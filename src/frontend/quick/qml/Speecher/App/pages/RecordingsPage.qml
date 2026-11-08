@@ -18,7 +18,6 @@ import "recordings/RecordingWords.js" as T
 Page {
     id: page
     title: Schema.page("recordings").title
-    subtitle: Schema.page("recordings").subtitle
 
     readonly property var t: T.text
     readonly property bool running: Recording.state !== "off"
@@ -32,9 +31,17 @@ Page {
     readonly property string pageService: ModelText.order("speech").find(id => id !== "local" && ModelText.streams(id)) || ""
     readonly property var chosenService: Settings.values.recordingService || {}
     readonly property string nextRecording: running ? T.text.nextRecording : ""
+    // Call audio is recorded only where both sources are chosen and this
+    // computer can capture them; the page's words follow.
+    readonly property bool micOnly: Recording.plan.sources !== "both"
     findField: transcript.open ? liveLines.findField : null
+    subtitle: micOnly ? page.t.subtitleMicOnly : Schema.page("recordings").subtitle
 
-    Component.onCompleted: Recording.lines.forEach(line => lines.append(line))
+    // The service's status under Run with says whether it is signed in.
+    Component.onCompleted: {
+        ModelText.checkUnknownSignIns()
+        Recording.lines.forEach(line => lines.append(line))
+    }
     Connections {
         target: Recording
         function onLineAdded(line) { lines.append(line) }
@@ -51,7 +58,7 @@ Page {
         Section {
             width: parent.width
             title: page.t.transcript
-            actions: Button { text: page.t.openFile; iconName: "external-link"; size: "small"; onClicked: Qt.openUrlExternally("file://" + Recording.path) }
+            actions: Button { text: page.t.openTranscript; iconName: "external-link"; size: "small"; onClicked: Qt.openUrlExternally("file://" + Recording.path) }
             TranscriptReader {
                 id: liveLines
                 topPadding: Theme.space3
@@ -72,7 +79,10 @@ Page {
         changesTitle: page.t.changes
         changesHelp: page.t.changesHelp
         changes: page.chosenService.service ? 1 : 0
-        // Its status shows beside Record instead.
+        // The fold holds only the speech service, which follows Speech to
+        // text, not the profile.
+        sameText: Words.sameAs(page.t.sameAsSpeech, page.pageService ? Models.service(page.pageService).label : page.t.noneCanRecord)
+        speechService: Recording.plan.service || ""
         onProfileChosen: id => Settings.set("recordingProfile", id)
 
         SettingRow {
@@ -107,7 +117,10 @@ Page {
         formatRowId: "recordingFormat"
         onFolderChosen: folder => Recording.setFolder(folder)
         onFormatChosen: id => Settings.set("recordingFormat", id)
-        SchemaRow { rowId: "recordingKeepAudio" }
+        SchemaRow {
+            rowId: "recordingKeepAudio"
+            note: page.micOnly ? spec.micOnlyHelp : spec.help
+        }
     }
 
     Section {
@@ -121,7 +134,14 @@ Page {
             value: Recording.canRecordCallAudio ? Settings.values.recordingSources : "mic"
             note: Recording.canRecordCallAudio ? spec.help : spec.fixedHelp
         }
-        SchemaRow { rowId: "recordingAutoStop" }
+        // Its help says what counts as speaking, with a link to where that
+        // is set, which stays usable while this is on.
+        SchemaRow {
+            rowId: "recordingAutoStop"
+            note: T.autoStopHelp(spec.help, Schema.valueLabel(Schema.row("vadThresholdPercent"), Settings.values.vadThresholdPercent))
+            helpLink: Schema.row("vadThresholdPercent").label
+            onHelpLinkActivated: Navigation.follow("microphone", "vadThresholdPercent")
+        }
         // The shortcut is set on Dictation with the others; this says
         // which it is.
         SettingRow {

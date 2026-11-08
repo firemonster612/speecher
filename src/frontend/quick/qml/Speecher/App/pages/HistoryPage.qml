@@ -9,9 +9,9 @@ import "history"
 import "history/HistoryWords.js" as T
 
 // Everything History kept, newest first, under Home: a search with filters,
-// then a card of entries a day, each opening in place. A Recording opens in
-// its reader instead, in the list's place ("recording:<id>" opens it from a
-// link); one still running opens Recordings. "historyKind:<kind>" opens it
+// then a card of entries a day. A dictation opens in place; a file or a
+// Recording opens in EntryReader, in the list's place ("recording:<id>"
+// opens one from a link); a Recording still running opens Recordings. "historyKind:<kind>" opens it
 // filtered to a kind. Clear… deletes a span of dictations and files, as
 // Privacy & data's Clear history does. With nothing to list it says why:
 // History keeps nothing or only stats, nothing kept yet, or nothing
@@ -36,7 +36,8 @@ Page {
     property int lastUndo: -1
     // The row items by their place in History.results, for Up and Down.
     property var rowItems: ({})
-    // The Recording open in the reader, 0 for none, and the line it opened at.
+    // The file or Recording open in the reader, 0 for none, and the line it
+    // opened at.
     property real readingId: 0
     property real readAt: -1
 
@@ -62,9 +63,9 @@ Page {
     }
     function remove(id) {
         if (openId === id) openId = 0
-        const entry = History.results.find(r => r.id === id)
+        const entry = History.results.find(r => r.id === id) || History.entry(id)
         // A Recording asks first, in its reader, as it may take its files.
-        if (entry && entry.kind === "recording") {
+        if (entry.kind === "recording") {
             read(id, -1)
             reader.askDelete = true
             return
@@ -72,8 +73,9 @@ Page {
         const token = History.remove(id)
         if (token < 0) return
         lastUndo = token
+        if (readingId === id) readingId = 0
         // A file's audio and saved transcript stay where they are.
-        Toaster.show(entry && entry.kind === "file" ? page.t.removed : Words.deleted(T.shortened(entry ? entry.text : "")),
+        Toaster.show(entry.kind === "file" ? T.fileDeleted(entry) : Words.deleted(T.shortened(entry.text || "")),
                      { icon: "trash-2", actionText: Words.undo, action: () => page.undo() })
     }
     function undo() {
@@ -267,12 +269,14 @@ Page {
             }
         }
 
-        RecordingReader {
+        EntryReader {
             id: reader
+            objectName: "entryReader"
             entryId: page.readingId
             startAt: page.readAt
             find: search.text
             onClosed: page.readingId = 0
+            onDeleteRequested: page.remove(page.readingId)
         }
     }
 }

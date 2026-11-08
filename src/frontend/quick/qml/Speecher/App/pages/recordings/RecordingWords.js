@@ -15,6 +15,7 @@ var text = {
     recording: "Recording",
     openSpeech: "Open Speech to text",
     runSetup: "Run setup",
+    setupFirst: "Recording waits until setup is finished.",
     openMicrophone: "Open Microphone",
     cancel: "Cancel",
     changes: "Change for recordings",
@@ -24,7 +25,8 @@ var text = {
     transcript: "Transcript, as it's written",
     following: "Following",
     jumpToLatest: "Jump to latest",
-    openFile: "Open file",
+    openTranscript: "Open transcript",
+    subtitleMicOnly: "Record a call to a transcript file from your microphone, as me.",
     allInHistory: "All recordings in History",
     noRecordings: "Recordings you make show here.",
     sameAsSpeech: "Speech to text",
@@ -91,6 +93,13 @@ function runningSummary(running, serviceLabel) {
         ? " Stops after " + (running.autoStopMinutes === 60 ? "an hour" : running.autoStopMinutes + " minutes") + " of silence."
         : ""
     return "Heard by " + serviceLabel + "." + stop
+}
+
+// Stop after silence's help, with what counts as speaking and where that's
+// set, which the page makes a link: "… Sound louder than Quiet below, now
+// 4%, on Microphone, counts as speaking."
+function autoStopHelp(help, threshold) {
+    return help + " Sound louder than Quiet below, now " + threshold + ", on Microphone, counts as speaking."
 }
 
 // A folder with the home folder as ~.

@@ -22,6 +22,9 @@ Section {
     property string changesHelp
     // How many of the profile's settings the run changes.
     property int changes: 0
+    // What the fold says while the run changes nothing: what its rows
+    // follow, the profile unless the page says otherwise.
+    property string sameText: T.changesSummary(0, Library.profileName(profileId || inheritedProfile))
     // The services the run hears and refines with, "" (or "none") for none,
     // whose status shows under the changes.
     property string speechService
@@ -48,7 +51,7 @@ Section {
         id: fold
         title: root.changesTitle
         help: root.changesHelp
-        trailingText: T.changesSummary(root.changes, Library.profileName(root.profileId || root.inheritedProfile))
+        trailingText: root.changes === 0 ? root.sameText : T.changesSummary(root.changes, "")
         open: root.changes > 0
     }
     ServiceStatus { role: "speech"; serviceId: root.speechService }

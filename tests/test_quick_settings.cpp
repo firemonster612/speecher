@@ -281,12 +281,15 @@ private slots:
     }
 
     // SchemaRow decides in QML, so its binding follows Settings.values:
-    // turning voice detection on enables its threshold with the page still up.
+    // turning voice detection on enables its threshold with the page still
+    // up, and so does recordings' Stop after silence, which times silence by
+    // it too.
     void schemaRowsGreyOutUntilTurnedOn()
     {
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         settings.set(QStringLiteral("vadEnabled"), false);
+        settings.set(QStringLiteral("recordingAutoStop"), QStringLiteral("0"));
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
 
@@ -294,6 +297,9 @@ private slots:
         QVERIFY(threshold);
         QVERIFY(!threshold->property("enabled").toBool());
         settings.set(QStringLiteral("vadEnabled"), true);
+        QVERIFY(threshold->property("enabled").toBool());
+        settings.set(QStringLiteral("vadEnabled"), false);
+        settings.set(QStringLiteral("recordingAutoStop"), QStringLiteral("30"));
         QVERIFY(threshold->property("enabled").toBool());
 
         QVERIFY(schemaRow(engine, "pauseMedia")->property("enabled").toBool());

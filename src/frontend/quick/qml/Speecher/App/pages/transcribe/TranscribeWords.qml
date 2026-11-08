@@ -59,6 +59,8 @@ QtObject {
         { id: "beside", label: "Next to each audio file", icon: "file-text" },
         { id: "folder", label: "One folder…", icon: "folder" }
     ]
+    readonly property string plainText: "Plain text"
+    readonly property string formatHelp: "Export makes SRT and WebVTT subtitles once they're done."
     function destinationHint(destination) {
         return destination === "beside" ? "For meeting.m4a, the transcript is meeting-transcribed.txt"
              : destination === "none" ? "Copy or export from the results afterwards" : ""

@@ -6,9 +6,11 @@ import Speecher.Controls
 import Speecher.Backend
 import "HistoryWords.js" as W
 
-// A Recording's lines, a row each: when its text was finalised, who said it
-// and what, me in stronger ink than them. Used by History's reader and by
-// Recordings while a recording runs. Find highlights the lines that hold any
+// A transcript's lines, a row each: for a Recording, when its text was
+// finalised, who said it and what, me in stronger ink than them; for a
+// file (timed false), its paragraphs alone. Used by History's reader and
+// by Recordings while a recording runs. A line's words can be selected and
+// copied. Find highlights the lines that hold any
 // part of it, parted as History's search parts it (quoted phrases whole),
 // and steps through them with Return and Shift+Return. live follows new lines
 // while the list is at its end and offers Jump to latest once scrolled up.
@@ -20,6 +22,8 @@ Column {
     // A list or a ListModel of { atMs, speaker, text }.
     property var model: []
     property bool live: false
+    // Lines with a time and a speaker, as a Recording's are.
+    property bool timed: true
     // The History Entry whose audio a line plays; 0 for none.
     property real audioEntry: 0
     property int maxHeight: 420
@@ -93,7 +97,7 @@ Column {
             id: find
             objectName: "transcriptFind"
             width: Math.min(Theme.fieldWidth, parent.width - found.width - Theme.space3)
-            placeholderText: W.text.findInRecording
+            placeholderText: W.text.findInTranscript
             clearText: W.text.clearSearch
             Keys.onReturnPressed: event => reader.step(event.modifiers & Qt.ShiftModifier ? -1 : 1)
             Keys.onEnterPressed: event => reader.step(event.modifiers & Qt.ShiftModifier ? -1 : 1)
@@ -145,6 +149,7 @@ Column {
             }
             Txt {
                 id: time
+                visible: reader.timed
                 x: Theme.rowInset
                 y: Theme.space1
                 text: W.lineClock(line.entry.atMs)
@@ -153,6 +158,7 @@ Column {
             }
             Txt {
                 id: speaker
+                visible: reader.timed
                 x: time.x + 84
                 y: Theme.space1
                 width: 52
@@ -160,16 +166,25 @@ Column {
                 tone: "secondary"
                 strong: line.entry.speaker === "me"
             }
-            Txt {
+            // A TextEdit, not a Txt, so its words can be selected and copied.
+            TextEdit {
                 id: words
-                x: speaker.x + speaker.width + Theme.space2
+                x: reader.timed ? speaker.x + speaker.width + Theme.space2 : Theme.rowInset
                 y: Theme.space1
                 width: parent.width - x - Theme.rowInset - (play.visible ? play.width + Theme.space2 : 0)
-                text: reader.marked(line.entry.text)
-                textFormat: Text.StyledText
-                variant: "transcript"
-                strong: line.entry.speaker === "me"
-                wrapMode: Text.WordWrap
+                readOnly: true
+                selectByMouse: true
+                activeFocusOnPress: true
+                // A TextEdit has no lineHeight; the transcript type's 1.25 comes as CSS.
+                text: "<div style=\"line-height:125%\">" + reader.marked(line.entry.text) + "</div>"
+                textFormat: TextEdit.RichText
+                wrapMode: TextEdit.Wrap
+                color: Theme.text
+                selectionColor: Theme.accent
+                selectedTextColor: Theme.accentText
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontTranscript
+                font.weight: line.entry.speaker === "me" ? Font.DemiBold : Font.Normal
             }
             IconButton {
                 id: play

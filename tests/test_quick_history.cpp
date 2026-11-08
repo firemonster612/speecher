@@ -12,7 +12,9 @@
 #include "frontend/quick/host/QuickHistory.h"
 #include "providers/ProviderRegistry.h"
 
+#include <QClipboard>
 #include <QFile>
+#include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -343,12 +345,76 @@ private slots:
         QuickHistory history(&controller);
         QCOMPARE(history.countIn(QStringLiteral("hour")), 1);
         QCOMPARE(history.countIn(QStringLiteral("all")), 2);
-        QVERIFY(history.clear(QStringLiteral("hour"), false));
+        QCOMPARE(history.clear(QStringLiteral("hour"), false),
+                 (QVariantMap{{QStringLiteral("cleared"), 1}, {QStringLiteral("left"), 0}, {QStringLiteral("files"), QStringList()}}));
         QCOMPARE(textsOf(history.results()), QStringList{QStringLiteral("last week")});
         QCOMPARE(controller.history()->records().size(), 2);
-        QVERIFY(history.clear(QStringLiteral("all"), true));
+        QCOMPARE(history.clear(QStringLiteral("all"), true).value(QStringLiteral("left")).toInt(), 0);
         QCOMPARE(history.kept(), 0);
         QVERIFY(controller.history()->records().isEmpty());
+    }
+
+    // A clear that leaves entries says how many went, how many stayed and
+    // which audio files kept them, so the page can say what to free.
+    void aFailedClearSaysWhatStayed()
+    {
+        ApplicationController controller(true);
+        QTemporaryDir dir;
+        HistoryEntry withAudio = kept(QStringLiteral("held"));
+        withAudio.kept = HistoryKeep::Audio;
+        withAudio.audioPath = dir.filePath(QStringLiteral("held.m4a"));
+        QFile audio(withAudio.audioPath);
+        QVERIFY(audio.open(QIODevice::WriteOnly));
+        audio.close();
+        controller.history()->add(withAudio);
+        controller.history()->add(kept(QStringLiteral("free")));
+        QuickHistory history(&controller);
+        test::LockedFolder locked(dir.path());
+        if (!locked.holds()) {
+            QSKIP("files here can be deleted anyway");
+        }
+        QCOMPARE(history.clear(QStringLiteral("all"), false),
+                 (QVariantMap{{QStringLiteral("cleared"), 1},
+                              {QStringLiteral("left"), 1},
+                              {QStringLiteral("files"), QStringList{withAudio.audioPath}}}));
+        QCOMPARE(textsOf(history.results()), QStringList{QStringLiteral("held")});
+    }
+
+    // A Recording copies as its plain text file has it; an edit made to its
+    // file is what a later search finds, without opening it first.
+    void aRecordingCopiesItsLinesAndSearchFindsItsEditedFile()
+    {
+        ApplicationController controller(true);
+        QTemporaryDir dir;
+        QFile transcript(dir.filePath(QStringLiteral("standup.txt")));
+        QVERIFY(transcript.open(QIODevice::WriteOnly));
+        transcript.write("[00:00:04] me: Ask Jon about the release\n");
+        transcript.close();
+        HistoryEntry recording;
+        recording.kind = HistoryKind::Recording;
+        recording.startedAt = QDateTime::currentDateTime().addSecs(-60);
+        recording.title = QStringLiteral("Standup");
+        recording.transcriptPath = transcript.fileName();
+        recording.kept = HistoryKeep::Text;
+        HistoryStore *store = controller.history();
+        const qint64 id = store->add(recording);
+        store->appendLine(id, {4000, QStringLiteral("me"), QStringLiteral("Ask Jon about the release")});
+        store->finishRecording(id, QDateTime::currentDateTime(), 60000, {}, {});
+        QuickHistory history(&controller);
+
+        history.copy(id, false);
+        QCOMPARE(QGuiApplication::clipboard()->text(), QStringLiteral("[00:00:04] me: Ask Jon about the release\n"));
+
+        QVERIFY(transcript.open(QIODevice::WriteOnly));
+        transcript.write("[00:00:04] me: Ask John about the release\n");
+        transcript.close();
+        QVERIFY(transcript.open(QIODevice::ReadWrite));
+        QVERIFY(transcript.setFileTime(QDateTime::currentDateTime().addSecs(5), QFileDevice::FileModificationTime));
+        transcript.close();
+        history.setQuery({{QStringLiteral("text"), QStringLiteral("John")}});
+        QTRY_VERIFY(!history.searching());
+        QCOMPARE(history.results().size(), 1);
+        QCOMPARE(history.results().first().toMap().value(QStringLiteral("id")).toLongLong(), id);
     }
 };
 

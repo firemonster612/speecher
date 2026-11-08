@@ -14,7 +14,6 @@ var text = {
     clearDetail: "Their text and audio are deleted from this computer. Audio files you transcribed and their saved transcripts stay where they are, and so do recordings. Home keeps counting them unless you check below.",
     alsoStats: "Also delete their stats",
     clearConfirm: "Delete",
-    clearFailed: "Speecher couldn't clear History. Try again.",
     nothingToClear: "Nothing to clear",
 
     search: "Search what you said, an app or a file…",
@@ -66,14 +65,11 @@ var text = {
     refining: "Refining…",
     keepThis: "Keep this",
     refineFailed: "Couldn't refine it again.",
-    removeFromHistory: "Remove from History",
-    removed: "Removed from History",
     openTranscript: "Open transcript",
-    showAudio: "Show audio file",
     transcribeAgain: "Transcribe again",
-    fileStays: "Removing it from History leaves the audio file and its saved transcript where they are.",
-    sourceMissing: "The audio file was moved or deleted, so it can't be transcribed again from here.",
-    findInRecording: "Find in this recording…",
+    locate: "Locate…",
+    locateDialog: "Locate the audio file",
+    findInTranscript: "Find in this transcript…",
     previous: "Previous match",
     next: "Next match",
     playFromHere: "Play from here",
@@ -87,22 +83,69 @@ var text = {
     ],
     exportDialog: "Export recording",
     exported: "Exported",
-    openFile: "Open file",
     showInFolder: "Show in folder",
     back: "All of History",
-    fileMissing: "The transcript file was moved or deleted. History still has its lines.",
+    fileMissing: "The saved transcript was moved or deleted. History still has its words.",
     fileDiverges: "The transcript file was changed into something other than its lines, so History shows them as they were recorded.",
     deleteRecording: "Delete this recording?",
     deleteRecordingDetail: "Its transcript file stays unless you check below.",
     alsoDeleteFile: "Also delete the transcript file and its audio",
     tryAgain: "Try again",
+    dismiss: "Dismiss",
     removeOnly: "Remove from History only"
+}
+
+// The line under a file's actions, saying what Delete leaves, by its name:
+// "Deleting it from History leaves interview-03.wav and its saved
+// transcript where they are."
+function fileStays(r) {
+    return "Deleting it from History leaves " + fileName(r) + (r.transcriptPath ? " and its saved transcript" : "")
+        + " where " + (r.transcriptPath ? "they are." : "it is.")
+}
+
+// What a file's Delete says once it's done, with Undo.
+function fileDeleted(r) {
+    return "Deleted from History. " + fileName(r) + (r.transcriptPath ? " and its saved transcript stay where they are." : " stays where it is.")
+}
+
+// Why a file can't be transcribed again: "interview-03.wav isn't in
+// ~/Calls any more. Locate it to transcribe it again."
+function sourceMissing(r, home) {
+    const at = folderOf(r.sourcePath)
+    return fileName(r) + (at ? " isn't in " + shortPath(at, home) + " any more." : " was moved or deleted.")
+        + " Locate it to transcribe it again."
+}
+
+// A file entry's name: its title, else the last part of its path.
+function fileName(r) { return r.title || (r.sourcePath || "").split(/[\\/]/).pop() || text.file }
+
+// The folder a path is in; empty for none.
+function folderOf(path) {
+    const at = Math.max((path || "").lastIndexOf("/"), (path || "").lastIndexOf("\\"))
+    return at > 0 ? path.slice(0, at) : ""
+}
+
+// A folder with the home folder as ~.
+function shortPath(path, home) {
+    return home && path.indexOf(home) === 0 ? "~" + path.slice(home.length) : path
+}
+
+// What a clear that couldn't finish says, as a deleted Recording's files
+// say it: what wouldn't go, what stayed, and what went.
+// "Speecher couldn't delete 1402.m4a, so 1 dictation or file stays as it
+// was. The other 21 were cleared."
+function clearStayed(result) {
+    const names = result.files.map(f => f.split(/[\\/]/).pop())
+    const shown = names.length > 3 ? names.slice(0, 3).join(", ") + " and " + (names.length - 3) + " more" : _list(names)
+    const stays = result.left === 1 ? "1 dictation or file stays as it was." : _num(result.left) + " dictations and files stay as they were."
+    const went = result.cleared > 0 ? (result.cleared === 1 ? " The other one was cleared." : " The other " + _num(result.cleared) + " were cleared.") : ""
+    return (names.length ? "Speecher couldn't delete " + shown + ", so " : "Speecher couldn't clear them, so ") + stays + went
 }
 
 // Why a Recording's files didn't go, and that it stays until they do.
 function filesStayed(files) {
     const names = files.map(f => f.split(/[\\/]/).pop())
-    return "Speecher couldn't delete " + names.join(" and ") + ". The recording stays in History until "
+    return "Speecher couldn't delete " + _list(names) + ". The recording stays in History until "
         + (files.length > 1 ? "they're" : "it's") + " gone, or you remove it from History only."
 }
 
@@ -140,10 +183,20 @@ function lineClock(ms) {
     return two(Math.floor(s / 3600)) + ":" + two(Math.floor(s / 60) % 60) + ":" + two(s % 60)
 }
 
-// The reader's line under its title: "Recording, Thursday 10:00 to 10:42",
-// and how it stopped where it wasn't by hand: ", stopped after silence".
-function readerDetail(r, today) {
+// The reader's line under its title. A Recording's: "Recording, Thursday
+// 10:00 to 10:42", and how it stopped where it wasn't by hand: ", stopped
+// after silence". A file's: where its audio is, when, how long, its words
+// and profile: "File in ~/Calls, Friday 17:20, 28 min, 4,102 words, Other".
+function readerDetail(r, today, home) {
     const day = dayHeading(r.day, today)
+    if (r.kind === "file") {
+        const at = folderOf(r.sourcePath)
+        const parts = [text.file + (at ? " in " + shortPath(at, home) : ""), day + " " + Qt.formatTime(r.finishedAt, "HH:mm")]
+        if (r.durationMs > 0) parts.push(duration(r.durationMs))
+        parts.push(_num(r.words) + (r.words === 1 ? " word" : " words"))
+        if (r.profileName) parts.push(r.profileName)
+        return parts.join(", ")
+    }
     const span = Qt.formatTime(r.startedAt, "HH:mm") + (r.live ? "" : " to " + Qt.formatTime(r.finishedAt, "HH:mm"))
     const silence = r.ending && r.ending.reason === "silence" ? ", stopped after silence" : ""
     return text.recording + ", " + day + " " + span + silence
@@ -248,4 +301,5 @@ function clock(ms) {
     return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0")
 }
 
+function _list(names) { return names.length > 1 ? names.slice(0, -1).join(", ") + " and " + names[names.length - 1] : names[0] || "" }
 function _num(n) { return Number(n).toLocaleString(Qt.locale(), "f", 0) }

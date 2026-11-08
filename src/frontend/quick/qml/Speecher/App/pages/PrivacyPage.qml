@@ -10,9 +10,9 @@ import "history/HistoryWords.js" as HistoryText
 
 // Privacy & data, under General: every choice about what Speecher keeps or
 // shares, each in one place. It edits What Speecher Keeps, its days and
-// Clear history itself, lists the Apps and App Types that keep less, and
-// links to what refinement sees and to learning from edits, each saying
-// how it is set where it lives.
+// Clear history itself, says how long Recordings stay, lists the Apps and
+// App Types that keep less, and links to what refinement sees and to
+// learning from edits, each saying how it is set where it lives.
 Page {
     id: page
     objectName: "privacyPage"
@@ -34,7 +34,11 @@ Page {
                                   : screenshot ? "A screenshot, not the text around your cursor"
                                   : "Only your words",
         cleanupOff: "Nothing: Clean up my words is off",
-        learning: (on, count) => (on ? "On, " : "Off, ") + Words.count(count, "correction", "corrections") + " kept"
+        learning: (on, count) => (on ? "On, " : "Off, ") + Words.count(count, "correction", "corrections") + " kept",
+        // Home's count and History's are of different entries, so each
+        // says what it counts.
+        counted: (count, since) => "Home counts " + Words.count(count, "dictation", "dictations") + " since " + Qt.formatDate(since, "MMMM yyyy") + ". ",
+        holdsText: count => "History holds the text of " + Words.count(count, "dictation or file", "dictations and files") + "."
     })
     // The Apps and App Types that keep less than What Speecher Keeps, App
     // Types first, each with its choice, as Pasting lists those that paste
@@ -58,8 +62,8 @@ Page {
         if (_lowerTo === "") Settings.set("historyKeeps", id)
     }
 
-    // What Speecher keeps of each dictation, for how long, the apps that
-    // keep less, and clearing it.
+    // What Speecher keeps of each dictation and file, for how long, what
+    // Recordings keep, the apps that keep less, and clearing it.
     Section {
         id: historySection
         objectName: "privacySection"
@@ -85,8 +89,7 @@ Page {
             cancelText: page.t.keepKept
             onConfirmed: {
                 Settings.set("historyKeeps", page._lowerTo)
-                if (!History.clear("all", false))
-                    Toaster.show(HistoryText.text.clearFailed, { icon: "alert-triangle", tone: "negative" })
+                clearConfirm.clearNow("all", false)
                 page._lowerTo = ""
             }
             onCancelled: {
@@ -96,6 +99,12 @@ Page {
         }
         SchemaRow { rowId: "historyTextDays" }
         SchemaRow { rowId: "historyAudioDays" }
+        SchemaRow {
+            rowId: "historyRecordings"
+            trailingText: Settings.values.recordingKeepAudio ? spec.withAudio : spec.until
+            clickable: true
+            onClicked: Navigation.follow("recordings", "recordingKeepAudio")
+        }
         SchemaRow {
             rowId: "historyExcludedApps"
             note: page._leftOut.length ? spec.help : spec.emptyText
@@ -144,9 +153,8 @@ Page {
         }
         SchemaRow {
             rowId: "clearHistory"
-            note: Insights.kept > 0
-                  ? Words.count(Insights.kept, "dictation", "dictations") + " counted since " + Qt.formatDate(Insights.firstDictation, "MMMM yyyy") + ", "
-                    + Words.count(History.keptText, "with its text", "with their text") + "."
+            note: Insights.kept > 0 || History.keptText > 0
+                  ? (Insights.kept > 0 ? page.t.counted(Insights.kept, Insights.firstDictation) : "") + page.t.holdsText(History.keptText)
                   : spec.help
             MenuButton {
                 objectName: "clearHistory"

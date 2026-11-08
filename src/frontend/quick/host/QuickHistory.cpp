@@ -71,6 +71,17 @@ std::pair<QDateTime, QDateTime> rangeOf(const QString &name, const QDate &today)
     return {};
 }
 
+// A Recording's lines as its plain text file has them, a line each:
+// "[00:00:04] me: Can you see my screen?".
+QByteArray linesText(const QList<HistoryLine> &lines)
+{
+    QByteArray text;
+    for (const HistoryLine &line : lines) {
+        text += QStringLiteral("[%1] %2: %3\n").arg(recordingClock(line.atMs), line.speaker, line.text).toUtf8();
+    }
+    return text;
+}
+
 } // namespace
 
 QuickHistory::QuickHistory(ApplicationController *controller, QObject *parent)
@@ -84,6 +95,7 @@ QuickHistory::QuickHistory(ApplicationController *controller, QObject *parent)
     m_searchDelay.setInterval(searchDelayMs);
     connect(&m_searchDelay, &QTimer::timeout, this, [this] {
         emit searchingChanged();
+        syncRecordingFiles();
         search(pageSize);
     });
     m_purge.setSingleShot(true);
@@ -153,6 +165,17 @@ void QuickHistory::search(int limit)
     }
     m_matches = history->count(query);
     emit resultsChanged();
+}
+
+void QuickHistory::syncRecordingFiles()
+{
+    HistoryStore *history = m_controller->history();
+    HistoryQuery recordings;
+    recordings.kinds = {HistoryKind::Recording};
+    recordings.limit = history->count(recordings);
+    for (const HistoryHit &hit : history->search(recordings)) {
+        history->syncRecordingFile(hit.entry.id);
+    }
 }
 
 void QuickHistory::fetchMore()
@@ -308,6 +331,10 @@ QVariantMap QuickHistory::entry(qint64 id) const
 void QuickHistory::copy(qint64 id, bool raw)
 {
     const QVariantMap found = entry(id);
+    if (found.value(QStringLiteral("kind")) == QStringLiteral("recording")) {
+        QGuiApplication::clipboard()->setText(QString::fromUtf8(linesText(m_controller->history()->lines(id))));
+        return;
+    }
     QGuiApplication::clipboard()->setText(found.value(raw ? QStringLiteral("raw") : QStringLiteral("text")).toString());
 }
 
@@ -360,14 +387,8 @@ void QuickHistory::openFile(qint64 id) const
 void QuickHistory::showInFolder(qint64 id) const
 {
     if (const std::optional<HistoryEntry> found = m_controller->history()->entry(id)) {
-        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(found->transcriptPath).absolutePath()));
-    }
-}
-
-void QuickHistory::showSource(qint64 id) const
-{
-    if (const std::optional<HistoryEntry> found = m_controller->history()->entry(id)) {
-        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(found->sourcePath).absolutePath()));
+        const QString shown = found->transcriptPath.isEmpty() ? found->sourcePath : found->transcriptPath;
+        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(shown).absolutePath()));
     }
 }
 
@@ -395,9 +416,7 @@ bool QuickHistory::exportEntry(qint64 id, const QString &format, const QUrl &fil
         }
         written = QJsonDocument(array).toJson();
     } else {
-        for (const HistoryLine &line : lines) {
-            written += QStringLiteral("[%1] %2: %3\n").arg(recordingClock(line.atMs), line.speaker, line.text).toUtf8();
-        }
+        written = linesText(lines);
     }
     QSaveFile out(file.toLocalFile());
     return out.open(QIODevice::WriteOnly) && out.write(written) == written.size() && out.commit();
@@ -465,10 +484,28 @@ int QuickHistory::countIn(const QString &range) const
     return m_controller->history()->countIn(from, to);
 }
 
-bool QuickHistory::clear(const QString &range, bool withStats)
+QVariantMap QuickHistory::clear(const QString &range, bool withStats)
 {
-    const auto [from, to] = rangeOf(range, QDate::currentDate());
-    return m_controller->clearHistory(from, to, withStats);
+    HistoryQuery holdingText;
+    holdingText.kinds = {HistoryKind::Dictation, HistoryKind::Edit, HistoryKind::File};
+    std::tie(holdingText.from, holdingText.to) = rangeOf(range, QDate::currentDate());
+    const HistoryStore *history = m_controller->history();
+    const int before = history->count(holdingText);
+    m_controller->clearHistory(holdingText.from, holdingText.to, withStats);
+    // An entry whose audio wouldn't go stays as it was, text and all.
+    const int left = history->count(holdingText);
+    QStringList files;
+    if (left > 0) {
+        holdingText.limit = left;
+        for (const HistoryHit &hit : history->search(holdingText)) {
+            if (const QString audio = history->audioFile(hit.entry); !audio.isEmpty() && QFile::exists(audio)) {
+                files.append(audio);
+            }
+        }
+    }
+    return {{QStringLiteral("cleared"), std::max(0, before - left)},
+            {QStringLiteral("left"), left},
+            {QStringLiteral("files"), files}};
 }
 
 } // namespace speecher
