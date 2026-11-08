@@ -1158,7 +1158,9 @@ void DictationSession::deliverRevision(bool selectionUnchanged)
     m_listeningMs = review.listeningMs;
     m_providerHistory = review.providerHistory;
     if (!selectionUnchanged) {
-        m_sessionSettings->output.steps = {.insert = false, .press = false, .keep = true};
+        // Only the clipboard: Insert or Press would land on the new selection.
+        // Set on the App's choice, which outranks the Pasting page's steps.
+        m_plan.app.pasting.steps = DeliverySteps{.insert = false, .press = false, .keep = true};
         deliverFinal(review.edit, selectionChangedNote(), review.spokenWords);
         return;
     }

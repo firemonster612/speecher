@@ -128,7 +128,7 @@ var rows = [
       help: "Your words stay on the clipboard after delivery, which is how you get them when nothing else delivers.",
       offHelp: "Speecher puts your previous clipboard back after a paste, or when the keys never went out. "
           + "So with Insert off and Press on, it pastes and your clipboard ends up as it was. "
-          + "A paste it can't confirm leaves your words on the clipboard.",
+          + "A paste it can't confirm gets a moment to land before your clipboard goes back.",
       keywords: "clipboard copy restore previous keep" },
     { id: "outputFormat", page: "pasting", section: "Options", kind: "choice",
       label: "Paste as", help: "Formatted text keeps lists and emphasis in apps that accept it. Inserting through accessibility always writes plain text.",

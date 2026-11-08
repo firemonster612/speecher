@@ -2470,8 +2470,20 @@ fi
         QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("new user copy"));
     }
 
-    void outputKeepsTranscriptWhenVirtualKeyboardInputCannotBeVerified()
+    void anUnconfirmedPasteGivesTheClipboardBackAfterAWhile_data()
     {
+        QTest::addColumn<bool>("copyMeanwhile");
+        QTest::newRow("nothing copied meanwhile") << false;
+        QTest::newRow("a newer copy meanwhile") << true;
+    }
+
+    // With Keep off, a paste the target can't confirm still borrows the
+    // clipboard only for the paste: the words are there for the keys, and
+    // the previous clipboard, every format of it, comes back once the target
+    // has had time to read them. A copy the person made meanwhile stays.
+    void anUnconfirmedPasteGivesTheClipboardBackAfterAWhile()
+    {
+        QFETCH(bool, copyMeanwhile);
         auto *previous = new QMimeData;
         previous->setText(QStringLiteral("previous clipboard"));
         previous->setHtml(QStringLiteral("<b>previous clipboard</b>"));
@@ -2491,24 +2503,37 @@ fi
 
         OutputSettings settings;
         settings.ydotoolEnabled = true;
-        settings.steps.keep = false;
+        settings.steps = {.insert = false, .press = true, .keep = false};
         Target target;
         target.applicationId = QStringLiteral("org.kde.kate");
         target.category = AppCategory::CodeEditor;
 
-        QString consumedText;
-        connect(&delivery, &TextDeliveryAdapter::delivered, this, [&consumedText] {
-            consumedText = QApplication::clipboard()->text();
+        QStringList seen;
+        connect(QApplication::clipboard(), &QClipboard::dataChanged, this, [&seen, copyMeanwhile] {
+            seen.append(QApplication::clipboard()->text());
+            if (copyMeanwhile && seen.last() == QStringLiteral("new text")) {
+                QTimer::singleShot(100, [] { QApplication::clipboard()->setText(QStringLiteral("new user copy")); });
+            }
         });
         const DeliveryResult result = deliverAndWait(
             delivery, settings,
             makeDeliveryContent(QStringLiteral("new text"), OutputFormat::Html),
             target);
-        QCoreApplication::processEvents();
+        disconnect(QApplication::clipboard(), nullptr, this, nullptr);
+
+        QCOMPARE(attempts, QList<QString>({virtualKeyboardMethod()}));
         QCOMPARE(result.receipt, DeliveryReceipt::InputSent);
-        QVERIFY(result.message.contains(QStringLiteral("Could not confirm the paste")));
-        QCOMPARE(consumedText, QStringLiteral("new text"));
-        QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("new text"));
+        QVERIFY(seen.contains(QStringLiteral("new text")));
+        if (copyMeanwhile) {
+            QCOMPARE(result.message, QStringLiteral("Could not confirm the paste. Previous clipboard kept as-is."));
+            QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("new user copy"));
+            return;
+        }
+        QCOMPARE(result.message, QStringLiteral("Could not confirm the paste."));
+        const QMimeData *restored = QApplication::clipboard()->mimeData();
+        QCOMPARE(restored->text(), QStringLiteral("previous clipboard"));
+        QCOMPARE(restored->html(), QStringLiteral("<b>previous clipboard</b>"));
+        QCOMPARE(restored->data(QStringLiteral("application/x-speecher-test")), QByteArrayLiteral("custom-data"));
     }
 
     void clipboardSnapshotCapturesAndRestoresEveryMimeType()

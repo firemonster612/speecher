@@ -310,6 +310,9 @@ private:
     GlobalShortcutBinder *m_pasteAgainShortcutBinder = nullptr;
     GlobalShortcutBinder *m_recordingShortcutBinder = nullptr;
     qint64 m_recordingEntry = 0;
+    // Lines written while the recording starts, before its History Entry
+    // exists; started replays them into it, and a start that fails drops them.
+    QList<HistoryLine> m_startingRecordingLines;
     PasteAgain *m_pasteAgain = nullptr;
     // The last dictation this run, for Paste Again: nullopt before the
     // first, empty for one into a password field.

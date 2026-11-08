@@ -45,7 +45,7 @@ Page {
                        : _runs("insert") ? "Plain text when inserted, formatted when pasted" : "Delivers formatted text"
         if (_keeps) return delivers + ", and leaves a copy on your clipboard."
         if (!_runs("press")) return delivers + ", and leaves your clipboard alone."
-        return delivers + ". After a paste your clipboard goes back, unless Speecher can't confirm the paste, which leaves your words there."
+        return delivers + ". After a paste your clipboard goes back as it was."
     }
     // Why a selection edit can't be reviewed now, or "": reading the
     // selection needs accessibility (Windows' needs no permission), then
