@@ -147,6 +147,15 @@ QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, TrayIcon *tray, 
     connect(session, &DictationSession::popupShowRequested, m_popup, &QuickPopupWindow::show);
     connect(m_popup, &QuickPopupWindow::presented, session, &DictationSession::popupPresented);
     connect(&m_dictation, &QuickDictation::pageRequested, this, &QuickFrontEnd::showPage);
+    // A link in the setup assistant opens its page in Main, and the way back
+    // brings the assistant up again.
+    connect(&m_navigation, &QuickNavigation::mainRequested, this, [this] { showPage({}); });
+    connect(&m_navigation, &QuickNavigation::setupRequested, this, [this] {
+        if (m_setup) {
+            m_setup->raise();
+            m_setup->requestActivate();
+        }
+    });
     connect(&m_updates, &QuickUpdates::pageRequested, this, &QuickFrontEnd::showPage);
     // An update restart brings back the windows that were on screen, never
     // the microphone: the new process has no dictation gesture behind it.
@@ -272,6 +281,9 @@ QQuickWindow *QuickFrontEnd::createWindow(const QString &typeName)
         delete object;
         return nullptr;
     }
+    // By its type, so a link inside can tell which window it is in
+    // (AccountsLink).
+    window->setObjectName(typeName);
     window->installEventFilter(this);
     return window;
 }
@@ -291,6 +303,7 @@ bool QuickFrontEnd::eventFilter(QObject *watched, QEvent *event)
 void QuickFrontEnd::setupClosed()
 {
     releaseTestIn(m_audio, m_setup);
+    m_navigation.forgetReturnTo(QuickNavigation::setupOrigin);
     std::exchange(m_setup, nullptr)->deleteLater();
     m_controller->setupAssistantClosed();
 }

@@ -7,6 +7,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 
 namespace speecher {
 
@@ -74,6 +75,12 @@ public:
     virtual MicrophoneAccess microphoneAccess() const { return MicrophoneAccess::NotAsked; }
     // Opens the system's microphone privacy settings, where there are any.
     virtual void openMicrophoneSettings() const {}
+    // Whether the system lets Speecher capture the screen, for screenshot
+    // context; asked each time. nullopt where the system asks nothing.
+    virtual std::optional<bool> screenRecordingAllowed() const { return std::nullopt; }
+    // Asks for screen capture, opening its privacy settings where the system
+    // no longer asks, where there are any.
+    virtual void requestScreenRecording() const {}
     virtual MediaController *createMediaController(QObject *parent) const = 0;
     virtual TargetProvider *createTargetProvider(QObject *parent) const = 0;
     virtual ScreenshotContextProvider *createScreenshotContextProvider(QObject *parent) const = 0;

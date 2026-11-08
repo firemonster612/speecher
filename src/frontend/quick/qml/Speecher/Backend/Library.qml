@@ -95,14 +95,16 @@ LibraryLists {
         const builtIn = builtInRecognitionRules.filter(b => !own.some(r => r.match === b.match))
         return own.concat(builtIn).filter(r => r.profile === id).map(r => r.match)
     }
-    // Where a profile is used, given its apps and whether it is the one for
-    // apps no match names: "Used in 22 apps." Matches are desktop IDs, not
-    // names, so the line counts them rather than listing them.
+    // Where a profile is used, given its app matches and whether it is the
+    // one for apps no match names: "22 app matches." Matches are patterns
+    // such as desktop IDs, not installed apps, so the line counts them as
+    // matches; profileMatches(apps) is the part of it that links to them.
     function profileUse(apps, isFallback) {
-        const used = apps.length === 0 ? "" : "Used in " + Words.count(apps.length, "app", "apps") + "."
+        const used = apps.length === 0 ? "" : profileMatches(apps) + "."
         if (isFallback) return used.length ? used + " Also used for apps Speecher doesn't recognize." : "Used for every app Speecher doesn't recognize."
-        return used.length ? used : "No apps use it yet."
+        return used.length ? used : "No app matches use it yet."
     }
+    function profileMatches(apps) { return apps.length ? Words.count(apps.length, "app match", "app matches") : "" }
     // The question before deleting a profile, and what deleting it changes.
     function profileDeleteQuestion(name) { return "Delete " + name + "?" }
     function profileDeleteDetail(apps, isFallback) {

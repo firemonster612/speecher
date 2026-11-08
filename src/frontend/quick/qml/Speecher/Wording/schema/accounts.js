@@ -5,6 +5,8 @@ var rows = [
       label: "Sign-in",
       help: "API keys only cover cleanup; dictation needs a ChatGPT or CLI Proxy API sign-in.",
       autoFound: "Automatic is using: %1.",
+      // A search for the API key lands here while another sign-in hides it.
+      keyHint: "To enter an API key, choose API key saved in Speecher.",
       keywords: "login chatgpt codex api key environment source",
       options: [
           { id: "auto", label: "Automatic", help: "The first one found: the Codex app, then an API key from the environment or Speecher." },
@@ -38,8 +40,11 @@ var rows = [
       placeholder: "Detected automatically",
       keywords: "oauth folder path files auth dir" },
     { id: "cliproxyBaseUrl", page: "accounts", section: "CLI Proxy API", kind: "text",
-      label: "Server URL", help: "Cleanup that signs in through CLI Proxy API goes through this server, and so does a Custom Endpoint set to it. Dictation still needs the account files on this computer.",
-      placeholder: "Use the account files on this computer",
+      label: "Server URL", help: "Cleanup that signs in through CLI Proxy API goes through this server, and so does a Custom Endpoint set to it. Leave it empty to use the account files on this computer. Dictation always needs those files.",
+      placeholder: "https://…",
+      // The row that holds the server's settings until a sign-in uses CLI Proxy API.
+      foldedLabel: "Server",
+      foldedHelp: "Only needed when CLI Proxy API runs on another computer.",
       keywords: "proxy endpoint host address base url" },
     { id: "cliproxyApiKey", page: "accounts", section: "CLI Proxy API", kind: "secret",
       label: "Server API key", help: "A key the server accepts. Needed when a server URL is set.",

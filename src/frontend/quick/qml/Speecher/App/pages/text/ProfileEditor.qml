@@ -101,7 +101,16 @@ Column {
                     open: editor.refusal.length > 0
                     Txt { text: editor.refusal; variant: "small"; tone: "negative"; width: parent.width; wrapMode: Text.WordWrap }
                 }
-                Txt { text: editor.usedIn; variant: "small"; tone: "secondary"; width: parent.width; wrapMode: Text.WordWrap }
+                // The count of matches opens them, under App recognition.
+                LinkedText {
+                    plainText: editor.usedIn
+                    link: Library.profileMatches(editor.apps)
+                    variant: "small"
+                    tone: "secondary"
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    onActivated: Navigation.follow(Schema.row("appRecognitionRules").page, "appRecognitionRules")
+                }
             }
             Button {
                 id: deleteButton

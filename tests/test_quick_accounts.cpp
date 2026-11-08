@@ -398,8 +398,8 @@ private slots:
             component.createWithInitialProperties({{QStringLiteral("providerId"), QStringLiteral("openai")}}));
         QVERIFY2(row, qPrintable(component.errorString()));
 
-        QVERIFY(!row->property("shown").toBool());
-        QTRY_VERIFY(row->property("shown").toBool());
+        QVERIFY(!row->property("open").toBool());
+        QTRY_VERIFY(row->property("open").toBool());
         QVERIFY(!row->property("unknown").toBool());
     }
 
@@ -420,11 +420,11 @@ private slots:
             component.createWithInitialProperties({{QStringLiteral("providerId"), QStringLiteral("openai")}}));
         QVERIFY2(row, qPrintable(component.errorString()));
 
-        QTRY_VERIFY(row->property("shown").toBool());
+        QTRY_VERIFY(row->property("open").toBool());
         QCOMPARE(serviceState(accounts, QStringLiteral("openai")), QStringLiteral("expired"));
         accounts.recheck(QStringLiteral("openai"));
         QCOMPARE(serviceState(accounts, QStringLiteral("openai")), QStringLiteral("checking"));
-        QVERIFY(row->property("shown").toBool());
+        QVERIFY(row->property("open").toBool());
     }
 
     // A sign-in setting saved from any page checks the sign-ins again; any

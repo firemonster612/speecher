@@ -608,12 +608,14 @@ std::unique_ptr<QQuickWindow> schemaRowWindow(QQmlEngine &engine, const QString 
     return window;
 }
 
-// The item in window whose QML type is typeName, or null.
+// The item in window whose QML type is typeName or built on it, or null.
 QQuickItem *findItem(QQuickWindow *window, const char *typeName)
 {
     for (QQuickItem *item : window->findChildren<QQuickItem *>()) {
-        if (QByteArray(item->metaObject()->className()).startsWith(typeName)) {
-            return item;
+        for (const QMetaObject *type = item->metaObject(); type; type = type->superClass()) {
+            if (QByteArray(type->className()).startsWith(typeName)) {
+                return item;
+            }
         }
     }
     return nullptr;

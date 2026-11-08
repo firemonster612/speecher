@@ -129,7 +129,12 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   `Settings.completeSetup()` records that the setup assistant finished.
 - `Navigation` is which page Main shows (`current`) and the row a page
   lands on (`pendingRow`); `go(pageId)` and `goToRow(pageId, rowId)` ask for
-  them. The host holds it and opens Main on a page through it.
+  them. A link from one page to another (Open Accounts, App matches, a fix)
+  calls `follow(pageId, rowId)` instead, which remembers where it came from
+  in `returnTo` until the person goes anywhere else, so the page it opens
+  offers the way back (`goBack()`). A link in the setup assistant follows
+  from `"setup"`, which opens Main and leads back to the assistant. The host
+  holds it and opens Main on a page through it.
 - `Updates` is the updater as `QuickUpdates.h` documents it: the running
   `version`, its state
   (checking through restarting, with check and install failures apart), the
@@ -434,7 +439,8 @@ Layout:
 - A check (`System.checks`) shows on the page of what it gates, as a
   `HealthRow` with its fix: microphone access on Microphone, global
   shortcuts on Dictation, accessibility and the virtual keyboard on
-  Pasting. Home's session card lists every check that applies, grouped as
+  Pasting, Screen Recording (macOS, while screenshots are on) on
+  Refinement. Home's session card lists every check that applies, grouped as
   what dictation needs (a check marked `needed`, a microphone, a working
   speech service) and what it works without, each row opening its page;
   while all pass it is one line with Run setup again.
@@ -522,7 +528,7 @@ control fades to `Theme.disabledOpacity`.
 
 Layout and rows:
 
-- `Page { title; subtitle; headerActions; path; pathPicked(id) }`: a scrolling page. With no title the page brings its own heading. `path` is the pages above it (`[{ id, title }]`), which lead its title as links; Main sets it from the schema and opens the page a step asks for.
+- `Page { title; subtitle; headerActions; path; pathPicked(id); backText; backPicked() }`: a scrolling page. With no title the page brings its own heading. `path` is the pages above it (`[{ id, title }]`), which lead its title as links; Main sets it from the schema and opens the page a step asks for. `backText` is the way back above the title, which Main sets from `Navigation.returnTo`.
 - `Section { title; caption; actions; plain; cardPadding }`: a heading over a raised card. Two side by side line up with `minimumHeaderHeight`/`minimumCardHeight` set from each other's `naturalHeaderHeight`/`naturalCardHeight`. Sections stacked outside a Page (in a Reveal or a Switcher view) go in a `Column { spacing: Theme.sectionGap }`.
 - `Card`: the raised card on its own. `Surface`: a floating panel (menus, palettes). `Plate`: the recessed panel a page's or setup step's picture sits on.
 - `SettingRow { title; help; helpLink; iconName; stacked; clickable; trailingText; shown; first; highlight() }`: one setting with its control on the right; `helpLink` makes that part of the help a link (`helpLinkActivated(at)`).
@@ -554,7 +560,7 @@ Choosing:
 Input:
 
 - `TextField { iconName; variant; secret; trailing }`, `SearchField`, `SuggestField { suggestions; committed }`, `TextArea { mono; minHeight }`: all draw `InputFrame`. `variant: "title"` sets a name edited where a title would be. Fields default to `Theme.fieldWidth`, and `Select`, `SuggestField` and `ShortcutField` to `Theme.selectWidth`, so choosers line up in a column of rows; leave them at that in settings rows.
-- `ShortcutField { keys; emptyText; listeningText; clearText; escapeRecords; keyAlone; takesAlone; recorded(keys) }`, and `KeyCombo { keys; size; pressed; lit }` / `KeyCap { text; size }` to show keys.
+- `ShortcutField { keys; size; emptyText; listeningText; clearText; escapeRecords; keyAlone; takesAlone; recorded(keys) }` (`size: "large"` for a page's picture of its shortcut), and `KeyCombo { keys; size; pressed; lit }` / `KeyCap { text; size }` to show keys.
 
 Actions and menus:
 
@@ -593,8 +599,12 @@ In Speecher.App, besides SchemaRow:
 - `SearchLanding { rowIds; target; landed() }`: where a search for schema rows lands when no SchemaRow stands for them (a custom row, a Disclosure, a card or a section). It scrolls to target and emits landed so the target can flash or open. It opens nothing that hides target: a section folded away until a choice makes it apply opens for a search only where its page says so, as Speech to text's Local Model and Custom Endpoint sections do through the page's `searched`.
 - `AccessibilityNotice { text }`: the note at the top of a card whose rows need desktop accessibility.
 - `HealthRow { rowId; checkId }`: a schema row showing one of `System.checks` with its fix; items inside follow the fix button. `AccessibilityMenu` is the desktopAccessibility row's menu that stops keeping it on. `StateText { stateId }` words a sign-in or check state, and `States` (states.js) maps states to tones: a state to sign in to, turn on or set up is `warning`, one that failed or can't be used `negative`.
-- `SignInRow { serviceId }`: under the cards that choose a speech service, while it isn't ready, how to sign in (or why the last check couldn't reach it) and Check again; the card keeps the status.
-- `RefinerSignInRow { providerId }`: under the cards that choose a refinement provider, while its sign-in isn't ready, how to sign in with Open Accounts, or, where Accounts couldn't read the keychain, Check again.
+- `SignInRow { serviceId }`: under the cards that choose a speech service, its sign-in: where it comes from, and while it isn't ready how to sign in (also while the first check runs) or why the last check couldn't reach it; the card keeps the status.
+- `RefinerSignInRow { providerId }`: the same under the cards that choose a refinement provider, once Accounts has answered, saying so where Accounts couldn't read the keychain.
+- `SignInSourceRow`: both rows' body: the sign-in source as the select Accounts has, Check again while it isn't ready, Open Accounts in every state, and a failure as one plain sentence with its own words behind `ErrorDetails { text }`, a Details link.
+- `AccountsLink { rowId }`: Open Accounts, landing on rowId, followed from the page or the setup assistant it sits in.
+- `ShortcutRecorder { rowId }`: a shortcut setting's ShortcutField wired to Settings, for the shortcut rows and Dictation's hero, which is where the dictation shortcut is set.
+- `Usable.usable(spec)`: whether a row can be used now, by its schema `usableWhen` (blur, accessibility, automaticDownloads, screenshotReader). SchemaRow and search both read it; a page doesn't disable a row by its own logic.
 - `CommandChip { command }`: a command in code type with a copy button.
 - `StartCommandRow`: the `startCommand` row, the command that starts one dictation with a copy button, wherever the desktop gives no shortcut.
 - `Sheet { side }`: the page a window shows beside its side column, framed or split as `Theme.split` says.

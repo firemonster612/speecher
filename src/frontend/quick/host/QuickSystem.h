@@ -51,14 +51,15 @@ public:
     bool accessibility() const;
     // One entry per health row, {id, state, reason, fix, needed, failures}:
     // id is the row's (microphoneAccess, desktopAccessibility,
-    // globalShortcuts, virtualKeyboardHealth); state is ok, attention, off or
+    // globalShortcuts, virtualKeyboardHealth, and screenRecording on macOS
+    // while screenshot context is on); state is ok, attention, off or
     // working; reason says which of the check's cases it is (keptOn for
     // accessibility Speecher keeps on past sign-out), notNeeded for
     // one this computer has nothing to ask for (accessibility on Windows);
     // needed says dictation can't start while it fails, as microphone access
     // can't; fix is the action fix(id) runs,
-    // or empty where there is nothing to run; the microphone's, openSettings,
-    // opens the system's privacy settings. failures are what went wrong in
+    // or empty where there is nothing to run; the microphone's and screen
+    // recording's, openSettings, open the system's privacy settings. failures are what went wrong in
     // the last thing tried on the check, [{step, error}]: step is enable or
     // disable for accessibility, and setUp, start, type, stop, remove or filesLeft
     // for the keyboard; error is why, in the words of the part that failed,

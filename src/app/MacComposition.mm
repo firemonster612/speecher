@@ -45,6 +45,8 @@ constexpr auto accessibilityPaneUrl =
     "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
 constexpr auto microphonePaneUrl =
     "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone";
+constexpr auto screenRecordingPaneUrl =
+    "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
 
 // value as one sh word, inside single quotes.
 QString shellQuote(QString value)
@@ -205,6 +207,20 @@ MicrophoneAccess MacComposition::microphoneAccess() const
 void MacComposition::openMicrophoneSettings() const
 {
     QDesktopServices::openUrl(QUrl(QString::fromLatin1(microphonePaneUrl)));
+}
+
+std::optional<bool> MacComposition::screenRecordingAllowed() const
+{
+    return CGPreflightScreenCaptureAccess();
+}
+
+void MacComposition::requestScreenRecording() const
+{
+    // macOS asks only the first time, which also lists Speecher in the
+    // settings; after that the person allows it there.
+    if (!CGRequestScreenCaptureAccess()) {
+        QDesktopServices::openUrl(QUrl(QString::fromLatin1(screenRecordingPaneUrl)));
+    }
 }
 
 MediaController *MacComposition::createMediaController(QObject *parent) const

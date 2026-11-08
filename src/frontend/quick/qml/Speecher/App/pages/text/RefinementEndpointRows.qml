@@ -19,7 +19,7 @@ Column {
         shown: Settings.values.refinementEndpointServer === "cliproxy"
         title: serverRow.spec.cliproxyLabel
         help: Settings.values.cliproxyBaseUrl || serverRow.spec.cliproxyUnset
-        Button { text: Words.openAccounts; size: "small"; onClicked: Navigation.goToRow("accounts", "cliproxyBaseUrl") }
+        AccountsLink { rowId: "cliproxyBaseUrl" }
     }
     SchemaRow { rowId: "refinementEndpointFormat" }
     SchemaRow { rowId: "refinementEndpointUrl" }

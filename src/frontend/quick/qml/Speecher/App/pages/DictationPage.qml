@@ -1,7 +1,6 @@
 import QtQuick
 import Speecher.Theme
 import Speecher.Controls
-import Speecher.Demo
 import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
@@ -20,7 +19,8 @@ Page {
     readonly property var t: ({
         recordsFrom: name => "Records from " + name,
         liveText: on => on ? "Live text on" : "Live text off",
-        sounds: on => on ? "sounds on" : "sounds off"
+        sounds: on => on ? "sounds on" : "sounds off",
+        chooseShortcut: "Click to choose a shortcut"
     })
 
     // How shortcuts reach Speecher: first where the command is the way in,
@@ -44,64 +44,48 @@ Page {
     }
     Reveal { open: page.noShortcuts; Reach {} }
 
-    // The shortcut, big: the page's one picture. Holding the pointer on it
-    // presses the keys and listens, as holding the shortcut does. With no
-    // shortcut there is nothing to picture, and the line of what pressing
-    // it does is the chosen option's own help below, so it folds away.
+    // The dictation shortcut, big: the page's one picture, and where it is
+    // set: clicking the keys records new ones. Under them, what pressing it
+    // does, or why the last keys were refused. With no shortcut to be had,
+    // the command above runs one dictation, so it folds away with the rows.
     Reveal {
-        open: hero.keys.length > 0
+        open: !page.noShortcuts
         Plate {
             id: hero
-            readonly property bool held: press.pressed
-            readonly property var keys: Settings.values.globalShortcut || []
+            readonly property var spec: Schema.row("globalShortcut")
+            readonly property string refused: Settings.errors.globalShortcut || ""
             height: 132
-            clip: true
+            SearchLanding { rowIds: ["globalShortcut"]; target: hero; onLanded: recorder.forceActiveFocus() }
 
-            KeyCombo {
-                id: caps
-                anchors.horizontalCenter: parent.horizontalCenter
-                y: 22
-                keys: hero.keys
+            ShortcutRecorder {
+                id: recorder
+                rowId: "globalShortcut"
                 size: "large"
-                pressed: hero.held
-                lit: hero.held
-            }
-            Row {
+                emptyText: page.t.chooseShortcut
+                width: Math.min(parent.width - Theme.space6 * 2, 480)
+                height: 72
                 anchors.horizontalCenter: parent.horizontalCenter
-                anchors.top: caps.bottom
-                anchors.topMargin: 22
-                spacing: 10
-                Row {
-                    spacing: 8
-                    anchors.verticalCenter: parent.verticalCenter
-                    Rectangle {
-                        width: 8; height: 8; radius: 4
-                        color: hero.held ? Theme.negative : Theme.textTertiary
-                        anchors.verticalCenter: parent.verticalCenter
-                        Behavior on color { EaseColor {} }
-                    }
-                    Waveform { bars: 16; height: 16; barWidth: 2.5; gap: 2; level: voice.level; active: hero.held; anchors.verticalCenter: parent.verticalCenter }
-                }
-                // What pressing it does, as the chosen option says it.
-                MorphText {
-                    text: Schema.valueHelp(Schema.row("shortcutBehavior"), Settings.values.shortcutBehavior)
-                    tone: "secondary"
-                    anchors.verticalCenter: parent.verticalCenter
-                }
+                y: Theme.space4
+                Accessible.name: hero.spec.label
             }
-
-            DemoVoice { id: voice; running: hero.held }
-            TapHandler { id: press; cursorShape: Qt.PointingHandCursor }
+            MorphText {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: recorder.bottom
+                anchors.topMargin: Theme.space3
+                width: Math.min(implicitWidth, parent.width - Theme.space6 * 2)
+                elide: Text.ElideRight
+                text: hero.refused || Schema.valueHelp(Schema.row("shortcutBehavior"), Settings.values.shortcutBehavior)
+                tone: hero.refused ? "negative" : "secondary"
+            }
         }
     }
 
-    // The dictation shortcut and what pressing it does: with no shortcut to
-    // be had, the command above runs one dictation, so both fold away.
+    // What pressing the shortcut does: with no shortcut to be had, the
+    // command above runs one dictation, so it folds away.
     Reveal {
         open: !page.noShortcuts
         Section {
-            title: Schema.row("globalShortcut").section
-            SchemaRow { rowId: "globalShortcut" }
+            title: Schema.row("shortcutBehavior").section
             SchemaRow { rowId: "shortcutBehavior" }
         }
     }

@@ -56,7 +56,6 @@ Page {
         showLess: "Show less",
         newSettings: "New settings",
         newSettingsCaption: "Added since the version you used before.",
-        noAutomaticDownloads: "This copy of Speecher can't install updates itself. Get new versions from the release page.",
         releasePage: "release page"
     })
 
@@ -107,8 +106,6 @@ Page {
         // Only a copy that can replace itself installs in the background.
         SchemaRow {
             rowId: "autoInstallUpdates"
-            enabled: Updates.automaticDownloads
-            note: Updates.automaticDownloads ? spec.help : page.t.noAutomaticDownloads
             helpLink: Updates.automaticDownloads ? "" : page.t.releasePage
             onHelpLinkActivated: Updates.openAllReleases()
         }
@@ -171,7 +168,7 @@ Page {
                     help: spec.help || ""
                     clickable: true
                     trailingText: Schema.page(spec.page).title
-                    onClicked: Navigation.goToRow(spec.page, key)
+                    onClicked: Navigation.follow(spec.page, key)
                 }
             }
         }

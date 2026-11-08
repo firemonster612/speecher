@@ -29,6 +29,11 @@ Page {
     Section {
         id: profilesSection
         SearchLanding { rowIds: ["writingProfileBehavior"]; target: profilesSection }
+        // Without app detection, every dictation takes the profile for apps
+        // Speecher doesn't recognize.
+        AccessibilityNotice {
+            text: Schema.row("writingProfileBehavior").undetected.arg(Library.profileName(Settings.values.defaultWritingProfile || ""))
+        }
         Item {
             width: parent.width
             height: Math.max(list.implicitHeight + Theme.space2, editorPane.implicitHeight + Theme.space5 * 2)
@@ -112,7 +117,7 @@ Page {
             help: Library.profilesText.appMatchesHelp
             clickable: true
             trailingText: Library.recognitionRulesText
-            onClicked: Navigation.goToRow(Schema.row("appRecognitionRules").page, "appRecognitionRules")
+            onClicked: Navigation.follow(Schema.row("appRecognitionRules").page, "appRecognitionRules")
         }
         SchemaRow {
             rowId: "additionalInstructions"

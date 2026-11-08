@@ -30,7 +30,8 @@ QtObject {
     }
     // After the page has slid in and laid out. QML empties a landing it has
     // begun destroying, and its Timer can still fire then; such a landing has
-    // no _land, so it only logs.
+    // no _land, so it only logs. Nothing runs on destruction: QML can run
+    // that after emptying the landing too, when even reading _wait warns.
     readonly property Timer _wait: Timer {
         interval: Theme.ms(260)
         onTriggered: {
@@ -51,5 +52,4 @@ QtObject {
         }
     }
     Component.onCompleted: if (rowIds.includes(Navigation.pendingRow)) { _log("waits"); _wait.start() }
-    Component.onDestruction: if (_wait.running) { _log("destroyed while waiting"); _wait.stop() }
 }

@@ -616,6 +616,129 @@ private slots:
         QTRY_VERIFY(!row->property("shown").toBool());
     }
 
+    // A link to another page, such as Open Accounts under a sign-in, offers
+    // the way back above the page it opens, until the person goes anywhere
+    // else.
+    void aLinkOffersTheWayBack()
+    {
+        ApplicationController controller(true);
+        QuickSettings(&controller).set(QStringLiteral("speechProvider"), QStringLiteral("claude"));
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        navigation->go(QStringLiteral("speech"));
+        QQuickItem *openAccounts = nullptr;
+        QTRY_VERIFY((openAccounts = findItem(main->contentItem(), QStringLiteral("openAccounts"))));
+        QMetaObject::invokeMethod(openAccounts, "activated");
+        QCOMPARE(navigation->current(), QStringLiteral("accounts"));
+        QCOMPARE(navigation->pendingRow(), QStringLiteral("anthropicAuthMode"));
+        QCOMPARE(navigation->returnTo(), QStringLiteral("speech"));
+        const auto backLink = [main] {
+            QQuickItem *link = findItem(main->contentItem(), QStringLiteral("backLink"));
+            return link && link->isVisible() && link->property("text") == QStringLiteral("Back to Speech to text") ? link : nullptr;
+        };
+        QTRY_VERIFY(backLink());
+        QMetaObject::invokeMethod(backLink(), "activated");
+        QCOMPARE(navigation->current(), QStringLiteral("speech"));
+        QCOMPARE(navigation->returnTo(), QString());
+
+        // Going anywhere else forgets it, and a search jump is not a link.
+        navigation->follow(QStringLiteral("accounts"), QStringLiteral("openAiAuthMode"));
+        QCOMPARE(navigation->returnTo(), QStringLiteral("speech"));
+        navigation->goToRow(QStringLiteral("refinement"), QStringLiteral("refinementProvider"));
+        QCOMPARE(navigation->returnTo(), QString());
+        navigation->follow(QStringLiteral("accounts"));
+        QCOMPARE(navigation->returnTo(), QStringLiteral("refinement"));
+        navigation->go(QStringLiteral("home"));
+        QCOMPARE(navigation->returnTo(), QString());
+    }
+
+    // Open Accounts in the setup assistant opens Main on Accounts, whose way
+    // back is to setup; once setup closes there is nothing to go back to.
+    void setupsAccountsLinkReturnsToSetup()
+    {
+        ApplicationController controller(true);
+        QuickSettings(&controller).set(QStringLiteral("speechProvider"), QStringLiteral("claude"));
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showSetupAssistant(SetupAssistantPage::All);
+        QQuickWindow *setup = openWindow("SetupAssistant");
+        QVERIFY(setup);
+        QVERIFY(QTest::qWaitForWindowExposed(setup));
+        QVERIFY(!openWindow("Main"));
+        const QJSValue steps = setup->property("steps").value<QJSValue>();
+        for (int i = 0; i < steps.property(QStringLiteral("length")).toInt(); ++i) {
+            if (steps.property(i).property(QStringLiteral("id")).toString() == QLatin1String("transcription")) {
+                setup->setProperty("step", i);
+            }
+        }
+        QQuickItem *openAccounts = nullptr;
+        QTRY_VERIFY((openAccounts = findItem(setup->contentItem(), QStringLiteral("openAccounts"))));
+        QMetaObject::invokeMethod(openAccounts, "activated");
+        QQuickWindow *main = nullptr;
+        QTRY_VERIFY((main = openWindow("Main")));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        QCOMPARE(navigation->current(), QStringLiteral("accounts"));
+        QCOMPARE(navigation->returnTo(), QStringLiteral("setup"));
+        QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("backLink"))
+                    && findItem(main->contentItem(), QStringLiteral("backLink"))->property("text") == QStringLiteral("Back to setup"));
+        navigation->goBack();
+        QCOMPARE(navigation->current(), QStringLiteral("accounts"));
+        QCOMPARE(navigation->returnTo(), QString());
+        QVERIFY(setup->isVisible());
+
+        navigation->follow(QStringLiteral("accounts"), QStringLiteral("anthropicAuthMode"), QStringLiteral("setup"));
+        QCOMPARE(navigation->returnTo(), QStringLiteral("setup"));
+        setup->close();
+        QTRY_COMPARE(navigation->returnTo(), QString());
+    }
+
+    // The sign-in row under the speech services has the sign-in source
+    // Accounts has, so a sign-in is changed in place. Codex dictation offers
+    // only the sources it signs in with, and choosing the one it shows keeps
+    // the saved source, which cleanup shares.
+    void signInRowChoosesTheSignInSource()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("speechProvider"), QStringLiteral("codex"));
+        settings.set(QStringLiteral("openAiAuthMode"), QStringLiteral("auto"));
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        navigation->go(QStringLiteral("speech"));
+        QQuickItem *source = nullptr;
+        QTRY_VERIFY((source = findItem(main->contentItem(), QStringLiteral("signInSource"))));
+        const auto optionIds = [source] {
+            QStringList ids;
+            for (const QVariant &option : source->property("options").value<QJSValue>().toVariant().toList()) {
+                ids.append(option.toMap().value(QStringLiteral("id")).toString());
+            }
+            return ids;
+        };
+        QCOMPARE(optionIds(), (QStringList{QStringLiteral("codex_oauth"), QStringLiteral("cliproxy")}));
+        QCOMPARE(source->property("currentId").toString(), QStringLiteral("codex_oauth"));
+        QMetaObject::invokeMethod(source, "chosen", Q_ARG(QString, QStringLiteral("codex_oauth")));
+        QCOMPARE(settings.values().value(QStringLiteral("openAiAuthMode")).toString(), QStringLiteral("auto"));
+        QMetaObject::invokeMethod(source, "chosen", Q_ARG(QString, QStringLiteral("cliproxy")));
+        QCOMPARE(settings.values().value(QStringLiteral("openAiAuthMode")).toString(), QStringLiteral("cliproxy"));
+        QTRY_COMPARE(source->property("currentId").toString(), QStringLiteral("cliproxy"));
+
+        // Claude's row offers every source Accounts does.
+        settings.set(QStringLiteral("speechProvider"), QStringLiteral("claude"));
+        QTRY_COMPARE(optionIds(), (QStringList{QStringLiteral("oauth"), QStringLiteral("cliproxy")}));
+    }
+
     // A search result for a row in a section folded away, such as the
     // Custom Endpoint's while Codex is chosen, opens the section and lands
     // on the row; keypad Enter picks a result as Return does.

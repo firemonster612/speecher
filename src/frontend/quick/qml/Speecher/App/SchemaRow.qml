@@ -12,11 +12,9 @@ SettingRow {
 
     required property string rowId
     readonly property var spec: Schema.row(rowId)
-    // A row that needs the desktop to blur behind windows, or accessibility,
-    // shows off, greyed and with why where it can't; the saved value comes
-    // back when it can.
-    readonly property bool _usable: (!spec.needsBlur || Appearance.canBlur)
-                                    && (!spec.needsAccessibility || System.accessibility)
+    // A row that can't be used now (usableWhen) shows off, greyed and with
+    // why; the saved value comes back when it can.
+    readonly property bool _usable: Usable.usable(spec)
     // What the control shows: the saved value, unless a page shows what is
     // in effect instead.
     property var value: _usable ? Settings.values[rowId] : false
@@ -159,23 +157,7 @@ SettingRow {
     }
     Component {
         id: shortcut
-        ShortcutField {
-            emptyText: Words.notSet; listeningText: Words.pressShortcut; clearText: Words.clearShortcut
-            // The keys that act while dictating may be Escape itself.
-            escapeRecords: root.rowId === "cancelShortcut" || root.rowId === "pauseShortcut"
-            keys: root.value || []
-            // Where the desktop picks the keys (the portal), clicking opens its
-            // chooser, and nothing records or lets go here.
-            recordsKeys: !Settings.desktopPicksKeys(root.rowId)
-            onClicked: if (!recordsKeys) Settings.act(root.rowId)
-            // The bound shortcuts let go while it listens, so pressing them
-            // records them; every way listening ends takes them back.
-            onListeningChanged: listening ? Settings.startRecordingShortcut(root.rowId) : Settings.stopRecordingShortcut(root.rowId)
-            Component.onDestruction: if (listening) Settings.stopRecordingShortcut(root.rowId)
-            keyAlone: () => Settings.lastKeyAlone()
-            takesAlone: keys => Settings.takesKeyAlone(root.rowId, keys)
-            onRecorded: keys => Settings.set(root.rowId, keys)
-        }
+        ShortcutRecorder { rowId: root.rowId; keys: root.value || [] }
     }
     Component {
         id: action

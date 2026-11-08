@@ -222,13 +222,11 @@ FocusScope {
                         anchors.verticalCenter: parent.verticalCenter
                         width: childrenRect.width
                         height: childrenRect.height
-                        // Off and greyed where the row needs blur and nothing
-                        // blurs, or accessibility and it is off, as on its
-                        // page, and greyed while the row that turns it on is
-                        // off.
+                        // Off and greyed where the row can't be used now, as
+                        // on its page, and greyed while the row that turns it
+                        // on is off.
                         Switch {
-                            readonly property bool usable: (!hit.spec?.needsBlur || Appearance.canBlur)
-                                                           && (!hit.spec?.needsAccessibility || System.accessibility)
+                            readonly property bool usable: !!hit.spec && Usable.usable(hit.spec)
                             visible: !!hit.spec && hit.spec.kind === "toggle"
                             checked: usable && !!Settings.values[hit.modelData.id]
                             enabled: usable && !!hit.spec && Schema.rowEnabled(hit.spec, Settings.values)

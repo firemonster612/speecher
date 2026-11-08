@@ -26,9 +26,10 @@ import "schema/updates.js" as Updates
 // and actionIcon for actions, keywords for search, and enabledWhen
 // { id, equals } to grey a row out until another row has a value, and
 // hiddenWhen { id, equals } to fold it away while another row has a value.
-// needsBlur marks a row that is off and greyed, showing its disabledHelp,
-// where Appearance.canBlur is false, and needsAccessibility one that is
-// where System.accessibility is false; its saved value stays.
+// usableWhen names the condition a row needs to be used now (blur,
+// accessibility, automaticDownloads, screenshotReader; Usable in
+// Speecher.App holds them): without it the row is off and greyed on its page
+// and in search, showing its disabledHelp, and its saved value stays.
 // needs names what a row or an option needs of the computer, a System
 // property such as hasVirtualKeyboard, or "!" and one for a row only a
 // computer without it has; without it, its page and search leave it out,

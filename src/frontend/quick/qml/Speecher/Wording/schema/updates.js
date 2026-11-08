@@ -37,7 +37,8 @@ var rows = [
     { id: "autoInstallUpdates", page: "updates", section: "How Speecher updates", kind: "toggle",
       label: "Download and install updates automatically",
       help: "Updates install in the background and take effect after a restart.",
-      keywords: "auto install background appimage" }
+      disabledHelp: "This copy of Speecher can't install updates itself. Get new versions from the release page.",
+      usableWhen: "automaticDownloads", keywords: "auto install background appimage" }
 ];
 
 // Each settings row's Since Version, by row id, for What's New's new

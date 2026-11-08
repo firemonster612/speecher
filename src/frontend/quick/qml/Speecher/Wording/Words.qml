@@ -79,17 +79,20 @@ QtObject {
                         missing: "No CLI Proxy API accounts found in %1" }[service.found]
         return found ? found.arg(service.directory) : ""
     }
-    // The keyring didn't answer for the key a sign-in needs: which key, the
-    // keyring's own reason (core's detail), and how to get it answering
-    // here. A locked keyring is the usual cause.
+    // The keyring didn't answer for the key a sign-in needs: which key and
+    // how to get it answering here; a locked keyring is the usual cause. The
+    // keyring's own reason (core's detail) goes behind Details.
     function keychainUnreadable(service) {
         const key = service.id === "cliproxy" ? "the CLI Proxy API server key" : "the OpenAI API key"
         const unlock = ({ osx: "Unlock your login keychain", windows: "Check Windows Credential Manager" })[Qt.platform.os]
                        || "Unlock your keyring (GNOME Keyring or KWallet)"
-        const reason = service.detail ? " (" + service.detail.replace(/\.$/, "") + ")" : ""
-        return "Couldn't read " + key + " from the system keychain" + reason + ". "
-             + unlock + ", then check again or choose another sign-in."
+        return "Couldn't read " + key + " from the system keychain. " + unlock + ", then check again or choose another sign-in."
     }
+    // The last sign-in check couldn't reach the service, so it says nothing
+    // about the sign-in.
+    function signInUnreachable(name) { return "Couldn't reach " + name + " to check the sign-in." }
+    // The link to a failure's own words, under its plain sentence.
+    readonly property string details: "Details"
     readonly property string disabledInCliproxy: "Disabled in CLI Proxy API"
     readonly property string checkAll: "Check all"
     readonly property string signInAgain: "Sign in again"
@@ -122,7 +125,10 @@ QtObject {
         maximize: "Maximize",
         restore: "Restore",
         zoom: "Zoom",
-        close: "Close"
+        close: "Close",
+        // Above a page a link opened, the way back.
+        backTo: title => "Back to " + title,
+        backToSetup: "Back to setup"
     })
     // The updater's states and actions, as the Updates page and the popup's
     // update offer both word them. restart and restarting are keyed by what
