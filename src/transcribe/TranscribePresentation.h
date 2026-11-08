@@ -48,10 +48,10 @@ QString refinementModel(const QString &providerId, const RefinementSettings &set
 // The model the chosen speech service is set to use where it has one to
 // choose (a Local Model, or a server's), otherwise empty.
 QString speechModel(const SpeechSettings &speech);
-// Whether a batch with these options refines its transcripts, which is when
-// the results offer the raw text beside the refined one. The settings say
-// whether the batch's profile translates, which refines even at None.
-bool refinesTranscripts(const TranscribeOptions &options, const RefinementSettings &settings);
+// Whether a batch with this plan refines its transcripts, which is when the
+// results offer the raw text beside the refined one. A profile that
+// translates refines even at None.
+bool refinesTranscripts(const DictationPlan &plan);
 // The raw transcript when asked for or when no refined one came back.
 QString shownTranscript(const TranscribeFileResult &result, bool raw);
 // Whether a finished transcript exports in that format: text always,
@@ -72,9 +72,7 @@ struct TranscribeBatchLabels {
     // Provider and model; empty when the batch does not refine.
     QString refinement;
 };
-TranscribeBatchLabels batchLabels(const TranscribeOptions &options,
-                                  const ProviderRegistry &providers,
-                                  const RefinementSettings &settings);
+TranscribeBatchLabels batchLabels(const DictationPlan &plan, const ProviderRegistry &providers);
 // Why a speech provider's transcripts cannot be subtitles: it returned no
 // timings.
 QString subtitlesNeedTimings(const QString &speechProvider);

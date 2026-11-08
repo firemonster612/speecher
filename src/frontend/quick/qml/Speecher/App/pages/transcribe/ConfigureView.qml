@@ -14,25 +14,26 @@ Column {
     id: view
 
     readonly property var options: Transcription.options
-    readonly property bool refines: options.refiner !== "none"
-    readonly property var service: ModelText.service(options.service)
-    readonly property var refiner: ModelText.provider(options.refiner)
+    readonly property var planned: Transcription.plan
+    readonly property bool refines: planned.refiner !== "none"
+    readonly property var service: ModelText.service(planned.service)
+    readonly property var refiner: ModelText.provider(planned.refiner)
     // What the model fields suggest, as Speech to text and Refinement do:
     // each provider's known models, the Local Runner's and the endpoints'
     // as they were listed.
     readonly property var refinerModels: {
         const named = names => names.map(m => ({ id: m, label: m }))
         const runner = Models.runners.find(r => r.id === Settings.values.localRunner)
-        return options.refiner === "openai" || options.refiner === "anthropic" ? ModelText.suggestedModels(options.refiner)
-             : options.refiner === "local" ? named(runner ? runner.models : [])
-             : options.refiner === "endpoint" ? named(Models.refinementEndpoint.models) : []
+        return planned.refiner === "openai" || planned.refiner === "anthropic" ? ModelText.suggestedModels(planned.refiner)
+             : planned.refiner === "local" ? named(runner ? runner.models : [])
+             : planned.refiner === "endpoint" ? named(Models.refinementEndpoint.models) : []
     }
 
     spacing: Theme.sectionGap
 
     Section {
         title: TranscribeWords.audioFiles
-        caption: TranscribeWords.filesCaption(Transcription.files, Library.pipelineCaption(view.options.service, view.options.refiner, Transcription.refinerModel))
+        caption: TranscribeWords.filesCaption(Transcription.files, Library.pipelineCaption(view.planned.service, view.planned.refiner, Transcription.plan.refinerModel))
 
         RowList {
             id: files
@@ -80,7 +81,7 @@ Column {
         SettingRow {
             title: TranscribeWords.profile
             help: TranscribeWords.profileHelp
-            Select { options: Library.profiles.map(p => ({ id: p.id, label: p.name, icon: Library.profileIcon(p.id) })); currentId: view.options.profile; onChosen: id => Transcription.setOption("profile", id) }
+            Select { options: Library.profiles.map(p => ({ id: p.id, label: p.name, icon: Library.profileIcon(p.id) })); currentId: view.planned.profile; onChosen: id => Transcription.setOption("profile", id) }
         }
     }
 
@@ -95,7 +96,7 @@ Column {
             trailingText: view.service.label
             ServiceCards {
                 options: States.withTones(ModelText.fileSpeechChoices(Models.speechServices))
-                currentId: view.options.service
+                currentId: view.planned.service
                 unratedText: ModelText.unrated
                 onActivated: id => Transcription.setOption("service", id)
                 onHelpLinkActivated: (id, at) => serviceLanguages.show(at, ModelText.service(id).languages)
@@ -106,29 +107,29 @@ Column {
         // files below, so Local Model needs nothing more.
         ServiceStatus {
             role: "speech"
-            serviceId: view.options.service === "local" && ModelText.downloadedModels.length > 0 ? "" : view.options.service
+            serviceId: view.planned.service === "local" && ModelText.downloadedModels.length > 0 ? "" : view.planned.service
         }
         LanguageList { id: serviceLanguages }
         // The model, for these files, of a service that has one to choose.
         // Without a downloaded Local Model the service's card says what to do.
         SettingRow {
-            shown: view.options.service === "local" && ModelText.downloadedModels.length > 0
+            shown: view.planned.service === "local" && ModelText.downloadedModels.length > 0
             title: TranscribeWords.model
             help: TranscribeWords.speechModelHelp
             Select {
                 options: ModelText.downloadedModels
-                currentId: Transcription.speechModel
+                currentId: Transcription.plan.speechModel
                 placeholder: TranscribeWords.chooseModel
                 onChosen: id => Transcription.setOption("speechModel", id)
             }
         }
         SettingRow {
-            shown: view.options.service === "endpoint"
+            shown: view.planned.service === "endpoint"
             title: TranscribeWords.model
             help: TranscribeWords.speechModelHelp
             SuggestField {
                 suggestionsText: Words.suggestions
-                text: Transcription.speechModel
+                text: Transcription.plan.speechModel
                 suggestions: Models.speechEndpoint.models.map(m => ({ id: m, label: m }))
                 onCommitted: v => Transcription.setOption("speechModel", v)
             }
@@ -138,7 +139,7 @@ Column {
             help: TranscribeWords.languageHelp
             LanguageSelect {
                 placeholder: Words.choose; searchText: Words.searchLanguages; clearText: Words.clear; emptyText: Words.noLanguage
-                options: Schema.row("spokenLanguage").options; currentId: view.options.language
+                options: Schema.row("spokenLanguage").options; currentId: view.planned.language
                 onChosen: id => Transcription.setOption("language", id)
             }
         }
@@ -196,13 +197,13 @@ Column {
             trailingText: view.refiner.label
             ServiceCards {
                 options: States.withTones(ModelText.refinementChoices(Models.refinementProviders))
-                currentId: view.options.refiner
+                currentId: view.planned.refiner
                 unratedText: ModelText.unrated
                 onActivated: id => Transcription.setOption("refiner", id)
             }
         }
         // What the chosen service still needs, with its Fix.
-        ServiceStatus { role: "refinement"; serviceId: view.options.refiner }
+        ServiceStatus { role: "refinement"; serviceId: view.planned.refiner }
         // The refiner's model, for these files.
         SettingRow {
             enabled: view.refines
@@ -210,7 +211,7 @@ Column {
             help: view.refines ? TranscribeWords.refinerModelHelp : TranscribeWords.needsRefiner
             SuggestField {
                 suggestionsText: Words.suggestions
-                text: Transcription.refinerModel
+                text: Transcription.plan.refinerModel
                 suggestions: view.refinerModels
                 onCommitted: v => Transcription.setOption("refinerModel", v)
             }
@@ -219,13 +220,13 @@ Column {
             enabled: view.refines
             title: TranscribeWords.cleanup
             help: view.refines ? TranscribeWords.cleanupHelp : TranscribeWords.needsRefiner
-            CompactChoice { options: Library.levelOptions; currentId: view.options.cleanup; onChosen: id => Transcription.setOption("cleanup", id) }
+            CompactChoice { options: Library.levelOptions; currentId: view.planned.cleanup; onChosen: id => Transcription.setOption("cleanup", id) }
         }
         SettingRow {
             enabled: view.refines
             title: TranscribeWords.tone
             help: view.refines ? TranscribeWords.toneHelp : TranscribeWords.needsRefiner
-            Select { options: Library.toneOptions; currentId: view.options.tone; onChosen: id => Transcription.setOption("tone", id) }
+            Select { options: Library.toneOptions; currentId: view.planned.tone; onChosen: id => Transcription.setOption("tone", id) }
         }
     }
 }

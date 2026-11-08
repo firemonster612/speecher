@@ -481,8 +481,8 @@ int main(int argc, char **argv)
 #endif
             installStdinSpoolRemoval();
         }
-        return runHeadlessTranscribe(decision.transcribeFiles, decision.headless, &settings, &providers,
-                                     std::cin, std::cout, std::cerr, stderrIsTerminal());
+        return runHeadlessTranscribe(decision.transcribeFiles, decision.overrides, decision.headless, &settings,
+                                     &providers, std::cin, std::cout, std::cerr, stderrIsTerminal());
     }
     if (decision.mode == LaunchMode::ListenHeadless) {
         // As transcribe: its own microphone and providers, beside whatever a
@@ -495,7 +495,7 @@ int main(int argc, char **argv)
         AudioInput *microphone =
             microphoneAccessGranted(*platform, &app) ? platform->createAudioInput(&settings, &app) : nullptr;
         const bool enterStops = installListenStopHandlers();
-        return runHeadlessListen(decision.headless, decision.untilSilenceMs, microphone,
+        return runHeadlessListen(decision.overrides, decision.headless, decision.untilSilenceMs, microphone,
                                  [] { return g_listenStopRequested.load(); }, enterStops, &settings, &providers,
                                  std::cout, std::cerr);
     }
@@ -608,7 +608,7 @@ int main(int argc, char **argv)
     } else {
         if (decision.startListening) {
             QTimer::singleShot(0, &controller, [&controller, &decision] {
-                controller.startListeningWith(decision.sessionOverrides);
+                controller.startListeningWith(decision.overrides);
             });
         }
         if (decision.showSettings) {

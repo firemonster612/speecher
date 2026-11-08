@@ -58,7 +58,7 @@ struct WritingProfileSettings {
     // The speech and refinement service this profile tries first, ahead of
     // the Speech to text and Refinement pages' Service Orders, with the
     // model it asks of it; nullopt is the same as the page. An empty model
-    // is the order's entry's (see WritingProfileProviders.h).
+    // is the order's entry's (see planDictation).
     std::optional<ServiceChoice> speechFirst;
     std::optional<ServiceChoice> refinementFirst;
 

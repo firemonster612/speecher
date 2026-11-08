@@ -7,6 +7,7 @@
 // release does.
 
 #include "dictation/DictationTypes.h"
+#include "dictation/RunOverrides.h"
 #include "recording/RecordingStatus.h"
 
 #include <QByteArray>
@@ -52,7 +53,7 @@ struct IpcRequest {
     IpcCommand command = IpcCommand::Status;
     // toggle and start: the session's output format, Writing Profile and
     // Spoken Language.
-    SessionOverrides overrides;
+    RunOverrides overrides;
     // transcribe: the files to open. recordStart: the file to write, or none
     // for the default one.
     QStringList files;

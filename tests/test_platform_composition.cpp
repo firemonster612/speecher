@@ -822,12 +822,13 @@ private slots:
         QTemporaryDir dir;
         const QString audio = dir.filePath(QStringLiteral("silence.wav"));
         QVERIFY(writeSilentWav(audio));
-        TranscribeOptions options;
-        options.speechProviderId = QStringLiteral("claude");
+        RunOverrides run;
+        run.speech = ServiceChoice{QStringLiteral("claude")};
+        run.refinement = ServiceChoice{kNoRefinementProvider};
         TranscribeQueue queue(controller.settings(), controller.providerRegistry(), controller.fileTranscription(),
                               [&controller] { return controller.fileTranscriptionRefusal(); });
         queue.addFiles({audio});
-        queue.setOptions(options);
+        queue.setOverrides(run);
 
         // A batch in flight turns the dictation shortcut away.
         QVERIFY(queue.start());
@@ -1775,13 +1776,13 @@ private slots:
                                                     QStringLiteral("--no-vocabulary"), QStringLiteral("--json")});
         QCOMPARE(decision.mode, LaunchMode::TranscribeHeadless);
         QCOMPARE(decision.transcribeFiles, QStringList{audio});
-        QCOMPARE(decision.headless.cleanupStrength, std::optional(QStringLiteral("light_cleanup")));
-        QCOMPARE(decision.headless.writingProfile, std::optional(QStringLiteral("ai_coding")));
-        QCOMPARE(decision.headless.tone, std::optional(QStringLiteral("very_casual")));
-        QCOMPARE(decision.headless.refinementProviderId, std::optional(QStringLiteral("none")));
+        QCOMPARE(decision.overrides.cleanupLevel, std::optional(QStringLiteral("light_cleanup")));
+        QCOMPARE(decision.overrides.writingProfile, std::optional(QStringLiteral("ai_coding")));
+        QCOMPARE(decision.overrides.tone, std::optional(QStringLiteral("very_casual")));
+        QCOMPARE(decision.overrides.refinement, std::optional(ServiceChoice{QStringLiteral("none")}));
         QCOMPARE(decision.headless.destination, TranscriptDestination::Folder);
         QCOMPARE(decision.headless.folder, dir.path());
-        QVERIFY(!decision.headless.applyVocabulary);
+        QVERIFY(!decision.overrides.applyVocabulary);
         QVERIFY(decision.headless.json);
         QCOMPARE(parse({QStringLiteral("--headless")}).mode, LaunchMode::TranscribeHeadless);
         // Without options the files still open in the window.
@@ -1791,7 +1792,7 @@ private slots:
         QCOMPARE(parse({QStringLiteral("--vtt"), QStringLiteral("--vtt")}).headless.format, TranscriptFormat::WebVtt);
         QCOMPARE(parse({QStringLiteral("--output"), QStringLiteral("NONE")}).headless.destination,
                  TranscriptDestination::None);
-        QCOMPARE(parse({QStringLiteral("--cleanup"), QStringLiteral("Medium")}).headless.cleanupStrength,
+        QCOMPARE(parse({QStringLiteral("--cleanup"), QStringLiteral("Medium")}).overrides.cleanupLevel,
                  std::optional(QStringLiteral("balanced")));
         // After --, everything is a file, even a name that looks like an option.
         const QString dashed = dir.filePath(QStringLiteral("--memo.wav"));
@@ -1861,14 +1862,12 @@ private slots:
                    QStringLiteral("formal"), QStringLiteral("--raw"), QStringLiteral("--json")});
         QCOMPARE(decision.mode, LaunchMode::ListenHeadless);
         QCOMPARE(decision.untilSilenceMs, std::optional(1500));
-        QCOMPARE(decision.headless.refinementProviderId, std::optional(QStringLiteral("none")));
-        QCOMPARE(decision.headless.writingProfile, std::optional(QStringLiteral("ai_coding")));
-        QCOMPARE(decision.headless.spokenLanguage, std::optional(QStringLiteral("de")));
-        QCOMPARE(decision.headless.tone, std::optional(QStringLiteral("formal")));
+        QCOMPARE(decision.overrides.refinement, std::optional(ServiceChoice{QStringLiteral("none")}));
+        QCOMPARE(decision.overrides.writingProfile, std::optional(QStringLiteral("ai_coding")));
+        QCOMPARE(decision.overrides.spokenLanguage, std::optional(QStringLiteral("de")));
+        QCOMPARE(decision.overrides.tone, std::optional(QStringLiteral("formal")));
         QVERIFY(decision.headless.raw);
         QVERIFY(decision.headless.json);
-        QVERIFY(!decision.sessionOverrides.writingProfile);
-        QVERIFY(!decision.sessionOverrides.spokenLanguage);
 
         QCOMPARE(parse({}).mode, LaunchMode::ListenHeadless);
         QCOMPARE(parse({}).untilSilenceMs, std::nullopt);
@@ -1879,10 +1878,10 @@ private slots:
         QVERIFY(vocabularyFile.open(QIODevice::WriteOnly));
         vocabularyFile.write("readSharedChoice\nSpeecher CLI\n");
         vocabularyFile.close();
-        QCOMPARE(parse({QStringLiteral("--vocab-file"), vocabulary}).headless.addedVocabulary,
+        QCOMPARE(parse({QStringLiteral("--vocab-file"), vocabulary}).overrides.addedVocabulary,
                  QStringList({QStringLiteral("readSharedChoice"), QStringLiteral("Speecher CLI")}));
         QCOMPARE(parse({QStringLiteral("--vocab-file"), vocabulary, QStringLiteral("--vocab-file"), vocabulary})
-                     .headless.addedVocabulary,
+                     .overrides.addedVocabulary,
                  QStringList({QStringLiteral("readSharedChoice"), QStringLiteral("Speecher CLI"),
                               QStringLiteral("readSharedChoice"), QStringLiteral("Speecher CLI")}));
         QCOMPARE(parse({QStringLiteral("--until-silence")}).untilSilenceMs, std::optional(2000));
@@ -2307,7 +2306,7 @@ private slots:
             const CommandLineDecision decision = parseCommandLine(
                 {QStringLiteral("speecher"), QStringLiteral("toggle"), QStringLiteral("--profile"), names.at(index)},
                 {});
-            QCOMPARE(decision.sessionOverrides.writingProfile, std::optional(ids.at(index)));
+            QCOMPARE(decision.overrides.writingProfile, std::optional(ids.at(index)));
         }
     }
 
@@ -2421,8 +2420,8 @@ private slots:
             {QStringLiteral("speecher"), QStringLiteral("transcribe"), QStringLiteral("--tone"),
              QStringLiteral("very-terse"), QStringLiteral("--cleanup"), QStringLiteral("notes"), audio},
             {});
-        QCOMPARE(decision.headless.tone, std::optional(QStringLiteral("custom_very_terse")));
-        QCOMPARE(decision.headless.cleanupStrength, std::optional(QStringLiteral("custom_notes")));
+        QCOMPARE(decision.overrides.tone, std::optional(QStringLiteral("custom_very_terse")));
+        QCOMPARE(decision.overrides.cleanupLevel, std::optional(QStringLiteral("custom_notes")));
         settings.raw().clear();
     }
 
@@ -2444,7 +2443,7 @@ private slots:
             {QStringLiteral("speecher"), QStringLiteral("transcribe"), QStringLiteral("--profile"),
              QStringLiteral("stand-up"), audio},
             {});
-        QCOMPARE(decision.headless.writingProfile, std::optional(QStringLiteral("custom_stand_up")));
+        QCOMPARE(decision.overrides.writingProfile, std::optional(QStringLiteral("custom_stand_up")));
         settings.raw().clear();
     }
 
@@ -2454,10 +2453,10 @@ private slots:
             return parseCommandLine(QStringList{QStringLiteral("speecher")} + arguments, {});
         };
         QCOMPARE(parse({QStringLiteral("toggle"), QStringLiteral("--language"), QStringLiteral("DE")})
-                     .sessionOverrides.spokenLanguage,
+                     .overrides.spokenLanguage,
                  std::optional(QStringLiteral("de")));
         QCOMPARE(parse({QStringLiteral("start"), QStringLiteral("--language"), QStringLiteral("auto")})
-                     .sessionOverrides.spokenLanguage,
+                     .overrides.spokenLanguage,
                  std::optional(QStringLiteral("auto")));
         QTemporaryDir dir;
         const QString audio = dir.filePath(QStringLiteral("memo.wav"));
@@ -2465,7 +2464,7 @@ private slots:
         QVERIFY(file.open(QIODevice::WriteOnly));
         file.close();
         QCOMPARE(parse({QStringLiteral("transcribe"), QStringLiteral("--language"), QStringLiteral("fr"), audio})
-                     .headless.spokenLanguage,
+                     .overrides.spokenLanguage,
                  std::optional(QStringLiteral("fr")));
         for (const QStringList &mistake :
              {QStringList{QStringLiteral("toggle"), QStringLiteral("--language"), QStringLiteral("klingon")},
@@ -2491,18 +2490,18 @@ private slots:
         };
         const auto profile = [&parse](const QString &value) {
             return parse({QStringLiteral("toggle"), QStringLiteral("--profile"), value})
-                .sessionOverrides.writingProfile;
+                .overrides.writingProfile;
         };
 
         const CommandLineDecision toggle = parse({QStringLiteral("toggle"), QStringLiteral("--profile"),
                                                   QStringLiteral("Email")});
         QCOMPARE(toggle.mode, LaunchMode::RunCli);
-        QCOMPARE(toggle.sessionOverrides.writingProfile, std::optional(WritingProfile::Email));
+        QCOMPARE(toggle.overrides.writingProfile, std::optional(WritingProfile::Email));
         const CommandLineDecision start = parse({QStringLiteral("start"), QStringLiteral("--profile"),
                                                  QStringLiteral("AI-Coding"), QStringLiteral("--format"),
                                                  QStringLiteral("html")});
-        QCOMPARE(start.sessionOverrides.writingProfile, std::optional(WritingProfile::AiCoding));
-        QCOMPARE(start.sessionOverrides.outputFormat, std::optional(OutputFormat::Html));
+        QCOMPARE(start.overrides.writingProfile, std::optional(WritingProfile::AiCoding));
+        QCOMPARE(start.overrides.outputFormat, std::optional(OutputFormat::Html));
         QCOMPARE(profile(QStringLiteral("ai coding")), std::optional(WritingProfile::AiCoding));
         QCOMPARE(profile(QStringLiteral("Daily Sync")), std::optional(QStringLiteral("custom_stand_up")));
         QCOMPARE(profile(QStringLiteral("daily-sync")), std::optional(QStringLiteral("custom_stand_up")));
@@ -2510,7 +2509,7 @@ private slots:
         // What toggle and start pass on to the daemon they start.
         QCOMPARE(parse({QStringLiteral("--daemon"), QStringLiteral("--start-listening"), QStringLiteral("--profile"),
                         QStringLiteral("custom_stand_up")})
-                     .sessionOverrides.writingProfile,
+                     .overrides.writingProfile,
                  std::optional(QStringLiteral("custom_stand_up")));
 
         // A custom profile named like a built-in makes that name ambiguous.
@@ -3799,9 +3798,10 @@ private slots:
         QTemporaryDir dir;
         const QString audio = dir.filePath(QStringLiteral("silence.wav"));
         QVERIFY(writeSilentWav(audio));
-        TranscribeOptions options;
-        options.speechProviderId = QStringLiteral("claude");
-        QVERIFY(controller.fileTranscription()->start({audio}, options));
+        RunOverrides run;
+        run.speech = ServiceChoice{QStringLiteral("claude")};
+        run.refinement = ServiceChoice{kNoRefinementProvider};
+        QVERIFY(controller.fileTranscription()->start({audio}, run));
         QCOMPARE(updater->restartBlocker(), UpdateController::RestartBlocker::FileTranscription);
 
         ManifestUpdaterTestAccess::setState(*updater, UpdateController::State::ReadyToRestart);
@@ -3847,11 +3847,11 @@ private slots:
         QVERIFY(writeSilentWav(audio));
         TranscribeQueue &queue = *controller.transcribeQueue();
         queue.addFiles({audio});
-        TranscribeOptions options = queue.options();
-        options.speechProviderId = QStringLiteral("claude");
-        options.refinementProviderId = QStringLiteral("none");
-        options.destination = TranscriptDestination::None;
-        queue.setOptions(options);
+        RunOverrides run;
+        run.speech = ServiceChoice{QStringLiteral("claude")};
+        run.refinement = ServiceChoice{kNoRefinementProvider};
+        queue.setOverrides(run);
+        queue.setOptions({TranscriptDestination::None});
         QVERIFY(queue.start());
 
         ManifestUpdaterTestAccess::setState(*updater, UpdateController::State::ReadyToRestart);

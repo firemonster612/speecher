@@ -38,8 +38,10 @@ struct CommandLineDecision {
     // RunCli's addVocabulary: the terms to save. record start: --vocab-file's
     // terms, for that recording only.
     QStringList vocabularyTerms;
-    // --format and --profile, for toggle, start and a daemon's --start-listening.
-    SessionOverrides sessionOverrides;
+    // Every per-run flag: toggle's, start's and a daemon's
+    // --start-listening's --format, --profile and --language, and the
+    // choices transcribe and listen take.
+    RunOverrides overrides;
     bool startListening = false;
     bool showSettings = false;
     bool showSetup = false;
@@ -48,7 +50,7 @@ struct CommandLineDecision {
     // file manager's "Open with" passes). TranscribeHeadless: the files to
     // transcribe.
     QStringList transcribeFiles;
-    // TranscribeHeadless and ListenHeadless: the choices for the run.
+    // TranscribeHeadless and ListenHeadless: where the transcripts go.
     HeadlessTranscribeOptions headless;
     // ListenHeadless: stop after this long without speech once there was some.
     std::optional<int> untilSilenceMs;

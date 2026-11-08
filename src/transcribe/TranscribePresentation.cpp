@@ -100,12 +100,10 @@ QString speechModel(const SpeechSettings &speech)
     return servicePicksModel(ProviderRole::Speech, service) ? speech.services.choice(service).model : QString();
 }
 
-bool refinesTranscripts(const TranscribeOptions &options, const RefinementSettings &settings)
+bool refinesTranscripts(const DictationPlan &plan)
 {
-    const WritingProfileSettings profile =
-        writingProfileSettingsFor(settings.writingProfiles, writingProfileFromName(options.writingProfile));
-    return options.refinementProviderId != kNoRefinementProvider
-        && refinedCleanupLevel(options.cleanupStrength, profile.outputLanguage) != QStringLiteral("none");
+    return !serviceChain(plan.settings.refinement).isEmpty()
+        && plan.settings.refinement.style != QStringLiteral("none");
 }
 
 QString shownTranscript(const TranscribeFileResult &result, bool raw)
@@ -142,16 +140,15 @@ QString subtitlesNeedTimings(const QString &speechProvider)
     return QStringLiteral("Subtitles need timings, and %1 returned none.").arg(speechProvider);
 }
 
-TranscribeBatchLabels batchLabels(const TranscribeOptions &options,
-                                  const ProviderRegistry &providers,
-                                  const RefinementSettings &settings)
+TranscribeBatchLabels batchLabels(const DictationPlan &plan, const ProviderRegistry &providers)
 {
     TranscribeBatchLabels labels;
-    labels.speech = providerLabel(providers.speechProviders(), options.speechProviderId);
-    if (refinesTranscripts(options, settings)) {
+    labels.speech = providerLabel(providers.speechProviders(), plan.settings.speech.services.main());
+    if (refinesTranscripts(plan)) {
+        const QString refiner = plan.settings.refinement.services.main();
         labels.refinement = QStringLiteral("%1 %2")
-                                .arg(providerLabel(providers.refinementProviders(), options.refinementProviderId),
-                                     refinementModel(options.refinementProviderId, settings))
+                                .arg(providerLabel(providers.refinementProviders(), refiner),
+                                     refinementModel(refiner, plan.settings.refinement))
                                 .trimmed();
     }
     return labels;

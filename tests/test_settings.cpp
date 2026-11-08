@@ -4,9 +4,9 @@
 #include "core/ProviderChain.h"
 #include "core/ProviderReadiness.h"
 #include "core/WritingProfileEdits.h"
-#include "core/WritingProfileProviders.h"
 #include "core/settings/SpokenLanguages.h"
 #include "core/settings/SettingsKeys.h"
+#include "dictation/DictationPlan.h"
 #include <QProcess>
 #ifdef SPEECHER_WITH_QKEYCHAIN
 #include "core/ShortcutBinding.h"
@@ -16,6 +16,22 @@
 
 using namespace speecher;
 
+
+
+namespace {
+
+// The settings a dictation under profile runs with, as planDictation leads
+// its Service Orders.
+AppSettings profiled(AppSettings settings, WritingProfileSettings profile)
+{
+    profile.profile = QStringLiteral("custom_test");
+    settings.refinement.writingProfiles.append(profile);
+    RunOverrides run;
+    run.writingProfile = profile.profile;
+    return planDictation(settings, Target{}, run).settings;
+}
+
+} // namespace
 
 class SettingsTests : public QObject {
     Q_OBJECT
@@ -1015,14 +1031,14 @@ private slots:
         settings.refinement.services.choice(QStringLiteral("anthropic")).model = QStringLiteral("claude-opus-5-5");
 
         WritingProfileSettings profile;
-        AppSettings resolved = withWritingProfileProviders(settings, profile);
+        AppSettings resolved = profiled(settings, profile);
         QCOMPARE(resolved.speech.services.main(), QStringLiteral("claude"));
         QCOMPARE(resolved.speech.services.order.mid(1), (QStringList{QStringLiteral("local"), QStringLiteral("codex")}));
         QCOMPARE(resolved.refinement.services.main(), QStringLiteral("openai"));
 
         profile.speechFirst = ServiceChoice{QStringLiteral("local"), QStringLiteral("moonshine-small")};
         profile.refinementFirst = ServiceChoice{QStringLiteral("anthropic"), QStringLiteral("claude-sonnet-5-5")};
-        resolved = withWritingProfileProviders(settings, profile);
+        resolved = profiled(settings, profile);
         QCOMPARE(resolved.speech.services.main(), QStringLiteral("local"));
         QCOMPARE(localModelId(resolved.speech), QStringLiteral("moonshine-small"));
         QCOMPARE(resolved.speech.services.order.mid(1), (QStringList{QStringLiteral("claude"), QStringLiteral("codex")}));
@@ -1036,7 +1052,7 @@ private slots:
         // service makes it one longer rather than dropping the last.
         settings.speech.services.order = {settings.speech.services.main(), QStringLiteral("codex"), QStringLiteral("endpoint")};
         settings.refinement.services.order = {settings.refinement.services.main(), QStringLiteral("local"), QStringLiteral("endpoint")};
-        resolved = withWritingProfileProviders(settings, profile);
+        resolved = profiled(settings, profile);
         QCOMPARE(resolved.speech.services.order.mid(1),
                  (QStringList{QStringLiteral("claude"), QStringLiteral("codex"), QStringLiteral("endpoint")}));
         QCOMPARE(serviceChain(resolved.speech),
@@ -1048,7 +1064,7 @@ private slots:
         // With Clean up my words off nothing refines, whatever the profile
         // picks.
         settings.refinement.enabled = false;
-        resolved = withWritingProfileProviders(settings, profile);
+        resolved = profiled(settings, profile);
         QVERIFY(serviceChain(resolved.refinement).isEmpty());
     }
 
@@ -1062,12 +1078,12 @@ private slots:
         WritingProfileSettings profile;
         profile.speechFirst = ServiceChoice{QStringLiteral("local"), QStringLiteral("parakeet")};
 
-        AppSettings resolved = withWritingProfileProviders(settings, profile);
+        AppSettings resolved = profiled(settings, profile);
         QCOMPARE(resolved.speech.services.main(), QStringLiteral("claude"));
         QCOMPARE(localModelId(resolved.speech), localModelId(settings.speech));
 
         profile.speechFirst->model = QStringLiteral("qwen3-asr");
-        resolved = withWritingProfileProviders(settings, profile);
+        resolved = profiled(settings, profile);
         QCOMPARE(resolved.speech.services.main(), QStringLiteral("local"));
         QCOMPARE(localModelId(resolved.speech), QStringLiteral("qwen3-asr"));
     }

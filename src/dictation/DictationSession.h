@@ -57,8 +57,8 @@ public:
     // A selection edit is under review, a follow-up to it dictated or not.
     bool reviewUp() const;
     SessionResponse response(bool ok = true, const QString &message = {}) const;
-    void toggleWith(const SessionOverrides &overrides);
-    void startListeningWith(const SessionOverrides &overrides);
+    void toggleWith(const RunOverrides &overrides);
+    void startListeningWith(const RunOverrides &overrides);
     void setScreenshotContextProvider(ScreenshotContextProvider *provider);
     // Whether the system says it can reach the internet. Only an outcome's
     // wording uses it: every provider in a chain is still tried.
@@ -216,8 +216,8 @@ private:
     bool selectTranscriptRefiner(const QString &providerId);
     void disconnectTranscriptRefiner();
     void connectTranscriptRefiner(TranscriptRefiner *refiner);
-    void toggleSession(const SessionOverrides &overrides);
-    void startSession(const SessionOverrides &overrides);
+    void toggleSession(const RunOverrides &overrides);
+    void startSession(const RunOverrides &overrides);
     SettingsStore *m_settings = nullptr;
     // The live UI settings, which apply the moment a save changes them,
     // mid-session too. Kept here so previews and streamed refinement never
@@ -254,9 +254,13 @@ private:
     // Bumped by every setState(), even to the same state.
     quint64 m_step = 0;
     quint64 m_continuedStartupGeneration = 0;
+    // The settings the session runs with: the saved ones until the Target is
+    // known, then its plan's, as the chains read their keys into them.
     std::optional<AppSettings> m_sessionSettings;
-    // What the session chose for itself: a forced Writing Profile.
-    RunChoices m_runChoices;
+    // What the session changes for itself, from the command line.
+    RunOverrides m_overrides;
+    // What it runs with, once the Target is known.
+    DictationPlan m_plan;
     Target m_target;
     QByteArray m_screenshotData;
     QString m_screenshotMediaType;

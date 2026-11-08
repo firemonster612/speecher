@@ -281,17 +281,24 @@ private slots:
         const auto option = [&transcription](const char *id) {
             return transcription.options().value(QLatin1String(id)).toString();
         };
+        const auto planned = [&transcription](const char *id) {
+            return transcription.plan().value(QLatin1String(id)).toString();
+        };
         QCOMPARE(option("tone"), tone);
         QCOMPARE(option("cleanup"), level);
 
+        // A deleted choice is the profile's again.
         QVERIFY(library.removeTone(tone) >= 0);
-        QCOMPARE(option("tone"), QStringLiteral("none"));
+        QCOMPARE(option("tone"), QString());
+        QCOMPARE(planned("tone"), QStringLiteral("none"));
         QCOMPARE(option("cleanup"), level);
         QVERIFY(library.removeLevel(level) >= 0);
-        QCOMPARE(option("cleanup"), QStringLiteral("balanced"));
+        QCOMPARE(option("cleanup"), QString());
+        QCOMPARE(planned("cleanup"), QStringLiteral("balanced"));
 
         library.removeProfile(profile);
-        QCOMPARE(option("profile"), WritingProfile::Other);
+        QCOMPARE(option("profile"), QString());
+        QCOMPARE(planned("profile"), WritingProfile::Other);
     }
 
     void editingATermKeepsWhatTheListDoesNotShow()

@@ -272,7 +272,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/WordPreview.cpp
   src/core/AppEdits.cpp
   src/core/WritingProfileEdits.cpp
-  src/core/WritingProfileProviders.cpp
+  src/dictation/DictationPlan.cpp
   src/dictation/DictationTypes.cpp
   src/dictation/PopupPresentation.cpp
   src/dictation/SelectionEditPresentation.cpp
@@ -327,9 +327,10 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/WordSpacing.h
   src/core/AppEdits.h
   src/core/WritingProfileEdits.h
-  src/core/WritingProfileProviders.h
+  src/dictation/DictationPlan.h
   src/dictation/DictationTypes.h
   src/dictation/PopupPresentation.h
+  src/dictation/RunOverrides.h
   src/dictation/SelectionEditPresentation.h
   src/recording/SystemAudioPresentation.h
 )
@@ -1496,6 +1497,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_transcript_state.cpp
     tests/test_bindings.cpp
     tests/test_apps.cpp
+    tests/test_dictation_plan.cpp
     tests/test_settings.cpp
     tests/test_provider_registry.cpp
     tests/test_platform_composition.cpp
@@ -1594,6 +1596,7 @@ if(SPEECHER_BUILD_TESTS)
     transcript_state
     bindings
     apps
+    dictation_plan
     settings
     provider_registry
     platform_composition

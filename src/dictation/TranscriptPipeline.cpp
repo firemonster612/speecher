@@ -45,14 +45,6 @@ QList<BindingRule> withVariablesFilled(QList<BindingRule> rules)
     return rules;
 }
 
-QString writingProfileFor(const AppSettings &settings, const RunChoices &choices, const Target &target)
-{
-    if (!choices.writingProfile.isEmpty()) {
-        return choices.writingProfile;
-    }
-    return resolveApp(target, settings.apps).writingProfile;
-}
-
 // The run's own terms in their order, then every stored term for the Writing
 // Profile in priority order, not the speech request's capped list: the speech
 // service takes a hundred hints, while refinement reads the list as prompt
@@ -159,9 +151,9 @@ QString trimmedKeepingIndentation(const QString &text)
     return QString(text).remove(blankEdges);
 }
 
-} // namespace
-
-void TranscriptPipeline::resolveCustomChoices(TranscriptPipelineResult &pipeline)
+// A tone or cleanup level the user defined goes on the context, and the
+// style becomes the level's base, which is what the prompt builds on.
+void resolveCustomChoices(TranscriptPipelineResult &pipeline)
 {
     RefinementSettings &refinement = pipeline.refinementSettings;
     RefinementContext &context = pipeline.refinementContext;
@@ -180,42 +172,16 @@ void TranscriptPipeline::resolveCustomChoices(TranscriptPipelineResult &pipeline
     }
 }
 
-QStringList TranscriptPipeline::speechVocabulary(const AppSettings &settings, const RunChoices &choices,
-                                                 const Target &target)
-{
-    return speecher::speechVocabulary(settings.vocabulary,
-                                      settings.learnedCorrections,
-                                      writingProfileFor(settings, choices, target),
-                                      choices.vocabulary);
-}
-
-WritingProfileSettings TranscriptPipeline::writingProfile(const AppSettings &settings, const RunChoices &choices,
-                                                          const Target &target)
-{
-    return writingProfileSettingsFor(settings.refinement.writingProfiles,
-                                     writingProfileFor(settings, choices, target));
-}
-
-RefinementSettings TranscriptPipeline::effectiveRefinementSettings(const AppSettings &settings,
-                                                                   const RunChoices &choices,
-                                                                   const Target &target)
-{
-    RefinementSettings refinement = settings.refinement;
-    const WritingProfileSettings profileSettings = writingProfileSettingsFor(
-        refinement.writingProfiles,
-        writingProfileFor(settings, choices, target));
-    refinement.style = refinedCleanupLevel(profileSettings.cleanupStrength, profileSettings.outputLanguage);
-    return refinement;
-}
+} // namespace
 
 TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscript,
-                                                     const AppSettings &settings,
-                                                     const RunChoices &choices,
+                                                     const DictationPlan &plan,
                                                      const Target &target,
                                                      const QString &spokenLanguage)
 {
     TranscriptPipelineResult result;
-    const QString writingProfile = writingProfileFor(settings, choices, target);
+    const AppSettings &settings = plan.settings;
+    const QString &writingProfile = plan.profile.profile;
     const QList<BindingRule> bindings = activeBindings(settings, target, writingProfile);
     const bool hasNoBindDirective = BindingProcessor::hasExplicitNoBindDirective(rawTranscript);
     result.noBindPhrases = BindingProcessor::explicitNoBindPhrases(rawTranscript, bindings);
@@ -233,22 +199,24 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
     if (result.editsSelection) {
         result.allowPostRefinementBindings = false;
     }
-    result.refinementSettings = effectiveRefinementSettings(settings, choices, target);
+    result.refinementSettings = settings.refinement;
     result.refinementContext.target = target;
     result.refinementContext.spokenLanguage = spokenLanguage;
     result.refinementContext.writingProfile = writingProfile;
     result.refinementContext.writingProfileName =
         writingProfileLabel(writingProfile, result.refinementSettings.writingProfiles);
     result.refinementVocabulary = refinementVocabulary(settings,
-                                                       choices.vocabulary,
-                                                       result.refinementContext.writingProfile,
+                                                       plan.addedVocabulary,
+                                                       writingProfile,
                                                        result.refinementContext.vocabularyContext);
-    const WritingProfileSettings profile = writingProfileSettingsFor(result.refinementSettings.writingProfiles,
-                                                                     result.refinementContext.writingProfile);
-    result.refinementContext.tone = profile.tone;
+    result.refinementContext.tone = plan.profile.tone;
     result.refinementContext.bindingVocabulary = BindingProcessor::refinementVocabulary(bindings);
-    fillUserInstructions(result.refinementContext, result.refinementSettings, profile);
+    fillUserInstructions(result.refinementContext, result.refinementSettings, plan.profile);
     resolveCustomChoices(result);
+    // A user-defined level built on None still translates for a profile with
+    // an output language, as None itself does.
+    result.refinementSettings.style =
+        refinedCleanupLevel(result.refinementSettings.style, result.refinementContext.outputLanguage);
     result.refinementContext.includeNearbyText = result.refinementSettings.useTargetContext && !target.secure;
     result.refinementContext.editSelection = result.editsSelection;
     if (!result.refinementSettings.useTargetContext) {

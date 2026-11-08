@@ -26,6 +26,26 @@
 using namespace speecher::test;
 using Scope = speecher::LegacyPasteRule::Scope;
 
+namespace {
+
+// The pipeline for a dictation into target, planned as a session plans it.
+TranscriptPipelineResult prepared(const QString &raw,
+                                  const AppSettings &settings,
+                                  const RunOverrides &run,
+                                  const Target &target,
+                                  const QString &spokenLanguage)
+{
+    return TranscriptPipeline::prepare(raw, planDictation(settings, target, run), target, spokenLanguage);
+}
+
+// The terms the speech request carries for a dictation into target.
+QStringList speechTerms(const AppSettings &settings, const RunOverrides &run, const Target &target)
+{
+    return planDictation(settings, target, run).settings.speech.vocabulary;
+}
+
+} // namespace
+
 class FakeBackend final : public DeliveryBackend {
 public:
     FakeBackend(QString method, QList<QString> *attempts, QHash<QString, bool> *results)
@@ -611,7 +631,7 @@ fi
         target.selectionEnd = 27;
 
         const QString instructions = QStringLiteral("Make this more confident and add a greeting");
-        const TranscriptPipelineResult pipeline = TranscriptPipeline::prepare(
+        const TranscriptPipelineResult pipeline = prepared(
             instructions,
             settings, {},
             target,
@@ -679,7 +699,7 @@ fi
         };
 
         const QStringList refinement =
-            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language).refinementVocabulary;
+            prepared(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language).refinementVocabulary;
         // Read from the stored list in priority order, not from the capped speech
         // request, and cut at the refinement ceiling.
         // Corrections lead, so a full list cannot push them out.
@@ -708,12 +728,12 @@ fi
         };
 
         const TranscriptPipelineResult work =
-            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language);
+            prepared(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language);
         QCOMPARE(work.refinementVocabulary,
                  (QStringList{QStringLiteral("Qt"), QStringLiteral("Kubernetes"), QStringLiteral("Speecher")}));
         QCOMPARE(work.refinementContext.vocabularyContext,
                  (QHash<QString, QString>{{QStringLiteral("Kubernetes"), QStringLiteral("The container platform.")}}));
-        QCOMPARE(TranscriptPipeline::speechVocabulary(settings, {}, Target{}),
+        QCOMPARE(speechTerms(settings, {}, Target{}),
                  (QStringList{QStringLiteral("Kubernetes"), QStringLiteral("Speecher"), QStringLiteral("Qt")}));
 
         // A correction that writes a term limited elsewhere stays out with it,
@@ -725,17 +745,17 @@ fi
         settings.vocabulary.append(pr);
         settings.learnedCorrections.append(
             {QStringLiteral("1"), QStringLiteral("pee are"), QStringLiteral("pr"), QString(), 1, 0.98, true, 1, 1});
-        QVERIFY(!TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language)
+        QVERIFY(!prepared(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language)
                      .refinementVocabulary.contains(QStringLiteral("pr")));
-        QVERIFY(!TranscriptPipeline::speechVocabulary(settings, {}, Target{}).contains(QStringLiteral("pr")));
-        const RunChoices aiCoding{WritingProfile::AiCoding};
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("pee are"), settings, {}, Target{}, settings.speech.language)
+        QVERIFY(!speechTerms(settings, {}, Target{}).contains(QStringLiteral("pr")));
+        const RunOverrides aiCoding{WritingProfile::AiCoding};
+        QCOMPARE(prepared(QStringLiteral("pee are"), settings, {}, Target{}, settings.speech.language)
                      .bindingResult.boundText,
                  QStringLiteral("pee are"));
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("pee are"), settings, aiCoding, Target{}, settings.speech.language)
+        QCOMPARE(prepared(QStringLiteral("pee are"), settings, aiCoding, Target{}, settings.speech.language)
                      .bindingResult.boundText,
                  QStringLiteral("pr"));
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, aiCoding, Target{}, settings.speech.language)
+        QCOMPARE(prepared(QStringLiteral("hello"), settings, aiCoding, Target{}, settings.speech.language)
                      .refinementContext.vocabularyContext.value(QStringLiteral("pr")),
                  QStringLiteral("Pull request."));
         settings.vocabulary.removeLast();
@@ -746,20 +766,20 @@ fi
         settings.vocabulary[2].keyTerm = false;
         settings.learnedCorrections.append(
             {QStringLiteral("2"), QStringLiteral("speaker"), QStringLiteral("speecher"), QString(), 1, 0.98, true, 1, 1});
-        QVERIFY(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language)
+        QVERIFY(prepared(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language)
                     .refinementVocabulary.contains(QStringLiteral("Speecher"), Qt::CaseInsensitive));
-        QVERIFY(!TranscriptPipeline::speechVocabulary(settings, {}, Target{}).contains(QStringLiteral("Speecher"),
+        QVERIFY(!speechTerms(settings, {}, Target{}).contains(QStringLiteral("Speecher"),
                                                                                    Qt::CaseInsensitive));
         settings.vocabulary[2].keyTerm = true;
         settings.learnedCorrections.removeLast();
 
-        const RunChoices personalProfile{WritingProfile::Personal};
+        const RunOverrides personalProfile{WritingProfile::Personal};
         const TranscriptPipelineResult personal =
-            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, personalProfile, Target{}, settings.speech.language);
+            prepared(QStringLiteral("hello"), settings, personalProfile, Target{}, settings.speech.language);
         QCOMPARE(personal.refinementVocabulary,
                  (QStringList{QStringLiteral("Qt"), QStringLiteral("Lúcia"), QStringLiteral("Speecher")}));
         QVERIFY(personal.refinementContext.vocabularyContext.isEmpty());
-        QCOMPARE(TranscriptPipeline::speechVocabulary(settings, personalProfile, Target{}),
+        QCOMPARE(speechTerms(settings, personalProfile, Target{}),
                  (QStringList{QStringLiteral("Lúcia"), QStringLiteral("Speecher"), QStringLiteral("Qt")}));
     }
 
@@ -775,7 +795,7 @@ fi
         Target target;
         target.applicationId = QStringLiteral("org.zulip.Zulip");
         const TranscriptPipelineResult pipeline =
-            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, target, settings.speech.language);
+            prepared(QStringLiteral("hello"), settings, {}, target, settings.speech.language);
         QCOMPARE(pipeline.refinementContext.writingProfile, QStringLiteral("custom_standup"));
         QCOMPARE(pipeline.refinementSettings.style, QStringLiteral("strong_polish"));
         QCOMPARE(pipeline.refinementContext.tone, QStringLiteral("formal"));
@@ -797,7 +817,7 @@ fi
             {WritingProfile::Other, notes.id, terse.id},
         };
         const TranscriptPipelineResult pipeline =
-            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language);
+            prepared(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language);
         QCOMPARE(pipeline.refinementSettings.style, QStringLiteral("custom_only"));
         QCOMPARE(pipeline.refinementContext.cleanupLevel, std::optional(notes));
         QCOMPARE(pipeline.refinementContext.customTone, std::optional(terse));
@@ -807,7 +827,7 @@ fi
     {
         AppSettings settings;
         settings.speech.language = QStringLiteral("de");
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hallo"), settings, {}, Target{}, settings.speech.language).refinementContext.spokenLanguage,
+        QCOMPARE(prepared(QStringLiteral("hallo"), settings, {}, Target{}, settings.speech.language).refinementContext.spokenLanguage,
                  QStringLiteral("de"));
     }
 
@@ -821,7 +841,7 @@ fi
              QStringLiteral("Spanish")},
         };
         const TranscriptPipelineResult dictation =
-            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language);
+            prepared(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language);
         QCOMPARE(dictation.refinementContext.outputLanguage, QStringLiteral("Spanish"));
         QCOMPARE(dictation.refinementSettings.style, QStringLiteral("light_cleanup"));
 
@@ -829,7 +849,7 @@ fi
         selection.selectedText = QStringLiteral("hola");
         selection.selectionStart = 0;
         selection.selectionEnd = 4;
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("shorter"), settings, {}, selection, settings.speech.language).refinementSettings.style,
+        QCOMPARE(prepared(QStringLiteral("shorter"), settings, {}, selection, settings.speech.language).refinementSettings.style,
                  QStringLiteral("light_cleanup"));
     }
 
@@ -852,7 +872,7 @@ fi
 
         Target kate;
         kate.applicationId = QStringLiteral("ORG.KDE.KATE");
-        const TranscriptPipelineResult inKate = TranscriptPipeline::prepare(
+        const TranscriptPipelineResult inKate = prepared(
             QStringLiteral("cute uses post grass and open ai"), settings, {}, kate, settings.speech.language);
         QCOMPARE(inKate.bindingResult.boundText,
                  QStringLiteral("user choice uses Postgres and OpenAI"));
@@ -862,7 +882,7 @@ fi
 
         Target firefox;
         firefox.applicationId = QStringLiteral("org.mozilla.firefox");
-        const TranscriptPipelineResult inFirefox = TranscriptPipeline::prepare(
+        const TranscriptPipelineResult inFirefox = prepared(
             QStringLiteral("cute uses post grass and open ai"), settings, {}, firefox, settings.speech.language);
         QCOMPARE(inFirefox.bindingResult.boundText,
                  QStringLiteral("user choice uses global choice and OpenAI"));
@@ -881,7 +901,7 @@ fi
         };
 
         const QString before = expansionAt(QDateTime::currentDateTime());
-        const TranscriptPipelineResult pipeline = TranscriptPipeline::prepare(
+        const TranscriptPipelineResult pipeline = prepared(
             QStringLiteral("thanks sign off"), settings, {}, Target{}, settings.speech.language);
         const QString after = expansionAt(QDateTime::currentDateTime());
         const QString bound = pipeline.bindingResult.boundText;
@@ -904,7 +924,7 @@ fi
             {QStringLiteral("0"), QStringLiteral("stamp"), QStringLiteral("{date}"),
              QString(), 1, 0.98, true, 1, 1},
         };
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("stamp"), settings, {}, Target{}, settings.speech.language)
+        QCOMPARE(prepared(QStringLiteral("stamp"), settings, {}, Target{}, settings.speech.language)
                      .bindingResult.boundText,
                  QStringLiteral("{date}"));
     }
@@ -916,12 +936,12 @@ fi
         selection.selectedText = QStringLiteral("return x;");
         selection.selectionStart = 0;
         selection.selectionEnd = 9;
-        const TranscriptPipelineResult edit = TranscriptPipeline::prepare(
+        const TranscriptPipelineResult edit = prepared(
             QStringLiteral("rename x to value"), settings, {}, selection, settings.speech.language);
         QCOMPARE(TranscriptPipeline::restoreRefinedResult(edit, QStringLiteral("\n \n\t    return value;\n  \n")),
                  std::optional<QString>(QStringLiteral("\t    return value;")));
 
-        const TranscriptPipelineResult dictation = TranscriptPipeline::prepare(
+        const TranscriptPipelineResult dictation = prepared(
             QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language);
         QCOMPARE(TranscriptPipeline::restoreRefinedResult(dictation, QStringLiteral("\n    Hello.\n")),
                  std::optional<QString>(QStringLiteral("Hello.")));
@@ -934,7 +954,7 @@ fi
         selection.selectedText = QStringLiteral("const auto token = \"SPEECHER_BINDING_0\";");
         selection.selectionStart = 0;
         selection.selectionEnd = selection.selectedText.size();
-        const TranscriptPipelineResult edit = TranscriptPipeline::prepare(
+        const TranscriptPipelineResult edit = prepared(
             QStringLiteral("make it constexpr"), settings, {}, selection, settings.speech.language);
         QCOMPARE(TranscriptPipeline::restoreRefinedResult(
                      edit, QStringLiteral("constexpr auto token = \"SPEECHER_BINDING_0\";")),
@@ -956,7 +976,7 @@ fi
         withBinding.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
         selection.selectedText = QStringLiteral("\"SPEECHER_BINDING_0 SPEECHER_BINDING_1\"");
         selection.selectionEnd = selection.selectedText.size();
-        const TranscriptPipelineResult colliding = TranscriptPipeline::prepare(
+        const TranscriptPipelineResult colliding = prepared(
             QStringLiteral("add my email above it"), withBinding, {}, selection, withBinding.speech.language);
         QCOMPARE(colliding.refinementInput, QStringLiteral("add SPEECHER_BINDING_0 above it"));
         QCOMPARE(TranscriptPipeline::restoreRefinedResult(
@@ -967,7 +987,7 @@ fi
     void dictationAboutPlaceholdersKeepsThem()
     {
         const AppSettings settings;
-        const TranscriptPipelineResult dictation = TranscriptPipeline::prepare(
+        const TranscriptPipelineResult dictation = prepared(
             QStringLiteral("rename the speecher binding zero placeholder"), settings, {}, Target{},
             settings.speech.language);
         QCOMPARE(TranscriptPipeline::restoreRefinedResult(
@@ -985,10 +1005,10 @@ fi
                                {{AppMatchKind::Id, QStringLiteral("org.kde.kate")}}, {}, WritingProfile::Email, {}}};
         Target kate;
         kate.applicationId = QStringLiteral("org.kde.kate");
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, kate, settings.speech.language).refinementContext.writingProfile,
+        QCOMPARE(prepared(QStringLiteral("hello"), settings, {}, kate, settings.speech.language).refinementContext.writingProfile,
                  WritingProfile::Email);
 
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {WritingProfile::Personal}, kate, settings.speech.language).refinementContext.writingProfile,
+        QCOMPARE(prepared(QStringLiteral("hello"), settings, {WritingProfile::Personal}, kate, settings.speech.language).refinementContext.writingProfile,
                  WritingProfile::Personal);
     }
 
