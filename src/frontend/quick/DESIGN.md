@@ -75,8 +75,8 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   as data: speech services and refinement providers with a `state` and
   core's `problem` sentence, their ratings as `{ measure, value }` bars, the
   Local Model catalog with fits, speeds, downloads and Speed Tests, the
-  hardware, the Local Runners and the Ollama pull, both servers' checks
-  and setup's fallback offers. Each speech service and Local Model
+  hardware, the Local Runners and the Ollama pull, and both servers'
+  checks. Each speech service and Local Model
   carries the language codes it listens for, from core's lists
   (`SpokenLanguages`, the catalog). `QuickModels.h` documents each field.
   `ModelText` (in Speecher.App) words all of it and looks entries up by id,
@@ -359,11 +359,8 @@ Choosing:
 
 - Speech to text and Refinement put their services in order with
   `ServiceOrderList`: each service first to last with its status, its own
-  choices under it (`ServiceChoiceRow`) and a Fix while it can't run. One
-  service for a setup step is chosen with `ServiceCards`: a grid of cards,
-  each with its icon, name, a line of help, its status and its ratings, and
-  a check on the chosen one. A narrow place gets fewer, smaller columns, not
-  another layout.
+  choices under it (`ServiceChoiceRow`) and a Fix while it can't run.
+  Setup's steps show the same lists.
 - A value a narrower place may change (an App's or App Type's, a Writing
   Profile's first services, one Transcribe batch's) is an `InheritSelect`
   whose first option is the wider place's value, "Same as <place>
@@ -388,7 +385,7 @@ Choosing:
   search, wherever it is chosen. `Chip`s are for choosing several at once or
   inserting a snippet.
 - A count of languages a service or Local Model listens for is a link
-  (`LinkedText`, or `helpLink` on ServiceCards and SettingRow) that opens
+  (`LinkedText`, or `helpLink` on SettingRow) that opens
   `LanguageList`, the same popover showing only those languages. Following
   it never chooses or opens the card it sits on.
 - Languages are named once, in the `spokenLanguage` row's options (English,
@@ -412,8 +409,8 @@ Press, hover, selection:
   pointer, `fillStrong` while pressed (`surfaceHover`/`surfacePressed` on
   raised buttons and fields). Nothing grows under the pointer.
 - Only a button or a whole-card choice shrinks when pressed: text buttons
-  and chips to 0.965, icon buttons to 0.92, `ChoiceCard`s (`OptionCards`,
-  `ServiceCards`) and theme thumbnails to 0.98, over `Theme.fast` springy.
+  and chips to 0.965, icon buttons to 0.92, `ChoiceCard`s (`OptionCards`)
+  and theme thumbnails to 0.98, over `Theme.fast` springy.
   Rows, menus, segments, fields and the header of a card that opens never
   shrink.
 - A card that opens is a `Card` whose header has the row wash and a chevron
@@ -637,8 +634,7 @@ Choosing:
 - `LanguageSelect { options; currentId; shownId; placeholder; searchText; clearText; emptyText; chosen(id) }`: the current language's flag and name, opening a `LanguagePopover` to choose from. `shownId` is what the button shows when the checked option stands for another language, as a later speech service's "Same as Spoken language" does.
 - `LanguagePopover { languages; currentId; choosing; searchText; clearText; emptyText; align; openFrom(item); chosen(id) }`: languages with their flags under a search field that filters by English name, own name or code; arrows, Return and Escape. `choosing` checks `currentId` and picks; without it the list only shows. It grows from what opened it, as menus do. An option's `icon` stands in for the flag (Automatic).
 - `CompactChoice { options; currentId; stretch; chosen(id) }`: segments for up to four options, a Select for more.
-- `OptionCards { options; currentId; activated(id) }`: a few choices as cards with help.
-- `ServiceCards { options; currentId; unratedText; helpLinkActivated(id, at) }`: a provider or service as a grid of cards inside a Section's card, each with its icon, help, status, ratings and a note on them, and a check when chosen; an option's `helpLink` makes that part of its help a link. `ChoiceCard` is the card both it and OptionCards use.
+- `OptionCards { options; currentId; activated(id) }`: a few choices as cards with help. `ChoiceCard` is its card.
 - `Chip { text; iconName; checkable }`: small choices or snippet buttons in a Flow.
 - `OrderedList { ids; options; statusOf; rowControl; rowDetail; minCount; maxCount; addLabel; emptyText }`: an ordered list to drag, reorder, add to and remove from; `rowControl` puts a control at each row's end, such as a Fix, and `rowDetail` a line of choices under its name; `minCount` rows always stay.
 - `EditableList { items; emptyTitle; emptyText; formOpen }`: things a person made, with edit and delete.

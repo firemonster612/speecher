@@ -27,8 +27,8 @@ MenuPopup {
 
     // Opens under item, lined up with its edge as align says. It stays a
     // child of where it was declared and is only placed at item, so it
-    // stays open when item goes, as a ServiceCards card does when Models
-    // changes and the cards are made again.
+    // stays open when item goes, as a row's link does when its list
+    // changes and the rows are made again.
     function openFrom(item) {
         width = Math.max(item.width, 280)
         const under = item.mapToItem(parent, 0, item.height + 6)

@@ -351,34 +351,6 @@ private slots:
         QVERIFY(inUse());
     }
 
-    // Setup's fallback offer saves a provider without a snapshot; Accounts
-    // still says the sign-in it uses is now in use.
-    void aSetupFallbackOfferChangesWhatIsInUse()
-    {
-        ApplicationController controller(true);
-        SettingsStore *store = controller.settings();
-        store->edit([](AppSettings &draft) {
-            draft.speech.services.order = {QStringLiteral("local")};
-            draft.refinement.enabled = false;
-            draft.refinement.services.order = {draft.refinement.services.main()};
-            return true;
-        });
-        QuickAccounts accounts(&controller);
-        const auto inUse = [&accounts] {
-            return service(accounts, QStringLiteral("anthropic")).value(QStringLiteral("inUse")).toBool();
-        };
-        QVERIFY(!inUse());
-        LocalSetupTestAccess::setRunners(*controller.localSetup(),
-                                         {{QStringLiteral("ollama"), QStringLiteral("Ollama"), QStringLiteral("0.34.4"),
-                                           QStringLiteral("http://127.0.0.1:11434/v1"), {QStringLiteral("gemma4:e4b")}}});
-
-        QSignalSpy changed(&accounts, &QuickAccounts::servicesChanged);
-        controller.localSetup()->acceptSetupFallbackOffer(ProviderRole::Refinement, QStringLiteral("anthropic"));
-        QCOMPARE(store->dictationSnapshot().refinement.services.main(), QStringLiteral("anthropic"));
-        QVERIFY(changed.count() > 0);
-        QVERIFY(inUse());
-    }
-
     // A refinement service's status waits for Accounts' first answer, then
     // says how to sign in.
     void aRefinementStatusWaitsForTheCheck()

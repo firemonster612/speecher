@@ -257,19 +257,6 @@ private slots:
         QCOMPARE(localModelId(SettingsStore().dictationSnapshot().speech), QStringLiteral("whisper-turbo"));
     }
 
-    // A role setup doesn't offer a fallback for changes nothing.
-    void anUnknownFallbackRoleIsRefused()
-    {
-        ApplicationController controller(true);
-        QuickModels models(&controller);
-        QSignalSpy saved(controller.settings(), &SettingsStore::snapshotApplied);
-
-        QTest::ignoreMessage(QtWarningMsg, "Models.acceptFallbackOffer: no role transcription");
-        models.acceptFallbackOffer(QStringLiteral("transcription"), QStringLiteral("openai"));
-
-        QCOMPARE(saved.count(), 0);
-    }
-
     // A failed download is the model's problem until the next try, and a
     // running one reports its share.
     void downloadsReportProgressAndFailure()
