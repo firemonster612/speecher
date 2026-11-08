@@ -9,7 +9,7 @@ One dictation, from the microphone opening through toggle or push-to-talk until 
 _Avoid_: Recording job, transcription run
 
 **Recording**:
-A call recorded into a transcript file, started and stopped with `speecher record`. It streams the microphone (`me`) and, where Speecher captures it, system audio (`them`) to a speech provider, each in its own session, and appends a timed line per utterance as it runs, beside any Dictation Session, and nothing is pasted, copied or refined. Distinct from a Dictation Session, which ends by delivering one text.
+A call recorded into a transcript file, started and stopped on the Recordings page, from the tray, with the Recording Shortcut or with `speecher record`. It streams the microphone (`me`) and, where Speecher captures it, system audio (`them`) to a speech service, each in its own session, and appends a timed line per utterance as it runs, beside any Dictation Session, and nothing is pasted, copied or refined. It uses the speech Service Order's services that send text as you speak, Local Models passed over, or its own first service ahead of them, and the Vocabulary that applies to Other apps. It writes into the recordings folder (Documents/Speecher unless chosen), named by its name and when it started, or the file `--to` names, and is a History Entry as it runs. It stops itself after a stretch of silence on both sides (30 minutes unless changed), and may keep both sides' audio beside its transcript. Distinct from a Dictation Session, which ends by delivering one text.
 _Avoid_: Call session, meeting mode
 
 **Spoken Language**:
@@ -73,11 +73,11 @@ Home's summary of History's delivered dictations: counts, streaks, apps and prof
 _Avoid_: Insights history, insights log
 
 **History**:
-Everything Speecher kept on this computer of your Dictation Sessions and file transcriptions, newest first and searchable, on the History page under Home and through `speecher history`. Each History Entry keeps what What Speecher Keeps allowed when it was made, and Home's stats are a summary of it.
+Everything Speecher kept on this computer of your Dictation Sessions, file transcriptions and Recordings, newest first and searchable, on the History page under Home and through `speecher history`. Each History Entry keeps what What Speecher Keeps allowed when it was made, and Home's stats are a summary of it. Recordings are kept whatever What Speecher Keeps says, never expire, and stay through a Clear; deleting one may take its files.
 _Avoid_: Log, archive, transcript list, insights log
 
 **History Entry**:
-One dictation, selection edit or transcribed file in History: its time, length, words, app and profile, and, when kept, its Refined and Raw Transcripts and its audio. A delete waits a moment for Undo, then is gone for good.
+One dictation, selection edit, transcribed file or Recording in History: its time, length, words, app and profile, and, when kept, its Refined and Raw Transcripts and its audio; a Recording's are its lines and its transcript file. A delete waits a moment for Undo, then is gone for good; a Recording's asks first instead. Refine again refines an entry's Raw Transcript once more with a Writing Profile, as a dictation into no app would.
 _Avoid_: Record, item, transcript (alone)
 
 **What Speecher Keeps**:
@@ -87,6 +87,10 @@ _Avoid_: History mode, logging level, privacy level, Keep insights
 **Paste Again**:
 Delivering the last dictation's text once more into the app in front, through the Delivery Steps and that app's Pasting choice, from History, the tray or its optional Global Shortcut. It takes History's newest dictation while History keeps text, else the last one this run, and never one into a password field.
 _Avoid_: Re-paste, repeat
+
+**Recording Shortcut**:
+An optional Global Shortcut that starts a Recording with the saved choices and no name, or stops the one running. Unbound until the user sets one.
+_Avoid_: Record hotkey
 
 **Global Shortcut**:
 The system-wide key combination that toggles a Dictation Session from anywhere on the desktop. While a selection edit waits for review, it dictates a follow-up instruction that changes the edit instead.

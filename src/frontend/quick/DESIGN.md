@@ -18,7 +18,7 @@ data.
 | `qml/Speecher/Wording/` | The UI's wording: `Schema` (pages and settings rows, from `schema/*.js`) and `Words` (shared words and the shell's) |
 | `qml/Speecher/Demo/` | `DemoVoice`: a made-up voice level for illustrations |
 | `qml/Speecher/Backend/` | `Library.qml`, the one QML type of `Speecher.Backend`, which words the C++ `LibraryLists` |
-| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup in `PopupWindowBase`, and the real `Settings`, `Dictation`, `DictationState`, `Navigation`, `Updates`, `Transcription`, `System`, `Phone`, `Removal`, `Models`, `Insights`, `History`, `Accounts`, `Apps`, `Audio`, `Appearance` and `LibraryLists` |
+| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup in `PopupWindowBase`, and the real `Settings`, `Dictation`, `DictationState`, `Navigation`, `Updates`, `Transcription`, `System`, `Phone`, `Removal`, `Models`, `Insights`, `History`, `Recording`, `Accounts`, `Apps`, `Audio`, `Appearance` and `LibraryLists` |
 | `assets/` | Atkinson Hyperlegible Next, the Lucide icon font (company marks are path data in `qml/Speecher/Controls/brands.js`), and the circle-flags language flags `Flag` draws |
 
 `cmake/QuickUi.cmake` builds each directory under `qml/` (the Backend with
@@ -35,7 +35,8 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   (`host/QuickUpdates`), `Transcription` (`host/QuickTranscription`),
   `System` (`host/QuickSystem`), `Phone` (`host/QuickPhone`), `Removal`
   (`host/QuickRemoval`), `Models` (`host/QuickModels`), `Insights`
-  (`host/QuickInsights`), `History` (`host/QuickHistory`), `Accounts` (`host/QuickAccounts`), `Apps`
+  (`host/QuickInsights`), `History` (`host/QuickHistory`), `Recording`
+  (`host/QuickRecording`), `Accounts` (`host/QuickAccounts`), `Apps`
   (`host/QuickApps`), `Audio`
   (`host/QuickAudio`), `Appearance` (`host/QuickAppearance`) and `Library`
   (`Library.qml` over `host/QuickLibrary`). No placeholders are left.
@@ -99,7 +100,29 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   `clear` take a span (hour, today, 7d, all), which History's Clear… and
   General's Clear history both ask about through `ClearConfirm`. What
   History keeps is the `historyKeeps` row; `pages/history/HistoryWords.js`
-  words all of it.
+  words all of it. A Recording is an entry too: its result carries the
+  lines a search matched, `entry(id)` all its lines, and it opens in
+  `RecordingReader` in the list's place (`recording:<id>` lands there),
+  whose `TranscriptReader` (Find, play from a line) Recordings' live view
+  shares; `exportEntry` writes it as md, txt or JSON and
+  `removeRecording(id, withFiles)` deletes it at once, after its own
+  question. `recent(kind, limit)` is the newest of a kind whatever the
+  query, which Recent recordings lists in History's rows.
+  `refineAgain(id, profile)` refines an entry's Raw Transcript again, as a
+  dictation into no app (core's `planDictation` with an empty Target),
+  answering with `refined` or `refineFailed`; `keepRefined` keeps it.
+- `Recording` is the recording running, however it started (the page, the
+  tray, the Recording Shortcut, `speecher record`): `state` (off,
+  starting, recording, stopping), its name, file and `elapsedMs`, each
+  stream's state and its `levels`, its `lines` as it started and
+  `lineAdded` after, core's echo and write problems, `problem` (why the
+  last start failed) and `refusal` (why Record can't start now), and
+  `plan`, what Record would run with (core's `planRecording`: the first
+  speech service that sends text as you speak, the sources, the folder
+  and the format). `start(title)`, `stop()` and `confirmConsent()` act;
+  the first recording ever asks the consent question on Recordings,
+  where the tray and the shortcut open it. `pages/recordings/RecordingWords.js`
+  words it. The popup's pill and Home's row read it too.
 - `Apps` is core's Apps and App Types (`core/Apps`) as the Apps page shows
   them: each App with what it sets, what core makes of it (`effective`) and
   what each value would be without its own (`inherited`, with where from),
@@ -254,7 +277,13 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   (`popupShowRequested(generation)`), answers `popupPresented(generation)`
   after the first frame of that dictation (a later show or a hide drops the
   answer), and hides itself once `PopupWindow.empty`, faded out, so the
-  popup works whether or not Main was ever opened.
+  popup works whether or not Main was ever opened. While a recording runs
+  and Show in the popup is on, it shows too, for the recording pill
+  (`RecordingPill`), which stands in the capsule's place while no
+  dictation is up: Connecting…, the time with Stop, a stream that needs
+  attention, Finishing…, then Saved with Open for the result's time.
+  During a dictation `OfferChips` carries a chip with the time and Stop
+  instead. The pill opens Main through `Recording.pageRequested`.
 - The popup window is larger than the capsule, so only the capsule (and the
   offers over it while they show) may take the pointer: the host sets the window's input region to
   `PopupWindow.inputRegion` (`QWindow::setMask`, which is the surface's
@@ -484,10 +513,11 @@ Layout:
   starts under the strip; split, the page's surface reaches the top and the
   strip lies over it; the 14 px shadow room around a framed window goes when it is
   maximized and is not padding.
-- The sidebar is one list with no headings: ten top-level pages (Home,
-  Transcribe files, Dictation, Speech to text, Refinement, Vocabulary, Apps,
-  Pasting, Services, General), in the order a dictation goes, and their
-  subpages. Vocabulary stands alone because speech, refinement and the
+- The sidebar is one list with no headings: eleven top-level pages (Home,
+  Transcribe files, Recordings, Dictation, Speech to text, Refinement,
+  Vocabulary, Apps, Pasting, Services, General), in the order a dictation
+  goes, and their subpages. Recordings sits beside Transcribe files, as
+  both turn audio that isn't being dictated into a transcript. Vocabulary stands alone because speech, refinement and the
   replacements all read it. A
   page sits under another (`parent` in `schema/pages.js`) when it is a part
   of that page a person looks for on its own: History under Home,
