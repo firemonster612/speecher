@@ -20,6 +20,7 @@ permissions:
 
 jobs:
   macos:
+    if: false
     runs-on: macos-26
     env:
       MACOS_DEPLOYMENT_TARGET: "15.0"
@@ -143,11 +144,44 @@ jobs:
 
       - name: Configure
         shell: pwsh
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_WITH_LOCAL_SPEECH=ON -DSPEECHER_LOCAL_SPEECH_ALL_CPUS=ON -DSPEECHER_LOCAL_SPEECH_VULKAN=ON
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_WITH_LOCAL_SPEECH=ON -DSPEECHER_LOCAL_SPEECH_ALL_CPUS=ON -DSPEECHER_LOCAL_SPEECH_VULKAN=ON
 
       - name: Build
         shell: pwsh
         run: cmake --build build --parallel --target speecher_tests
+
+      - name: Diagnose
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $exe = (Resolve-Path build/speecher_tests.exe).Path
+          New-Item -ItemType Directory diag | Out-Null
+          foreach ($i in 1..3) {
+            $sw = [Diagnostics.Stopwatch]::StartNew()
+            $p = Start-Process $exe -ArgumentList '--suite','quick_pages' -NoNewWindow -PassThru -RedirectStandardOutput "diag/whole$i.txt" -RedirectStandardError "diag/whole$i.err"
+            if (-not $p.WaitForExit(600000)) { $p.Kill(); "HANG whole suite $i" } else { '{0,6:N1}s exit {1} whole suite {2}' -f $sw.Elapsed.TotalSeconds, $p.ExitCode, $i }
+            Get-Content "diag/whole$i.txt" -Tail 6
+            Get-Content "diag/whole$i.err"
+          }
+
+      - name: Bundle the tests
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory bundle | Out-Null
+          Copy-Item build/speecher_tests.exe bundle/
+          Get-ChildItem build -Filter *.dll | Copy-Item -Destination bundle/
+          & "$env:QT_ROOT_DIR/bin/windeployqt.exe" --release --qmldir src/frontend/quick --dir bundle bundle/speecher_tests.exe
+
+      - name: Upload diagnosis
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: win-diag
+          path: |
+            diag
+            bundle
 
       - name: Capture
         shell: pwsh
