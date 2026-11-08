@@ -258,7 +258,7 @@ private slots:
         seen.applicationId = QStringLiteral("org.kde.kate");
         // The session's entry, which it makes only while History keeps
         // stats, goes to History and the apps dictated into.
-        emit controller.session()->dictationFinished(finished(seen));
+        emit controller.session()->dictationFinished(finished(seen), false);
         QCOMPARE(controller.seenApps()->apps().size(), 1);
         QuickInsights insights(&controller);
         QCOMPARE(insights.kept(), 1);
@@ -296,7 +296,7 @@ private slots:
 
         DictationRecord record = recordOn(kToday, 5, QStringLiteral("Slack"), WritingProfile::Work);
         record.applicationId = QStringLiteral("com.slack.Slack");
-        emit session->dictationFinished(finished(record));
+        emit session->dictationFinished(finished(record), false);
         latest = insights.latest().toMap();
         QCOMPARE(latest.value(QStringLiteral("app")).toString(), QStringLiteral("Slack"));
         QCOMPARE(latest.value(QStringLiteral("appId")).toString(), QStringLiteral("com.slack.Slack"));
@@ -318,7 +318,7 @@ private slots:
         QuickInsights insights(&controller);
         emit controller.session()->transcriptDelivered(QStringLiteral("Hello."));
         emit controller.session()->dictationFinished(
-            finished(recordOn(kToday, 1, QStringLiteral("Kate"), QStringLiteral("custom_notes"))));
+            finished(recordOn(kToday, 1, QStringLiteral("Kate"), QStringLiteral("custom_notes"))), false);
         QCOMPARE(insights.latest().toMap().value(QStringLiteral("profile")).toString(), QStringLiteral("Notes"));
 
         QSignalSpy latestChanged(&insights, &QuickInsights::latestChanged);

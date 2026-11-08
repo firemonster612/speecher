@@ -24,6 +24,7 @@ class QTimer;
 
 namespace speecher {
 
+class HistoryAudioWriter;
 class ProviderRegistry;
 class RefinementChain;
 class SettingsStore;
@@ -64,6 +65,9 @@ public:
     // Whether the system says it can reach the internet. Only an outcome's
     // wording uses it: every provider in a chain is still tried.
     void setReachability(Reachability reachability);
+    // Where History keeps a dictation's audio while What Speecher Keeps is
+    // Text and audio; empty keeps none.
+    void setHistoryAudioFolder(const QString &folder);
     // The keys that keep and replace while a selection edit is reviewed, as
     // the review names them. The controller sets them whenever it takes or
     // lets go of keys; a review on screen is shown again with the new ones.
@@ -111,9 +115,12 @@ signals:
     void transcriptDelivered(const QString &text);
     // A finished Dictation Session, delivered or not, with what History may
     // keep of it: the least of What Speecher Keeps (as the session started
-    // and as it is now), the app's choice and a password field's Stats. Not
-    // while that is Nothing, nor for a cancelled session.
-    void dictationFinished(const speecher::HistoryEntry &entry);
+    // and as it is now), the app's choice and a password field's Stats; its
+    // audio with Text and audio. Never for a cancelled session.
+    // intoPasswordField says the Target was one, whose words Paste Again
+    // never offers. Emitted while History keeps Nothing too, with nothing
+    // in it to keep.
+    void dictationFinished(const speecher::HistoryEntry &entry, bool intoPasswordField);
     void previewDisplayChanged(const QString &preview);
     void audioLevelChanged(float level);
     void popupShowRequested(quint64 generation);
@@ -295,7 +302,14 @@ private:
     };
     AwaitedDelivery m_awaitedDelivery;
     // Offers History the delivery as an entry; raw is the Raw Transcript.
-    void recordHistory(const AwaitedDelivery &delivery, HistoryKeep keep, HistoryOutcome outcome, const QString &raw);
+    void recordHistory(const AwaitedDelivery &delivery, HistoryKeep keep, HistoryOutcome outcome, const QString &raw,
+                       bool intoPasswordField);
+    // The audio this session tees to History, from when its Target settles
+    // while it keeps audio; the writer deletes itself once done.
+    QPointer<HistoryAudioWriter> m_historyAudio;
+    QString m_historyAudioFolder;
+    void openHistoryAudio();
+    void discardHistoryAudio();
     // Deliveries asked for and not yet answered, a dropped one's included.
     int m_unansweredDeliveries = 0;
     // What the system last said about the internet.

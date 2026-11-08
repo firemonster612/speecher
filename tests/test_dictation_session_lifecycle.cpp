@@ -6,6 +6,7 @@
 
 #include <QSemaphore>
 #include <QElapsedTimer>
+#include <QTemporaryDir>
 #include <QTimer>
 
 #include <utility>
@@ -871,7 +872,7 @@ private slots:
         QTest::addColumn<HistoryKeep>("kept");
         QTest::newRow("text") << HistoryKeep::Text << true << false << true << HistoryOutcome::Delivered << HistoryKeep::Text;
         QTest::newRow("stats") << HistoryKeep::Stats << true << false << true << HistoryOutcome::Delivered << HistoryKeep::Stats;
-        QTest::newRow("nothing") << HistoryKeep::Nothing << true << false << false << HistoryOutcome::Delivered
+        QTest::newRow("nothing") << HistoryKeep::Nothing << true << false << true << HistoryOutcome::Delivered
                                  << HistoryKeep::Nothing;
         QTest::newRow("delivery failed") << HistoryKeep::Text << false << false << true << HistoryOutcome::Undelivered
                                          << HistoryKeep::Text;
@@ -928,9 +929,16 @@ private slots:
             return;
         }
         const auto entry = finished.first().first().value<HistoryEntry>();
-        QCOMPARE(entry.kind, HistoryKind::Dictation);
+        QCOMPARE(finished.first().at(1).toBool(), secure);
         QCOMPARE(entry.outcome, outcome);
         QCOMPARE(entry.kept, kept);
+        // Nothing: only that it finished, for Paste Again.
+        if (kept == HistoryKeep::Nothing) {
+            QVERIFY(!entry.text);
+            QCOMPARE(entry.stats.words, 0);
+            return;
+        }
+        QCOMPARE(entry.kind, HistoryKind::Dictation);
         QCOMPARE(entry.stats.words, 3);
         QCOMPARE(entry.stats.appName, QStringLiteral("Kate"));
         QCOMPARE(entry.stats.applicationId, QStringLiteral("org.kde.kate"));
@@ -940,6 +948,55 @@ private slots:
             QCOMPARE(*entry.text, QStringLiteral("Hello, dear world."));
             QCOMPARE(entry.rawText, entry.text);
         }
+    }
+
+    // With Text and audio, what the microphone heard is kept beside the
+    // entry; a cancelled dictation leaves no audio behind.
+    void audioIsKeptOnlyForADeliveredDictation()
+    {
+        QTemporaryDir folder;
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.enabled = false;
+            draft.history.keeps = HistoryKeep::Audio;
+            return true;
+        });
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        session.setHistoryAudioFolder(folder.path());
+        QSignalSpy finished(&session, &DictationSession::dictationFinished);
+        const auto hear = [&audio] {
+            for (int i = 0; i < 5; ++i) {
+                emit audio->audioChunk(QByteArray(3200, '\0'));
+            }
+        };
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        hear();
+        session.cancel();
+        QTRY_COMPARE(int(session.state()), int(DictationState::Idle));
+        QTRY_VERIFY(QDir(folder.path()).entryList(QDir::Files).isEmpty());
+        QCOMPARE(finished.count(), 0);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        hear();
+        speech->emitFinalText(QStringLiteral("Keep my voice."));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QTRY_COMPARE(finished.count(), 1);
+        const auto entry = finished.first().first().value<HistoryEntry>();
+        QCOMPARE(entry.kept, HistoryKeep::Audio);
+        QVERIFY(!entry.audioPath.isEmpty());
+        QTRY_VERIFY_WITH_TIMEOUT(QFile::exists(QDir(folder.path()).filePath(entry.audioPath)), 10000);
+        settings.raw().clear();
     }
 
     // The saved language is one Claude Voice lacks: once the target settles
@@ -1092,7 +1149,8 @@ private slots:
         session.stopListening();
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
 
-        QCOMPARE(recorded.count(), 0);
+        QTRY_COMPARE(recorded.count(), 1);
+        QCOMPARE(recorded.first().first().value<HistoryEntry>().kept, HistoryKeep::Nothing);
     }
 
     void dictationSessionDefersTargetCaptureUntilPopupCanPaint()

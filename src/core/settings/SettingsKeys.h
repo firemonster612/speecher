@@ -79,6 +79,7 @@ inline const QString GlobalShortcut = QStringLiteral("shortcuts/toggleDictation"
 // The optional Global Shortcuts that cancel and pause dictation, kept the same way.
 inline const QString CancelShortcut = QStringLiteral("shortcuts/cancelDictation");
 inline const QString PauseShortcut = QStringLiteral("shortcuts/pauseDictation");
+inline const QString PasteAgainShortcut = QStringLiteral("shortcuts/pasteAgain");
 inline const QString ShortcutActivationMode = QStringLiteral("shortcuts/activationMode");
 inline const QString CorrectionLearningEnabled = QStringLiteral("vocabulary/correctionLearningEnabled");
 inline const QString LearnedCorrections = QStringLiteral("vocabulary/learnedCorrections");

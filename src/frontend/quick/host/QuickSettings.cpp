@@ -298,6 +298,7 @@ const struct ShortcutRow {
     {"globalShortcut", GlobalShortcutRole::Dictation},
     {"cancelShortcut", GlobalShortcutRole::Cancel},
     {"pauseShortcut", GlobalShortcutRole::Pause},
+    {"pasteAgainShortcut", GlobalShortcutRole::PasteAgain},
 };
 
 const QString runSetupAction = QStringLiteral("runSetup");

@@ -3,9 +3,11 @@
 
 #include "common/test_suites.h"
 #include "core/OwnerOnly.h"
+#include "core/history/HistoryAudioWriter.h"
 #include "core/history/HistoryPolicy.h"
 #include "core/history/HistoryStore.h"
 
+#include <QAudioDecoder>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
@@ -14,6 +16,7 @@
 #include <QTest>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 using namespace speecher;
@@ -343,6 +346,53 @@ private slots:
         QVERIFY2(fastest(searchFor(QStringLiteral("uploader"))) < 16, "a word's page took a frame or longer");
         QVERIFY2(fastest(searchFor(QStringLiteral("retry loop 12"))) < 16, "several words' page took a frame or longer");
         QVERIFY2(fastest({}) < 16, "the first page took a frame or longer");
+    }
+
+    // A second of tone goes in as it is heard and comes out a second long,
+    // under its final name once the encoder is done.
+    void audioRoundTrips()
+    {
+        QTemporaryDir folder;
+        auto *writer = new HistoryAudioWriter(folder.path());
+        constexpr int rate = 16000;
+        for (int chunk = 0; chunk < 10; ++chunk) {
+            QByteArray pcm;
+            for (int i = 0; i < rate / 10; ++i) {
+                const auto sample = qint16(8000 * std::sin(2 * M_PI * 440 * (chunk * rate / 10 + i) / rate));
+                pcm.append(reinterpret_cast<const char *>(&sample), 2);
+            }
+            writer->write(pcm);
+        }
+        const QString name = writer->finish();
+        QVERIFY(!name.isEmpty());
+        const QString path = QDir(folder.path()).filePath(name);
+        QTRY_VERIFY_WITH_TIMEOUT(QFile::exists(path), 10000);
+        QTRY_VERIFY(QDir(folder.path()).entryList({QStringLiteral("*.part")}, QDir::Files).isEmpty());
+#ifdef Q_OS_UNIX
+        QVERIFY(isOwnerOnly(folder.path()));
+#endif
+
+        QAudioDecoder decoder;
+        decoder.setSource(QUrl::fromLocalFile(path));
+        qint64 decodedUs = 0;
+        connect(&decoder, &QAudioDecoder::bufferReady, &decoder, [&] { decodedUs += decoder.read().duration(); });
+        bool done = false;
+        connect(&decoder, &QAudioDecoder::finished, &decoder, [&done] { done = true; });
+        connect(&decoder, qOverload<QAudioDecoder::Error>(&QAudioDecoder::error), &decoder, [&done] { done = true; });
+        decoder.start();
+        QTRY_VERIFY_WITH_TIMEOUT(done, 10000);
+        QVERIFY2(std::abs(decodedUs / 1000 - 1000) < 150, qPrintable(QStringLiteral("decoded %1 ms").arg(decodedUs / 1000)));
+    }
+
+    // Nothing heard, nothing written; thrown away, nothing left.
+    void audioThatIsntKeptLeavesNoFile()
+    {
+        QTemporaryDir folder;
+        QVERIFY((new HistoryAudioWriter(folder.path()))->finish().isEmpty());
+        auto *discarded = new HistoryAudioWriter(folder.path());
+        discarded->write(QByteArray(3200, '\0'));
+        discarded->discard();
+        QTRY_VERIFY(QDir(folder.path()).entryList(QDir::Files).isEmpty());
     }
 
     void historyKeepTakesTheLeast_data()

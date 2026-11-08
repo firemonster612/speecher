@@ -89,6 +89,12 @@ TrayIcon::TrayIcon(ApplicationController *controller, QObject *parent)
 #endif
     m_toggleAction = m_menu.addAction(QString(), controller, &ApplicationController::toggle);
     m_toggleAction->setObjectName(QStringLiteral("trayToggleDictation"));
+    QAction *pasteAgain = m_menu.addAction(QStringLiteral("Paste last dictation"), controller,
+                                           [controller] { controller->pasteAgain(); });
+    pasteAgain->setObjectName(QStringLiteral("trayPasteAgain"));
+    // Offered while there is something to paste again.
+    connect(&m_menu, &QMenu::aboutToShow, pasteAgain,
+            [pasteAgain, controller] { pasteAgain->setEnabled(!controller->pasteAgainText().isEmpty()); });
     QAction *settings = m_menu.addAction(QStringLiteral("Settings"), controller, &ApplicationController::showSettings);
     settings->setObjectName(QStringLiteral("traySettings"));
     m_menu.addSeparator();

@@ -4,6 +4,8 @@
 #include "app/ApplicationController.h"
 #include "app/TrayIcon.h"
 #include "core/SettingsStore.h"
+#include "core/history/HistoryStore.h"
+#include "dictation/DictationSession.h"
 
 #include <QAction>
 #include <QMenu>
@@ -63,14 +65,59 @@ private slots:
         QCOMPARE(actions.first()->objectName(), QStringLiteral("trayOpen"));
         QCOMPARE(actions.takeFirst()->text(), QStringLiteral("Open Speecher"));
 #endif
-        QCOMPARE(actions.size(), 4);
+        QCOMPARE(actions.size(), 5);
         QCOMPARE(actions.at(0)->objectName(), QStringLiteral("trayToggleDictation"));
         QCOMPARE(actions.at(0)->text(), QStringLiteral("Start dictation"));
-        QCOMPARE(actions.at(1)->objectName(), QStringLiteral("traySettings"));
-        QCOMPARE(actions.at(1)->text(), QStringLiteral("Settings"));
-        QVERIFY(actions.at(2)->isSeparator());
-        QCOMPARE(actions.at(3)->objectName(), QStringLiteral("trayQuit"));
-        QCOMPARE(actions.at(3)->text(), QStringLiteral("Quit Speecher"));
+        QCOMPARE(actions.at(1)->objectName(), QStringLiteral("trayPasteAgain"));
+        QCOMPARE(actions.at(1)->text(), QStringLiteral("Paste last dictation"));
+        QCOMPARE(actions.at(2)->objectName(), QStringLiteral("traySettings"));
+        QCOMPARE(actions.at(2)->text(), QStringLiteral("Settings"));
+        QVERIFY(actions.at(3)->isSeparator());
+        QCOMPARE(actions.at(4)->objectName(), QStringLiteral("trayQuit"));
+        QCOMPARE(actions.at(4)->text(), QStringLiteral("Quit Speecher"));
+    }
+
+    // Paste last dictation is offered once a dictation finished, and never
+    // for one into a password field.
+    void pasteLastDictationFollowsTheLastDictation()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QMenu *menu = tray.findChild<QSystemTrayIcon *>()->contextMenu();
+        QAction *pasteAgain = menu->findChild<QAction *>(QStringLiteral("trayPasteAgain"));
+        QVERIFY(pasteAgain);
+        emit menu->aboutToShow();
+        QVERIFY(!pasteAgain->isEnabled());
+
+        HistoryEntry entry;
+        entry.kept = HistoryKeep::Nothing;
+        emit controller.session()->dictationFinished(entry, true);
+        emit menu->aboutToShow();
+        QVERIFY(!pasteAgain->isEnabled());
+        QVERIFY(controller.pasteAgainText().isEmpty());
+    }
+
+    // After a restart, History's newest dictation, while it keeps text.
+    void pasteLastDictationReadsHistory()
+    {
+        ApplicationController controller(true);
+        controller.history()->clear({}, {}, true);
+        QVERIFY(controller.settings()->edit([](AppSettings &draft) {
+            draft.history.keeps = HistoryKeep::Text;
+            return true;
+        }));
+        HistoryEntry entry;
+        entry.stats.finishedAt = QDateTime::currentDateTime();
+        entry.kept = HistoryKeep::Text;
+        entry.text = QStringLiteral("Move the review to Thursday.");
+        controller.history()->add(entry);
+        TrayIcon tray(&controller);
+        QMenu *menu = tray.findChild<QSystemTrayIcon *>()->contextMenu();
+        emit menu->aboutToShow();
+        QVERIFY(menu->findChild<QAction *>(QStringLiteral("trayPasteAgain"))->isEnabled());
+        QCOMPARE(controller.pasteAgainText(), QStringLiteral("Move the review to Thursday."));
+        controller.history()->clear({}, {}, true);
+        controller.settings()->raw().clear();
     }
 
     void listeningStateFlipsToggleTextAndTooltip()

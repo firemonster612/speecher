@@ -25,10 +25,12 @@ enum class DictationState;
 class FileTranscriptionSession;
 class Accounts;
 class TranscribeQueue;
+struct TranscribeFileResult;
 class AudioInput;
 class SessionKeyGrab;
 class ShortcutGesture;
 class HistoryStore;
+class PasteAgain;
 class SeenApps;
 class IpcCommandHandler;
 class LocalModelStore;
@@ -113,6 +115,10 @@ public:
     // withStats the entries, and for everything the apps dictated into too.
     // False when a file refused it.
     bool clearHistory(const QDateTime &from, const QDateTime &to, bool withStats);
+    // What Paste Again pastes: History's newest dictation while it keeps
+    // text, unless one this run is newer; while it doesn't, the last one
+    // this run. Never one into a password field. Empty when there's none.
+    QString pasteAgainText() const;
     WhatsNewTracker *whatsNew() const;
     SecretStore *secretStore() const;
     ProviderRegistry *providerRegistry() const;
@@ -198,6 +204,9 @@ public:
     IpcCommandHandler *ipcCommands() const;
 
 public slots:
+    // Pastes text, or pasteAgainText() when it is empty, into the app in
+    // front: Speecher's windows step aside first. Not during a dictation.
+    void pasteAgain(const QString &text = {});
     void toggle();
     // A toggle with the --format, --profile or --language it was given.
     void toggleWith(const SessionOverrides &overrides);
@@ -228,10 +237,13 @@ signals:
     void globalShortcutSupportChanged();
     void globalShortcutRegistrationFinished(bool bound, const QString &detail, GlobalShortcutRole role);
     void quitRequested();
+    // Paste Again ended: ok, or why not in words for the person.
+    void pasteAgainFinished(bool ok, const QString &message);
 
 private:
     void forgetLastRecord();
-    void keepInHistory(const HistoryEntry &entry);
+    void keepInHistory(const HistoryEntry &entry, bool intoPasswordField);
+    void keepFileInHistory(const TranscribeFileResult &result);
     // Retention, as of now.
     void pruneHistory();
     void notifyModelReady(const QString &modelId);
@@ -280,6 +292,11 @@ private:
     GlobalShortcutBinder *m_shortcutBinder = nullptr;
     GlobalShortcutBinder *m_cancelShortcutBinder = nullptr;
     GlobalShortcutBinder *m_pauseShortcutBinder = nullptr;
+    GlobalShortcutBinder *m_pasteAgainShortcutBinder = nullptr;
+    PasteAgain *m_pasteAgain = nullptr;
+    // The last dictation this run, for Paste Again: nullopt before the
+    // first, empty for one into a password field.
+    std::optional<QString> m_pasteAgainText;
     SessionKeyGrab *m_sessionKeyGrab = nullptr;
     int m_shortcutSuspensions = 0;
     IpcCommandHandler *m_ipcCommands = nullptr;

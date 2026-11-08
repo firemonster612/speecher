@@ -7,7 +7,9 @@
 #include "recording/RecordingPresentation.h"
 #include "recording/RecordingStatus.h"
 
+#include <QDateTime>
 #include <QDeadlineTimer>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QProcess>
@@ -110,6 +112,47 @@ int printLastTranscript(const std::shared_ptr<const SingleInstancePlatform> &pla
     }
     std::cout << response.text.toStdString() << "\n";
     return 0;
+}
+
+// Prints what History found, a line an entry or, with json, the array the
+// running instance answered with. Nothing found, or no running instance,
+// is exit status 1.
+int printHistory(const HistorySearch &search, bool json, const std::shared_ptr<const SingleInstancePlatform> &platform)
+{
+    IpcRequest request{IpcCommand::History};
+    request.history = search;
+    IpcResponse response;
+    QString ipcError;
+    const IpcCommandResult ipcResult =
+        SingleInstanceIpc::sendRequest(request, &response, kIpcTimeoutMs, platform, &ipcError);
+    if (ipcResult == IpcCommandResult::Unavailable) {
+        std::cerr << "Speecher isn't running; History is read through it.\n";
+        return 1;
+    }
+    if (ipcResult != IpcCommandResult::Sent) {
+        std::cerr << ipcError.toStdString() << "\n";
+        return 1;
+    }
+    if (response.unknownCommand) {
+        return reportOlderInstance("doesn't know `history`");
+    }
+    if (json) {
+        std::cout << QJsonDocument(response.history).toJson(QJsonDocument::Compact).toStdString() << "\n";
+        return response.history.isEmpty() ? 1 : 0;
+    }
+    for (const QJsonValue &value : std::as_const(response.history)) {
+        const QJsonObject entry = value.toObject();
+        const QDateTime finished = QDateTime::fromString(entry[u"finishedAt"].toString(), Qt::ISODate);
+        const QString source = entry[u"kind"].toString() == u"file" ? entry[u"title"].toString()
+                                                                     : entry[u"app"].toString();
+        // One line each, so the output greps and pipes.
+        const QString text = entry[u"text"].toString().simplified();
+        std::cout << (finished.toString(QStringLiteral("yyyy-MM-dd HH:mm")) + QStringLiteral("  ") + source
+                      + QStringLiteral("  ") + text)
+                         .toStdString()
+                  << "\n";
+    }
+    return response.history.isEmpty() ? 1 : 0;
 }
 
 // Saves the terms through the running instance, so its settings and its next
@@ -351,6 +394,8 @@ int runCliCommand(const CommandLineDecision &decision,
     switch (command) {
     case IpcCommand::Last:
         return printLastTranscript(platform);
+    case IpcCommand::History:
+        return printHistory(decision.historySearch, decision.json, platform);
     case IpcCommand::AddVocabulary:
         return addVocabularyTerms(decision.vocabularyTerms, platform);
     case IpcCommand::RecordStart:

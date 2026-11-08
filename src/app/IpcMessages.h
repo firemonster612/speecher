@@ -10,6 +10,8 @@
 #include "recording/RecordingStatus.h"
 
 #include <QByteArray>
+#include <QDate>
+#include <QJsonArray>
 #include <QString>
 #include <QStringList>
 
@@ -32,6 +34,7 @@ enum class IpcCommand {
     Status,
     WatchStatus,
     Last,
+    History,
     Providers,
     AddVocabulary,
     Quit,
@@ -48,6 +51,19 @@ enum class IpcCommand {
 QString ipcCommandName(IpcCommand command);
 std::optional<IpcCommand> ipcCommandNamed(const QString &name);
 
+// What `speecher history` asks History for.
+struct HistorySearch {
+    // Words that must all appear, as History's search takes them.
+    QString text;
+    // dictation, file or recording; empty: every kind.
+    QString kind;
+    // Finished on or after this day; invalid: any day.
+    QDate since;
+    int limit = 20;
+
+    bool operator==(const HistorySearch &other) const = default;
+};
+
 struct IpcRequest {
     IpcCommand command = IpcCommand::Status;
     // toggle and start: the session's output format, Writing Profile and
@@ -61,6 +77,8 @@ struct IpcRequest {
     QStringList terms;
     // recordStart's --mic-only.
     bool microphoneOnly = false;
+    // history: the search.
+    HistorySearch history;
 
     bool operator==(const IpcRequest &other) const = default;
 };
@@ -78,6 +96,10 @@ struct IpcResponse {
     QString text;
     // The terms an addVocabulary request carried that the list held already.
     QStringList skippedTerms;
+    // history: the entries found, newest first, each as
+    // { id, kind, finishedAt, app, profile, title, words, audioMs, outcome,
+    // text }, which `speecher history --json` prints as they are.
+    QJsonArray history;
     // The record commands' answer: the recording now, or the one stopped.
     std::optional<RecordingStatus> recording;
     // The instance did not know the command, so it is older than the

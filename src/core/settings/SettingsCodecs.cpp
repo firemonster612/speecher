@@ -1176,6 +1176,8 @@ QString globalShortcutKey(GlobalShortcutRole role)
         return SettingsKeys::CancelShortcut;
     case GlobalShortcutRole::Pause:
         return SettingsKeys::PauseShortcut;
+    case GlobalShortcutRole::PasteAgain:
+        return SettingsKeys::PasteAgainShortcut;
     case GlobalShortcutRole::Dictation:
         break;
     }

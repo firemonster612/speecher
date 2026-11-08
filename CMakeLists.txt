@@ -342,6 +342,7 @@ set(SPEECHER_DOMAIN_HEADERS
 )
 
 set(SPEECHER_WORKFLOW_SOURCES
+  src/core/history/HistoryAudioWriter.cpp
   src/dictation/DictationSession.cpp
   src/dictation/DictationPorts.cpp
   src/dictation/DictationSpeech.cpp
@@ -356,6 +357,7 @@ set(SPEECHER_WORKFLOW_SOURCES
 )
 
 set(SPEECHER_WORKFLOW_HEADERS
+  src/core/history/HistoryAudioWriter.h
   src/dictation/BetweenAttempts.h
   src/dictation/DictationPorts.h
   src/dictation/DictationSession.h
@@ -641,6 +643,7 @@ set(SPEECHER_APP_SOURCES
   src/app/ApplicationController.cpp
   src/app/LocalSetup.cpp
   src/app/NetworkReachability.cpp
+  src/app/PasteAgain.cpp
   src/app/ProviderAvailability.cpp
   src/app/CliClient.cpp
   src/app/CommandLine.cpp
@@ -679,6 +682,7 @@ set(SPEECHER_APP_HEADERS
   src/app/ApplicationController.h
   src/app/LocalSetup.h
   src/app/NetworkReachability.h
+  src/app/PasteAgain.h
   src/app/ProviderAvailability.h
   src/app/MicrophoneTest.h
   src/app/CliClient.h
@@ -766,7 +770,8 @@ add_library(speecher_workflow STATIC
   ${SPEECHER_WORKFLOW_HEADERS}
 )
 target_include_directories(speecher_workflow PUBLIC src)
-target_link_libraries(speecher_workflow PUBLIC speecher_domain)
+# Multimedia for History's audio, which a dictation writes as it hears it.
+target_link_libraries(speecher_workflow PUBLIC speecher_domain Qt6::Multimedia)
 
 add_library(speecher_providers STATIC
   ${SPEECHER_PROVIDER_SOURCES}
