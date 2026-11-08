@@ -31,8 +31,7 @@ Page {
     readonly property bool _keeps: _runs("keep")
     readonly property string _routeCaption: {
         // What the steps that are on but can't run yet wait for, by name.
-        const waiting = [...new Set([].concat(..._steps.filter(s => s.on).map(s => s.waiting))
-                                      .map(n => Schema.pasting.needs[n].label))].join(" or ")
+        const waiting = Schema.pasting.waitingNeeds(_steps).map(n => Schema.pasting.needs[n].label).join(" or ")
         if (!_reachesApp && _keeps)
             return waiting ? "Your words stay on the clipboard until " + waiting + " is ready."
                            : "Your words stay on the clipboard for you to paste."
@@ -98,7 +97,7 @@ Page {
         // they do here.
         readonly property var entries: Apps.types.filter(o => o.steps || o.keys).map(o => Object.assign(Schema.apps.typeLink(o), {
             effective: o.effective,
-            terminalWins: o.id === "ai_coding" && Apps.types.some(o => o.id === "terminal" && (o.steps || o.keys))
+            terminalWins: Schema.pasting.pastesLikeTerminals(o.id, Apps.types)
         })).concat(Apps.entries.filter(e => e.steps || e.keys).map(e => Object.assign(Schema.apps.appLink(e), {
             effective: e.effective, terminalWins: false
         })))

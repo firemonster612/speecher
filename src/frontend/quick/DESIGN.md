@@ -222,7 +222,8 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   that gives a shortcut row its own help sets `note`, not `help`.
 - `Library` is `Library.qml` over `LibraryLists` (`host/QuickLibrary`): the
   Writing Profiles, custom tones
-  and cleanup levels, and the Vocabulary (`vocabulary`: spellings,
+  and cleanup levels (as choices: `profileOptions`, `levelOptions`,
+  `toneOptions`), and the Vocabulary (`vocabulary`: spellings,
   replacements and Learned Corrections as one list, each with the profiles
   and apps it is limited to), read from and saved through the daemon's
   `SettingsStore`.
@@ -330,7 +331,8 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   `SPEECHER_POPUP_CAPTURE_DIR=<dir>` saves the popup's frames while it is up.
 - Wording belongs to the UI. It comes from the schema row, `Words` (shared
   words such as Cancel, Save and Copied, and the shell's: `Words.shell`,
-  `Words.results(count)`) or the page, kept short and in one place per page.
+  `Words.results(count)`, and `Words.clock(ms)`, the one m:ss / h:mm:ss
+  clock) or the page, kept short and in one place per page.
   A C++ Backend type carries data, not wording. The popup words itself
   (`DictationPopup.t`) and Home words the dictation's state; the
   messages core writes (receipts, errors, a review's summary) come through
@@ -787,6 +789,8 @@ In Speecher.App, besides SchemaRow:
 - `HealthRow { rowId; checkId }`: a schema row showing one of `System.checks` with its fix; items inside follow the fix button. `AccessibilityMenu` is the desktopAccessibility row's menu that stops keeping it on. `StateText { stateId }` words a sign-in or check state, and `States` (states.js) maps states to tones: a state to sign in to, turn on or set up is `warning`, one that failed or can't be used `negative`.
 - `ServiceOrderList { role }`: a job's Service Order, speech or refinement, on an `OrderedList`: each service with its status and a Fix while it can't run, its `ServiceChoiceRow` under it, saving as it changes. `ServiceChoiceRow` is one entry's choices: its model (picked where the service lets you, else named), a later speech service's Spoken language with "Same as Spoken language" first, and ChatGPT's and Claude's thinking and speed.
 - `ServiceOrderSection { role }`: a ServiceOrderList under the order row's label and help, as Speech to text, Refinement and their setup steps show it.
+- `ModelText.hasFix(service, signInInDoubt)`: whether a Fix for the service has a Services card to open, which ServiceStatus, ServiceOrderList and Home's readiness ask alike.
+- `AppLinkRow { entry; detail }` (pages/apps): an App or App Type another page lists (Pasting's own steps, Privacy & data's keep less), opening it in Apps; `Schema.apps.typeLink` and `appLink` make its entry.
 - `ServiceStatus { role; serviceId }`: under Run with (Transcribe files and Recordings), what a service the batch runs with still needs and how to sign in, with Check again and Fix; folded away while it is ready and before the first check answers.
 - `FixSheet { openFor(role, serviceId) }`: the Services card that fixes one service (ChatGPT's or Claude's sign-in, This computer's part for the job, or the job's server) in a modal sheet over the page, with Open Services (Open This computer for its part), which leads back to setup when opened from there.
 - `ErrorDetails { text }`: a failure's own words behind a Details link, under its plain sentence.

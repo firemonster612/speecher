@@ -130,6 +130,12 @@ QtObject {
         return !["ready", "unknown", "language", "offline", ""].includes(provider.state)
             && !(provider.refines && provider.id === "local" && provider.state === "noModel")
     }
+    // Whether Fix has something to open for a service: its Services card,
+    // where it has one, while its problem is fixable there or, with
+    // signInInDoubt, while its sign-in may be the problem.
+    function hasFix(provider, signInInDoubt) {
+        return cardOf(provider.id) !== "" && (fixable(provider) || !!signInInDoubt)
+    }
     // A sign-in no check has vouched for: Check again asks, and Fix opens
     // the sign-in in case it is the problem.
     function unchecked(provider) { return provider.state === "unknown" && !!provider.signsIn }

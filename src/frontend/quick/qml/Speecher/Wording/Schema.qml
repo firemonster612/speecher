@@ -77,6 +77,9 @@ QtObject {
     function row(id) {
         return _rowsById[id] || { id: id, page: "", label: id, help: "This row is not in the schema yet.", kind: "missing" }
     }
+    // Whether What Speecher Keeps (the historyKeeps row's option id) keeps
+    // the words of new dictations and files: text, or text and audio.
+    function keepsText(keeps) { return keeps === "text" || keeps === "audio" }
     function page(id) { return _pagesById[id] || { id: id, title: id, icon: "circle" } }
     // The pages under a page, in sidebar order.
     function subpages(id) { return pages.filter(p => p.parent === id) }

@@ -57,6 +57,8 @@ LibraryLists {
         id: l.id, label: l.name, base: l.base,
         help: l.base === "custom_only" ? "Your instructions only." : levelLabel(l.base) + ", plus your own instructions." })))
     readonly property var toneOptions: tones.concat(customTones.map(t => ({ id: t.id, label: t.name, help: t.instruction })))
+    // The profiles as one choice each, with their icons.
+    readonly property var profileOptions: profiles.map(p => ({ id: p.id, label: p.name, icon: profileIcon(p.id) }))
     function levelLabel(id) {
         const builtIn = cleanupLevels.find(l => l.id === id)
         if (builtIn) return builtIn.label

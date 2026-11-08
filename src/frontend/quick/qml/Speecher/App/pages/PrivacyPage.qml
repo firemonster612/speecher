@@ -55,8 +55,7 @@ Page {
     // choice drops a question still open, so its answer can't save it.
     function chooseKeeps(id) {
         const below = id === "nothing" || id === "stats"
-        const keepsText = Settings.values.historyKeeps === "text" || Settings.values.historyKeeps === "audio"
-        _lowerTo = below && History.keptText > 0 && keepsText ? id : ""
+        _lowerTo = below && History.keptText > 0 && Schema.keepsText(Settings.values.historyKeeps) ? id : ""
         if (_lowerTo === "") Settings.set("historyKeeps", id)
     }
 

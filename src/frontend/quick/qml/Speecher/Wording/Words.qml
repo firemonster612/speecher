@@ -41,7 +41,8 @@ QtObject {
     readonly property string choose: "Choose…"
     readonly property string suggestions: "Suggestions"
     readonly property string checkAgain: "Check again"
-    // A service that can't run, in an order: opens its Services card.
+    // A service that can't run, wherever it shows (an order, Run with,
+    // Home's readiness): opens its Services card.
     readonly property string fix: "Fix"
     readonly property string use: "Use"
     // The language picker's search, and what it says when nothing matches.

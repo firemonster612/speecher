@@ -25,7 +25,7 @@ Section {
         // keeps text.
         Button {
             objectName: "resultsInHistory"
-            readonly property bool kept: Settings.values.historyKeeps === "text" || Settings.values.historyKeeps === "audio"
+            readonly property bool kept: Schema.keepsText(Settings.values.historyKeeps)
             text: TranscribeWords.inHistory
             variant: "ghost"
             enabled: kept && Transcription.results.some(r => !r.failed)

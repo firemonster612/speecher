@@ -42,7 +42,7 @@ Section {
         InheritSelect {
             objectName: "runProfile"
             inheritedText: Words.sameAs(T.text.yourSettings, Library.profileName(root.inheritedProfile))
-            choices: Library.profiles.map(p => ({ id: p.id, label: p.name, icon: Library.profileIcon(p.id) }))
+            choices: Library.profileOptions
             currentId: root.profileId
             onChosen: id => root.profileChosen(id)
         }

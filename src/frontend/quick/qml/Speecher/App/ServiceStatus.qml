@@ -4,8 +4,8 @@ import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
 
-// A chosen service's status, under the cards that choose it (setup and
-// Transcribe files): while it can't run, what stands in its way and how to
+// A chosen service's status, under RunWith's choice of it (Transcribe files
+// and Recordings): while it can't run, what stands in its way and how to
 // sign in where that is the fix, with Fix, which opens its Services card in
 // a sheet over the page, and Check again for a sign-in. Folded away while
 // it is ready, and for a service with nothing to fix on Services.
@@ -23,8 +23,8 @@ Reveal {
     objectName: "serviceStatus"
     // Not before the first check answers: a sign-in nobody has seen is
     // unknown, not missing.
-    open: serviceId !== "" && serviceId !== "none" && service.state !== "ready" && ModelText.cardOf(serviceId) !== ""
-          && (ModelText.fixable(service) || ["missing", "expired", "unknown"].includes(account.found))
+    open: serviceId !== "" && serviceId !== "none" && service.state !== "ready"
+          && ModelText.hasFix(service, ["missing", "expired", "unknown"].includes(account.found))
 
     SettingRow {
         title: ModelText.status(status.service)

@@ -32,7 +32,7 @@ Column {
     // The delivery steps, and the needs of those that are on which this
     // computer lacks now.
     readonly property var steps: System.deliverySteps
-    readonly property var waiting: [...new Set([].concat(...steps.filter(s => s.on).map(s => s.waiting)))]
+    readonly property var waiting: Schema.pasting.waitingNeeds(steps)
     // With nothing to deliver the words, dictation is for nothing.
     readonly property bool pastingNeeded: System.pastingOutcome === "nothing"
     // The check each missing need has, by check id: accessibility and the
@@ -67,8 +67,7 @@ Column {
     // a runner or a server, the row opens its card (Services, or This
     // computer for a model or a runner) and its Fix
     // opens that card over the page.
-    readonly property bool speechFixable: !working && !!speechService && ModelText.fixable(speechService)
-                                          && ModelText.cardOf(speechService.id) !== ""
+    readonly property bool speechFixable: !working && !!speechService && ModelText.hasFix(speechService)
     readonly property var speechItem: ({
         id: "speech", title: Schema.page("speech").title, state: speechState,
         page: speechFixable ? ModelText.cardPage(speechService.id) : "speech", row: speechFixable ? ModelText.servicesRow("speech", speechService.id) : "",

@@ -168,12 +168,13 @@ Page {
             onClicked: Navigation.follow("history", "historyKind:recording")
         }
         SearchLanding { rowIds: ["recentRecordings"]; target: recentSection }
-        Repeater {
-            model: page.recent
-            HistoryRow {
-                required property var modelData
+        RowList {
+            id: recentList
+            values: page.recent
+            delegate: HistoryRow {
+                required property string key
                 required property int index
-                entry: modelData
+                entry: recentList.entry(key)
                 first: index === 0
                 // The one running is on this page already.
                 onReadRequested: { if (!entry.live) Navigation.follow("history", "recording:" + entry.id) }

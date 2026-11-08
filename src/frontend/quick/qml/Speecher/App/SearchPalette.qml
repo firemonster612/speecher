@@ -28,8 +28,7 @@ FocusScope {
     // query in what was said, landing on History with it typed in its search
     // ("historyFind:<query>"). Keeping no new text leaves what is kept,
     // recordings among it, findable.
-    readonly property bool _historySearchable: History.kept > 0 || Settings.values.historyKeeps === "text"
-                                               || Settings.values.historyKeeps === "audio"
+    readonly property bool _historySearchable: History.kept > 0 || Schema.keepsText(Settings.values.historyKeeps)
     readonly property var _historyResult: _historySearchable && query.trim().length
         ? [{ type: "history", id: "historyFind:" + query.trim(), page: "history", label: Words.shell.searchHistory(query.trim()),
              icon: Schema.page("history").icon, trail: Schema.trail("history") }]
@@ -287,7 +286,7 @@ FocusScope {
                                 ? System.deliverySteps.find(s => s.id === hit.spec.step) || null : null
                             visible: !!step
                             text: !step ? "" : !step.on ? Schema.pasting.switchState.off
-                                : Schema.pasting.switchState.on + (step.waiting.length ? " · " + Schema.pasting.waitingFor(step.waiting[0]) : "")
+                                : Schema.pasting.switchState.on + (step.waiting.length ? ", " + Schema.pasting.waitingFor(step.waiting[0]).toLowerCase() : "")
                             variant: "small"
                             tone: "secondary"
                         }

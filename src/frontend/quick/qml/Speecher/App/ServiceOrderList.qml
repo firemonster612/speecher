@@ -73,7 +73,7 @@ Column {
                     objectName: "fix_" + actions.modelData
                     text: Words.fix
                     size: "small"
-                    visible: (ModelText.fixable(actions.service) || actions.unknown) && ModelText.cardOf(actions.modelData) !== ""
+                    visible: ModelText.hasFix(actions.service, actions.unknown)
                     onClicked: sheet.openFor(list.role, actions.modelData)
                 }
             }

@@ -25,7 +25,6 @@ Item {
 
     readonly property var t: Schema.apps.t
     readonly property bool isOther: isType && entry.id === "general"
-    readonly property var profiles: Library.profiles.map(p => ({ id: p.id, label: p.name, icon: Library.profileIcon(p.id) }))
     readonly property string otherProfile: (Apps.types.find(o => o.id === "general") || { profile: "" }).profile
     // The type that decides what an App follows.
     readonly property var appType: Schema.apps.type(isType ? entry.id : (entry.effective || {}).type)
@@ -34,7 +33,7 @@ Item {
     // What delivering here does: the steps and keys this App or App Type
     // ends up with.
     readonly property var effective: entry.effective || { steps: pageSteps, keys: "standard" }
-    readonly property bool terminalWins: isType && entry.id === "ai_coding" && Apps.types.some(o => o.id === "terminal" && (o.steps || o.keys))
+    readonly property bool terminalWins: isType && Schema.pasting.pastesLikeTerminals(entry.id, Apps.types)
 
     // Where an App's value would come from without its own, by layer:
     // Terminals, its type, or (fallback) its type following the widest
@@ -57,6 +56,16 @@ Item {
         const inherited = entry.inherited || {}
         return Words.sameAs(placeOf(inherited.stepsFrom), Schema.pasting.stepsText(inherited.steps || pageSteps))
     }
+    // The paste keys' choice, on Press's step row or in a row of its own.
+    // owner is the editor, whose ids an inline component can't see.
+    component KeysSelect: InheritSelect {
+        required property var owner
+        inheritedText: owner.inheritedKeys()
+        choices: Schema.pasting.keyChoices
+        currentId: owner.entry.keys || ""
+        onChosen: id => owner.save({ keys: id })
+    }
+
     function inheritedKeys() {
         if (isType) return Words.sameAs(t.pastingPage, Schema.pasting.keysLabel("standard"))
         const inherited = entry.inherited || {}
@@ -225,7 +234,7 @@ Item {
             InheritSelect {
                 objectName: "appProfile"
                 inheritedText: editor.isOther ? "" : editor.inheritedProfile()
-                choices: editor.profiles
+                choices: Library.profileOptions
                 currentId: editor.entry.profile || ""
                 onChosen: id => editor.save({ profile: id })
             }
@@ -257,16 +266,13 @@ Item {
                         ownSteps: editor.entry.steps || {}
                         keys: editor.effective.keys
                         onStepToggled: on => editor.setStep(modelData, on)
-                        InheritSelect {
+                        KeysSelect {
+                            owner: editor
                             visible: stepRow.modelData === "press" && Schema.pasting.keyChoices.length > 0
                             // Narrower than a settings row's, beside the
                             // step's needs and switch.
                             width: 170
-                            inheritedText: editor.inheritedKeys()
-                            choices: Schema.pasting.keyChoices
-                            currentId: editor.entry.keys || ""
                             anchors.verticalCenter: parent.verticalCenter
-                            onChosen: id => editor.save({ keys: id })
                         }
                     }
                 }
@@ -277,12 +283,9 @@ Item {
             shown: Schema.pasting.keyChoices.length > 0 && !editor.entry.steps && !!editor.effective.steps.press
             title: editor.t.pasteKeys
             help: editor.t.pasteKeysHelp
-            InheritSelect {
+            KeysSelect {
                 objectName: "appPasteKeys"
-                inheritedText: editor.inheritedKeys()
-                choices: Schema.pasting.keyChoices
-                currentId: editor.entry.keys || ""
-                onChosen: id => editor.save({ keys: id })
+                owner: editor
             }
         }
         SettingRow {

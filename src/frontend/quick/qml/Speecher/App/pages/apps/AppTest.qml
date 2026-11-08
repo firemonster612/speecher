@@ -92,7 +92,7 @@ Reveal {
                 spacing: Theme.space2
                 Txt {
                     width: parent.width
-                    text: test.result.name + (test.result.windowTitle ? " · " + test.result.windowTitle : "")
+                    text: test.result.name + (test.result.windowTitle ? ", " + test.result.windowTitle : "")
                     variant: "label"
                     elide: Text.ElideRight
                 }

@@ -98,12 +98,22 @@ function pastingResult(steps, keys, terminalWins) {
     // the app is listed: "Press (Ctrl+Shift+V)".
     const waiting = route.filter(id => !usable.includes(id))
         .map(id => stepShort[id] + (id === "press" && keys === "terminal" && !mac ? " (" + terminalKeys + ")" : ""));
-    if (!usable.length)
-        return ["No delivery here yet: " + waiting.join(" and ") + " can't run",
-                terminalWins ? "Apps in a terminal paste like Terminals" : ""].filter(s => s).join(". ");
-    return [parts.join(", "),
-            waiting.length ? waiting.join(" and ") + " can't run here yet" : "",
-            terminalWins ? "Apps in a terminal paste like Terminals" : ""].filter(s => s).join(". ");
+    const lines = usable.length ? [parts.join(", "), waiting.length ? waiting.join(" and ") + " can't run here yet" : ""]
+                                : ["No delivery here yet: " + waiting.join(" and ") + " can't run"];
+    return lines.concat([terminalWins ? "Apps in a terminal paste like Terminals" : ""]).filter(s => s).join(". ");
+}
+
+// Whether an App Type's apps in a terminal paste like Terminals instead, as
+// pastingResult's terminalWins says: AI coding apps, while Terminals have
+// steps or keys of their own (types is Apps.types).
+function pastesLikeTerminals(typeId, types) {
+    return typeId === "ai_coding" && types.some(o => o.id === "terminal" && (o.steps || o.keys));
+}
+
+// The needs of the steps that are on (System.deliverySteps) which this
+// computer lacks now, each once.
+function waitingNeeds(steps) {
+    return [...new Set([].concat(...steps.filter(s => s.on).map(s => s.waiting)))];
 }
 
 // What desktop accessibility turns on, while it is off, as Home's readiness
