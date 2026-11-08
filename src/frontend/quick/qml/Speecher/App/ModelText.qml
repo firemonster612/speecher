@@ -82,12 +82,13 @@ QtObject {
         if (Models.speechServices.some(unknown)) Models.checkSignIns()
     }
     // Where a speech service's or refinement provider's sign-in comes from,
-    // as Accounts' Sign-in row names it: { rowId, label, choice, options },
+    // as Accounts' Sign-in row names it: { rowId, choice, found, options },
     // or null for one that signs in elsewhere or not at all. choice is the
     // option that row's select shows for this service, among options. Codex
     // dictation takes only a ChatGPT sign-in, the Codex app's unless CLI
-    // Proxy API's, whatever refinement uses, so it offers those two;
-    // Automatic names what its last check found.
+    // Proxy API's, whatever refinement uses, so it offers those two. found
+    // is the label of the source Automatic's last check found, or "" while
+    // the choice is another or the check found none.
     function signInSource(id) {
         const openAi = id === "codex" || id === "openai"
         if (!openAi && id !== "claude" && id !== "anthropic") return null
@@ -98,7 +99,7 @@ QtObject {
         const choice = mode
         if (mode === "auto") mode = (Accounts.services.find(s => s.id === "openai") || {}).source || mode
         const option = all.find(o => o.id === mode)
-        return { rowId: rowId, label: option ? option.label : "", choice: choice,
+        return { rowId: rowId, choice: choice, found: choice === "auto" && mode !== "auto" && option ? option.label : "",
                  options: id === "codex" ? all.filter(o => o.id === "codex_oauth" || o.id === "cliproxy") : all }
     }
     readonly property string notChecked: "Not checked yet"

@@ -4,7 +4,8 @@ var rows = [
     { id: "openAiAuthMode", page: "accounts", section: "ChatGPT", kind: "choice", control: "select",
       label: "Sign-in",
       help: "API keys only cover cleanup; dictation needs a ChatGPT or CLI Proxy API sign-in.",
-      autoFound: "Automatic is using: %1.",
+      // What Automatic's last check found, here and under the select in place.
+      autoFound: "Using %1.",
       // A search for the API key lands here while another sign-in hides it.
       keyHint: "To enter an API key, choose API key saved in Speecher.",
       keywords: "login chatgpt codex api key environment source",
@@ -17,7 +18,7 @@ var rows = [
           { id: "cliproxy", label: "CLI Proxy API account" }
       ] },
     { id: "openAiApiKey", page: "accounts", section: "ChatGPT", kind: "secret",
-      label: "API key", help: "Stored in the system keychain when there is one.",
+      label: "ChatGPT API key", help: "Stored in the system keychain when there is one.",
       placeholder: "sk-…", keywords: "openai key secret token" },
     { id: "openAiCliproxyAccount", page: "accounts", section: "ChatGPT", kind: "custom",
       label: "Account", help: "The CLI Proxy API account to use.",
@@ -45,9 +46,11 @@ var rows = [
       // The row that holds the server's settings until a sign-in uses CLI Proxy API.
       foldedLabel: "Server",
       foldedHelp: "Only needed when CLI Proxy API runs on another computer.",
+      // The same row while no sign-in uses CLI Proxy API, when it is the whole card.
+      unusedHelp: "Not used. To sign in through it, choose it as a ChatGPT or Claude sign-in above.",
       keywords: "proxy endpoint host address base url" },
     { id: "cliproxyApiKey", page: "accounts", section: "CLI Proxy API", kind: "secret",
-      label: "Server API key", help: "A key the server accepts. Needed when a server URL is set.",
+      label: "CLI Proxy API server key", help: "A key the server accepts. Needed when a server URL is set.",
       placeholder: "A key the server accepts",
       keywords: "proxy secret token password" }
 ];

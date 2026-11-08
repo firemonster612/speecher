@@ -32,8 +32,15 @@ Page {
     }
     Connections {
         target: Navigation
-        function onPendingRowChanged() { page._follow(Navigation.pendingRow) }
+        function onPendingRowChanged() {
+            page._follow(Navigation.pendingRow)
+            if (page.promptRows.includes(Navigation.pendingRow)) advanced.open = true
+        }
     }
+    // The rows in the Advanced group, which opens for a search that lands
+    // on one of them.
+    readonly property var promptRows: Schema.rows.filter(r => r.page === "refinement" && r.section === Schema.row("customSystemPromptEnabled").section)
+                                                 .map(r => r.id)
 
     // The page's fixed wording.
     readonly property var t: ({
@@ -41,7 +48,8 @@ Page {
         ultrafastPlans: "Ultrafast only works on ChatGPT Pro $500 and eligible Enterprise and Edu plans. Other plans run it at Standard.",
         ultrafastModels: "Ultrafast needs GPT-6 Astra or GPT-6.1 Sol. This model refines at Standard.",
         contextCaption: "Context helps it spell names and match what you're writing. Nothing is kept after the dictation.",
-        promptCaption: "The rules refinement follows. Most people never change them."
+        promptCaption: "A custom system prompt. Most people keep the built-in rules.",
+        customPrompt: "Custom prompt"
     })
     // Under the sample, which is an example: who would clean it up, or that
     // nothing does.
@@ -170,6 +178,41 @@ Page {
                 LocalRunnerRows {}
                 RefinementEndpointRows {}
             }
+            // The system prompt, which few people change, folded away
+            // under the provider's settings until opened or searched for.
+            Disclosure {
+                id: advanced
+                title: Schema.row("customSystemPromptEnabled").section
+                help: page.t.promptCaption
+                trailingText: Settings.values.customSystemPromptEnabled ? page.t.customPrompt : ""
+                Component.onCompleted: open = page.promptRows.includes(Navigation.pendingRow)
+                SchemaRow { rowId: "customSystemPromptEnabled" }
+                Reveal {
+                    open: !!Settings.values.customSystemPromptEnabled
+                    SchemaRow {
+                        rowId: "customSystemPrompt"
+                        stacked: true
+                        TextArea {
+                            width: parent.width
+                            mono: true
+                            minHeight: 150
+                            text: Settings.values.customSystemPrompt || Models.builtInSystemPrompt
+                            onEditingFinished: Settings.set("customSystemPrompt", text)
+                        }
+                    }
+                    SchemaRow {
+                        id: resetPromptRow
+                        rowId: "resetCustomSystemPrompt"
+                        Button {
+                            text: resetPromptRow.spec.actionLabel
+                            iconName: "rotate-ccw"
+                            size: "small"
+                            enabled: !!Settings.values.customSystemPrompt && Settings.values.customSystemPrompt !== Models.builtInSystemPrompt
+                            onClicked: Settings.set("customSystemPrompt", "")
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -215,41 +258,6 @@ Page {
             HealthRow {
                 rowId: "screenRecording"
                 shown: !!check.id && screenshotRow.enabled
-            }
-        }
-    }
-
-    Reveal {
-        open: page.refines
-
-        Section {
-            title: Schema.row("customSystemPromptEnabled").section
-            caption: page.t.promptCaption
-            SchemaRow { rowId: "customSystemPromptEnabled" }
-            Reveal {
-                open: !!Settings.values.customSystemPromptEnabled
-                SchemaRow {
-                    rowId: "customSystemPrompt"
-                    stacked: true
-                    TextArea {
-                        width: parent.width
-                        mono: true
-                        minHeight: 150
-                        text: Settings.values.customSystemPrompt || Models.builtInSystemPrompt
-                        onEditingFinished: Settings.set("customSystemPrompt", text)
-                    }
-                }
-                SchemaRow {
-                    id: resetPromptRow
-                    rowId: "resetCustomSystemPrompt"
-                    Button {
-                        text: resetPromptRow.spec.actionLabel
-                        iconName: "rotate-ccw"
-                        size: "small"
-                        enabled: !!Settings.values.customSystemPrompt && Settings.values.customSystemPrompt !== Models.builtInSystemPrompt
-                        onClicked: Settings.set("customSystemPrompt", "")
-                    }
-                }
             }
         }
     }

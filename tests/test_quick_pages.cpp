@@ -23,6 +23,7 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QFontDatabase>
 #include <QGuiApplication>
 #include <QImage>
@@ -37,6 +38,7 @@
 #include <QScopeGuard>
 #include <QSGRendererInterface>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QTextDocument>
 
 #include <algorithm>
@@ -81,12 +83,26 @@ void capture(QQuickWindow *window, int index, const QString &step)
     }
     QVERIFY(scroll);
     const auto overflow = [scroll] { return scroll->property("contentHeight").toReal() - scroll->height(); };
-    // A page can grow a little as it lays out at the new height.
-    for (int fit = 0; fit < 3 && (fit == 0 || overflow() > 0); ++fit) {
-        window->resize(1100, std::max(820, int(std::ceil(window->height() + overflow()))));
+    // Waits until the window and the page hold their heights: a window
+    // manager can apply a resize late, and a page can grow a little as it
+    // lays out at the new height, easing there (Grow).
+    const auto settle = [&overflow] {
         QTest::qWait(kSettleMs);
+        for (int wait = 0; wait < 20; ++wait) {
+            const qreal before = overflow();
+            QTest::qWait(50);
+            if (overflow() == before) {
+                return;
+            }
+        }
+    };
+    for (int fit = 0; fit < 5 && (fit == 0 || overflow() > 0); ++fit) {
+        window->resize(1100, std::max(820, int(std::ceil(window->height() + overflow()))));
+        settle();
     }
-    QVERIFY2(overflow() <= 0, qPrintable(QStringLiteral("%1 is cut off by %2 px").arg(step).arg(overflow())));
+    // Under a pixel is the window's whole-pixel height rounding a
+    // fractional page height.
+    QVERIFY2(overflow() < 1, qPrintable(QStringLiteral("%1 is cut off by %2 px").arg(step).arg(overflow())));
     const QString slug = step.toLower().replace(QRegularExpression(QStringLiteral("[^a-z0-9]+")), QStringLiteral("-"));
     const QString file = QStringLiteral("%1-%2-%3.png").arg(QLatin1String(QTest::currentDataTag())).arg(index, 2, 10, QLatin1Char('0')).arg(slug);
     QVERIFY(QDir().mkpath(captureDir()));
@@ -616,6 +632,37 @@ private slots:
         QTRY_VERIFY(!row->property("shown").toBool());
     }
 
+    // CLI Proxy API nothing signs in through is one folded line, its server
+    // inside, with no sign-in state to read as a problem; once a sign-in
+    // uses it, its card shows its state and its server opens.
+    void cliProxyFoldsToOneLineUntilUsed()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        navigation->go(QStringLiteral("accounts"));
+        QQuickItem *server = nullptr;
+        QTRY_VERIFY((server = findItem(main->contentItem(), QStringLiteral("cliproxyServer"))));
+        QQuickItem *card = server;
+        while (card && card->property("serviceId").toString() != QLatin1String("cliproxy")) {
+            card = card->parentItem();
+        }
+        QVERIFY(card);
+        QCOMPARE(server->property("title").toString(), QStringLiteral("CLI Proxy API"));
+        QVERIFY(!server->property("open").toBool());
+        QVERIFY(!card->property("headShown").toBool());
+
+        QuickSettings(&controller).set(QStringLiteral("openAiAuthMode"), QStringLiteral("cliproxy"));
+        QTRY_VERIFY(card->property("headShown").toBool());
+        QCOMPARE(server->property("title").toString(), QStringLiteral("Server"));
+        QVERIFY(server->property("open").toBool());
+    }
+
     // A link to another page, such as Open Accounts under a sign-in, offers
     // the way back above the page it opens, until the person goes anywhere
     // else.
@@ -739,6 +786,44 @@ private slots:
         QTRY_COMPARE(optionIds(), (QStringList{QStringLiteral("oauth"), QStringLiteral("cliproxy")}));
     }
 
+    // While the select stays on Automatic, the sign-in row under the cards
+    // says which source Automatic's check found, as Accounts does.
+    void signInRowNamesWhatAutomaticFound()
+    {
+        // No Codex sign-in, so Automatic finds the environment's key.
+        QTemporaryDir codexHome;
+        QVERIFY(codexHome.isValid());
+        const QByteArray oldCodexPath = qgetenv("SPEECHER_TEST_CODEX_AUTH_PATH");
+        const QByteArray oldKey = qgetenv("OPENAI_API_KEY");
+        const auto restore = qScopeGuard([&] {
+            oldCodexPath.isNull() ? qunsetenv("SPEECHER_TEST_CODEX_AUTH_PATH") : qputenv("SPEECHER_TEST_CODEX_AUTH_PATH", oldCodexPath);
+            oldKey.isNull() ? qunsetenv("OPENAI_API_KEY") : qputenv("OPENAI_API_KEY", oldKey);
+        });
+        qputenv("SPEECHER_TEST_CODEX_AUTH_PATH", QFile::encodeName(codexHome.filePath(QStringLiteral("auth.json"))));
+        qputenv("OPENAI_API_KEY", "sk-test");
+
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("refinementProvider"), QStringLiteral("openai"));
+        settings.set(QStringLiteral("openAiAuthMode"), QStringLiteral("auto"));
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        navigation->go(QStringLiteral("refinement"));
+        QQuickItem *found = nullptr;
+        QTRY_VERIFY((found = findItem(main->contentItem(), QStringLiteral("signInFound"))));
+        QTRY_COMPARE(found->property("text").toString(), QStringLiteral("Using API key from the environment."));
+        QCOMPARE(findItem(main->contentItem(), QStringLiteral("signInSource"))->property("currentId").toString(), QStringLiteral("auto"));
+
+        // A source chosen by hand needs no line.
+        settings.set(QStringLiteral("openAiAuthMode"), QStringLiteral("env"));
+        QTRY_COMPARE(found->property("text").toString(), QString());
+    }
+
     // A search result for a row in a section folded away, such as the
     // Custom Endpoint's while Codex is chosen, opens the section and lands
     // on the row; keypad Enter picks a result as Return does.
@@ -834,11 +919,23 @@ private slots:
         QVERIFY(!row->isVisible());
     }
 
-    // A search for a timing row opens the Microphone page's Advanced group,
-    // which is closed otherwise, and lands on the row.
-    void searchOpensTheMicrophonesAdvancedGroup()
+    // A search for a row in a page's Advanced group, a timing row on
+    // Microphone or the system prompt on Refinement, opens the group, which
+    // is closed otherwise, and lands on the row.
+    void searchOpensAnAdvancedGroup_data()
     {
+        QTest::addColumn<QString>("pageId");
+        QTest::addColumn<QString>("rowId");
+        QTest::newRow("microphone") << QStringLiteral("microphone") << QStringLiteral("preRollMs");
+        QTest::newRow("refinement") << QStringLiteral("refinement") << QStringLiteral("customSystemPromptEnabled");
+    }
+    void searchOpensAnAdvancedGroup()
+    {
+        QFETCH(QString, pageId);
+        QFETCH(QString, rowId);
         ApplicationController controller(true);
+        // Refinement shows its service's settings while a service refines.
+        QuickSettings(&controller).set(QStringLiteral("refinementProvider"), QStringLiteral("openai"));
         TrayIcon tray(&controller);
         QuickFrontEnd ui(&controller, &tray);
         ui.showMainWindow();
@@ -847,13 +944,13 @@ private slots:
         QVERIFY(QTest::qWaitForWindowExposed(main));
         auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         QVERIFY(navigation);
-        navigation->go(QStringLiteral("microphone"));
+        navigation->go(pageId);
         QQuickItem *row = nullptr;
-        QTRY_VERIFY((row = schemaRow(main, QStringLiteral("preRollMs"))));
+        QTRY_VERIFY((row = schemaRow(main, rowId)));
         QTest::qWait(kSettleMs);
         QVERIFY(!row->isVisible());
 
-        navigation->goToRow(QStringLiteral("microphone"), QStringLiteral("preRollMs"));
+        navigation->goToRow(pageId, rowId);
         QTRY_VERIFY(row->isVisible() && row->height() > 0);
         QTRY_COMPARE(navigation->pendingRow(), QString());
     }
@@ -947,6 +1044,34 @@ private slots:
         QTRY_VERIFY(helpShown(QStringLiteral("Live text off, sounds on")));
     }
 
+    // Under the dictation shortcut's keys, that clicking them changes it;
+    // with no keys, or while it listens for new ones, the field itself says
+    // what to do, and what pressing them does is the cards' to say. The test
+    // gives the field its keys, as a desktop may pick them itself.
+    void dictationShortcutSaysItCanBeChanged()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        navigation->go(QStringLiteral("dictation"));
+        QQuickItem *caption = nullptr;
+        QQuickItem *recorder = nullptr;
+        QTRY_VERIFY((caption = findItem(main->contentItem(), QStringLiteral("shortcutCaption"))));
+        QVERIFY((recorder = findItem(main->contentItem(), QStringLiteral("dictationShortcut"))));
+        recorder->setProperty("keys", QStringList{QStringLiteral("Ctrl"), QStringLiteral("Alt"), QStringLiteral("D")});
+        QTRY_COMPARE(caption->property("text").toString(), QStringLiteral("Click to change"));
+        recorder->setProperty("listening", true);
+        QTRY_COMPARE(caption->property("text").toString(), QString());
+        recorder->setProperty("listening", false);
+        recorder->setProperty("keys", QStringList{});
+        QTRY_COMPARE(caption->property("text").toString(), QString());
+    }
+
     // Clicking another profile, or pressing it with an assistive technology,
     // saves the field being edited to the profile it was edited for, before
     // the editor shows the other one.
@@ -1023,6 +1148,35 @@ private slots:
     // At the window's narrowest, an app match's Writing Profile choice ends
     // before its Edit and Delete buttons, so a click on it can't delete the
     // match.
+    // Writing profiles and App recognition count app matches in the same
+    // words: how many, and how many of them are yours.
+    void appMatchCountsReadAlike()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QObject *library = qmlEngine(main)->singletonInstance<QObject *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Library"));
+        QVERIFY(library);
+        const auto count = [library](int total, int own) {
+            QVariant text;
+            QMetaObject::invokeMethod(library, "matchCount", Q_RETURN_ARG(QVariant, text), Q_ARG(QVariant, total), Q_ARG(QVariant, own));
+            return text.toString();
+        };
+        QCOMPARE(count(22, 0), QStringLiteral("22 app matches, all built in"));
+        QCOMPARE(count(3, 1), QStringLiteral("3 app matches, 1 of yours"));
+        QCOMPARE(count(1, 1), QStringLiteral("1 app match, all yours"));
+        // With none of your own, every count says so.
+        QVERIFY(library->property("recognitionRulesText").toString().endsWith(QLatin1String(" app matches, all built in")));
+        QVariant work;
+        QMetaObject::invokeMethod(library, "profileApps", Q_RETURN_ARG(QVariant, work), Q_ARG(QVariant, QStringLiteral("work")));
+        QVariant workCount;
+        QMetaObject::invokeMethod(library, "profileMatches", Q_RETURN_ARG(QVariant, workCount), Q_ARG(QVariant, work));
+        QVERIFY(workCount.toString().endsWith(QLatin1String(" app matches, all built in")));
+    }
+
     void appMatchChoicesClearTheirButtons()
     {
         ApplicationController controller(true);

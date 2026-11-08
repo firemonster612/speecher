@@ -20,7 +20,8 @@ Page {
         recordsFrom: name => "Records from " + name,
         liveText: on => on ? "Live text on" : "Live text off",
         sounds: on => on ? "sounds on" : "sounds off",
-        chooseShortcut: "Click to choose a shortcut"
+        chooseShortcut: "Click to choose a shortcut",
+        changeShortcut: "Click to change"
     })
 
     // How shortcuts reach Speecher: first where the command is the way in,
@@ -45,9 +46,10 @@ Page {
     Reveal { open: page.noShortcuts; Reach {} }
 
     // The dictation shortcut, big: the page's one picture, and where it is
-    // set: clicking the keys records new ones. Under them, what pressing it
-    // does, or why the last keys were refused. With no shortcut to be had,
-    // the command above runs one dictation, so it folds away with the rows.
+    // set: clicking the keys records new ones. Under them, that they can be
+    // clicked, or why the last keys were refused; the cards below say what
+    // pressing them does. With no shortcut to be had, the command above runs
+    // one dictation, so it folds away with the rows.
     Reveal {
         open: !page.noShortcuts
         Plate {
@@ -59,6 +61,7 @@ Page {
 
             ShortcutRecorder {
                 id: recorder
+                objectName: "dictationShortcut"
                 rowId: "globalShortcut"
                 size: "large"
                 emptyText: page.t.chooseShortcut
@@ -69,12 +72,13 @@ Page {
                 Accessible.name: hero.spec.label
             }
             MorphText {
+                objectName: "shortcutCaption"
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.top: recorder.bottom
                 anchors.topMargin: Theme.space3
                 width: Math.min(implicitWidth, parent.width - Theme.space6 * 2)
                 elide: Text.ElideRight
-                text: hero.refused || Schema.valueHelp(Schema.row("shortcutBehavior"), Settings.values.shortcutBehavior)
+                text: hero.refused || (recorder.keys.length > 0 && !recorder.listening ? page.t.changeShortcut : "")
                 tone: hero.refused ? "negative" : "secondary"
             }
         }

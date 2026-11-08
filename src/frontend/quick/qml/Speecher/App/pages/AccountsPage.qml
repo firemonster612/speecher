@@ -9,7 +9,7 @@ import "app"
 
 // The services side by side, each a card with its state on top so every
 // sign-in reads at a glance, and CLI Proxy API below with the account files
-// it found, its settings folded away until a sign-in uses it.
+// it found, folded to one line until a sign-in uses it.
 Page {
     id: page
     // A search for the API key while another sign-in is chosen, which hides
@@ -85,8 +85,10 @@ Page {
         id: cliproxy
         serviceId: "cliproxy"
         // Its account files matter once a sign-in reads them; until then
-        // the card offers only its server, folded away.
+        // the card is one folded line holding its server, with no state to
+        // read as a problem.
         readonly property bool used: service.inUse || !!Settings.values.cliproxyOauthDir
+        headShown: used
 
         // The account files it found, each with its own state.
         RowList {
@@ -112,8 +114,8 @@ Page {
         Disclosure {
             id: server
             objectName: "cliproxyServer"
-            title: Schema.row("cliproxyBaseUrl").foldedLabel
-            help: Schema.row("cliproxyBaseUrl").foldedHelp
+            title: cliproxy.used ? Schema.row("cliproxyBaseUrl").foldedLabel : cliproxy.service.name
+            help: cliproxy.used ? Schema.row("cliproxyBaseUrl").foldedHelp : Schema.row("cliproxyBaseUrl").unusedHelp
             trailingText: Settings.values.cliproxyBaseUrl || ""
             open: cliproxy.used
             SearchLanding {

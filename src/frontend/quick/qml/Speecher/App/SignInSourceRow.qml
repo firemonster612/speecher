@@ -9,7 +9,8 @@ import Speecher.Wording
 // the problem shows. While it isn't ready the row says how to sign in or
 // what went wrong in one plain sentence, with Check again and, behind
 // Details, the failure in the words of the part that failed. Open Accounts
-// is there in every state. The chosen card already says the state.
+// is there in every state, and under the select, what Automatic is using
+// once a check found it. The chosen card already says the state.
 SettingRow {
     id: row
 
@@ -19,7 +20,7 @@ SettingRow {
     // The failure as the part that failed put it, or "".
     property string details
     signal recheck()
-    readonly property var source: ModelText.signInSource(serviceId) || { rowId: "", options: [], choice: "" }
+    readonly property var source: ModelText.signInSource(serviceId) || { rowId: "", options: [], choice: "", found: "" }
 
     stacked: !ready
     Column {
@@ -46,6 +47,17 @@ SettingRow {
                 anchors.verticalCenter: parent.verticalCenter
             }
             AccountsLink { rowId: row.source.rowId; visible: rowId !== ""; anchors.verticalCenter: parent.verticalCenter }
+        }
+        Reveal {
+            open: row.source.found !== ""
+            Txt {
+                objectName: "signInFound"
+                width: parent.width
+                text: row.source.found ? Schema.row(row.source.rowId).autoFound.arg(row.source.found) : ""
+                variant: "small"
+                tone: "secondary"
+                wrapMode: Text.WordWrap
+            }
         }
         ErrorDetails { text: row.ready ? "" : row.details }
     }

@@ -20,7 +20,7 @@ var pages = [
       subtitleNoShortcuts: "Start a dictation with the speecher command, and pause or cancel it with the popup's buttons.",
       keywords: "dictate start shortcut hotkey keybinding push to talk toggle hold cancel pause" },
     { id: "microphone", parent: "dictation", title: "Microphone", icon: "mic", file: "MicrophonePage.qml",
-      subtitle: "The microphone Speecher records from, and how much audio each dictation keeps.",
+      subtitle: "The microphone Speecher records from, and a test that it hears you.",
       keywords: "input device audio recording silence level test" },
     { id: "feedback", parent: "dictation", title: "Popup & sounds", icon: "message-square-text", file: "FeedbackPage.qml",
       subtitle: "What you see and hear while you dictate. The preview follows your choices.",

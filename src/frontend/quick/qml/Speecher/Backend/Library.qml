@@ -96,15 +96,25 @@ LibraryLists {
         return own.concat(builtIn).filter(r => r.profile === id).map(r => r.match)
     }
     // Where a profile is used, given its app matches and whether it is the
-    // one for apps no match names: "22 app matches." Matches are patterns
-    // such as desktop IDs, not installed apps, so the line counts them as
-    // matches; profileMatches(apps) is the part of it that links to them.
+    // one for apps no match names: "22 app matches, all built in." Matches
+    // are patterns such as desktop IDs, not installed apps, so the line
+    // counts them as matches; profileMatches(apps) is the part of it that
+    // links to them.
     function profileUse(apps, isFallback) {
         const used = apps.length === 0 ? "" : profileMatches(apps) + "."
         if (isFallback) return used.length ? used + " Also used for apps Speecher doesn't recognize." : "Used for every app Speecher doesn't recognize."
         return used.length ? used : "No app matches use it yet."
     }
-    function profileMatches(apps) { return apps.length ? Words.count(apps.length, "app match", "app matches") : "" }
+    function profileMatches(apps) {
+        return apps.length ? matchCount(apps.length, apps.filter(m => recognitionRules.some(r => r.match === m)).length) : ""
+    }
+    // A count of app matches, worded alike on Writing profiles and App
+    // recognition, with how many of them are yours: "22 app matches, all
+    // built in", "3 app matches, 1 of yours".
+    function matchCount(total, own) {
+        const split = own === 0 ? "all built in" : own === total ? "all yours" : own + " of yours"
+        return Words.count(total, "app match", "app matches") + ", " + split
+    }
     // The question before deleting a profile, and what deleting it changes.
     function profileDeleteQuestion(name) { return "Delete " + name + "?" }
     function profileDeleteDetail(apps, isFallback) {
@@ -283,9 +293,9 @@ LibraryLists {
         builtInMatchTip: "Click to add your own match for it."
     })
 
-    // "2 of yours, 14 built in"
-    readonly property string recognitionRulesText: recognitionRules.length + " of yours, " + builtInRecognitionRules.length + " built in"
-    readonly property string builtInMatchesCount: Words.count(builtInRecognitionRules.length, "match", "matches")
+    // Every app match, yours and built in: "16 app matches, 2 of yours".
+    readonly property string recognitionRulesText: matchCount(recognitionRules.length + builtInRecognitionRules.length, recognitionRules.length)
+    readonly property string builtInMatchesCount: Words.count(builtInRecognitionRules.length, "app match", "app matches")
     // What a built-in match sets: "Chat, Work profile".
     function builtInMatchSummary(rule) {
         return [rule.category ? categoryLabel(rule.category) : "",
