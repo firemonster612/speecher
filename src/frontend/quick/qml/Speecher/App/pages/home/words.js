@@ -48,15 +48,14 @@ var text = {
 
     setShortcut: "Set shortcut",
     privacyNote: "Insights are stored only on this computer and never sent anywhere.",
-    insightsSettings: "Insights settings",
+    insightsSettings: "Privacy & data",
     offTitle: "Insights are off",
-    offBody: "Speecher keeps nothing about new dictation. What it kept stays on this computer until you clear it in Insights settings.",
+    offBody: "Speecher keeps nothing about new dictation. What it kept stays on this computer until you clear it in Privacy & data.",
     emptyTitle: "No dictation yet",
     emptyBody: "Counts, streaks and your busiest hours appear here after your first dictation.",
     history: "History"
 }
 
-// History's line on Home: "1,284 dictations, searchable".
 // "Recording a call, 12:03"
 function recordingLine(ms) {
     const s = Math.floor(ms / 1000)
@@ -64,7 +63,9 @@ function recordingLine(ms) {
     return text.recordingCall + ", " + (s < 3600 ? mmss : Math.floor(s / 3600) + ":" + mmss.padStart(5, "0"))
 }
 
-function historyLine(kept) { return _count(kept, "dictation", "dictations") + ", searchable" }
+// History's line on Home: "1,284 entries, searchable". Recordings and files
+// count too, so not "dictations".
+function historyLine(kept) { return _count(kept, "entry", "entries") + ", searchable" }
 // What History keeps while it holds no words to search.
 function historyKeeps(keeps) {
     return keeps === "nothing" ? "Keeping nothing" : keeps === "stats" ? "Keeping stats only" : "Nothing kept yet"
