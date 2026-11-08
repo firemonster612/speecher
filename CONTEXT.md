@@ -29,8 +29,8 @@ The desktop application and editable control selected when a Dictation Session s
 _Avoid_: Destination, focused app
 
 **Writing Profile**:
-How refinement treats a Target, chosen by its App or App Type. A profile is built-in (Work, Email, Personal, AI coding, Other) or user-defined, and sets a Cleanup Level, a Tone, Additional Instructions and an optional output language that refinement translates into. It may also name a speech and a refinement Service, with a model, that it tries first, ahead of the page's Service Order; unset, it is the same as the page's. AI coding wins over a terminal's own identity when a coding agent is detected inside it.
-_Avoid_: Style preset, persona
+How refinement treats a Target, chosen by its App or App Type, else Other apps' profile. A profile is built-in (Work, Email, Personal, AI coding, Other) or user-defined, and sets a Cleanup Level, a Tone, Additional Instructions and an optional output language that refinement translates into. It may also name a speech and a refinement Service, with a model, that it tries first, ahead of the page's Service Order; unset, it is the same as the page's. AI coding wins over a terminal's own identity when a coding agent is detected inside it.
+_Avoid_: Style preset, persona, Writing Profile Override, default writing profile
 
 **Cleanup Level**:
 How much refinement may rewrite the Raw Transcript: None, Light, Medium, High, or a user-defined level built on one of them.
@@ -49,16 +49,20 @@ One way Speecher gets words out, which the person turns on or off: Insert throug
 _Avoid_: Output method, paste mode
 
 **App**:
-An application the person set something for, picked from installed apps or apps they dictated into. It holds an App Type, a Writing Profile and a Pasting choice, each "Same as" what its App Type gives until changed. An App is recognized by its ids (desktop file id, bundle id or program name), or, for web apps and programs in a terminal, by text its name or window title contains; a window title never sets the App Type.
-_Avoid_: App rule, app match, recognition rule, exception
+An application the person set something for, picked from installed apps or apps they dictated into. It holds an App Type, a Writing Profile, a Pasting choice and a History choice, each "Same as" what its App Type gives until changed. An App is recognized by its ids (desktop file id, bundle id or program name), or, for web apps and programs in a terminal, by text its name or window title contains; a window title never sets the App Type.
+_Avoid_: App rule, app match, recognition rule, application recognition, exception
 
 **App Type**:
-The kind of app a Target is: Terminal, Browser, Email, Office, Code editor, AI coding, or Other. Speecher sorts common apps into them from a built-in list, and each carries a Writing Profile and a Pasting choice its apps follow. Other apps' profile is what any app Speecher doesn't recognize writes with.
+The kind of app a Target is: Terminal, Browser, Email, Office, Code editor, AI coding, or Other. Speecher sorts common apps into them from a built-in list, and each carries a Writing Profile, a Pasting choice and a History choice its apps follow. Other apps' profile is what any app Speecher doesn't recognize writes with.
 _Avoid_: Category, app category
 
 **Pasting choice**:
 How an App or App Type narrows the Delivery Steps: the steps as they are, Terminal keys, Skip paste keys, or Clipboard only. It never turns on a step that is off. An app's own choice wins, then Terminals' for anything running in a terminal, then its App Type's. The Pasting page lists those that differ from the steps, read-only, and Apps changes them.
 _Avoid_: Paste Rule, exception, output route
+
+**History choice**:
+How an App or App Type lowers What Speecher Keeps for its dictations: Stats only or Nothing, never more than What Speecher Keeps. An app's own choice wins, then its App Type's, then Other apps'. Privacy & data lists the apps and types that keep less, read-only, and Apps changes them.
+_Avoid_: Excluded app, blocklist, private app
 
 **Vocabulary Entry**:
 One entry of the Vocabulary, Speecher's one list of what it should spell or replace. A spelling is a word or phrase Speecher keeps spelled the person's way: as a key term the speech service takes it as a hint, and refinement reads every spelling, with a context that says what it means and when it applies. A replacement is a spoken phrase and the exact text written in its place, several lines included, where {date} and {time} become today's date and the time. Any entry may be limited to some Writing Profiles and some Apps; anywhere else neither the speech service nor refinement gets it, and no replacement is made. Of two replacements for one phrase, the person's own wins over a Learned Correction, and the narrower one, limited to an App, then to a profile, wins over the wider.
@@ -81,8 +85,12 @@ One dictation, selection edit or transcribed file in History: its time, length, 
 _Avoid_: Record, item, transcript (alone)
 
 **What Speecher Keeps**:
-How much of each dictation History holds: Nothing, Stats, Text, or Text and audio. A new install keeps Text; an upgrade from Keep insights keeps Stats, or Nothing where insights were off. An App or App Type may lower it, never raise it, and a password field always keeps Stats. Text and audio are deleted after their days (90 and 7 by default), and the stats stay; a cancelled dictation keeps nothing.
+How much of each dictation History holds, set in General's Privacy & data: Nothing, Stats, Text, or Text and audio. A new install keeps Text; an upgrade from Keep insights keeps Stats, or Nothing where insights were off. An App or App Type may lower it with its History choice, never raise it, and a password field always keeps Stats. Text and audio are deleted after their days (90 and 7 by default), and the stats stay; a cancelled dictation keeps nothing.
 _Avoid_: History mode, logging level, privacy level, Keep insights
+
+**Privacy & data**:
+The section of General that holds every choice about what Speecher keeps or shares, each in one place: What Speecher Keeps and its days, the History choices that keep less, Clear history, and links to what refinement sees (the text around the cursor and a screenshot, set on Refinement) and to learning Learned Corrections (set on Vocabulary). The last dictation's text stays in memory until Speecher quits, whatever History keeps, for Paste Again and `speecher last`.
+_Avoid_: Insights section, privacy settings (as several places)
 
 **Paste Again**:
 Delivering the last dictation's text once more into the app in front, through the Delivery Steps and that app's Pasting choice, from History, the tray or its optional Global Shortcut. It takes History's newest dictation while History keeps text, else the last one this run, and never one into a password field.

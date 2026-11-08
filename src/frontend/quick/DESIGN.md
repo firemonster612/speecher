@@ -76,7 +76,9 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   core's `problem` sentence, their ratings as `{ measure, value }` bars, the
   Local Model catalog with fits, speeds, downloads and Speed Tests, the
   hardware, the Local Runners and the Ollama pull, and both servers'
-  checks. Each speech service and Local Model
+  checks. It reads the settings as `Settings` shows them
+  (`QuickSettings::shown`), as System does, so setup's draft shows in the
+  services' states and the Spoken Language warning. Each speech service and Local Model
   carries the language codes it listens for, from core's lists
   (`SpokenLanguages`, the catalog). `QuickModels.h` documents each field.
   `ModelText` (in Speecher.App) words all of it and looks entries up by id,
@@ -101,7 +103,8 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   History keeps is the `historyKeeps` row; `pages/history/HistoryWords.js`
   words all of it.
 - `Apps` is core's Apps and App Types (`core/Apps`) as the Apps page shows
-  them: each App with what it sets, what core makes of it (`effective`) and
+  them: each App with what it sets (its type, profile, Pasting and History
+  choices), what core makes of it (`effective`) and
   what each value would be without its own (`inherited`, with where from),
   so the editor's "Same as …" options agree with dictation; the App Types,
   Other apps' profile always set; the installed apps the platform's
@@ -118,7 +121,8 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   with an entry that leaves a field out keeps that field's saved value.
   `ModelText` (`entries`, `order`, `entry`, `mainSpeech`, `mainRefiner`,
   `refiners`, `withFirst`) is how pages read them; nothing else names a
-  first service. `Settings.act("useCliproxyServer")` points the refinement
+  first service. An order's Add service shows each service's ratings
+  (`ModelText.ratingLine`, from `Models`), so they can be compared there. `Settings.act("useCliproxyServer")` points the refinement
   server at the CLI Proxy API server a sign-in names.
 - `Accounts` shows the daemon's `Accounts` (`app/Accounts`), which runs
   each service's sign-in check on a worker and queues secret writes; a
@@ -410,6 +414,21 @@ Choosing:
   lands on that page filtered to it (`vocabularyFor:profile/<id>`,
   `vocabularyFor:app/<id>`), and a search for one entry opens it
   (`vocab:<id>`).
+- Every choice about what Speecher keeps or shares has one home, and
+  General's Privacy & data gathers them: it edits What Speecher Keeps, its
+  days and Clear history itself, lists the Apps and App Types whose
+  History choice keeps less (read-only, each opening in Apps, where the
+  editor's History row changes it, as Pasting lists the apps that paste
+  differently), and links to what refinement sees (Refinement) and to
+  learning from edits (Vocabulary), each saying how it is set there. A
+  link row never copies the control it leads to.
+- Search (`SearchPalette`) finds pages, schema rows (by label, keywords,
+  section, options and help, `Schema.search`), the person's Apps
+  (`appentry:<id>`) and Vocabulary entries (`vocab:<id>`). While History
+  keeps text, its last result is Search History for the words, which
+  opens History with them in its search (`historyFind:<words>`). A result
+  lands through `Navigation.goToRow`, so every id it offers is a schema
+  row, one of those prefixes, or a page.
 - `SettingRow` for settings, `ListRow` for data. Rows start their content
   `Theme.rowInset` in from the card and end it the same distance from the
   right.
@@ -518,9 +537,14 @@ Layout:
   shortcuts on Dictation, accessibility and the virtual keyboard on
   Pasting, as the needs of the delivery steps, and Screen Recording (macOS,
   while screenshots are on) on Refinement. Home's session card lists
-  the checks that apply, grouped as what dictation needs (a check marked
+  the checks that apply in its `Readiness` card (`pages/home`), grouped as
+  what dictation needs (a check marked
   `needed`, a microphone, a working speech service, a way to deliver the
-  words) and what it works without, each row opening its page. Delivery is
+  words) and what it works without, each row opening its page: a speech
+  service that can't run opens its Services card and has a Fix that opens
+  that card in a `FixSheet`, and accessibility, listed only while no
+  delivery step that is on relies on it, opens Apps, which it tells apart.
+  Delivery is
   one Pasting row naming what is missing, with the first fix; the virtual
   keyboard never has a row of its own, and accessibility has one only
   while no delivery step that is on relies on it. While all pass the card
@@ -529,8 +553,9 @@ Layout:
   own sections and writes the same settings: Speech to text's Spoken
   language and Service Order, Microphone's test and Input card, Pasting's
   Steps, Refinement's sample, Clean up my words and Service Order, and
-  Dictation's shortcut recorder and what pressing it does; Ready lists the
-  steps still open. A step has no control or wording of its own: the part
+  Dictation's shortcut recorder and what pressing it does; Ready shows
+  Home's `Readiness` card over the draft, where a row with a step of its
+  own goes back to that step. A step has no control or wording of its own: the part
   a page shares with setup lives in `pages/<area>/` (or `App/` when two
   areas share it, as `ServiceOrderSection` does) and both use it. What the
   steps choose waits in `Settings`' draft until Finish or Set up later
@@ -648,7 +673,7 @@ Choosing:
 - `CompactChoice { options; currentId; stretch; chosen(id) }`: segments for up to four options, a Select for more.
 - `OptionCards { options; currentId; activated(id) }`: a few choices as cards with help. `ChoiceCard` is its card.
 - `Chip { text; iconName; checkable }`: small choices or snippet buttons in a Flow.
-- `OrderedList { ids; options; statusOf; rowControl; rowDetail; minCount; maxCount; addLabel; emptyText }`: an ordered list to drag, reorder, add to and remove from; `rowControl` puts a control at each row's end, such as a Fix, and `rowDetail` a line of choices under its name; `minCount` rows always stay.
+- `OrderedList { ids; options; statusOf; rowControl; rowDetail; minCount; maxCount; addLabel; emptyText }`: an ordered list to drag, reorder, add to and remove from; `rowControl` puts a control at each row's end, such as a Fix, and `rowDetail` a line of choices under its name; `minCount` rows always stay. An option's `help` shows under it in the add choices.
 - `EditableList { items; emptyTitle; emptyText; formOpen }`: things a person made, with edit and delete.
 
 Input:
