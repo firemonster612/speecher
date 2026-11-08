@@ -28,7 +28,7 @@ Button {
 
     Menu {
         id: menu
-        width: 220
+        minWidth: 220
         items: root.items
         onPicked: id => root.picked(id)
     }

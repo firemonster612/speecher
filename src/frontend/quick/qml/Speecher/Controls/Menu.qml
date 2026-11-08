@@ -20,7 +20,9 @@ MenuPopup {
         picked(entry.id)
     }
 
-    width: 260
+    // Wide enough for its items, and at least minWidth.
+    property int minWidth: 200
+    width: fitWidth(items, minWidth)
     implicitHeight: Math.min(list.contentHeight + topPadding + bottomPadding, maxHeight)
     focus: true
     // A press on what opened the menu is left to its toggle; closing on it

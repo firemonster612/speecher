@@ -28,6 +28,7 @@ Loader {
         id: downloaded
         InheritSelect {
             placeholder: Words.choose
+            emptyText: Schema.row("speechLocalModel").emptyHelp
             inheritedText: field.inheritedText
             choices: field.choices
             currentId: field.value

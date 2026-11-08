@@ -30,7 +30,7 @@ MenuPopup {
     // stays open when item goes, as a row's link does when its list
     // changes and the rows are made again.
     function openFrom(item) {
-        width = Math.max(item.width, 280)
+        width = fitWidth(languages, Math.max(item.width, 280), true)
         const under = item.mapToItem(parent, 0, item.height + 6)
         x = align === "right" ? under.x + item.width - width : under.x
         y = under.y
@@ -64,7 +64,7 @@ MenuPopup {
         close()
     }
 
-    width: Math.max(parent ? parent.width : 0, 280)
+    width: fitWidth(languages, Math.max(parent ? parent.width : 0, 280), true)
     implicitHeight: implicitContentHeight + topPadding + bottomPadding
     // Kept inside the window, over what opened it where there is no room
     // below.

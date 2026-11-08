@@ -15,7 +15,7 @@ T.ItemDelegate {
     property bool current: false
 
     readonly property bool _leads: iconName.length > 0 || flagCode.length > 0
-    implicitWidth: leftPadding + rightPadding + (_leads ? 24 : 0) + labelRow.implicitWidth + 24
+    implicitWidth: leftPadding + rightPadding + (_leads ? 24 : 0) + labelText.implicitWidth + (badgeTag.visible ? badgeTag.implicitWidth + 6 : 0) + 24
     implicitHeight: Math.max(34, textColumn.implicitHeight + 14)
     leftPadding: 10
     rightPadding: 10
@@ -50,11 +50,19 @@ T.ItemDelegate {
             width: parent.width - x - 24
             anchors.verticalCenter: parent.verticalCenter
             spacing: 2
+            // A label longer than the menu ends in an ellipsis before the
+            // badge and the check rather than running under them.
             Row {
                 id: labelRow
                 spacing: 6
-                Txt { text: item.text; variant: "label" }
-                Badge { visible: item.badge.length > 0; text: item.badge; anchors.verticalCenter: parent.verticalCenter }
+                Txt {
+                    id: labelText
+                    text: item.text
+                    variant: "label"
+                    width: Math.min(implicitWidth, textColumn.width - (badgeTag.visible ? badgeTag.width + labelRow.spacing : 0))
+                    elide: Text.ElideRight
+                }
+                Badge { id: badgeTag; visible: item.badge.length > 0; text: item.badge; anchors.verticalCenter: parent.verticalCenter }
             }
             Txt {
                 visible: item.help.length > 0

@@ -735,7 +735,7 @@ Choosing:
 
 - `Switch`, `CheckBox`, `Slider { format }`.
 - `SegmentedControl { options; currentId; activated(id) }`: two to four short choices in a row.
-- `Select { options; currentId; placeholder; chosen(id) }`: a dropdown.
+- `Select { options; currentId; placeholder; emptyText; chosen(id) }`: a dropdown. Its menu, like every menu, is as wide as its widest option (up to `Theme.menuMaxWidth`, past which a label elides before the check); with no options it says `emptyText`.
 - `InheritSelect { inheritedText; choices; currentId; chosen(id) }`: the Select for a value a narrower place may change. Its first option, id "", is `inheritedText`, the wider place's value as `Words.sameAs(place, value)` words it, marked with a link; `choices` follow. Without `inheritedText` it is a plain Select, for the widest place.
 - `LanguageSelect { options; currentId; shownId; placeholder; searchText; clearText; emptyText; chosen(id) }`: the current language's flag and name, opening a `LanguagePopover` to choose from. `shownId` is what the button shows when the checked option stands for another language, as a later speech service's "Same as Spoken language" does.
 - `LanguagePopover { languages; currentId; choosing; searchText; clearText; emptyText; align; openFrom(item); chosen(id) }`: languages with their flags under a search field that filters by English name, own name or code; arrows, Return and Escape. `choosing` checks `currentId` and picks; without it the list only shows. It grows from what opened it, as menus do. An option's `icon` stands in for the flag (Automatic).
@@ -754,7 +754,7 @@ Actions and menus:
 
 - `Button { variant; size; iconName; trailingIcon; trailing; busy; tooltip }`, `IconButton { iconName; tooltip }`, `TextLink { text; iconName; variant; quiet }` for a link in a line of text; `quiet` is secondary ink rather than pencil, for a page's path in its title. `LinkedText { plainText; link; activated() }` is a Txt with one part of it a link (Tab reaches it, and a click goes no further than the link). `trailing` ends the button with an item, such as the `KeyCombo { size: "small" }` of its key.
 - `CopyButton { text; tooltip; copiedText; copied() }`: icon-only without text; the caller copies on `copied`.
-- `Menu { items; currentId; picked(id) }`: a menu declared inside what opens it. `MenuButton { label; items; confirm(text) }` is a Button with one. `MenuItem` (an icon or a language's `flagCode`) and `MenuPopup` are their parts, shared with Select and LanguagePopover.
+- `Menu { items; currentId; minWidth; picked(id) }`: a menu declared inside what opens it, as wide as its items need and at least `minWidth`. `MenuButton { label; items; confirm(text) }` is a Button with one. `MenuItem` (an icon or a language's `flagCode`) and `MenuPopup` are their parts, shared with Select and LanguagePopover.
 
 Status and feedback:
 

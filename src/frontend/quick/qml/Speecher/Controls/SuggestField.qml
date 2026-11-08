@@ -33,7 +33,7 @@ TextField {
 
     Menu {
         id: menu
-        width: Math.max(field.width, 240)
+        minWidth: Math.max(field.width, 240)
         items: field.suggestions
         currentId: field.text
         onPicked: id => {

@@ -18,7 +18,6 @@ Reveal {
         onClicked: menu.open()
         Menu {
             id: menu
-            width: 240
             items: [{ id: "disable", label: "Stop keeping on", icon: "power-off",
                       help: "Turns off when you sign out. Chromium apps stop once restarted." }]
             onPicked: System.disablePermanentAccessibility()

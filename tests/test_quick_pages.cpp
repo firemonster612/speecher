@@ -1545,6 +1545,74 @@ private slots:
         QCOMPARE(navigation->returnTo(), QStringLiteral("pasting"));
     }
 
+    // A dropdown's menu is as wide as its options need, so a long "Same as
+    // …" shows whole beside its check, and one with no options says why
+    // rather than opening as an empty sliver.
+    void dropdownsShowTheirOptionsWhole()
+    {
+        ApplicationController controller(true);
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.apps.apps = {test::idApp(QStringLiteral("org.example.FooEditor"))};
+            return true;
+        });
+        QuickSettings(&controller).set(QStringLiteral("speechServices"),
+                                       test::serviceOrder({QStringLiteral("claude"), QStringLiteral("local")}));
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        const auto popupOf = [](QQuickItem *select) { return select->property("popup").value<QObject *>(); };
+        const auto rows = [](QObject *popup) {
+            auto *list = popup->property("contentItem").value<QQuickItem *>();
+            auto *content = list ? list->property("contentItem").value<QQuickItem *>() : nullptr;
+            return content ? content->childItems() : QList<QQuickItem *>();
+        };
+        QQuickItem *pasting = nullptr;
+        QQuickItem *model = nullptr;
+        runSteps({
+            {QStringLiteral("an App's Pasting menu"), [&] {
+                 navigation->goToRow(QStringLiteral("apps"), QStringLiteral("appentry:app:org.example.FooEditor"));
+                 QTRY_VERIFY((pasting = findItem(main->contentItem(), QStringLiteral("appPasting"))));
+                 QTRY_VERIFY(pasting->isVisible());
+                 QVERIFY(QMetaObject::invokeMethod(popupOf(pasting), "open"));
+                 QTRY_VERIFY(popupOf(pasting)->property("opened").toBool());
+                 const QList<QQuickItem *> items = rows(popupOf(pasting));
+                 QVERIFY(!items.isEmpty());
+                 for (QQuickItem *item : items) {
+                     if (!item->isVisible()) {
+                         continue;
+                     }
+                     QVERIFY2(item->width() >= item->implicitWidth(),
+                              qPrintable(item->property("text").toString() + QStringLiteral(" is cut short")));
+                 }
+             }},
+            {QStringLiteral("This computer's model picker with nothing downloaded"), [&] {
+                 QVERIFY(QMetaObject::invokeMethod(popupOf(pasting), "close"));
+                 navigation->go(QStringLiteral("speech"));
+                 QTRY_VERIFY((model = [&]() -> QQuickItem * {
+                     QList<QQuickItem *> items{main->contentItem()};
+                     while (!items.isEmpty()) {
+                         QQuickItem *item = items.takeLast();
+                         items += item->childItems();
+                         if (item->objectName() == QLatin1String("serviceModel") && item->property("service").toString() == QLatin1String("local")) {
+                             return item->property("item").value<QQuickItem *>();
+                         }
+                     }
+                     return nullptr;
+                 }()));
+                 QVERIFY(!model->property("emptyText").toString().isEmpty());
+                 QVERIFY(QMetaObject::invokeMethod(popupOf(model), "open"));
+                 QTRY_VERIFY(popupOf(model)->property("opened").toBool());
+                 QVERIFY(popupOf(model)->property("height").toReal() > 40);
+             }},
+        }, main);
+        QVERIFY(QMetaObject::invokeMethod(popupOf(model), "close"));
+    }
+
     // A saved App is found by its name or what it is recognized by, and the
     // result opens it on Apps.
     // Your own writing profiles, tones and cleanup levels are found by name:

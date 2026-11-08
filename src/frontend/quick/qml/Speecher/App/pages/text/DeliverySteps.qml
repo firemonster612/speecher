@@ -31,7 +31,6 @@ Section {
                 onClicked: keyboardMenu.open()
                 Menu {
                     id: keyboardMenu
-                    width: 240
                     items: [
                         { id: "disable", label: "Disable in Speecher", icon: "power-off", help: "Keeps the setup for later." },
                         { id: "remove", label: "Remove setup", icon: "trash-2", help: "Asks for administrator permission." }

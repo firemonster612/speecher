@@ -169,7 +169,6 @@ Column {
                 onClicked: more.open()
                 Menu {
                     id: more
-                    width: 200
                     items: [root.opensReader ? { id: "open", label: T.text.open, icon: "file-text" }
                                              : { id: "paste", label: T.text.pasteAgain, icon: "clipboard-paste" },
                             { id: "delete", label: T.text.delete_, icon: "trash-2" }]
