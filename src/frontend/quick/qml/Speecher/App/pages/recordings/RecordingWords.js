@@ -14,8 +14,6 @@ var text = {
     saved: "Saved",
     recording: "Recording",
     openSpeech: "Open Speech to text",
-    runSetup: "Run setup",
-    setupFirst: "Recording waits until setup is finished.",
     openMicrophone: "Open Microphone",
     cancel: "Cancel",
     changes: "Change for recordings",

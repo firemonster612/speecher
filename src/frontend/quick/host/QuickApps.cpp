@@ -476,6 +476,10 @@ QString QuickApps::update(const QString &id, const QVariantMap &patch)
             for (auto it = patch.cbegin(); it != patch.cend(); ++it) {
                 if (it.key() == u"type") {
                     app.type = optionalFrom<AppCategory>(it.value(), appCategoryFromName);
+                    // A type the person chose takes that type's profile, as
+                    // for any App; only a migrated rule's type left it to the
+                    // catalog.
+                    app.catalogPicksProfile = false;
                 } else if (it.key() == u"profile") {
                     app.writingProfile = optionalFrom<QString>(it.value(), [](const QString &v) { return v; });
                 } else if (it.key() == u"history") {

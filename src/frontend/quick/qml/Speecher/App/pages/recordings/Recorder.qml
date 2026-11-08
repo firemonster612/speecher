@@ -27,7 +27,7 @@ Section {
     readonly property bool idle: phase === "off"
     readonly property bool canRecord: Recording.refusal.length === 0
     // Why Record is off, the most specific reason first.
-    readonly property string blocker: !Recording.plan.service ? Recording.refusal : Recording.setupPending ? t.setupFirst : ""
+    readonly property string blocker: Recording.refusal
     // The microphone's access, then whether there is one, as Home says it.
     readonly property var access: Health.find(System.checks, "microphoneAccess")
     readonly property string microphoneProblem: !Health.passes(access) ? Health.status(access)
@@ -117,8 +117,8 @@ Section {
                     objectName: "recordingRefusal"
                     text: recorder.blocker
                     inset: Theme.rowInset
-                    actionText: Recording.plan.service ? recorder.t.runSetup : recorder.t.openSpeech
-                    onAction: Recording.plan.service ? Settings.act("runSetup") : Navigation.follow("speech", "speechServices")
+                    actionText: recorder.t.openSpeech
+                    onAction: Navigation.follow("speech", "speechServices")
                 }
             }
             InlineConfirm {

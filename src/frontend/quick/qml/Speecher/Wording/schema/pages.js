@@ -66,7 +66,7 @@ var pages = [
       subtitle: "How Speecher starts, moving it to your phone or off this computer, and the setup assistant.",
       keywords: "login startup phone setup assistant uninstall remove" },
     { id: "privacy", parent: "general", title: "Privacy & data", icon: "shield", file: "PrivacyPage.qml",
-      subtitle: "What Speecher keeps of your dictations and for how long, and what else it sends or holds.",
+      subtitle: "What Speecher keeps of your dictations, files and recordings, for how long, and what else it sends or holds.",
       keywords: "privacy data history insights stats keep retention delete clear share send" },
     { id: "appearance", parent: "general", title: "Appearance", icon: "palette", file: "AppearancePage.qml",
       subtitle: "How Speecher's windows look.",

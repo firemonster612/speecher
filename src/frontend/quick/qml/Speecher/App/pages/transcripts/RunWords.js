@@ -5,7 +5,7 @@
 var text = {
     runWith: "Run with",
     profile: "Writing profile",
-    yourSettings: "your settings",
+    yourSettings: "Other apps' profile",
     saveTranscripts: "Save transcripts",
     where: "Where",
     folder: "Folder",

@@ -155,11 +155,6 @@ QString alreadyRecordingText(const QString &path)
     return QStringLiteral("Already recording to %1. Stop it with speecher record stop first.").arg(path);
 }
 
-QString recordingNeedsSetupText()
-{
-    return QStringLiteral("Finish setting up Speecher, then start the recording.");
-}
-
 QString recordingNoServiceText()
 {
     return QStringLiteral("None of your speech services can record a call. Local models can't send text as you "

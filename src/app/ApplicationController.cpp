@@ -440,10 +440,8 @@ void ApplicationController::startRecording(const RecordingRequest &request,
         done(error);
         emit recordingStartFinished(error);
     };
-    if (!ensureSetupCompleted()) {
-        finished(recordingNeedsSetupText());
-        return;
-    }
+    // A recording needs only a microphone and a speech service that can
+    // record, not the rest of setup (pasting, a shortcut).
     m_platform->requestMicrophoneAccess(this, [this, request, finished](bool granted) {
         if (!granted) {
             finished(microphoneAccessOffText());

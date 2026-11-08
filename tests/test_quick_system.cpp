@@ -1010,6 +1010,26 @@ private slots:
     // Pasting lists only the Apps and App Types with steps or keys of their
     // own: on a fresh install the terminals' keys, where they differ, then
     // what Apps sets, each with what it does here.
+    // A type the person sets on an App migrated from a category-only rule
+    // takes that type's profile, as for any App, rather than the catalog's.
+    void choosingATypeEndsTheCatalogsProfile()
+    {
+        ApplicationController controller(true);
+        controller.settings()->edit([](AppSettings &draft) {
+            AppEntry kate;
+            kate.id = QStringLiteral("app:kate");
+            kate.name = QStringLiteral("Kate");
+            kate.matches = {{AppMatchKind::Id, QStringLiteral("org.kde.kate")}};
+            kate.type = AppCategory::General;
+            kate.catalogPicksProfile = true;
+            draft.apps.apps = {kate};
+            return true;
+        });
+        QuickApps apps(&controller);
+        QCOMPARE(apps.update(QStringLiteral("app:kate"), {{QStringLiteral("type"), QStringLiteral("email")}}), QString());
+        QTRY_VERIFY(!controller.settings()->snapshot().apps.apps.value(0).catalogPicksProfile);
+    }
+
     void pastingListsOnlyTheChoicesThatDiffer()
     {
         ApplicationController controller(true);

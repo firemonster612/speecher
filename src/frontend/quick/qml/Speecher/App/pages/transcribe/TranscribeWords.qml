@@ -8,7 +8,7 @@ QtObject {
     readonly property string audioFiles: "Audio files"
     readonly property string inHistory: "In History"
     readonly property string changes: "Change for these files"
-    function changesHelp(profile) { return "Cleanup, tone, services and language for these files only. " + profile + " and the settings keep their own." }
+    function changesHelp(profile) { return "Cleanup, tone, services and language for these files only. " + profile + " stays as it is everywhere else." }
     readonly property string services: "Services for these files"
     readonly property string dropToAdd: "Drop audio or video files here, or choose them"
     readonly property string dropMore: "Drop more files here"

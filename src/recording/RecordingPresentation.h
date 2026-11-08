@@ -42,7 +42,6 @@ QString statusWatchText(const QString &dictationState, const RecordingStatus &re
 
 QString notRecordingText();
 QString alreadyRecordingText(const QString &path);
-QString recordingNeedsSetupText();
 // Why nothing can record: no speech service in the Service Order sends text
 // as it hears.
 QString recordingNoServiceText();

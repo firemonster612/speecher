@@ -137,16 +137,8 @@ QString QuickRecording::writeError() const
     return m_controller->recording()->status().writeError;
 }
 
-bool QuickRecording::setupPending() const
-{
-    return m_controller->setupPending();
-}
-
 QString QuickRecording::refusal() const
 {
-    if (setupPending()) {
-        return recordingNeedsSetupText();
-    }
     return plan().value(QStringLiteral("service")).toString().isEmpty() ? recordingNoServiceText() : QString();
 }
 

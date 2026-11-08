@@ -144,8 +144,8 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   changes of it in a fold, saying what its rows follow, then each
   service's status with its Fix) and `SaveTranscripts` (where, the folder,
   the file format). Record names each thing in its way with its own fix
-  (the microphone, a speech service that can record, setup), whether or
-  not setup has finished (`setupPending`).
+  (the microphone, a speech service that can record); it doesn't wait for
+  the rest of setup.
   The first recording ever asks the consent question on Recordings,
   where the tray and the shortcut open it. `pages/recordings/RecordingWords.js`
   words it. The popup's pill and Home's row read it too.
