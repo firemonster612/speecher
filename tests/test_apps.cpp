@@ -612,8 +612,9 @@ private slots:
                  (PastingChoice{DeliverySteps{.insert = true, .press = true, .keep = false},
                                 terminalKeysDiffer ? std::optional(PasteKeyCombo::Standard) : std::nullopt}));
         QCOMPARE(appTypeSettings(apps, AppCategory::General).pasting, (PastingChoice{keepOnly, std::nullopt}));
+        // On macOS Terminals' keys are the usual ones, so they aren't stored.
         QCOMPARE(appTypeSettings(apps, AppCategory::Terminal).pasting.keys,
-                 terminalKeysDiffer ? PasteKeyCombo::Terminal : PasteKeyCombo::Standard);
+                 terminalKeysDiffer ? std::optional(PasteKeyCombo::Terminal) : std::nullopt);
         QVERIFY(!stored.value(SettingsKeys::AppsEntries).toByteArray().contains("\"pasting\""));
         QCOMPARE(stored.value(SettingsKeys::AppsMigrationVersion).toInt(), 2);
         // Once.
