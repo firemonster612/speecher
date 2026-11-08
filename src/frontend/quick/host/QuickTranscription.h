@@ -33,14 +33,24 @@ class QuickTranscription final : public QObject, public HostSingleton<QuickTrans
     Q_PROPERTY(QVariantList files READ files NOTIFY filesChanged)
     // The extensions, without the dot, of the files the chooser offers.
     Q_PROPERTY(QStringList extensions READ extensions CONSTANT)
-    // The next batch's choices: { service, vocabulary, refiner, cleanup,
-    // profile, tone, language (a spoken language id), destination (beside,
-    // folder or none), folder (as shown), folderUrl }.
+    // What the next batch changes for itself, each empty while it is the
+    // same as the profile or the settings: { profile, service, speechModel,
+    // refiner (or "none"), refinerModel, cleanup, tone, language (a spoken
+    // language id) }, then { vocabulary (the saved vocabulary applies),
+    // destination (beside, folder or none), folder (as shown), folderUrl }.
     Q_PROPERTY(QVariantMap options READ options NOTIFY optionsChanged)
-    // The model the batch's speech service runs, where it has one to choose.
-    Q_PROPERTY(QString speechModel READ speechModel NOTIFY optionsChanged)
-    // The model the chosen refiner runs, or empty.
-    Q_PROPERTY(QString refinerModel READ refinerModel NOTIFY optionsChanged)
+    // What the next batch runs with, core's planDictation: { profile,
+    // service, speechModel, refiner (or "none"), refinerModel (empty for
+    // none, or a service with no model to choose), cleanup, tone, language,
+    // outputLanguage, sources }. sources says where each came from, by the
+    // same keys as DictationPlan's (writingProfile, speech, refinement,
+    // spokenLanguage, cleanup, tone, …): "run", "profile:<id>",
+    // "type:<App Type id>" or "default".
+    Q_PROPERTY(QVariantMap plan READ plan NOTIFY optionsChanged)
+    // The same, as it would be without the batch's own choices but its
+    // profile: what each "Same as …" option names. Its profile is the one
+    // without the batch's either.
+    Q_PROPERTY(QVariantMap inherited READ inherited NOTIFY optionsChanged)
     // The batch as it started: { files, speech and refinement (who hears
     // it and who refines it, refinement empty when it does not), refines,
     // destination, folder, cancelled }.
@@ -76,8 +86,8 @@ public:
     QVariantList files() const;
     QStringList extensions() const;
     QVariantMap options() const;
-    QString speechModel() const;
-    QString refinerModel() const;
+    QVariantMap plan() const;
+    QVariantMap inherited() const;
     QVariantMap batch() const;
     int current() const;
     QString phase() const;
@@ -94,9 +104,9 @@ public:
     // Chosen or dropped files, as URLs.
     Q_INVOKABLE void addUrls(const QList<QUrl> &urls);
     Q_INVOKABLE void removeFile(const QString &path);
-    // Sets one of options, or speechModel or refinerModel, the models the
-    // batch's services run, which another service or profile puts back to
-    // theirs; profile brings its services, cleanup and tone.
+    // Sets one of options; an empty value makes it the same as the profile
+    // or the settings again. A model is for the batch's service, so choosing
+    // another service drops it.
     Q_INVOKABLE void setOption(const QString &id, const QVariant &value);
     // The folder transcripts go in. An empty one, the chooser dismissed,
     // while there is none yet sends the transcripts beside each file instead.

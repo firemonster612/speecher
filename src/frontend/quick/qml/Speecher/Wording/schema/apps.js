@@ -56,7 +56,6 @@ var t = {
     remove: "Remove app",
     removeHelp: "It goes back to Automatic everywhere. What Speecher learned in it stays.",
     automatic: label => "Automatic (" + label + ")",
-    sameAs: (place, value) => "Same as " + place + " (" + value + ")",
     theSteps: "the steps on Pasting",
     otherProfileHelp: "The profile for apps Speecher doesn't recognize.",
     // The picker's words.

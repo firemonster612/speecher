@@ -7,32 +7,40 @@ import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
+import "../text"
 
-// Step one: the files to transcribe with the drop zone under them, then
-// how they are heard, where the transcripts go, and how they are cleaned up.
+// Step one: the files to transcribe with the drop zone under them, the
+// Writing Profile they are written with and what these files change of it,
+// then where the transcripts go.
 Column {
     id: view
 
+    // What the batch changes, "" where it is the same as the profile or the
+    // settings, what it runs with, and what each would be without its change.
     readonly property var options: Transcription.options
-    readonly property bool refines: options.refiner !== "none"
-    readonly property var service: ModelText.service(options.service)
-    readonly property var refiner: ModelText.provider(options.refiner)
-    // What the model fields suggest, as Speech to text and Refinement do:
-    // each provider's known models, the Local Runner's and the endpoints'
-    // as they were listed.
-    readonly property var refinerModels: {
-        const named = names => names.map(m => ({ id: m, label: m }))
-        const runner = Models.runners.find(r => r.id === Settings.values.localRunner)
-        return options.refiner === "openai" || options.refiner === "anthropic" ? ModelText.suggestedModels(options.refiner)
-             : options.refiner === "local" ? named(runner ? runner.models : [])
-             : options.refiner === "endpoint" ? named(Models.refinementEndpoint.models) : []
+    readonly property var planned: Transcription.plan
+    readonly property var inherited: Transcription.inherited
+    readonly property string profileName: Library.profileName(planned.profile)
+    readonly property bool changed: ["service", "refiner", "cleanup", "tone", "language"].some(id => !!options[id])
+                                    || !options.vocabulary
+    // Where a value the batch leaves alone comes from: the profile when it
+    // sets it, otherwise the page that does.
+    function place(source, pageId) { return (source || "").startsWith("profile:") ? profileName : Schema.page(pageId).title }
+    function languageName(id) { return (Schema.row("spokenLanguage").options.find(o => o.id === id) || { label: id }).label }
+    // The editor's edits, by the batch's option ids. A new service drops its
+    // model on its own.
+    function edit(patch) {
+        const ids = { cleanup: "cleanup", tone: "tone", speech: "service", refinement: "refiner" }
+        for (const key in ids) if (key in patch) Transcription.setOption(ids[key], patch[key])
+        if ("speechModel" in patch && !("speech" in patch)) Transcription.setOption("speechModel", patch.speechModel)
+        if ("refinementModel" in patch && !("refinement" in patch)) Transcription.setOption("refinerModel", patch.refinementModel)
     }
 
     spacing: Theme.sectionGap
 
     Section {
         title: TranscribeWords.audioFiles
-        caption: TranscribeWords.filesCaption(Transcription.files, Library.pipelineCaption(view.options.service, view.options.refiner, Transcription.refinerModel))
+        caption: TranscribeWords.filesCaption(Transcription.files, Library.pipelineCaption(view.planned.service, view.planned.refiner, view.planned.refinerModel))
 
         RowList {
             id: files
@@ -73,80 +81,76 @@ Column {
         }
     }
 
-    // The Writing Profile first, on its own card, since choosing one sets
-    // the services, cleanup and tone in both sections below; each can still
-    // be changed.
+    // The Writing Profile, then what these files change of it: the profile
+    // editor in run mode, each control starting "Same as …", and the
+    // Spoken language and vocabulary, which only a run changes here.
     Section {
+        title: TranscribeWords.profileAndChanges
         SettingRow {
             title: TranscribeWords.profile
             help: TranscribeWords.profileHelp
-            Select { options: Library.profiles.map(p => ({ id: p.id, label: p.name, icon: Library.profileIcon(p.id) })); currentId: view.options.profile; onChosen: id => Transcription.setOption("profile", id) }
-        }
-    }
-
-    // The service and the provider start as the profile has them, so each
-    // folds to one row; opened, it is chosen as on Speech to text and
-    // Refinement, with the same cards.
-    Section {
-        title: TranscribeWords.transcription
-        Disclosure {
-            title: TranscribeWords.service
-            help: TranscribeWords.serviceHelp
-            trailingText: view.service.label
-            ServiceCards {
-                options: States.withTones(ModelText.fileSpeechChoices(Models.speechServices))
-                currentId: view.options.service
-                unratedText: ModelText.unrated
-                onActivated: id => Transcription.setOption("service", id)
-                onHelpLinkActivated: (id, at) => serviceLanguages.show(at, ModelText.service(id).languages)
+            InheritSelect {
+                inheritedText: Words.sameAs(Schema.apps.type("general").label, Library.profileName(view.inherited.profile))
+                choices: Library.profiles.map(p => ({ id: p.id, label: p.name, icon: Library.profileIcon(p.id) }))
+                currentId: view.options.profile
+                onChosen: id => Transcription.setOption("profile", id)
             }
         }
-        // What the chosen service still needs, with its Fix; these files
-        // wait here meanwhile. A downloaded Local Model is picked for these
-        // files below, so Local Model needs nothing more.
+        Disclosure {
+            title: TranscribeWords.changes
+            help: TranscribeWords.changesHelp(view.profileName)
+            trailingText: view.changed ? Library.profilesText.custom : Library.profilesText.default_
+            open: view.changed
+            Item {
+                width: parent.width
+                height: runEditor.implicitHeight + Theme.space4 * 2
+                ProfileEditor {
+                    id: runEditor
+                    objectName: "runEditor"
+                    x: Theme.rowInset
+                    y: Theme.space4
+                    width: parent.width - 2 * Theme.rowInset
+                    runMode: true
+                    servicesTitle: TranscribeWords.services
+                    profile: ({ cleanup: view.options.cleanup, tone: view.options.tone,
+                                speech: view.options.service, speechModel: view.options.speechModel,
+                                refinement: view.options.refiner, refinementModel: view.options.refinerModel })
+                    inherited: ({ profileName: view.profileName,
+                                  cleanup: view.inherited.cleanup, tone: view.inherited.tone,
+                                  outputLanguage: view.inherited.outputLanguage,
+                                  speech: view.inherited.service, speechModel: view.inherited.speechModel,
+                                  speechPlace: view.place(view.inherited.sources.speech, "speech"),
+                                  refinement: view.inherited.refiner, refinementModel: view.inherited.refinerModel,
+                                  refinementPlace: view.place(view.inherited.sources.refinement, "refinement") })
+                    onEdited: patch => view.edit(patch)
+                }
+            }
+            SettingRow {
+                title: TranscribeWords.language
+                help: TranscribeWords.languageHelp
+                LanguageSelect {
+                    placeholder: Words.choose; searchText: Words.searchLanguages; clearText: Words.clear; emptyText: Words.noLanguage
+                    options: [{ id: "", label: Words.sameAs(Schema.page("speech").title, view.languageName(view.inherited.language)), icon: "link" }]
+                             .concat(Schema.row("spokenLanguage").options)
+                    currentId: view.options.language
+                    shownId: view.inherited.language
+                    onChosen: id => Transcription.setOption("language", id)
+                }
+            }
+            SettingRow {
+                title: TranscribeWords.vocabulary
+                help: TranscribeWords.vocabularyHelp
+                Switch { checked: view.options.vocabulary; onToggled: Transcription.setOption("vocabulary", checked) }
+            }
+        }
+        // What the batch's services still need, with their Fix; these files
+        // wait here meanwhile. A downloaded Local Model is picked above, so
+        // Local Model needs nothing more.
         ServiceStatus {
             role: "speech"
-            serviceId: view.options.service === "local" && ModelText.downloadedModels.length > 0 ? "" : view.options.service
+            serviceId: view.planned.service === "local" && ModelText.downloadedModels.length > 0 ? "" : view.planned.service
         }
-        LanguageList { id: serviceLanguages }
-        // The model, for these files, of a service that has one to choose.
-        // Without a downloaded Local Model the service's card says what to do.
-        SettingRow {
-            shown: view.options.service === "local" && ModelText.downloadedModels.length > 0
-            title: TranscribeWords.model
-            help: TranscribeWords.speechModelHelp
-            Select {
-                options: ModelText.downloadedModels
-                currentId: Transcription.speechModel
-                placeholder: TranscribeWords.chooseModel
-                onChosen: id => Transcription.setOption("speechModel", id)
-            }
-        }
-        SettingRow {
-            shown: view.options.service === "endpoint"
-            title: TranscribeWords.model
-            help: TranscribeWords.speechModelHelp
-            SuggestField {
-                suggestionsText: Words.suggestions
-                text: Transcription.speechModel
-                suggestions: Models.speechEndpoint.models.map(m => ({ id: m, label: m }))
-                onCommitted: v => Transcription.setOption("speechModel", v)
-            }
-        }
-        SettingRow {
-            title: TranscribeWords.language
-            help: TranscribeWords.languageHelp
-            LanguageSelect {
-                placeholder: Words.choose; searchText: Words.searchLanguages; clearText: Words.clear; emptyText: Words.noLanguage
-                options: Schema.row("spokenLanguage").options; currentId: view.options.language
-                onChosen: id => Transcription.setOption("language", id)
-            }
-        }
-        SettingRow {
-            title: TranscribeWords.vocabulary
-            help: TranscribeWords.vocabularyHelp
-            Switch { checked: view.options.vocabulary; onToggled: Transcription.setOption("vocabulary", checked) }
-        }
+        ServiceStatus { role: "refinement"; serviceId: view.planned.refiner === "none" ? "" : view.planned.refiner }
     }
 
     Section {
@@ -186,46 +190,5 @@ Column {
         currentFolder: view.options.folderUrl || StandardPaths.writableLocation(StandardPaths.HomeLocation)
         onAccepted: Transcription.setFolder(folderChooser.selectedFolder)
         onRejected: Transcription.setFolder("")
-    }
-
-    Section {
-        title: TranscribeWords.refinement
-        Disclosure {
-            title: TranscribeWords.service
-            help: TranscribeWords.refinerHelp
-            trailingText: view.refiner.label
-            ServiceCards {
-                options: States.withTones(ModelText.refinementChoices(Models.refinementProviders))
-                currentId: view.options.refiner
-                unratedText: ModelText.unrated
-                onActivated: id => Transcription.setOption("refiner", id)
-            }
-        }
-        // What the chosen service still needs, with its Fix.
-        ServiceStatus { role: "refinement"; serviceId: view.options.refiner }
-        // The refiner's model, for these files.
-        SettingRow {
-            enabled: view.refines
-            title: TranscribeWords.model
-            help: view.refines ? TranscribeWords.refinerModelHelp : TranscribeWords.needsRefiner
-            SuggestField {
-                suggestionsText: Words.suggestions
-                text: Transcription.refinerModel
-                suggestions: view.refinerModels
-                onCommitted: v => Transcription.setOption("refinerModel", v)
-            }
-        }
-        SettingRow {
-            enabled: view.refines
-            title: TranscribeWords.cleanup
-            help: view.refines ? TranscribeWords.cleanupHelp : TranscribeWords.needsRefiner
-            CompactChoice { options: Library.levelOptions; currentId: view.options.cleanup; onChosen: id => Transcription.setOption("cleanup", id) }
-        }
-        SettingRow {
-            enabled: view.refines
-            title: TranscribeWords.tone
-            help: view.refines ? TranscribeWords.toneHelp : TranscribeWords.needsRefiner
-            Select { options: Library.toneOptions; currentId: view.options.tone; onChosen: id => Transcription.setOption("tone", id) }
-        }
     }
 }

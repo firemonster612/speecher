@@ -432,13 +432,15 @@ QString addVocabularyFile(const QString &path, QStringList *terms)
 }
 
 // Reads one of the choices transcribe and listen share, the one at index,
-// into options, moving index past its value. Returns false for an option that
-// is not one of them; sets error for a usage mistake.
+// into decision, moving index past its value. Returns false for an option
+// that is not one of them; sets error for a usage mistake.
 bool readSharedChoice(const QStringList &arguments,
                       qsizetype &index,
-                      HeadlessTranscribeOptions &options,
+                      CommandLineDecision *decision,
                       QString *error)
 {
+    RunOverrides &overrides = decision->overrides;
+    HeadlessTranscribeOptions &options = decision->headless;
     const QString argument = arguments.at(index);
     const auto value = [&] { return optionValue(arguments, index, error); };
     const auto choice = [&](const CliNames &choices, std::optional<QString> *target) {
@@ -453,7 +455,7 @@ bool readSharedChoice(const QStringList &arguments,
         }
     };
     if (argument == QStringLiteral("--no-vocabulary")) {
-        options.applyVocabulary = false;
+        overrides.applyVocabulary = false;
     } else if (argument == QStringLiteral("--raw")) {
         options.raw = true;
     } else if (argument == QStringLiteral("--json")) {
@@ -461,24 +463,24 @@ bool readSharedChoice(const QStringList &arguments,
     } else if (argument == QStringLiteral("--model") || argument == QStringLiteral("--refine")) {
         // Checked against the registry once it exists; this only reads it.
         if (const std::optional<QString> given = value()) {
-            (argument == QStringLiteral("--model") ? options.speechProviderId
-                                                   : options.refinementProviderId) = given->toLower();
+            (argument == QStringLiteral("--model") ? overrides.speech : overrides.refinement) =
+                ServiceChoice{given->toLower()};
         }
     } else if (argument == QStringLiteral("--cleanup")) {
-        choice(cleanupNames(), &options.cleanupStrength);
+        choice(cleanupNames(), &overrides.cleanupLevel);
     } else if (argument == QStringLiteral("--profile")) {
         if (const std::optional<QString> given = value()) {
-            options.writingProfile = writingProfileNamed(*given, error);
+            overrides.writingProfile = writingProfileNamed(*given, error);
         }
     } else if (argument == QStringLiteral("--language")) {
         if (const std::optional<QString> given = value()) {
-            options.spokenLanguage = spokenLanguageNamed(*given, error);
+            overrides.spokenLanguage = spokenLanguageNamed(*given, error);
         }
     } else if (argument == QStringLiteral("--tone")) {
-        choice(toneNames(), &options.tone);
+        choice(toneNames(), &overrides.tone);
     } else if (argument == QStringLiteral("--vocab-file")) {
         if (const std::optional<QString> path = value()) {
-            *error = addVocabularyFile(*path, &options.addedVocabulary);
+            *error = addVocabularyFile(*path, &overrides.addedVocabulary);
         }
     } else {
         return false;
@@ -548,7 +550,7 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
         }
         headless = true;
         QString error;
-        if (readSharedChoice(arguments, index, options, &error)) {
+        if (readSharedChoice(arguments, index, decision, &error)) {
         } else if (argument == QStringLiteral("--headless")) {
         } else if (argument == QStringLiteral("--stdout")) {
             options.printTranscripts = true;
@@ -626,7 +628,7 @@ QString parseListenArguments(const QStringList &arguments, CommandLineDecision *
                 }
             }
             decision->untilSilenceMs = int(seconds * 1000);
-        } else if (!readSharedChoice(arguments, index, decision->headless, &error)) {
+        } else if (!readSharedChoice(arguments, index, decision, &error)) {
             error = QStringLiteral("Unknown listen option: %1").arg(argument);
         }
         if (!error.isEmpty()) {
@@ -777,7 +779,7 @@ QString parseArguments(const QStringList &arguments, CommandLineDecision *decisi
     decision->showSetup = arguments.contains(QStringLiteral("--show-setup"));
 
     QString error;
-    SessionOverrides &overrides = decision->sessionOverrides;
+    RunOverrides &overrides = decision->overrides;
     if (const std::optional<QString> format = dictationOptionValue(arguments, QStringLiteral("--format"), &error)) {
         overrides.outputFormat = outputFormatNamed(*format, &error);
     }

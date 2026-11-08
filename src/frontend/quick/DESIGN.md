@@ -198,11 +198,15 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   (`errorHoldRequested`). `renewing` says a sign-in is renewing. `DictationState` is the same type with
   nothing behind it, for a page's demo popup.
 - `Transcription` is core's `TranscribeQueue`: the files listed for the next
-  batch, its `options` (seeded from the settings, never saved), the batch as
-  it started (`batch`), its progress and its `results`, whose fields
-  `QuickTranscription.h` documents. Its choice lists come from their owners
-  (`Models`, `Library`, the `spokenLanguage` row), and its
-  wording is the page's (`TranscribeWords`). Choosing files and folders and
+  batch, its `options` (the batch's Run Overrides, each empty while it is
+  the same as the profile or the settings, never saved), its `plan` (core's
+  `planDictation`: what the batch runs with and, in `sources`, which layer
+  each value came from) and `inherited` (the plan without the batch's own
+  changes, which each "Same as …" names), the batch as it started (`batch`),
+  its progress and its `results`, whose fields `QuickTranscription.h`
+  documents. Its choice lists come from their owners (`Models`, `Library`,
+  the `spokenLanguage` row), and its wording is the page's
+  (`TranscribeWords`). Choosing files and folders and
   exporting open the desktop's file dialogs, titled by the page; a start,
   retry or export that fails says why in `problem`.
 - `Schema` is the UI's own: pages and rows with label, help, kind and
@@ -343,12 +347,19 @@ Choosing:
 - Speech to text and Refinement put their services in order with
   `ServiceOrderList`: each service first to last with its status, its own
   choices under it (`ServiceChoiceRow`) and a Fix while it can't run. One
-  service, for one batch or a setup step, is chosen with `ServiceCards`
-  (setup and Transcribe): a grid of cards, each with its icon, name, a line
-  of help, its status and its ratings, and a check on the chosen one. A
-  narrow place gets fewer, smaller columns, not another layout. A profile's
-  own first service stays a `Select` whose first option is "Same as
-  <page> (<service>)".
+  service for a setup step is chosen with `ServiceCards`: a grid of cards,
+  each with its icon, name, a line of help, its status and its ratings, and
+  a check on the chosen one. A narrow place gets fewer, smaller columns, not
+  another layout.
+- A value a narrower place may change (an App's or App Type's, a Writing
+  Profile's first services, one Transcribe batch's) is an `InheritSelect`
+  whose first option is the wider place's value, "Same as <place>
+  (<value>)" (`Words.sameAs`), and choosing it hands the value back. The
+  places, widest first, are the setting's page, the App Type, the App, the
+  Writing Profile and the run; core's `planDictation` resolves them and says
+  where each value came from, so the "Same as …" text and the run agree. A
+  run changes its profile through the profile editor in run mode
+  (`ProfileEditor { runMode }`), the same rows worded the same way.
 - A service is signed in to or set up once, on Services. Elsewhere a
   service that can't run shows its status and a Fix (`ServiceStatus`, or a
   row's Fix in the order), which opens that service's Services card in a
@@ -596,6 +607,7 @@ Choosing:
 - `Switch`, `CheckBox`, `Slider { format }`.
 - `SegmentedControl { options; currentId; activated(id) }`: two to four short choices in a row.
 - `Select { options; currentId; placeholder; chosen(id) }`: a dropdown.
+- `InheritSelect { inheritedText; choices; currentId; chosen(id) }`: the Select for a value a narrower place may change. Its first option, id "", is `inheritedText`, the wider place's value as `Words.sameAs(place, value)` words it, marked with a link; `choices` follow. Without `inheritedText` it is a plain Select, for the widest place.
 - `LanguageSelect { options; currentId; shownId; placeholder; searchText; clearText; emptyText; chosen(id) }`: the current language's flag and name, opening a `LanguagePopover` to choose from. `shownId` is what the button shows when the checked option stands for another language, as a later speech service's "Same as Spoken language" does.
 - `LanguagePopover { languages; currentId; choosing; searchText; clearText; emptyText; align; openFrom(item); chosen(id) }`: languages with their flags under a search field that filters by English name, own name or code; arrows, Return and Escape. `choosing` checks `currentId` and picks; without it the list only shows. It grows from what opened it, as menus do. An option's `icon` stands in for the flag (Automatic).
 - `CompactChoice { options; currentId; stretch; chosen(id) }`: segments for up to four options, a Select for more.
@@ -648,7 +660,7 @@ In Speecher.App, besides SchemaRow:
 - `AccessibilityNotice { text }`: the note at the top of a card whose rows need desktop accessibility.
 - `HealthRow { rowId; checkId }`: a schema row showing one of `System.checks` with its fix; items inside follow the fix button. `AccessibilityMenu` is the desktopAccessibility row's menu that stops keeping it on. `StateText { stateId }` words a sign-in or check state, and `States` (states.js) maps states to tones: a state to sign in to, turn on or set up is `warning`, one that failed or can't be used `negative`.
 - `ServiceOrderList { role }`: a job's Service Order, speech or refinement, on an `OrderedList`: each service with its status and a Fix while it can't run, its `ServiceChoiceRow` under it, saving as it changes. `ServiceChoiceRow` is one entry's choices: its model (picked where the service lets you, else named), a later speech service's Spoken language with "Same as Spoken language" first, and ChatGPT's and Claude's thinking and speed.
-- `ServiceStatus { role; serviceId }`: under the cards that choose one service (setup, Transcribe), what it still needs and how to sign in, with Check again and Fix; folded away while it is ready and before the first check answers.
+- `ServiceStatus { role; serviceId }`: under the cards that choose one service (setup) and under Transcribe's profile, what it still needs and how to sign in, with Check again and Fix; folded away while it is ready and before the first check answers.
 - `FixSheet { openFor(role, serviceId) }`: the Services card that fixes one service (ChatGPT's or Claude's sign-in, This computer's part for the job, or the job's server) in a modal sheet over the page, with Open Services, which leads back to setup when opened from there.
 - `ErrorDetails { text }`: a failure's own words behind a Details link, under its plain sentence.
 - `ShortcutRecorder { rowId }`: a shortcut setting's ShortcutField wired to Settings, for the shortcut rows and Dictation's hero, which is where the dictation shortcut is set.

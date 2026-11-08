@@ -459,7 +459,7 @@ struct UpdateSettings {
 // SettingsCodecs::fields() says which of these are stored. SettingsStore::edit
 // refuses a change to any other: a snapshot derives or detects those, or
 // their owner writes them. What one run chooses for itself travels apart
-// (RunChoices, SpeechAttemptOptions, RefinementContext).
+// (RunOverrides, SpeechAttemptOptions, RefinementContext).
 struct AppSettings {
     // Empty secret fields in this draft were unread, not cleared by the user.
     QStringList unreadSecretKeys;

@@ -825,7 +825,7 @@ void ApplicationController::toggle()
     toggleWith({});
 }
 
-void ApplicationController::toggleWith(const SessionOverrides &overrides)
+void ApplicationController::toggleWith(const RunOverrides &overrides)
 {
     // Stop before the setup check: a session already listening always ends.
     if (sessionActive()) {
@@ -843,7 +843,7 @@ void ApplicationController::startListening()
     startListeningWith({});
 }
 
-void ApplicationController::startListeningWith(const SessionOverrides &overrides)
+void ApplicationController::startListeningWith(const RunOverrides &overrides)
 {
     if (!ensureSetupCompleted()) {
         return;

@@ -106,7 +106,7 @@ std::optional<IpcCommand> ipcCommandNamed(const QString &name)
 QByteArray ipcRequestFrame(const IpcRequest &request)
 {
     QJsonObject object{{QStringLiteral("command"), ipcCommandName(request.command)}};
-    const SessionOverrides &overrides = request.overrides;
+    const RunOverrides &overrides = request.overrides;
     if (overrides.outputFormat) {
         object.insert(QStringLiteral("outputFormat"), outputFormatName(*overrides.outputFormat));
     }

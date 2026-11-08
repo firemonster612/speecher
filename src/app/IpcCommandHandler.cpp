@@ -97,7 +97,7 @@ void IpcCommandHandler::startRecording(const IpcRequest &request, QLocalSocket *
 void IpcCommandHandler::handle(const IpcRequest &request, QLocalSocket *socket)
 {
     SettingsStore *settings = m_controller.settings();
-    const SessionOverrides &overrides = request.overrides;
+    const RunOverrides &overrides = request.overrides;
     if (overrides.writingProfile
         && offeredWritingProfile(*overrides.writingProfile, settings->dictationSnapshot().refinement.writingProfiles, {}).isEmpty()) {
         SingleInstanceIpc::writeResponse(socket, response(false, QStringLiteral("Unknown writing profile")));

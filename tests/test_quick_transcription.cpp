@@ -2,6 +2,7 @@
 #include "common/test_suites.h"
 
 #include "app/ApplicationController.h"
+#include "core/ProviderTable.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
@@ -63,7 +64,12 @@ private slots:
 
         QCOMPARE(option("destination").toString(), QStringLiteral("beside"));
         QCOMPARE(option("vocabulary").toBool(), true);
-        QCOMPARE(option("language").toString(), controller.settings()->dictationSnapshot().speech.language);
+        // Unchosen, the language is the settings'.
+        QCOMPARE(option("language").toString(), QString());
+        QCOMPARE(transcription.plan().value(QStringLiteral("language")).toString(),
+                 controller.settings()->dictationSnapshot().speech.language);
+        QCOMPARE(transcription.plan().value(QStringLiteral("sources")).toMap().value(QStringLiteral("spokenLanguage")),
+                 QStringLiteral("default"));
 
         transcription.setOption(QStringLiteral("destination"), QStringLiteral("none"));
         transcription.setOption(QStringLiteral("language"), QStringLiteral("fr"));
@@ -74,6 +80,12 @@ private slots:
         QCOMPARE(option("destination").toString(), QStringLiteral("none"));
         QCOMPARE(option("language").toString(), QStringLiteral("fr"));
         QCOMPARE(option("tone").toString(), QStringLiteral("casual"));
+        QCOMPARE(transcription.plan().value(QStringLiteral("sources")).toMap().value(QStringLiteral("spokenLanguage")),
+                 QStringLiteral("run"));
+
+        // Empty makes a choice the same as the settings' again.
+        transcription.setOption(QStringLiteral("language"), QString());
+        QCOMPARE(option("language").toString(), QString());
     }
 
     // The page reads the options on the GUI thread, so they leave a key only
@@ -103,19 +115,41 @@ private slots:
         transcription.setOption(QStringLiteral("refiner"), QStringLiteral("endpoint"));
         transcription.setOption(QStringLiteral("refinerModel"), QStringLiteral("qwen3:8b"));
         transcription.setOption(QStringLiteral("refiner"), QStringLiteral("endpoint"));
-        QCOMPARE(transcription.refinerModel(), QStringLiteral("qwen3:8b"));
+        QCOMPARE(transcription.plan().value(QStringLiteral("refinerModel")).toString(), QStringLiteral("qwen3:8b"));
         transcription.setOption(QStringLiteral("refiner"), QStringLiteral("anthropic"));
-        QCOMPARE(transcription.refinerModel(), saved.refinement.services.choice(QStringLiteral("anthropic")).model);
+        QCOMPARE(transcription.plan().value(QStringLiteral("refinerModel")).toString(), saved.refinement.services.choice(QStringLiteral("anthropic")).model);
 
         transcription.setOption(QStringLiteral("service"), QStringLiteral("endpoint"));
         transcription.setOption(QStringLiteral("speechModel"), QStringLiteral("whisper-large-v3"));
         transcription.setOption(QStringLiteral("service"), QStringLiteral("endpoint"));
-        QCOMPARE(transcription.speechModel(), QStringLiteral("whisper-large-v3"));
+        QCOMPARE(transcription.plan().value(QStringLiteral("speechModel")).toString(), QStringLiteral("whisper-large-v3"));
         transcription.setOption(QStringLiteral("service"), QStringLiteral("claude"));
-        QVERIFY(transcription.speechModel().isEmpty());
+        QVERIFY(transcription.plan().value(QStringLiteral("speechModel")).toString().isEmpty());
 
         QCOMPARE(controller.settings()->snapshot().refinement.services.choice(QStringLiteral("endpoint")).model, saved.refinement.services.choice(QStringLiteral("endpoint")).model);
         QCOMPARE(controller.settings()->snapshot().speech.services.choice(QStringLiteral("endpoint")).model, saved.speech.services.choice(QStringLiteral("endpoint")).model);
+    }
+
+    // A model chosen while the batch follows the profile's service keeps
+    // that service for the batch; "Same as" hands both back.
+    void aModelKeepsTheServiceItIsFor()
+    {
+        ApplicationController controller(true);
+        QuickTranscription transcription(&controller);
+        const auto option = [&transcription](const char *id) { return transcription.options().value(QLatin1String(id)).toString(); };
+        const QString planned = transcription.plan().value(QStringLiteral("refiner")).toString();
+        QVERIFY(planned != kNoRefinementProvider);
+
+        transcription.setOption(QStringLiteral("refinerModel"), QStringLiteral("gpt-test"));
+        QCOMPARE(option("refiner"), planned);
+        QCOMPARE(option("refinerModel"), QStringLiteral("gpt-test"));
+        QCOMPARE(transcription.plan().value(QStringLiteral("refinerModel")).toString(), QStringLiteral("gpt-test"));
+
+        transcription.setOption(QStringLiteral("refiner"), QString());
+        QVERIFY(option("refiner").isEmpty());
+        QVERIFY(option("refinerModel").isEmpty());
+        QCOMPARE(transcription.plan().value(QStringLiteral("sources")).toMap().value(QStringLiteral("refinement")),
+                 QStringLiteral("default"));
     }
 
     // A picked suggestion fills the model field as typing would, so the field

@@ -1,6 +1,8 @@
 #include "frontend/quick/host/QuickTranscription.h"
 
 #include "app/ApplicationController.h"
+#include "core/ProviderChain.h"
+#include "core/ProviderTable.h"
 #include "core/SettingsStore.h"
 
 #include <QClipboard>
@@ -126,8 +128,6 @@ QuickTranscription::QuickTranscription(ApplicationController *controller, QObjec
     connect(&m_queue, &TranscribeQueue::optionsChanged, this, &QuickTranscription::optionsChanged);
     connect(&m_queue, &TranscribeQueue::resultsChanged, this, &QuickTranscription::resultsChanged);
     connect(&m_queue, &TranscribeQueue::problemChanged, this, &QuickTranscription::problemChanged);
-    // The refiner's model and the seeded language follow the settings.
-    connect(controller->settings(), &SettingsStore::snapshotApplied, this, &QuickTranscription::optionsChanged);
 }
 
 void QuickTranscription::addFiles(const QStringList &paths)
@@ -169,33 +169,71 @@ QStringList QuickTranscription::extensions() const
     return transcribableExtensions();
 }
 
-// The page binds to this on the GUI thread, so it never waits for the keyring.
+namespace {
+
+// A plan as the page reads it; see QuickTranscription::plan.
+QVariantMap planMap(const DictationPlan &plan)
+{
+    const QString refiner = serviceChain(plan.settings.refinement).value(0, kNoRefinementProvider);
+    QVariantMap sources;
+    for (auto it = plan.sources.cbegin(); it != plan.sources.cend(); ++it) {
+        sources.insert(it.key(), it.value());
+    }
+    return {
+        {QStringLiteral("profile"), plan.profile.profile},
+        {QStringLiteral("service"), plan.settings.speech.services.main()},
+        {QStringLiteral("speechModel"), speechModel(plan.settings.speech)},
+        {QStringLiteral("refiner"), refiner},
+        {QStringLiteral("refinerModel"),
+         refiner == kNoRefinementProvider ? QString() : refinementModel(refiner, plan.settings.refinement)},
+        {QStringLiteral("cleanup"), plan.profile.cleanupStrength},
+        {QStringLiteral("tone"), plan.profile.tone},
+        {QStringLiteral("language"), plan.settings.speech.language},
+        {QStringLiteral("outputLanguage"), plan.profile.outputLanguage},
+        {QStringLiteral("sources"), sources},
+    };
+}
+
+} // namespace
+
+// The page binds to these on the GUI thread, so they never wait for the
+// keyring.
 QVariantMap QuickTranscription::options() const
 {
+    const RunOverrides &run = m_queue.overrides();
     const TranscribeOptions &options = m_queue.options();
     return {
-        {QStringLiteral("service"), options.speechProviderId},
-        {QStringLiteral("vocabulary"), options.applyVocabulary},
-        {QStringLiteral("refiner"), options.refinementProviderId},
-        {QStringLiteral("cleanup"), options.cleanupStrength},
-        {QStringLiteral("profile"), options.writingProfile},
-        {QStringLiteral("tone"), options.tone},
-        {QStringLiteral("language"),
-         options.spokenLanguage.value_or(m_controller->settings()->dictationSnapshot().speech.language)},
+        {QStringLiteral("profile"), run.writingProfile.value_or(QString())},
+        {QStringLiteral("service"), run.speech ? run.speech->service : QString()},
+        {QStringLiteral("speechModel"), run.speech ? run.speech->model : QString()},
+        {QStringLiteral("refiner"), run.refinement ? run.refinement->service : QString()},
+        {QStringLiteral("refinerModel"), run.refinement ? run.refinement->model : QString()},
+        {QStringLiteral("cleanup"), run.cleanupLevel.value_or(QString())},
+        {QStringLiteral("tone"), run.tone.value_or(QString())},
+        {QStringLiteral("language"), run.spokenLanguage.value_or(QString())},
+        {QStringLiteral("vocabulary"), run.applyVocabulary},
         {QStringLiteral("destination"), idOf(kDestinations, options.destination)},
         {QStringLiteral("folder"), QDir::toNativeSeparators(options.folder)},
         {QStringLiteral("folderUrl"), options.folder.isEmpty() ? QUrl() : QUrl::fromLocalFile(options.folder)},
     };
 }
 
-QString QuickTranscription::speechModel() const
+QVariantMap QuickTranscription::plan() const
 {
-    return m_queue.speechModel();
+    return planMap(m_queue.plan(m_queue.overrides()));
 }
 
-QString QuickTranscription::refinerModel() const
+QVariantMap QuickTranscription::inherited() const
 {
-    return m_queue.refinementModel();
+    RunOverrides profileOnly;
+    profileOnly.writingProfile = m_queue.overrides().writingProfile;
+    QVariantMap inherited = planMap(m_queue.plan(profileOnly));
+    const DictationPlan settingsOnly = m_queue.plan({});
+    inherited.insert(QStringLiteral("profile"), settingsOnly.profile.profile);
+    QVariantMap sources = inherited.value(QStringLiteral("sources")).toMap();
+    sources.insert(QStringLiteral("writingProfile"), settingsOnly.sources.value(QStringLiteral("writingProfile")));
+    inherited.insert(QStringLiteral("sources"), sources);
+    return inherited;
 }
 
 QVariantMap QuickTranscription::batch() const
@@ -315,40 +353,55 @@ void QuickTranscription::removeFile(const QString &path)
 
 void QuickTranscription::setOption(const QString &id, const QVariant &value)
 {
+    const QString chosen = value.toString();
+    const auto optional = [&chosen]() -> std::optional<QString> {
+        return chosen.isEmpty() ? std::nullopt : std::optional(chosen);
+    };
+    // A service, kept with its model while the same one is chosen again.
+    const auto service = [&chosen](std::optional<ServiceChoice> &run) {
+        if (chosen.isEmpty()) {
+            run.reset();
+        } else if (!run || run->service != chosen) {
+            run = ServiceChoice{chosen};
+        }
+    };
+    // A model is for the service the batch runs: choosing one keeps that
+    // service for the batch.
+    const auto model = [&chosen](std::optional<ServiceChoice> &run, const QString &planned) {
+        if (!run) {
+            run = ServiceChoice{planned};
+        }
+        run->model = chosen;
+    };
+    RunOverrides run = m_queue.overrides();
     if (id == QStringLiteral("profile")) {
-        m_queue.chooseProfile(value.toString());
-        return;
-    }
-    TranscribeOptions options = m_queue.options();
-    if (id == QStringLiteral("service")) {
-        if (options.speechProviderId != value.toString()) {
-            options.speechModel.clear();
-        }
-        options.speechProviderId = value.toString();
+        run.writingProfile = optional();
+    } else if (id == QStringLiteral("service")) {
+        service(run.speech);
     } else if (id == QStringLiteral("speechModel")) {
-        options.speechModel = value.toString();
-    } else if (id == QStringLiteral("vocabulary")) {
-        options.applyVocabulary = value.toBool();
+        model(run.speech, plan().value(QStringLiteral("service")).toString());
     } else if (id == QStringLiteral("refiner")) {
-        if (options.refinementProviderId != value.toString()) {
-            options.refinementModel.clear();
-        }
-        options.refinementProviderId = value.toString();
+        service(run.refinement);
     } else if (id == QStringLiteral("refinerModel")) {
-        options.refinementModel = value.toString();
+        model(run.refinement, plan().value(QStringLiteral("refiner")).toString());
     } else if (id == QStringLiteral("cleanup")) {
-        options.cleanupStrength = value.toString();
+        run.cleanupLevel = optional();
     } else if (id == QStringLiteral("tone")) {
-        options.tone = value.toString();
+        run.tone = optional();
     } else if (id == QStringLiteral("language")) {
-        options.spokenLanguage = value.toString();
-    } else if (id == QStringLiteral("destination") && valueOf(kDestinations, value.toString())) {
-        options.destination = *valueOf(kDestinations, value.toString());
+        run.spokenLanguage = optional();
+    } else if (id == QStringLiteral("vocabulary")) {
+        run.applyVocabulary = value.toBool();
+    } else if (id == QStringLiteral("destination") && valueOf(kDestinations, chosen)) {
+        TranscribeOptions options = m_queue.options();
+        options.destination = *valueOf(kDestinations, chosen);
+        m_queue.setOptions(options);
+        return;
     } else {
         qWarning().noquote() << "Transcription.setOption: no option" << id << "taking" << value;
         return;
     }
-    m_queue.setOptions(options);
+    m_queue.setOverrides(run);
 }
 
 void QuickTranscription::setFolder(const QUrl &folder)

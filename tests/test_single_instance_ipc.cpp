@@ -478,7 +478,9 @@ private slots:
             << QByteArrayLiteral(R"({"command":"toggle","outputFormat":"html","spokenLanguage":"de",)"
                                  R"("writingProfile":"ai_coding"})" "\n")
             << IpcRequest{IpcCommand::Toggle,
-                          {OutputFormat::Html, QStringLiteral("ai_coding"), QStringLiteral("de")}}
+                          {.writingProfile = QStringLiteral("ai_coding"),
+                           .spokenLanguage = QStringLiteral("de"),
+                           .outputFormat = OutputFormat::Html}}
             << QByteArrayLiteral(R"({"message":null,"ok":true,"spokenLanguage":"de","state":"starting",)"
                                  R"("writingProfile":"ai_coding"})" "\n")
             << echoed;
@@ -751,7 +753,7 @@ private slots:
         CommandLineDecision decision;
         decision.mode = LaunchMode::RunCli;
         decision.ipcCommand = IpcCommand::Toggle;
-        decision.sessionOverrides.writingProfile = QStringLiteral("work");
+        decision.overrides.writingProfile = QStringLiteral("work");
 
         int exitCode = -1;
         QThread *client = QThread::create([&exitCode, &decision, platform] {

@@ -65,7 +65,7 @@ bool startDetachedSetup(const SingleInstancePlatform *platform)
 }
 
 // The options that hand a session's overrides to the daemon a command starts.
-QStringList sessionOverrideArguments(const SessionOverrides &overrides)
+QStringList overrideArguments(const RunOverrides &overrides)
 {
     QStringList arguments;
     if (overrides.outputFormat) {
@@ -368,9 +368,9 @@ int runCliCommand(const CommandLineDecision &decision,
     IpcResponse response;
     QString ipcError;
     const IpcCommandResult ipcResult = SingleInstanceIpc::sendRequest(
-        {command, decision.sessionOverrides}, &response, kIpcTimeoutMs, platform, &ipcError);
+        {command, decision.overrides}, &response, kIpcTimeoutMs, platform, &ipcError);
     if (ipcResult == IpcCommandResult::Sent) {
-        const SessionOverrides &overrides = decision.sessionOverrides;
+        const RunOverrides &overrides = decision.overrides;
         const bool ignoredProfile = overrides.writingProfile && response.writingProfile != *overrides.writingProfile;
         const bool ignoredLanguage = overrides.spokenLanguage && response.spokenLanguage != *overrides.spokenLanguage;
         if (response.ok && (ignoredProfile || ignoredLanguage)) {
@@ -393,7 +393,7 @@ int runCliCommand(const CommandLineDecision &decision,
         ? startDetachedSettings(platform.get())
         : command == IpcCommand::ShowSetup
             ? startDetachedSetup(platform.get())
-            : startDetachedListening(platform.get(), sessionOverrideArguments(decision.sessionOverrides));
+            : startDetachedListening(platform.get(), overrideArguments(decision.overrides));
     if (!started) {
         std::cerr << "Could not start speecher daemon\n";
         return 1;

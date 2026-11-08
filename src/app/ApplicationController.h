@@ -12,6 +12,7 @@
 #include "core/DictationRecord.h"
 #include "core/ShortcutBinding.h"
 #include "dictation/DictationTypes.h"
+#include "dictation/RunOverrides.h"
 #include "platform/GlobalShortcutBinder.h"
 
 namespace speecher {
@@ -196,10 +197,10 @@ public:
 public slots:
     void toggle();
     // A toggle with the --format, --profile or --language it was given.
-    void toggleWith(const SessionOverrides &overrides);
+    void toggleWith(const RunOverrides &overrides);
     void startListening();
     // A start with the --format, --profile or --language it was given.
-    void startListeningWith(const SessionOverrides &overrides);
+    void startListeningWith(const RunOverrides &overrides);
     void stopListening();
     // Throws away the dictation in progress, or one about to start.
     void cancel();

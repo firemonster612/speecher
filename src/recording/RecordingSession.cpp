@@ -3,7 +3,7 @@
 #include "core/EchoCanceller.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationPorts.h"
-#include "dictation/TranscriptPipeline.h"
+#include "dictation/DictationPlan.h"
 #include "platform/audio/AudioPcmConverter.h"
 #include "providers/ProviderRegistry.h"
 #include "providers/SpeechTranscriber.h"
@@ -34,14 +34,12 @@ constexpr qsizetype kLongestUtteranceBytes = qsizetype(25) * 16000 * 2;
 AppSettings recordingSettings(const AppSettings &settings, const ProviderRegistry &providers,
                               const QStringList &vocabulary)
 {
+    RunOverrides run;
+    run.writingProfile = WritingProfile::Other;
+    run.speech = ServiceChoice{settings.speech.services.main()};
+    run.addedVocabulary = vocabulary;
     AppSettings recording = settings;
-    const AppSettings profiled = providers.withProfileProviders(
-        settings, writingProfileSettingsFor(settings.refinement.writingProfiles, WritingProfile::Other));
-    if (profiled.speech.services.main() == settings.speech.services.main()) {
-        recording.speech = profiled.speech;
-    }
-    recording.speech.vocabulary = TranscriptPipeline::speechVocabulary(recording, {WritingProfile::Other, vocabulary},
-                                                                        Target{});
+    recording.speech = planDictation(settings, Target{}, run, providers.offersSpeech()).settings.speech;
     return recording;
 }
 

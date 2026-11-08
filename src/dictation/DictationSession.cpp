@@ -231,12 +231,12 @@ void DictationSession::toggle()
     toggleSession({});
 }
 
-void DictationSession::toggleWith(const SessionOverrides &overrides)
+void DictationSession::toggleWith(const RunOverrides &overrides)
 {
     toggleSession(overrides);
 }
 
-void DictationSession::toggleSession(const SessionOverrides &overrides)
+void DictationSession::toggleSession(const RunOverrides &overrides)
 {
     qInfo().noquote() << "toggle requested state=" + stateName();
     if (m_state == DictationState::Idle || m_state == DictationState::Error
@@ -257,12 +257,12 @@ void DictationSession::startListening()
     startSession({});
 }
 
-void DictationSession::startListeningWith(const SessionOverrides &overrides)
+void DictationSession::startListeningWith(const RunOverrides &overrides)
 {
     startSession(overrides);
 }
 
-void DictationSession::startSession(const SessionOverrides &overrides)
+void DictationSession::startSession(const RunOverrides &overrides)
 {
     // A start while an edit is reviewed, from a toggle or a push-to-talk
     // press, is a follow-up to it, on the edit's own settings: overrides do
@@ -282,24 +282,14 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     }
     m_completionTimer->stop();
 
-    // A follow-up keeps the settings the edit was made with.
-    AppSettings settings = followUp ? m_review.revision().settings : m_settings->dictationSnapshot();
-    RunChoices choices = followUp ? m_review.revision().choices : RunChoices{};
-    if (overrides.outputFormat) {
-        settings.output.format = *overrides.outputFormat;
-    }
-    if (overrides.writingProfile) {
-        choices.writingProfile = *overrides.writingProfile;
-    }
-    if (overrides.spokenLanguage) {
-        settings.speech.language = *overrides.spokenLanguage;
-    }
+    // A follow-up keeps the settings the edit was made with, and its plan.
+    const AppSettings settings = followUp ? m_review.revision().settings : m_settings->dictationSnapshot();
 
     ++m_generation;
     m_speech->begin();
     const quint64 generation = m_generation;
     m_sessionSettings = settings;
-    m_runChoices = choices;
+    m_overrides = overrides;
     m_heardSpeech = false;
     m_target = {};
     // The chains wait for the target, whose Writing Profile may lead them.
@@ -371,7 +361,16 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
 void DictationSession::continueStartupWithTarget(quint64 generation, const Target &target)
 {
     m_target = target;
-    m_target.category = resolveApp(m_target, m_sessionSettings->apps).type;
+    // The target settles the Writing Profile, and with it the services the
+    // session runs and the terms the speech request may carry. A follow-up
+    // runs as the edit it follows did.
+    if (m_review.followingUp()) {
+        m_plan = m_review.revision().plan;
+    } else {
+        m_plan = planDictation(*m_sessionSettings, m_target, m_overrides, m_providers->offersSpeech());
+        m_sessionSettings = m_plan.settings;
+    }
+    m_target.category = m_plan.app.type;
     // Lengths only: the text itself stays out of the log.
     qInfo().noquote() << (m_review.followingUp() ? "target kept for follow-up app=" : "target captured app=")
                              + m_target.applicationId
@@ -379,16 +378,11 @@ void DictationSession::continueStartupWithTarget(quint64 generation, const Targe
                       << "accessible=" << m_target.accessible << "editable=" << m_target.editable
                       << "selectionLength=" << m_target.selectedText.size()
                       << "selectionEdit=" << m_target.hasSelection();
-    // The target settles the Writing Profile, and with it the services the
-    // session runs and the terms the speech request may carry.
     if (!selectProviders()) {
         return;
     }
-    m_sessionSettings->speech.vocabulary =
-        TranscriptPipeline::speechVocabulary(*m_sessionSettings, m_runChoices, m_target);
     const AppSettings settings = *m_sessionSettings;
-    const RefinementSettings effectiveRefinement =
-        TranscriptPipeline::effectiveRefinementSettings(settings, m_runChoices, m_target);
+    const RefinementSettings &effectiveRefinement = settings.refinement;
     // Once, for whichever refiner in the chain reads it.
     const QStringList &refiners = m_refinementChain->providerIds();
     const bool chainReadsScreenshots = std::any_of(refiners.cbegin(), refiners.cend(), [this](const QString &id) {
@@ -414,13 +408,11 @@ void DictationSession::continueStartupWithTarget(quint64 generation, const Targe
     m_speech->start(*m_sessionSettings, refines ? m_refiner.data() : nullptr);
 }
 
-// The target's Writing Profile's own services lead the chains. A fallback
-// that is missing or can't listen for the Spoken Language is passed over
-// later; the primary stops the dictation, as it always has.
+// The chains as the plan leads them. A fallback that is missing or can't
+// listen for the Spoken Language is passed over later; the primary stops the
+// dictation, as it always has.
 bool DictationSession::selectProviders()
 {
-    m_sessionSettings = m_providers->withProfileProviders(
-        *m_sessionSettings, TranscriptPipeline::writingProfile(*m_sessionSettings, m_runChoices, m_target));
     const AppSettings &settings = *m_sessionSettings;
     const QString speech = settings.speech.services.main();
     const QStringList refiners = serviceChain(settings.refinement);
@@ -919,7 +911,10 @@ void DictationSession::beginRefinement(quint64 generation)
         // A follow-up edits the revision under review, not the selection.
         target.selectedText = m_review.revision().edit;
     }
-    m_transcriptPipeline = TranscriptPipeline::prepare(m_transcript->text(), settings, m_runChoices, target,
+    // The plan with the keys the chains have read since.
+    DictationPlan plan = m_plan;
+    plan.settings = settings;
+    m_transcriptPipeline = TranscriptPipeline::prepare(m_transcript->text(), plan, target,
                                                         m_transcript->heardLanguage());
     TranscriptPipelineResult &pipeline = m_transcriptPipeline;
     const RefinementSettings &refinement = pipeline.refinementSettings;
@@ -1065,7 +1060,7 @@ void DictationSession::reviewSelectionEdit(const QString &revised)
 void DictationSession::reviseSelectionEdit(const QString &revised)
 {
     const QString spoken = m_transcript->text();
-    m_review.revise({revised, {spoken}, m_target, *m_sessionSettings, m_runChoices, m_transcriptPipeline, m_speechWarning,
+    m_review.revise({revised, {spoken}, m_target, *m_sessionSettings, m_plan, m_transcriptPipeline, m_speechWarning,
                      m_providerHistory, countWords(spoken), m_listeningMs});
 }
 
@@ -1090,7 +1085,7 @@ void DictationSession::returnToReview()
     const EditReview::Revision &revision = m_review.revision();
     m_target = revision.target;
     m_sessionSettings = revision.settings;
-    m_runChoices = revision.choices;
+    m_plan = revision.plan;
     m_transcriptPipeline = revision.pipeline;
     // Nothing the follow-up met belongs in the receipt of the revision kept.
     m_usedRawTranscript = false;
@@ -1215,7 +1210,7 @@ void DictationSession::deliverFinal(const QString &text, const QString &note, st
                                         settings.output.completionStatusDurationMs};
     ++m_unansweredDeliveries;
     m_delivery->deliver(settings.output, makeDeliveryContent(text, settings.output.format), m_target,
-                        resolveApp(m_target, settings.apps).pasting);
+                        m_plan.app.pasting);
 }
 
 void DictationSession::finishDelivery(const DeliveryResult &result)

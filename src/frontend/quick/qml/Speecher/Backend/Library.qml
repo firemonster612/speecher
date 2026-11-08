@@ -142,15 +142,11 @@ LibraryLists {
         refinement: "Refinement",
         refinementSkipped: "Cleanup None skips refinement for this profile.",
         defaultRefinementHelp: "The services under Refinement, in their order.",
-        refinementModel: "Refinement model",
-        defaultModel: "Same as Refinement"
+        refinementModel: "Refinement model"
     })
     // Cleanup None with an output language still translates, which takes
     // Light cleanup from the profile's provider.
     function translatesAtLight(provider) { return "None still translates, at Light cleanup, with " + provider + "." }
-    // "Same as Speech to text (Claude)": a profile's choice that follows a
-    // page's order, by the page's title and the order's first service.
-    function sameAs(page, label) { return "Same as " + page + " (" + label + ")" }
     // A profile's own refinement service, whose thinking and speed are its
     // entry's in Refinement's order.
     function ownRefinementHelp(provider) { return "Thinking and speed are " + provider + "'s, as Refinement's order sets them." }

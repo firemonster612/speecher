@@ -579,7 +579,7 @@ private slots:
         registerFakeSpeechProvider(registry, &speech);
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
 
-        session.toggleWith({OutputFormat::Html, std::nullopt});
+        session.toggleWith({.outputFormat = OutputFormat::Html});
         QCOMPARE(int(session.state()), int(DictationState::Starting));
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         QCOMPARE(speech->startCalls, 1);
@@ -753,7 +753,7 @@ private slots:
         registerFakeSpeechProvider(registry, &speech);
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
 
-        session.startListeningWith({OutputFormat::Html, std::nullopt});
+        session.startListeningWith({.outputFormat = OutputFormat::Html});
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("<hello>"));
         session.stopListening();
@@ -947,7 +947,7 @@ private slots:
         QCOMPARE(speech->startCalls, 0);
 
         session.stopListening();
-        session.startListeningWith({std::nullopt, std::nullopt, QStringLiteral("de")});
+        session.startListeningWith({.spokenLanguage = QStringLiteral("de")});
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         QCOMPARE(speech->lastLanguage, QStringLiteral("de"));
         QCOMPARE(settings.dictationSnapshot().speech.language, QStringLiteral("cy"));
@@ -976,7 +976,7 @@ private slots:
             &settings, audio.get(), media.get(), targetProvider.get(), delivery.get(), &registry);
         QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
 
-        session.startListeningWith({std::nullopt, QStringLiteral("custom_stand_up")});
+        session.startListeningWith({.writingProfile = QStringLiteral("custom_stand_up")});
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         // Deleting the profile mid-session leaves this session's copy alone.
         draft = settings.snapshot();
