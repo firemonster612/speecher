@@ -124,6 +124,14 @@ _Avoid_: Fallback chain, primary and fallbacks, fallbacks
 The switch that turns refinement on or off for every dictation. Off, no refinement service runs, a Writing Profile's own included, and the words are pasted as spoken; the Service Order waits for it to come back on. Distinct from a Writing Profile's Cleanup Level None, which skips cleanup for that profile but still translates into its output language.
 _Avoid_: None (as a refinement service)
 
+**Run Overrides**:
+What one Dictation Session, Transcribe batch or headless `transcribe`/`listen` run changes for itself, never saved: its Writing Profile, Cleanup Level, Tone, Spoken Language, first speech and refinement Services with their models, output format, and vocabulary (terms it adds, or none of the saved ones). A run that names a refinement Service refines even with Clean up my words off; one that names none refines nothing.
+_Avoid_: Session overrides, run choices, batch options
+
+**Layers**:
+Where a setting's value comes from, widest first: the setting's own page (Defaults), the App Type, the App, the Writing Profile, then the Run Overrides. Each narrower place that can change a value starts with "Same as <wider place> (<value>)", and one resolver settles every run the same way and says which layer each value came from. An App sets a Writing Profile and Pasting, never a Service; a Writing Profile sets cleanup, tone, output language, instructions and its first Services.
+_Avoid_: Inheritance chain, overrides (for saved settings)
+
 **Local Model**:
 A speech-to-text model file Speecher downloads and runs on the user's own machine through transcribe.cpp, managed on the Local models page under Services.
 _Avoid_: Offline model, on-device model, embedded model
