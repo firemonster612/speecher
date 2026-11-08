@@ -147,22 +147,57 @@ QList<LocalSpeechEngine::Device> LocalSpeechEngine::devices()
     return result;
 }
 
-LocalSpeechEngine::LocalSpeechEngine(std::function<bool()> shouldAbort)
-    : m_shouldAbort(std::move(shouldAbort))
-{
-}
+namespace {
 
-LocalSpeechEngine::~LocalSpeechEngine()
-{
-    unload();
-}
+class TranscribeEngine;
 
-bool LocalSpeechEngine::abortRequested(void *engine)
-{
-    return static_cast<LocalSpeechEngine *>(engine)->m_shouldAbort();
-}
+class TranscribeSession final : public LocalSpeechEngine::Session {
+public:
+    TranscribeSession(const TranscribeEngine &engine, transcribe_session *session, std::function<bool()> shouldAbort);
+    ~TranscribeSession() override;
 
-bool LocalSpeechEngine::load(const QString &modelPath, const LocalRunsOn &runsOn, QString *error)
+    std::optional<QString> transcribe(const QByteArray &pcm16, const QString &spokenLanguage, QString *error) override;
+    std::optional<QString> transcribeTimed(const QByteArray &pcm16, const QString &spokenLanguage,
+                                           QList<TranscriptSegment> *segments, QString *error) override;
+    bool beginStream(const QString &spokenLanguage, QString *error) override;
+    bool feed(const QByteArray &pcm16, LocalSpeechEngine::StreamText *text, QString *error) override;
+    std::optional<QString> finalize(QString *error) override;
+
+private:
+    static bool abortRequested(void *session);
+    std::optional<QString> run(const QByteArray &pcm16, bool timed, const QString &spokenLanguage, QString *error);
+    QByteArray languageHint(const QString &spokenLanguage) const;
+
+    const TranscribeEngine &m_engine;
+    transcribe_session *m_session;
+    std::function<bool()> m_shouldAbort;
+};
+
+class TranscribeEngine final : public LocalSpeechEngine {
+public:
+    ~TranscribeEngine() override { unload(); }
+
+    bool load(const QString &modelPath, const LocalRunsOn &runsOn, QString *error) override;
+    void unload() override;
+    bool isLoaded(const QString &modelPath, const LocalRunsOn &runsOn) const override;
+    QString runsOnDescription() const override;
+    bool streams() const override { return m_streams; }
+    std::unique_ptr<Session> openSession(std::function<bool()> shouldAbort, QString *error) override;
+
+    bool timesSegments() const { return m_timesSegments; }
+    const QStringList &languages() const { return m_languages; }
+
+private:
+    transcribe_model *m_model = nullptr;
+    QString m_modelPath;
+    LocalRunsOn m_runsOn;
+    bool m_streams = false;
+    bool m_timesSegments = false;
+    // The language codes the loaded model declares.
+    QStringList m_languages;
+};
+
+bool TranscribeEngine::load(const QString &modelPath, const LocalRunsOn &runsOn, QString *error)
 {
     unload();
     initBackendsOnce();
@@ -200,11 +235,6 @@ bool LocalSpeechEngine::load(const QString &modelPath, const LocalRunsOn &runsOn
     if (!succeeded(status, error)) {
         return false;
     }
-    if (!succeeded(transcribe_session_init(m_model, nullptr, &m_session), error)) {
-        unload();
-        return false;
-    }
-    transcribe_set_abort_callback(m_session, &LocalSpeechEngine::abortRequested, this);
     transcribe_capabilities capabilities;
     transcribe_capabilities_init(&capabilities);
     const bool knowsCapabilities = transcribe_model_get_capabilities(m_model, &capabilities) == TRANSCRIBE_OK;
@@ -219,11 +249,9 @@ bool LocalSpeechEngine::load(const QString &modelPath, const LocalRunsOn &runsOn
     return true;
 }
 
-void LocalSpeechEngine::unload()
+void TranscribeEngine::unload()
 {
-    transcribe_session_free(m_session);
     transcribe_model_free(m_model);
-    m_session = nullptr;
     m_model = nullptr;
     m_modelPath.clear();
     m_runsOn = {};
@@ -231,12 +259,12 @@ void LocalSpeechEngine::unload()
     m_timesSegments = false;
 }
 
-bool LocalSpeechEngine::isLoaded(const QString &modelPath, const LocalRunsOn &runsOn) const
+bool TranscribeEngine::isLoaded(const QString &modelPath, const LocalRunsOn &runsOn) const
 {
-    return m_session && m_modelPath == modelPath && m_runsOn == runsOn;
+    return m_model && m_modelPath == modelPath && m_runsOn == runsOn;
 }
 
-QString LocalSpeechEngine::runsOnDescription() const
+QString TranscribeEngine::runsOnDescription() const
 {
     transcribe_device_info info;
     transcribe_device_info_init(&info);
@@ -248,24 +276,52 @@ QString LocalSpeechEngine::runsOnDescription() const
                                          localBackendName(QString::fromUtf8(info.kind)));
 }
 
-bool LocalSpeechEngine::streams() const
+std::unique_ptr<LocalSpeechEngine::Session> TranscribeEngine::openSession(std::function<bool()> shouldAbort,
+                                                                          QString *error)
 {
-    return m_streams;
+    transcribe_session *session = nullptr;
+    if (!succeeded(transcribe_session_init(m_model, nullptr, &session), error)) {
+        return nullptr;
+    }
+    return std::make_unique<TranscribeSession>(*this, session, std::move(shouldAbort));
 }
 
-std::optional<QString> LocalSpeechEngine::transcribe(const QByteArray &pcm16,
-                                                     const QString &spokenLanguage,
+TranscribeSession::TranscribeSession(const TranscribeEngine &engine, transcribe_session *session,
+                                     std::function<bool()> shouldAbort)
+    : m_engine(engine)
+    , m_session(session)
+    , m_shouldAbort(std::move(shouldAbort))
+{
+    transcribe_set_abort_callback(m_session, &TranscribeSession::abortRequested, this);
+}
+
+TranscribeSession::~TranscribeSession()
+{
+    transcribe_session_free(m_session);
+}
+
+bool TranscribeSession::abortRequested(void *session)
+{
+    return static_cast<TranscribeSession *>(session)->m_shouldAbort();
+}
+
+QByteArray TranscribeSession::languageHint(const QString &spokenLanguage) const
+{
+    return localModelLanguageHint(requestedSpokenLanguage(spokenLanguage), m_engine.languages()).toUtf8();
+}
+
+std::optional<QString> TranscribeSession::transcribe(const QByteArray &pcm16, const QString &spokenLanguage,
                                                      QString *error)
 {
     return run(pcm16, false, spokenLanguage, error);
 }
 
-std::optional<QString> LocalSpeechEngine::transcribeTimed(const QByteArray &pcm16,
+std::optional<QString> TranscribeSession::transcribeTimed(const QByteArray &pcm16,
                                                           const QString &spokenLanguage,
                                                           QList<TranscriptSegment> *segments,
                                                           QString *error)
 {
-    const bool timed = m_timesSegments;
+    const bool timed = m_engine.timesSegments();
     const std::optional<QString> text = run(pcm16, timed, spokenLanguage, error);
     if (!text || !timed || transcribe_returned_timestamp_kind(m_session) != TRANSCRIBE_TIMESTAMPS_SEGMENT) {
         return text;
@@ -279,7 +335,7 @@ std::optional<QString> LocalSpeechEngine::transcribeTimed(const QByteArray &pcm1
     return text;
 }
 
-std::optional<QString> LocalSpeechEngine::run(const QByteArray &pcm16,
+std::optional<QString> TranscribeSession::run(const QByteArray &pcm16,
                                               bool timed,
                                               const QString &spokenLanguage,
                                               QString *error)
@@ -293,7 +349,7 @@ std::optional<QString> LocalSpeechEngine::run(const QByteArray &pcm16,
     transcribe_run_params params;
     transcribe_run_params_init(&params);
     params.timestamps = timed ? TRANSCRIBE_TIMESTAMPS_SEGMENT : TRANSCRIBE_TIMESTAMPS_NONE;
-    const QByteArray language = localModelLanguageHint(requestedSpokenLanguage(spokenLanguage), m_languages).toUtf8();
+    const QByteArray language = languageHint(spokenLanguage);
     params.language = language.isEmpty() ? nullptr : language.constData();
     const transcribe_status status = transcribe_run(m_session, pcm.data(), int(pcm.size()), &params);
     if (status == TRANSCRIBE_ERR_ABORTED) {
@@ -305,19 +361,19 @@ std::optional<QString> LocalSpeechEngine::run(const QByteArray &pcm16,
     return QString::fromUtf8(transcribe_full_text(m_session)).trimmed();
 }
 
-bool LocalSpeechEngine::beginStream(const QString &spokenLanguage, QString *error)
+bool TranscribeSession::beginStream(const QString &spokenLanguage, QString *error)
 {
     // A cancelled attempt can leave the previous stream active.
     transcribe_stream_reset(m_session);
     transcribe_run_params params;
     transcribe_run_params_init(&params);
     params.timestamps = TRANSCRIBE_TIMESTAMPS_NONE;
-    const QByteArray language = localModelLanguageHint(requestedSpokenLanguage(spokenLanguage), m_languages).toUtf8();
+    const QByteArray language = languageHint(spokenLanguage);
     params.language = language.isEmpty() ? nullptr : language.constData();
     return succeeded(transcribe_stream_begin(m_session, &params, nullptr), error);
 }
 
-bool LocalSpeechEngine::feed(const QByteArray &pcm16, StreamText *text, QString *error)
+bool TranscribeSession::feed(const QByteArray &pcm16, LocalSpeechEngine::StreamText *text, QString *error)
 {
     const std::vector<float> pcm = floatPcm(pcm16);
     if (pcm.empty()) {
@@ -338,7 +394,7 @@ bool LocalSpeechEngine::feed(const QByteArray &pcm16, StreamText *text, QString 
     return true;
 }
 
-std::optional<QString> LocalSpeechEngine::finalize(QString *error)
+std::optional<QString> TranscribeSession::finalize(QString *error)
 {
     const transcribe_status status = transcribe_stream_finalize(m_session, nullptr);
     if (status == TRANSCRIBE_ERR_ABORTED || !succeeded(status, error)) {
@@ -354,7 +410,14 @@ std::optional<QString> LocalSpeechEngine::finalize(QString *error)
         QString::fromUtf8(snapshot.full_text, qsizetype(snapshot.full_text_bytes)));
 }
 
-std::optional<double> LocalSpeechEngine::speedTestSeconds(QString *error)
+} // namespace
+
+std::unique_ptr<LocalSpeechEngine> LocalSpeechEngine::create()
+{
+    return std::make_unique<TranscribeEngine>();
+}
+
+std::optional<double> speedTestSeconds(LocalSpeechEngine::Session &session, QString *error)
 {
     QFile clip(QStringLiteral(":/speedtest/librispeech-6930-75918-0018.s16le"));
     if (!clip.open(QIODevice::ReadOnly)) {
@@ -364,12 +427,12 @@ std::optional<double> LocalSpeechEngine::speedTestSeconds(QString *error)
     const QByteArray pcm16 = clip.readAll();
     // Untimed: a backend's first run pays one-off costs, such as Vulkan
     // compiling its shaders, that dictation after it never sees.
-    if (!transcribe(pcm16, speedTestLanguage, error)) {
+    if (!session.transcribe(pcm16, speedTestLanguage, error)) {
         return std::nullopt;
     }
     QElapsedTimer timer;
     timer.start();
-    if (!transcribe(pcm16, speedTestLanguage, error)) {
+    if (!session.transcribe(pcm16, speedTestLanguage, error)) {
         return std::nullopt;
     }
     const double clipSeconds = double(pcm16.size() / 2) / sampleRateHz;

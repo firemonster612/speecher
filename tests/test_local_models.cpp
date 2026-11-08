@@ -11,9 +11,12 @@
 #include "providers/LocalModelStore.h"
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
 #include "providers/LocalSpeechTranscriber.h"
+#include "providers/LocalSpeechWorker.h"
+#include "providers/SpeechAudio.h"
 #endif
 
 #include <QCryptographicHash>
+#include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QSignalSpy>
@@ -21,8 +24,10 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTemporaryDir>
+#include <QtEndian>
 
 #include <algorithm>
+#include <atomic>
 
 using namespace speecher;
 
@@ -63,6 +68,120 @@ LocalModel fakeModel(const QByteArray &content)
     model.sha256 = QString::fromLatin1(QCryptographicHash::hash(content, QCryptographicHash::Sha256).toHex());
     return model;
 }
+
+#ifdef SPEECHER_WITH_LOCAL_SPEECH
+// What the fake engine below did, read once its signals are in.
+struct FakeModelCounts {
+    std::atomic<int> loads = 0;
+    std::atomic<int> sessions = 0;
+};
+
+// A 100 ms chunk the fake hears as the word "w<word>".
+QByteArray spoken(qint16 word)
+{
+    QByteArray chunk(kSpeechChunkBytes, 0);
+    qToLittleEndian<qint16>(word, chunk.data());
+    return chunk;
+}
+
+QString fakeWords(const QByteArray &pcm)
+{
+    QStringList words;
+    for (qsizetype at = 0; at + kSpeechChunkBytes <= pcm.size(); at += kSpeechChunkBytes) {
+        if (const qint16 word = qFromLittleEndian<qint16>(pcm.constData() + at)) {
+            words << QStringLiteral("w%1").arg(word);
+        }
+    }
+    return words.join(QLatin1Char(' '));
+}
+
+// A streaming session commits each word as it is fed.
+class FakeSession final : public LocalSpeechEngine::Session {
+public:
+    std::optional<QString> transcribe(const QByteArray &pcm16, const QString &, QString *) override
+    {
+        return fakeWords(pcm16);
+    }
+    std::optional<QString> transcribeTimed(const QByteArray &pcm16, const QString &language,
+                                           QList<TranscriptSegment> *, QString *error) override
+    {
+        return transcribe(pcm16, language, error);
+    }
+    bool beginStream(const QString &, QString *) override
+    {
+        m_committed.clear();
+        return true;
+    }
+    bool feed(const QByteArray &pcm16, LocalSpeechEngine::StreamText *text, QString *) override
+    {
+        if (const QString words = fakeWords(pcm16); !words.isEmpty()) {
+            m_committed += words + QLatin1Char(' ');
+        }
+        text->committed = m_committed;
+        return true;
+    }
+    std::optional<QString> finalize(QString *) override { return m_committed.trimmed(); }
+
+private:
+    QString m_committed;
+};
+
+class FakeEngine final : public LocalSpeechEngine {
+public:
+    FakeEngine(FakeModelCounts &counts, bool streams)
+        : m_counts(counts)
+        , m_streams(streams)
+    {
+    }
+    bool load(const QString &modelPath, const LocalRunsOn &runsOn, QString *) override
+    {
+        ++m_counts.loads;
+        m_modelPath = modelPath;
+        m_runsOn = runsOn;
+        return true;
+    }
+    void unload() override { m_modelPath.clear(); }
+    bool isLoaded(const QString &modelPath, const LocalRunsOn &runsOn) const override
+    {
+        return !m_modelPath.isEmpty() && modelPath == m_modelPath && runsOn == m_runsOn;
+    }
+    QString runsOnDescription() const override
+    {
+        return m_modelPath.isEmpty() ? QString() : QStringLiteral("Fake (CPU)");
+    }
+    bool streams() const override { return m_streams; }
+    std::unique_ptr<Session> openSession(std::function<bool()>, QString *) override
+    {
+        ++m_counts.sessions;
+        return std::make_unique<FakeSession>();
+    }
+
+private:
+    FakeModelCounts &m_counts;
+    bool m_streams;
+    QString m_modelPath;
+    LocalRunsOn m_runsOn;
+};
+
+// The model's file in store, the size the catalog gives, so it counts as
+// downloaded.
+bool fakeDownload(const LocalModelStore &store, const QString &modelId)
+{
+    const LocalModel *model = findLocalModel(modelId);
+    QFile file(store.modelPath(*model));
+    return QDir().mkpath(QFileInfo(file).path()) && file.open(QIODevice::WriteOnly) && file.resize(model->sizeBytes);
+}
+
+QStringList texts(const QSignalSpy &spy)
+{
+    QStringList result;
+    for (const QList<QVariant> &signal : spy) {
+        result << signal.at(1).toString();
+    }
+    return result;
+}
+
+#endif
 
 } // namespace
 
@@ -276,7 +395,9 @@ private slots:
         LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
         providers.registerSpeechProvider({"local", "Local model"},
-            [&models](QObject *parent) { return new LocalSpeechTranscriber(models, parent); });
+            [&models, worker = std::make_shared<LocalSpeechWorker>()](QObject *parent) {
+                return new LocalSpeechTranscriber(models, worker, parent);
+            });
 #endif
         LocalSetup setup(settings, providers, models);
         QVERIFY(!settings.dictationSnapshot().speech.local.modelChosen);
@@ -744,7 +865,7 @@ private slots:
         QVERIFY(model);
         LocalModelStore store(modelDir, QUrl());
         QVERIFY2(store.isDownloaded(*model), qPrintable(store.modelPath(*model)));
-        LocalSpeechTranscriber transcriber(store);
+        LocalSpeechTranscriber transcriber(store, std::make_shared<LocalSpeechWorker>());
         QSignalSpy partials(&transcriber, &SpeechTranscriber::partialTranscript);
         QSignalSpy transcripts(&transcriber, &SpeechTranscriber::attemptTranscript);
         QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
@@ -831,12 +952,12 @@ private slots:
             })) {
             QSKIP("This computer runs ROCm.");
         }
-        LocalSpeechEngine engine([] { return false; });
+        const std::unique_ptr<LocalSpeechEngine> engine = LocalSpeechEngine::create();
         QString error;
-        QVERIFY(!engine.load(QStringLiteral("/nonexistent.gguf"), {QStringLiteral("rocm"), {}}, &error));
+        QVERIFY(!engine->load(QStringLiteral("/nonexistent.gguf"), {QStringLiteral("rocm"), {}}, &error));
         QCOMPARE(error, QStringLiteral("ROCm is not available on this computer. Choose where the model "
                                        "runs in Services › This computer."));
-        QVERIFY(engine.runsOnDescription().isEmpty());
+        QVERIFY(engine->runsOnDescription().isEmpty());
     }
 
     // An attempt that starts while the worker is busy must still get every
@@ -850,7 +971,7 @@ private slots:
             QSKIP("Set SPEECHER_TEST_LOCAL_MODEL and SPEECHER_TEST_LOCAL_MODEL_DIR to run a real model.");
         }
         LocalModelStore store(modelDir, QUrl());
-        LocalSpeechTranscriber transcriber(store);
+        LocalSpeechTranscriber transcriber(store, std::make_shared<LocalSpeechWorker>());
         QSignalSpy transcripts(&transcriber, &SpeechTranscriber::attemptTranscript);
         QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
         SpeechSettings settings;
@@ -924,11 +1045,72 @@ private slots:
         QCOMPARE(finalStreamText(committed, revised), revised);
     }
 
+    // Two transcribers, such as dictation and another, load the model once,
+    // with a session each, and only one model at a time.
+    void transcribersShareOneLoadedModel()
+    {
+        QTemporaryDir dir;
+        LocalModelStore store(dir.path(), QUrl());
+        QVERIFY(fakeDownload(store, QStringLiteral("moonshine-small")));
+        QVERIFY(fakeDownload(store, QStringLiteral("moonshine-medium")));
+        FakeModelCounts counts;
+        const auto worker = std::make_shared<LocalSpeechWorker>(std::make_unique<FakeEngine>(counts, false));
+        LocalSpeechTranscriber me(store, worker);
+        LocalSpeechTranscriber them(store, worker);
+        LocalSpeechTranscriber dictation(store, worker);
+        QSignalSpy myTranscripts(&me, &SpeechTranscriber::attemptTranscript);
+        QSignalSpy theirTranscripts(&them, &SpeechTranscriber::attemptTranscript);
+        QSignalSpy dictationFailed(&dictation, &SpeechTranscriber::failed);
+        QSignalSpy dictationDone(&dictation, &SpeechTranscriber::attemptCompleted);
+        QSignalSpy speedTest(&dictation, &LocalSpeechTranscriber::speedTestFinished);
+        QSignalSpy runsOn(&dictation, &LocalSpeechTranscriber::runsOnChanged);
+        SpeechSettings settings;
+        localModelId(settings) = QStringLiteral("moonshine-small");
+
+        me.startAttempt(1, settings, {});
+        them.startAttempt(1, settings, {});
+        me.sendAudio(1, spoken(1));
+        them.sendAudio(1, spoken(2));
+        me.sendAudio(1, spoken(3));
+        QTRY_COMPARE(counts.sessions.load(), 2);
+        QCOMPARE(counts.loads.load(), 1);
+        // Every transcriber hears where the model runs, whoever loaded it.
+        QTRY_COMPARE(runsOn.size(), 1);
+        QCOMPARE(runsOn.first().at(0).toString(), QStringLiteral("Fake (CPU)"));
+
+        // The Speed Test waits for the others.
+        dictation.runSpeedTest(QStringLiteral("moonshine-small"), {});
+        QCOMPARE(speedTest.first().at(2).toString(),
+                 QStringLiteral("Finish dictating or recording, then test the speed again."));
+
+        // Another model can't load in place of the one they hold.
+        SpeechSettings otherModel = settings;
+        localModelId(otherModel) = QStringLiteral("moonshine-medium");
+        dictation.startAttempt(1, otherModel, {});
+        QVERIFY(dictationFailed.wait(2000));
+        QCOMPARE(dictationFailed.first().at(0).value<SpeechFailure>().message,
+                 QStringLiteral("This computer is already transcribing with another model, and runs one model "
+                                "at a time."));
+        QCOMPARE(counts.loads.load(), 1);
+
+        // Each has its own text, and once both are done the other can load.
+        me.finishInput(1);
+        them.finishInput(1);
+        QTRY_COMPARE(texts(myTranscripts), QStringList{QStringLiteral("w1 w3")});
+        QTRY_COMPARE(texts(theirTranscripts), QStringList{QStringLiteral("w2")});
+        QTRY_VERIFY(!worker->attemptRunning());
+        dictation.startAttempt(2, otherModel, {});
+        dictation.sendAudio(2, spoken(4));
+        dictation.finishInput(2);
+        QVERIFY(dictationDone.wait(2000));
+        QCOMPARE(counts.loads.load(), 2);
+    }
+
     void missingModelFailsWithAnActionableMessage()
     {
         QTemporaryDir dir;
         LocalModelStore store(dir.path(), QUrl());
-        LocalSpeechTranscriber transcriber(store);
+        LocalSpeechTranscriber transcriber(store, std::make_shared<LocalSpeechWorker>());
         QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
         SpeechSettings settings;
 

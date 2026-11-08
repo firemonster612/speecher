@@ -13,6 +13,7 @@
 #include "providers/LocalRunner.h"
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
 #include "providers/LocalSpeechTranscriber.h"
+#include "providers/LocalSpeechWorker.h"
 #endif
 #include "providers/OpenAiTranscriptRefiner.h"
 #include "providers/ProviderRegistry.h"
@@ -44,10 +45,12 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
             return new CodexSpeechTranscriber(parent);
         });
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
+    // Dictation's transcriber and every recording's share one worker, and
+    // with it one loaded model.
     registry.registerSpeechProvider(
         {providerKey(ProviderId::Local), QStringLiteral("This computer")},
-        [localModels](QObject *parent) {
-            return new LocalSpeechTranscriber(*localModels, parent);
+        [localModels, worker = std::make_shared<LocalSpeechWorker>()](QObject *parent) {
+            return new LocalSpeechTranscriber(*localModels, worker, parent);
         });
 #else
     Q_UNUSED(localModels);

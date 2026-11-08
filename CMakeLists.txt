@@ -950,6 +950,8 @@ if(SPEECHER_WITH_LOCAL_SPEECH)
     src/providers/LocalSpeechEngine.h
     src/providers/LocalSpeechTranscriber.cpp
     src/providers/LocalSpeechTranscriber.h
+    src/providers/LocalSpeechWorker.cpp
+    src/providers/LocalSpeechWorker.h
   )
   target_compile_definitions(speecher_providers PUBLIC SPEECHER_WITH_LOCAL_SPEECH=1)
   target_link_libraries(speecher_providers PRIVATE transcribe)
