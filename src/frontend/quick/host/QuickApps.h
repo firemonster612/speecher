@@ -25,14 +25,16 @@ class QuickApps final : public QObject, public HostSingleton<QuickApps> {
     QML_SINGLETON
     // [{ id, name, icon, ids (what it is recognized by), byText (matched by
     // name or window title, not an id), titleOnly, type, profile, pasting,
-    // effective: { type, profile, pasting }, inherited: { type, profile,
-    // profileFrom, pasting, pastingFrom } }]: effective is what the
-    // app gets now; inherited is what each value would be without the app's
-    // own, with where it would come from (builtIn, terminal, type or
-    // fallback), for "Same as …".
+    // history, effective: { type, profile, pasting, history }, inherited: {
+    // type, profile, profileFrom, pasting, pastingFrom, history, historyFrom
+    // } }]: effective is what the app gets now; inherited is what each value
+    // would be without the app's own, with where it would come from
+    // (builtIn, terminal, type or fallback), for "Same as …". history is
+    // "stats", "nothing" or empty: what History keeps of the app's
+    // dictations, at most What Speecher Keeps.
     Q_PROPERTY(QVariantList entries READ entries NOTIFY changed)
     // One per App Type, Other apps ("general") last: [{ id, profile, pasting,
-    // effectiveProfile }]. Other apps' profile is always set.
+    // history, effectiveProfile }]. Other apps' profile is always set.
     Q_PROPERTY(QVariantList types READ types NOTIFY changed)
     // The installed apps, once refresh() has scanned them: [{ name, icon,
     // ids, entry (the App that already matches it, or empty), type, profile
@@ -71,13 +73,15 @@ public:
     // matches: [{ kind: "name" | "title", value }] } by name or window title.
     // Returns { id, refusal }: the new App's id, or why core refused it.
     Q_INVOKABLE QVariantMap add(const QVariantMap &app);
-    // Changes an App's type, profile, pasting or name; an empty value unsets
-    // it. Returns why core refused it, empty when saved.
+    // Changes an App's type, profile, pasting, history or name; an empty
+    // value unsets it. Returns why core refused it, empty when saved, or
+    // "invalid" for a history other than "stats" or "nothing", which could
+    // only raise What Speecher Keeps.
     Q_INVOKABLE QString update(const QString &id, const QVariantMap &patch);
     // Removes an App. Returns the token undo takes, or -1 when none went.
     Q_INVOKABLE int remove(const QString &id);
     Q_INVOKABLE void undo(int token);
-    // Changes an App Type's profile or pasting, as update does.
+    // Changes an App Type's profile, pasting or history, as update does.
     Q_INVOKABLE QString updateType(const QString &type, const QVariantMap &patch);
     // Switch to it: counts down `seconds`, waits for another app to come to
     // the front, then captures it as dictation does and answers captured

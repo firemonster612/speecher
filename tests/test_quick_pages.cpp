@@ -264,6 +264,8 @@ private slots:
             draft.apps.apps = {test::idApp(QStringLiteral("org.kde.kate"), WritingProfile::Personal, PasteMethod::DirectInsert),
                                gmail};
             draft.apps.apps.first().name = QStringLiteral("Kate");
+            // Privacy & data lists an app kept out of History.
+            draft.apps.apps.first().history = HistoryKeep::Stats;
             draft.apps.types[1].writingProfile = WritingProfile::Work;
             // Vocabulary shows each kind: a key term with a context, one
             // limited to a profile, a snippet over several lines, one
@@ -1294,6 +1296,48 @@ private slots:
         apps->undo(undo);
         QCOMPARE(controller.settings()->snapshot().apps.apps.size(), 1);
         QCOMPARE(controller.settings()->snapshot().apps.apps.first().type, AppCategory::Email);
+    }
+
+    // An App's History choice can only lower what Privacy & data keeps. Once
+    // chosen, Privacy & data lists the App, and its row opens it in Apps.
+    void anAppKeptOutOfHistoryShowsInPrivacyAndData()
+    {
+        ApplicationController controller(true);
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.apps.apps = {test::idApp(QStringLiteral("org.example.Vault"))};
+            return true;
+        });
+        const QString id = QStringLiteral("app:org.example.Vault");
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        QQmlEngine *engine = qmlEngine(main);
+        auto *navigation = engine->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        auto *apps = engine->singletonInstance<QuickApps *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Apps"));
+        QVERIFY(navigation && apps);
+        QTest::ignoreMessage(QtWarningMsg, "Apps.update takes no History choice text");
+        QCOMPARE(apps->update(id, {{QStringLiteral("history"), QStringLiteral("text")}}), QStringLiteral("invalid"));
+
+        navigation->goToRow(QStringLiteral("apps"), QStringLiteral("appentry:") + id);
+        QQuickItem *row = nullptr;
+        QTRY_VERIFY((row = findItem(main->contentItem(), QStringLiteral("appentry:") + id)));
+        QTRY_VERIFY(row->parentItem()->property("open").toBool());
+        QQuickItem *history = findItem(row->parentItem(), QStringLiteral("appHistory"));
+        QVERIFY(history);
+        QVERIFY(QMetaObject::invokeMethod(history, "chosen", Q_ARG(QString, QStringLiteral("nothing"))));
+        QCOMPARE(controller.settings()->snapshot().apps.apps.first().history, HistoryKeep::Nothing);
+
+        navigation->go(QStringLiteral("general"));
+        QQuickItem *listed = nullptr;
+        QTRY_VERIFY((listed = findItem(main->contentItem(), QStringLiteral("leftOut_appentry:") + id)));
+        QVERIFY(QMetaObject::invokeMethod(listed, "clicked"));
+        QTRY_COMPARE(navigation->current(), QStringLiteral("apps"));
+        QTRY_VERIFY((row = findItem(main->contentItem(), QStringLiteral("appentry:") + id)));
+        QTRY_VERIFY(row->parentItem()->property("open").toBool());
+        QCOMPARE(navigation->returnTo(), QStringLiteral("general"));
     }
 
     // History in each of its states: off, keeping stats, nothing kept yet,

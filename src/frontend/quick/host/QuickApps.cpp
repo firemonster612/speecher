@@ -56,6 +56,27 @@ QString pastingName(const std::optional<PasteMethod> &pasting)
     return pasting ? pasteMethodName(*pasting) : QString();
 }
 
+QString historyName(const std::optional<HistoryKeep> &history)
+{
+    return history ? historyKeepName(*history) : QString();
+}
+
+// An App's or App Type's History choice from an edit: empty unsets it, and
+// only Stats and Nothing are choices, as one can only lower What Speecher
+// Keeps.
+std::optional<std::optional<HistoryKeep>> historyChoice(const QVariant &value)
+{
+    const QString text = value.toString();
+    if (text.isEmpty()) {
+        return std::optional<HistoryKeep>();
+    }
+    const std::optional<HistoryKeep> keep = historyKeepFromName(text);
+    if (!keep || *keep > HistoryKeep::Stats) {
+        return std::nullopt;
+    }
+    return keep;
+}
+
 QString kindName(AppMatchKind kind)
 {
     return kind == AppMatchKind::Id ? QStringLiteral("id")
@@ -91,7 +112,8 @@ QVariantMap resolved(const AppResolution &resolution)
 {
     return {{QStringLiteral("type"), appCategoryName(resolution.type)},
             {QStringLiteral("profile"), resolution.writingProfile},
-            {QStringLiteral("pasting"), pastingName(resolution.pasting)}};
+            {QStringLiteral("pasting"), pastingName(resolution.pasting)},
+            {QStringLiteral("history"), historyName(resolution.history)}};
 }
 
 // What core makes of the App, now and with each of its own values unset in
@@ -111,6 +133,7 @@ QVariantMap entryRecord(const AppEntry &app, const AppsSettings &apps)
     const AppResolution type = without([](AppEntry &entry) { entry.type.reset(); });
     const AppResolution profile = without([](AppEntry &entry) { entry.writingProfile.reset(); });
     const AppResolution pasting = without([](AppEntry &entry) { entry.pasting.reset(); });
+    const AppResolution history = without([](AppEntry &entry) { entry.history.reset(); });
     QStringList ids;
     QVariantList matches;
     bool byText = true;
@@ -133,13 +156,16 @@ QVariantMap entryRecord(const AppEntry &app, const AppsSettings &apps)
         {QStringLiteral("type"), typeName(app.type)},
         {QStringLiteral("profile"), app.writingProfile.value_or(QString())},
         {QStringLiteral("pasting"), pastingName(app.pasting)},
+        {QStringLiteral("history"), historyName(app.history)},
         {QStringLiteral("effective"), resolved(resolveApp(target, apps))},
         {QStringLiteral("inherited"),
          QVariantMap{{QStringLiteral("type"), appCategoryName(type.type)},
                      {QStringLiteral("profile"), profile.writingProfile},
                      {QStringLiteral("profileFrom"), layerName(profile.writingProfileFrom)},
                      {QStringLiteral("pasting"), pastingName(pasting.pasting)},
-                     {QStringLiteral("pastingFrom"), layerName(pasting.pastingFrom)}}},
+                     {QStringLiteral("pastingFrom"), layerName(pasting.pastingFrom)},
+                     {QStringLiteral("history"), historyName(history.history)},
+                     {QStringLiteral("historyFrom"), layerName(history.historyFrom)}}},
     };
 }
 
@@ -236,6 +262,7 @@ void QuickApps::rebuild()
             {QStringLiteral("id"), appCategoryName(type.type)},
             {QStringLiteral("profile"), other ? fallbackWritingProfile(apps) : type.writingProfile.value_or(QString())},
             {QStringLiteral("pasting"), pastingName(type.pasting)},
+            {QStringLiteral("history"), historyName(type.history)},
             {QStringLiteral("effectiveProfile"), type.writingProfile.value_or(fallbackWritingProfile(apps))},
         });
     }
@@ -323,8 +350,13 @@ QVariantMap QuickApps::add(const QVariantMap &app)
 
 QString QuickApps::update(const QString &id, const QVariantMap &patch)
 {
+    const auto history = historyChoice(patch.value(QStringLiteral("history")));
+    if (!history) {
+        qWarning().noquote() << "Apps.update takes no History choice" << patch.value(QStringLiteral("history")).toString();
+        return invalidRecord;
+    }
     return saveUnlessRefused([&](AppSettings &s) {
-        return editApp(s, id, [&patch](AppEntry &app) {
+        return editApp(s, id, [&patch, &history](AppEntry &app) {
             for (auto it = patch.cbegin(); it != patch.cend(); ++it) {
                 if (it.key() == u"type") {
                     app.type = optionalFrom<AppCategory>(it.value(), appCategoryFromName);
@@ -332,6 +364,8 @@ QString QuickApps::update(const QString &id, const QVariantMap &patch)
                     app.writingProfile = optionalFrom<QString>(it.value(), [](const QString &v) { return v; });
                 } else if (it.key() == u"pasting") {
                     app.pasting = optionalFrom<PasteMethod>(it.value(), pasteMethodFromName);
+                } else if (it.key() == u"history") {
+                    app.history = *history;
                 } else if (it.key() == u"name") {
                     app.name = it.value().toString();
                 }
@@ -365,14 +399,22 @@ void QuickApps::undo(int token)
 
 QString QuickApps::updateType(const QString &type, const QVariantMap &patch)
 {
+    const auto history = historyChoice(patch.value(QStringLiteral("history")));
+    if (!history) {
+        qWarning().noquote() << "Apps.updateType takes no History choice" << patch.value(QStringLiteral("history")).toString();
+        return invalidRecord;
+    }
     return saveUnlessRefused([&](AppSettings &s) {
-        return editAppType(s, appCategoryFromName(type), [&patch](AppTypeSettings &settings) {
+        return editAppType(s, appCategoryFromName(type), [&patch, &history](AppTypeSettings &settings) {
             if (patch.contains(QStringLiteral("profile"))) {
                 settings.writingProfile =
                     optionalFrom<QString>(patch.value(QStringLiteral("profile")), [](const QString &v) { return v; });
             }
             if (patch.contains(QStringLiteral("pasting"))) {
                 settings.pasting = optionalFrom<PasteMethod>(patch.value(QStringLiteral("pasting")), pasteMethodFromName);
+            }
+            if (patch.contains(QStringLiteral("history"))) {
+                settings.history = *history;
             }
         });
     });

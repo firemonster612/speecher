@@ -36,6 +36,26 @@ var pastingChoices = [
 ].filter(o => o.id !== "terminal_paste" || !mac);
 function pastingLabel(id) { return (pastingChoices.find(o => o.id === (id || "standard_paste")) || pastingChoices[0]).label }
 
+// An App's or App Type's History choice, which can only lower what
+// Privacy & data keeps (General's historyKeeps, whose option ids these
+// share); none is "Same as …".
+var historyChoices = [
+    { id: "stats", label: "Stats only", icon: "chart-no-axes-column" },
+    { id: "nothing", label: "Nothing", icon: "eye-off" }
+];
+function historyLabel(id) { return (historyChoices.find(o => o.id === id) || { label: "" }).label }
+// What History keeps of an app's dictations, for the line under its History
+// row: the lower of its choice (empty for none) and keeps, Privacy & data's
+// level, whose label is keepsLabel.
+var keepOrder = ["nothing", "stats", "text", "audio"];
+function historyResult(choice, keeps, keepsLabel) {
+    const level = keepsLabel.toLowerCase()
+    if (!choice) return "Keeps " + level + ", as Privacy & data does."
+    if (keepOrder.indexOf(keeps) < keepOrder.indexOf(choice)) return "Keeps " + level + ": Privacy & data keeps " + level + "."
+    return choice === "stats" ? "Keeps word counts and times for Home, never the words."
+                              : "Keeps nothing of its dictations, not even for Home."
+}
+
 // The editor's words, an App's and an App Type's alike.
 var t = {
     addApp: "Add app",
@@ -48,6 +68,8 @@ var t = {
     type: "Type",
     profile: "Writing profile",
     pasting: "Pasting",
+    history: "History",
+    leftOut: "Left out of History",
     recognizedAs: "Recognized as",
     byName: "Name contains",
     byTitle: "Window title contains",
@@ -94,12 +116,15 @@ function summary(entry, profileName) {
     if (entry.type) parts.push(type(entry.type).one)
     if (entry.profile) parts.push(profileName(entry.profile) + " profile")
     if (entry.pasting) parts.push(pastingLabel(entry.pasting))
+    if (entry.history) parts.push(t.leftOut)
     return parts.length ? parts.join(", ") : "Same as " + type(entry.effective.type).label
 }
-// What an App Type's row says: its profile and Pasting choice.
+// What an App Type's row says: its profile, Pasting and History choices.
 function typeSummary(settings, profileName) {
-    const profile = settings.profile ? profileName(settings.profile) + " profile" : "Same as Other apps"
-    return settings.pasting ? profile + ", " + pastingLabel(settings.pasting) : profile
+    const parts = [settings.profile ? profileName(settings.profile) + " profile" : "Same as Other apps"]
+    if (settings.pasting) parts.push(pastingLabel(settings.pasting))
+    if (settings.history) parts.push(t.leftOut)
+    return parts.join(", ")
 }
 
 var rows = [
@@ -112,6 +137,10 @@ var rows = [
     { id: "appTypes", page: "apps", section: t.types, kind: "custom",
       label: t.types, help: "Each type has a writing profile and a way of pasting its apps follow.",
       keywords: "app type category terminal keys built-in " + types.map(c => c.label.toLowerCase()).join(" ") },
+    { id: "appHistory", page: "apps", section: t.yourApps, kind: "custom",
+      label: "History for an app",
+      help: "Keep only stats, or nothing, of what you dictate into an app or a type of app. It never keeps more than Privacy & data.",
+      keywords: "history privacy exclude leave out private password manager incognito keep stats nothing" },
     { id: "otherAppsProfile", page: "apps", section: t.types, kind: "custom",
       label: "Profile for apps Speecher doesn't recognize", help: t.otherProfileHelp,
       keywords: "fallback default profile unknown unrecognized other apps writing profile" }
