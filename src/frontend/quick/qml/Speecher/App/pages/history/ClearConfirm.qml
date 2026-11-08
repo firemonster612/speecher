@@ -29,7 +29,7 @@ Column {
     // Clears span at once, saying what stayed if anything did.
     function clearNow(span, withStats) {
         const result = History.clear(span, withStats)
-        stayed = result.left > 0 ? Object.assign({ range: span, withStats: withStats }, result) : null
+        stayed = !result.succeeded || result.left > 0 ? Object.assign({ range: span, withStats: withStats }, result) : null
     }
 
     width: parent ? parent.width : implicitWidth

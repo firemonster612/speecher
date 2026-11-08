@@ -47,6 +47,7 @@ QString alreadyRecordingText(const QString &path);
 QString recordingNoServiceText();
 // Why a start stopped while it was connecting ended without a recording.
 QString recordingCancelledText();
+QString recordingAlreadyStartedText();
 QString recordingStreamEndedText();
 // A stream's problem once an utterance was not transcribed, for reason.
 QString recordingUtteranceFailedText(const QString &reason);

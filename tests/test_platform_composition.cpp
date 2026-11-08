@@ -713,6 +713,26 @@ private slots:
         controller.stopListening();
     }
 
+    // A start waiting for the microphone (macOS asks the first time) shows
+    // as starting and a second toggle cancels it: the grant that comes after
+    // starts nothing.
+    void recordingPermissionWaitCanBeCancelled()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        platform->audioInputs = [](QObject *parent) { return new test::FakeAudioInput(parent); };
+        ApplicationController controller(true, platform);
+        controller.settings()->setRecordingConsentNoticeShown(true);
+        controller.toggleRecording();
+        QVERIFY(platform->microphoneAnswer);
+        QVERIFY(controller.recordingStartPending());
+        QCOMPARE(controller.recording()->phase(), RecordingSession::Phase::Off);
+        controller.toggleRecording();
+        QVERIFY(!controller.recordingStartPending());
+        const auto lateGrant = platform->microphoneAnswer;
+        lateGrant(true);
+        QCOMPARE(controller.recording()->phase(), RecordingSession::Phase::Off);
+    }
+
     // Tests answer for the operating system's reachability, whatever the
     // machine's own network: test_main sets online unless the run chose.
     void testsChooseTheReachabilityTheControllerSees()

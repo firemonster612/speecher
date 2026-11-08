@@ -21,6 +21,9 @@
 #include <QPointer>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QScopeGuard>
+#include <QStandardPaths>
+#include <QDir>
 #include <QTest>
 
 using namespace speecher;
@@ -346,12 +349,40 @@ private slots:
         QCOMPARE(history.countIn(QStringLiteral("hour")), 1);
         QCOMPARE(history.countIn(QStringLiteral("all")), 2);
         QCOMPARE(history.clear(QStringLiteral("hour"), false),
-                 (QVariantMap{{QStringLiteral("cleared"), 1}, {QStringLiteral("left"), 0}, {QStringLiteral("files"), QStringList()}}));
+                 (QVariantMap{{QStringLiteral("succeeded"), true},
+                              {QStringLiteral("cleared"), 1}, {QStringLiteral("left"), 0}, {QStringLiteral("files"), QStringList()}}));
         QCOMPARE(textsOf(history.results()), QStringList{QStringLiteral("last week")});
         QCOMPARE(controller.history()->records().size(), 2);
         QCOMPARE(history.clear(QStringLiteral("all"), true).value(QStringLiteral("left")).toInt(), 0);
         QCOMPARE(history.kept(), 0);
         QVERIFY(controller.history()->records().isEmpty());
+    }
+
+    // A clear of the stats too that can't finish (its recent apps won't go)
+    // says so, though no entry holding text stayed.
+    void aClearOfStatsThatFailsSaysSo()
+    {
+        ApplicationController controller(true);
+        HistoryEntry stats = kept(QStringLiteral("stats"));
+        stats.kept = HistoryKeep::Stats;
+        controller.history()->add(stats);
+        const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+        QFile seen(QDir(folder).filePath(QStringLiteral("seen-apps.json")));
+        QVERIFY(seen.open(QIODevice::WriteOnly));
+        seen.write("[]");
+        seen.close();
+        const auto cleanUp = qScopeGuard([&seen] { seen.remove(); });
+        QuickHistory history(&controller);
+        {
+            test::LockedFolder locked(folder);
+            if (!locked.holds()) {
+                QSKIP("files here can be deleted anyway");
+            }
+            const QVariantMap result = history.clear(QStringLiteral("all"), true);
+            QVERIFY(!result.value(QStringLiteral("succeeded")).toBool());
+            QCOMPARE(result.value(QStringLiteral("left")).toInt(), 0);
+        }
+        QVERIFY(history.clear(QStringLiteral("all"), true).value(QStringLiteral("succeeded")).toBool());
     }
 
     // A clear that leaves entries says how many went, how many stayed and
@@ -374,7 +405,8 @@ private slots:
             QSKIP("files here can be deleted anyway");
         }
         QCOMPARE(history.clear(QStringLiteral("all"), false),
-                 (QVariantMap{{QStringLiteral("cleared"), 1},
+                 (QVariantMap{{QStringLiteral("succeeded"), false},
+                              {QStringLiteral("cleared"), 1},
                               {QStringLiteral("left"), 1},
                               {QStringLiteral("files"), QStringList{withAudio.audioPath}}}));
         QCOMPARE(textsOf(history.results()), QStringList{QStringLiteral("held")});

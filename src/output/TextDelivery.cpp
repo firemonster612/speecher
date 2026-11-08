@@ -115,6 +115,47 @@ private:
 };
 #endif // SPEECHER_WITH_WIN
 
+// Whose turn it is to borrow the clipboard, across every TextDelivery: a
+// paste that saved the clipboard while another held its words there would
+// put those words back instead of what the user had copied. A turn is taken
+// before saving and given back once the paste has put the clipboard back.
+struct ClipboardTurns {
+    bool taken = false;
+    QList<std::pair<QPointer<QObject>, std::function<void()>>> waiting;
+};
+
+ClipboardTurns &clipboardTurns()
+{
+    static ClipboardTurns turns;
+    return turns;
+}
+
+// Calls next once it's context's turn: now, or after the pastes ahead.
+void takeClipboardTurn(QObject *context, std::function<void()> next)
+{
+    ClipboardTurns &turns = clipboardTurns();
+    if (turns.taken) {
+        turns.waiting.append({context, std::move(next)});
+        return;
+    }
+    turns.taken = true;
+    next();
+}
+
+void giveClipboardTurn()
+{
+    ClipboardTurns &turns = clipboardTurns();
+    while (!turns.waiting.isEmpty()) {
+        auto [context, next] = turns.waiting.takeFirst();
+        if (context) {
+            // Not inside the giver, which is going away.
+            QMetaObject::invokeMethod(context, std::move(next), Qt::QueuedConnection);
+            return;
+        }
+    }
+    turns.taken = false;
+}
+
 } // namespace
 
 TextDelivery::TextDelivery(QObject *parent)
@@ -181,11 +222,27 @@ public:
         : m_clipboard(clipboard)
     {
     }
+    // The turn goes with the run, after its restore or however it ended.
+    ~PreviousClipboard()
+    {
+        if (m_hasTurn) {
+            giveClipboardTurn();
+        }
+    }
 
-    // Saves the clipboard, and only one it can put back whole. next hears
-    // why it could not, as a reason to put after "Not delivered: ", or
-    // nothing once it is saved.
+    // Once it's this paste's turn, saves the clipboard, and only one it can
+    // put back whole. next hears why it could not, as a reason to put after
+    // "Not delivered: ", or nothing once it is saved.
     void save(QObject *context, std::function<void(const QString &failure)> next)
+    {
+        takeClipboardTurn(context, [this, context, next = std::move(next)] {
+            m_hasTurn = true;
+            saveNow(context, next);
+        });
+    }
+
+private:
+    void saveNow(QObject *context, const std::function<void(const QString &failure)> &next)
     {
         if (!m_clipboard.canSnapshot()) {
 #ifdef SPEECHER_WITH_WAYLAND
@@ -216,6 +273,7 @@ public:
         });
     }
 
+public:
     // Puts the saved clipboard back. next hears false when nothing was
     // saved, or when it could not be put back, which the receipt then says.
     void restore(QObject *context, std::function<void(bool restored)> next)
@@ -253,6 +311,7 @@ private:
     ClipboardDelivery &m_clipboard;
     ClipboardSnapshot m_snapshot;
     bool m_saved = false;
+    bool m_hasTurn = false;
     QString m_warning;
     QString m_note;
 };

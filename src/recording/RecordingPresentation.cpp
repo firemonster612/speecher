@@ -166,6 +166,11 @@ QString recordingCancelledText()
     return QStringLiteral("The recording was cancelled before it started.");
 }
 
+QString recordingAlreadyStartedText()
+{
+    return QStringLiteral("A recording is already starting or running.");
+}
+
 QString recordingStreamEndedText()
 {
     return QStringLiteral("The speech stream ended.");

@@ -12,6 +12,7 @@
 #include <QKeyEvent>
 
 #include <algorithm>
+#include <iterator>
 #include <type_traits>
 #include <utility>
 
@@ -74,6 +75,29 @@ QVariant serviceOrderValue(const ServiceOrder &services)
 // The order QML hands back. A field an entry leaves out keeps the stored
 // choice's, and a service left out of the order keeps its choice for when
 // it comes back.
+// An order as v sets it, each entry keeping only the fields that differ from
+// the same service's in shown: an order hands back every field as it was
+// read, and replaying those would undo a model saved since by other means.
+QVariant changedFields(const QVariant &shown, const QVariant &v)
+{
+    QVariantList entries;
+    const QVariantList before = shown.toList();
+    for (const QVariant &value : v.toList()) {
+        QVariantMap entry = value.toMap();
+        const auto same = std::find_if(before.cbegin(), before.cend(), [&entry](const QVariant &old) {
+            return old.toMap().value(QStringLiteral("service")) == entry.value(QStringLiteral("service"));
+        });
+        if (same != before.cend()) {
+            const QVariantMap old = same->toMap();
+            for (auto it = entry.begin(); it != entry.end();) {
+                it = it.key() != u"service" && old.value(it.key()) == it.value() ? entry.erase(it) : std::next(it);
+            }
+        }
+        entries.append(entry);
+    }
+    return entries;
+}
+
 void setServiceOrder(ServiceOrder &services, const QVariant &v)
 {
     services.order.clear();
@@ -132,18 +156,9 @@ const SettingRow settingRows[] = {
     FIELD_ROW("vadEnabled", audio.vadEnabled),
     FIELD_ROW("vadThresholdPercent", audio.vadThresholdPercent),
 
-    // [{service, model, language}], the first service first. The "local"
-    // entry's model is speechLocalModel's: an order hands back the one it
-    // was read with, which setup's draft would replay over a model chosen
-    // since.
+    // [{service, model, language}], the first service first.
     {"speechServices", [](const AppSettings &s) { return serviceOrderValue(s.speech.services); },
-     [](AppSettings &s, const QVariant &v) {
-         const QString localModel = localModelId(std::as_const(s.speech));
-         setServiceOrder(s.speech.services, v);
-         if (localModelId(std::as_const(s.speech)) != localModel) {
-             localModelId(s.speech) = localModel;
-         }
-     }},
+     [](AppSettings &s, const QVariant &v) { setServiceOrder(s.speech.services, v); }},
     FIELD_ROW("spokenLanguage", speech.language),
     FIELD_ROW("codexFinalRetranscribe", speech.codexFinalRetranscribe),
     // The "local" entry's model, in the order or out of it. Choosing one
@@ -421,11 +436,17 @@ void QuickSettings::set(const QString &id, const QVariant &value)
         }
     };
     if (m_draftRows.contains(id)) {
-        m_draft = [before = m_draft, write](AppSettings &settings) {
+        // A Service Order waits with only what this edit changed, so a model
+        // saved meanwhile (a download, a runner's pull, a Fix sheet) stays.
+        const bool order = id == u"speechServices" || id == u"refinementServices";
+        const SettingsEdit drafted = order ? SettingsEdit([row, value = changedFields(row->read(shown()), value)](
+                                                              AppSettings &settings) { row->write(settings, value); })
+                                           : write;
+        m_draft = [before = m_draft, drafted](AppSettings &settings) {
             if (before) {
                 before(settings);
             }
-            write(settings);
+            drafted(settings);
         };
         refresh();
         return;

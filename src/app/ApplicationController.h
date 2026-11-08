@@ -86,6 +86,11 @@ public:
     // ask for the microphone first, and the provider's stream must connect, so
     // it can come long after. recordingStartFinished says the same.
     void startRecording(const RecordingRequest &request, std::function<void(const QString &error)> done);
+    // Whether a start waits for the microphone, before the session starts:
+    // shown as starting, and stopRecording or toggleRecording cancels it.
+    bool recordingStartPending() const;
+    // Stops the recording running, or cancels a start still waiting.
+    void stopRecording();
     // The tray's and the Recording Shortcut's: stops the recording running,
     // or starts one with the saved settings and no name. The first recording
     // ever asks for recordingConsentNeeded instead.
@@ -238,6 +243,7 @@ signals:
     void recordingChanged(bool recording);
     // A start ended: empty once it records, else why it did not.
     void recordingStartFinished(const QString &error);
+    void recordingStartPendingChanged();
     // A start from the tray or the shortcut waits for the person to have
     // seen the consent notice, which the Recordings page shows.
     void recordingConsentNeeded();
@@ -253,6 +259,7 @@ signals:
     void pasteAgainFinished(bool ok, const QString &message);
 
 private:
+    bool cancelRecordingStart();
     void forgetLastRecord();
     void keepInHistory(const HistoryEntry &entry, bool intoPasswordField);
     void keepFileInHistory(const TranscribeFileResult &result);
@@ -327,6 +334,9 @@ private:
     bool m_deferredStartupDone = false;
     quint64 m_microphoneStartGeneration = 0;
     bool m_microphoneStartPending = false;
+    // A recording start waiting for the microphone, and which one may go on.
+    std::function<void(const QString &error)> m_pendingRecordingStart;
+    quint64 m_recordingStartGeneration = 0;
     // Set for good once quitApplication() runs; guards its re-entry and
     // blocks new session starts during the shutdown pump.
     bool m_quitting = false;

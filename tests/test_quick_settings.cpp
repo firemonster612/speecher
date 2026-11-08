@@ -118,6 +118,27 @@ private slots:
         QCOMPARE(entry.value(QStringLiteral("speed")).toString(), QStringLiteral("standard"));
     }
 
+    void setupDraftKeepsSeparatelySavedRefinementModel()
+    {
+        ApplicationController controller(true);
+        controller.settings()->edit([](AppSettings &saved) {
+            saved.refinement.services.order = {QStringLiteral("chatgpt"), QStringLiteral("local")};
+            saved.refinement.services.choice(QStringLiteral("local")).model = QStringLiteral("old:1b");
+            return true;
+        });
+        QuickSettings settings(&controller);
+        settings.startDraft({QStringLiteral("refinementServices")});
+        const QVariantList order = settings.values().value(QStringLiteral("refinementServices")).toList();
+        settings.set(QStringLiteral("refinementServices"), order.mid(1) + order.mid(0, 1));
+        const QString model = QStringLiteral("qwen3:8b");
+        controller.settings()->edit([&](AppSettings &saved) {
+            saved.refinement.services.choice(QStringLiteral("local")).model = model;
+            return true;
+        });
+        settings.saveDraft();
+        QCOMPARE(SettingsStore().dictationSnapshot().refinement.services.choice(QStringLiteral("local")).model, model);
+    }
+
     void updateIntervalIsListedOrCustom()
     {
         ApplicationController controller(true);

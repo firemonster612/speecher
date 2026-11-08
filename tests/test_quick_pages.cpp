@@ -1945,6 +1945,34 @@ private slots:
         QTRY_VERIFY(palette->property("shown").toBool());
     }
 
+    // Refine again in a reader that moves to another entry starts over, so
+    // Keep this can't save one entry's refined text into the next; the same
+    // entry read again, as History refreshes, keeps what it has.
+    void refineAgainStartsOverForAnotherEntry()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QQmlComponent component(qmlEngine(main), QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/history/RefineAgain.qml")));
+        const auto entry = [](qint64 id) { return QVariantMap{{QStringLiteral("id"), id}, {QStringLiteral("profile"), QString()}}; };
+        const std::unique_ptr<QObject> again(component.createWithInitialProperties({{QStringLiteral("entry"), entry(1)}}));
+        QVERIFY2(again, qPrintable(component.errorString()));
+        again->setProperty("refinedText", QStringLiteral("refined first"));
+        again->setProperty("refining", true);
+        again->setProperty("failed", true);
+
+        again->setProperty("entry", entry(1));
+        QCOMPARE(again->property("refinedText").toString(), QStringLiteral("refined first"));
+
+        again->setProperty("entry", entry(2));
+        QVERIFY(again->property("refinedText").toString().isEmpty());
+        QVERIFY(!again->property("refining").toBool());
+        QVERIFY(!again->property("failed").toBool());
+    }
+
     // While History keeps text, search ends with Search History for the
     // words, which opens History with them searched; keeping only stats, it
     // doesn't offer it.

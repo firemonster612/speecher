@@ -491,7 +491,7 @@ QVariantMap QuickHistory::clear(const QString &range, bool withStats)
     std::tie(holdingText.from, holdingText.to) = rangeOf(range, QDate::currentDate());
     const HistoryStore *history = m_controller->history();
     const int before = history->count(holdingText);
-    m_controller->clearHistory(holdingText.from, holdingText.to, withStats);
+    const bool succeeded = m_controller->clearHistory(holdingText.from, holdingText.to, withStats);
     // An entry whose audio wouldn't go stays as it was, text and all.
     const int left = history->count(holdingText);
     QStringList files;
@@ -503,7 +503,8 @@ QVariantMap QuickHistory::clear(const QString &range, bool withStats)
             }
         }
     }
-    return {{QStringLiteral("cleared"), std::max(0, before - left)},
+    return {{QStringLiteral("succeeded"), succeeded},
+            {QStringLiteral("cleared"), std::max(0, before - left)},
             {QStringLiteral("left"), left},
             {QStringLiteral("files"), files}};
 }

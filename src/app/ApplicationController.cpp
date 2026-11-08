@@ -440,9 +440,22 @@ void ApplicationController::startRecording(const RecordingRequest &request,
         done(error);
         emit recordingStartFinished(error);
     };
+    if (recordingStartPending() || m_recording->phase() != RecordingSession::Phase::Off) {
+        finished(recordingAlreadyStartedText());
+        return;
+    }
     // A recording needs only a microphone and a speech service that can
-    // record, not the rest of setup (pasting, a shortcut).
-    m_platform->requestMicrophoneAccess(this, [this, request, finished](bool granted) {
+    // record, not the rest of setup (pasting, a shortcut). While macOS asks
+    // for the microphone, the start waits here, cancellable.
+    const quint64 generation = ++m_recordingStartGeneration;
+    m_pendingRecordingStart = finished;
+    emit recordingStartPendingChanged();
+    m_platform->requestMicrophoneAccess(this, [this, request, generation, finished](bool granted) {
+        if (generation != m_recordingStartGeneration) {
+            return;
+        }
+        m_pendingRecordingStart = {};
+        emit recordingStartPendingChanged();
         if (!granted) {
             finished(microphoneAccessOffText());
             return;
@@ -451,8 +464,35 @@ void ApplicationController::startRecording(const RecordingRequest &request,
     });
 }
 
+bool ApplicationController::recordingStartPending() const
+{
+    return bool(m_pendingRecordingStart);
+}
+
+bool ApplicationController::cancelRecordingStart()
+{
+    const auto finished = std::exchange(m_pendingRecordingStart, {});
+    if (!finished) {
+        return false;
+    }
+    ++m_recordingStartGeneration;
+    emit recordingStartPendingChanged();
+    finished(recordingCancelledText());
+    return true;
+}
+
+void ApplicationController::stopRecording()
+{
+    if (!cancelRecordingStart()) {
+        m_recording->stop();
+    }
+}
+
 void ApplicationController::toggleRecording()
 {
+    if (cancelRecordingStart()) {
+        return;
+    }
     switch (m_recording->phase()) {
     case RecordingSession::Phase::Starting:
     case RecordingSession::Phase::Recording:

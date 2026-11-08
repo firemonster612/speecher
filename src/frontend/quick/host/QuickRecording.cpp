@@ -28,7 +28,7 @@ QuickRecording::QuickRecording(ApplicationController *controller, QObject *paren
             emit problemsChanged();
         }
     });
-    connect(recording, &RecordingSession::phaseChanged, this, [this] {
+    const auto phaseChanged = [this] {
         const QString now = state();
         if (now == u"starting") {
             m_lines.clear();
@@ -46,7 +46,9 @@ QuickRecording::QuickRecording(ApplicationController *controller, QObject *paren
         emit problemsChanged();
         // The first `record start` ever shows the notice itself.
         emit consentNeededChanged();
-    });
+    };
+    connect(recording, &RecordingSession::phaseChanged, this, phaseChanged);
+    connect(controller, &ApplicationController::recordingStartPendingChanged, this, phaseChanged);
     connect(recording, &RecordingSession::problemChanged, this, &QuickRecording::problemsChanged);
     connect(recording, &RecordingSession::lineWritten, this,
             [this](qint64 atMs, const QString &speaker, const QString &text) {
@@ -72,6 +74,9 @@ QuickRecording::QuickRecording(ApplicationController *controller, QObject *paren
 
 QString QuickRecording::state() const
 {
+    if (m_controller->recordingStartPending()) {
+        return QStringLiteral("starting");
+    }
     switch (m_controller->recording()->phase()) {
     case RecordingSession::Phase::Starting:
         return QStringLiteral("starting");
@@ -187,7 +192,7 @@ void QuickRecording::start(const QString &title)
 
 void QuickRecording::stop()
 {
-    m_controller->recording()->stop();
+    m_controller->stopRecording();
 }
 
 void QuickRecording::setFolder(const QUrl &folder)

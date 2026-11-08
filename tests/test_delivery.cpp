@@ -2532,6 +2532,38 @@ fi
         QCOMPARE(restored->data(QStringLiteral("application/x-speecher-test")), QByteArrayLiteral("custom-data"));
     }
 
+    // Two pastes that overlap, a dictation's and Paste Again's say, each
+    // borrow the clipboard in turn: the second saves only once the first has
+    // put the clipboard back, so what the person had copied is what stays.
+    void overlappingPastesGiveBackTheOriginalClipboard()
+    {
+        QApplication::clipboard()->setText(QStringLiteral("original user clipboard"));
+        QList<QString> attempts;
+        QHash<QString, bool> results{{virtualKeyboardMethod(), true}};
+        const auto backend = [&attempts, &results](const QString &method, const OutputSettings &, PasteKeyCombo) {
+            return std::make_unique<FakeBackend>(method, &attempts, &results);
+        };
+        FakeTargetProvider targetProvider;
+        targetProvider.verified = false;
+        TextDelivery first(backend, &targetProvider);
+        TextDelivery second(backend, &targetProvider);
+        OutputSettings settings;
+        settings.ydotoolEnabled = true;
+        settings.steps = {.insert = false, .press = true, .keep = false};
+        Target target;
+        target.applicationId = QStringLiteral("org.kde.kate");
+
+        QSignalSpy firstDone(&first, &TextDelivery::delivered);
+        QSignalSpy secondDone(&second, &TextDelivery::delivered);
+        first.deliver(settings, makeDeliveryContent(QStringLiteral("dictation A"), OutputFormat::PlainText), target, {});
+        QTimer::singleShot(100, &second, [&] {
+            second.deliver(settings, makeDeliveryContent(QStringLiteral("paste again B"), OutputFormat::PlainText), target, {});
+        });
+        QTRY_COMPARE_WITH_TIMEOUT(secondDone.count(), 1, 5000);
+        QCOMPARE(firstDone.count(), 1);
+        QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("original user clipboard"));
+    }
+
     void clipboardSnapshotCapturesAndRestoresEveryMimeType()
     {
         auto *original = new QMimeData;

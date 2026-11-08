@@ -111,6 +111,9 @@ TrayIcon::TrayIcon(ApplicationController *controller, QObject *parent)
             this, &TrayIcon::applyState);
     m_recordingClock.setInterval(1000);
     connect(&m_recordingClock, &QTimer::timeout, this, [this, controller] { applyState(controller->dictationState()); });
+    for (const auto changed : {&ApplicationController::recordingStartPendingChanged}) {
+        connect(controller, changed, this, [this, controller] { applyState(controller->dictationState()); });
+    }
     connect(controller->recording(), &RecordingSession::phaseChanged, this, [this, controller] {
         applyState(controller->dictationState());
     });
@@ -149,7 +152,8 @@ void TrayIcon::applyState(DictationState state)
     m_toggleAction->setText(toggle.label);
     m_toggleAction->setEnabled(toggle.enabled);
     // A start can be cancelled; a stop can't be hurried.
-    m_recordingAction->setText(trayRecordingActionText(phase == RecordingSession::Phase::Starting, recording, elapsedMs));
+    const bool starting = phase == RecordingSession::Phase::Starting || m_controller->recordingStartPending();
+    m_recordingAction->setText(trayRecordingActionText(starting, recording, elapsedMs));
     m_recordingAction->setEnabled(phase != RecordingSession::Phase::Stopping);
     if (recording != m_recordingClock.isActive()) {
         recording ? m_recordingClock.start() : m_recordingClock.stop();

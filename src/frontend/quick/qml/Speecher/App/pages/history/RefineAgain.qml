@@ -17,6 +17,15 @@ Column {
     property bool refining: false
     property bool failed: false
     property string problem
+    // Another entry in the same reader starts with nothing refined; the
+    // last one's late answer is for its id, so it isn't taken.
+    readonly property var _entryId: entry ? entry.id : 0
+    on_EntryIdChanged: {
+        refinedText = ""
+        refining = false
+        failed = false
+        problem = ""
+    }
     readonly property var profiles: {
         const own = Library.profiles.filter(p => p.id === root.entry.profile)
         return own.concat(Library.profiles.filter(p => p.id !== root.entry.profile)).map(p => ({ id: p.id, label: p.name }))

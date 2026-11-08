@@ -135,6 +135,8 @@ function shortPath(path, home) {
 // "Speecher couldn't delete 1402.m4a, so 1 dictation or file stays as it
 // was. The other 21 were cleared."
 function clearStayed(result) {
+    // A clear that failed with no text involved, such as on stats alone.
+    if (result.left === 0) return "Speecher couldn't finish clearing History."
     const names = result.files.map(f => f.split(/[\\/]/).pop())
     const shown = names.length > 3 ? names.slice(0, 3).join(", ") + " and " + (names.length - 3) + " more" : _list(names)
     const stays = result.left === 1 ? "1 dictation or file stays as it was." : _num(result.left) + " dictations and files stay as they were."

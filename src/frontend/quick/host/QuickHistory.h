@@ -132,9 +132,10 @@ public:
     Q_INVOKABLE bool keepRefined(qint64 id, const QString &text);
     // hour, today, 7d or all: how many dictations and files finished then,
     // and deleting their words (and with withStats, the entries). clear
-    // answers { cleared, left, files }: how many that held text were
-    // cleared, how many still hold it, and the audio files that wouldn't go
-    // and kept theirs. left is 0 once it all went.
+    // answers { succeeded, cleared, left, files }: whether it all went, how
+    // many that held text were cleared, how many still hold it, and the audio
+    // files that wouldn't go and kept theirs. A clear can fail with left 0,
+    // on stats alone.
     Q_INVOKABLE int countIn(const QString &range) const;
     Q_INVOKABLE QVariantMap clear(const QString &range, bool withStats);
 
