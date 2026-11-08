@@ -357,7 +357,7 @@ bool QuickFrontEnd::eventFilter(QObject *watched, QEvent *event)
 
 void QuickFrontEnd::setupClosed()
 {
-    // Finish and Set up later saved what setup chose; closing it any other
+    // Finish and Skip setup saved what setup chose; closing it any other
     // way leaves it unsaved.
     m_settings.dropDraft();
     releaseTestIn(m_audio, m_setup);

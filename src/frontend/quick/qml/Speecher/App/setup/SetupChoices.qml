@@ -39,7 +39,7 @@ QtObject {
 
     Component.onCompleted: Settings.startDraft(draftedRows)
 
-    // Saves the draft: Finish and Set up later.
+    // Saves the draft: Finish and Skip setup.
     function save() { Settings.saveDraft() }
 
     function _status(id) {

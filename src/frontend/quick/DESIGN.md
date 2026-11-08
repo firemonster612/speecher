@@ -212,7 +212,7 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   `set` keeps those rows' edits in it, in order, as one `SettingsEdit`
   rather than saving them. `values` shows the draft over the saved
   settings, on every page, and a save from anywhere else shows under it.
-  `saveDraft()` saves it in one go (Finish, Set up later) and
+  `saveDraft()` saves it in one go (Finish, Skip setup) and
   `dropDraft()` drops it (the host, when setup closes). Every other row,
   the microphone, the shortcuts and whatever a Fix sheet changes, saves at
   once, so the microphone test, the bound keys and the sign-in and server
@@ -627,7 +627,7 @@ Layout:
   own goes back to that step. A step has no control or wording of its own: the part
   a page shares with setup lives in `pages/<area>/` (or `App/` when two
   areas share it, as `ServiceOrderSection` does) and both use it. What the
-  steps choose waits in `Settings`' draft until Finish or Set up later
+  steps choose waits in `Settings`' draft until Finish or Skip setup
   saves it, so setup, the pages and Home's readiness read one set of
   values. Speech, the microphone and a delivery that gets the words
   somewhere are needed; Finish is always there and names what is missing,

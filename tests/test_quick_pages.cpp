@@ -2649,7 +2649,7 @@ private slots:
 
     // Setup's Speech to text step is the page's own Service Order, and what
     // it changes waits in setup's draft, which Settings shows to every page:
-    // closing setup drops it, and Set up later saves it.
+    // closing setup drops it, and Skip setup saves it.
     void setupDraftsWhatItsStepsChange()
     {
         ApplicationController controller(true);

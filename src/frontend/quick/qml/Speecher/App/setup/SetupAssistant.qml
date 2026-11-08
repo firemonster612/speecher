@@ -132,10 +132,9 @@ ClientWindow {
             // In line with the step's content above.
             Rectangle { x: Theme.pageInset; width: parent.width - Theme.pageInset * 2; height: 1; color: Theme.rule }
 
-            // Set up later saves the draft and closes, leaving setup to
-            // open again; once every needed step passes it becomes Skip,
-            // which finishes. On the last step, what still keeps setup from
-            // being done. Back fades where it stands rather than reflowing
+            // Skip setup saves the draft and closes, leaving setup to open
+            // again while a needed step is open, else finishing it. On the
+            // last step, what still keeps setup from being done. Back fades where it stands rather than reflowing
             // the footer; the main button's label rolls to its new wording.
             Row {
                 x: Theme.pageInset
@@ -145,7 +144,7 @@ ClientWindow {
                     opacity: window._last ? 0 : 1
                     visible: opacity > 0
                     Behavior on opacity { Ease {} }
-                    text: choices.complete ? Setup.text.skip : Setup.text.later
+                    text: Setup.text.skip
                     variant: "ghost"
                     anchors.verticalCenter: parent.verticalCenter
                     onClicked: window.finish()

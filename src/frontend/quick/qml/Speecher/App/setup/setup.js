@@ -22,9 +22,9 @@ var steps = [
 var text = {
     title: "Set up Speecher",
     runAgain: "You can run setup again any time from Home or General.",
+    // Saves what was chosen and closes; setup opens again next time while
+    // a step dictation needs is still open.
     skip: "Skip setup",
-    // Saves what was chosen and closes; setup opens again next time.
-    later: "Set up later",
     back: "Back",
     getStarted: "Get started",
     continue_: "Continue",
