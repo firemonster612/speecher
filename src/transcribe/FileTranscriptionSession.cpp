@@ -1,5 +1,6 @@
 #include "transcribe/FileTranscriptionSession.h"
 
+#include "core/ProviderChain.h"
 #include "core/SettingsStore.h"
 #include "core/TranscriptState.h"
 #include "core/WritingProfileProviders.h"
@@ -176,20 +177,24 @@ AppSettings withBatchChoices(AppSettings settings, const ProviderRegistry &provi
     const AppSettings profiled = providers.withProfileProviders(
         settings, writingProfileSettingsFor(settings.refinement.writingProfiles,
                                             writingProfileFromName(options.writingProfile)));
-    if (profiled.speech.providerId == options.speechProviderId) {
+    if (profiled.speech.services.main() == options.speechProviderId) {
         settings.speech = profiled.speech;
     }
-    if (profiled.refinement.providerId == options.refinementProviderId) {
+    if (profiled.refinement.services.main() == options.refinementProviderId) {
         settings.refinement = profiled.refinement;
     }
-    settings.speech.providerId = options.speechProviderId;
-    settings.refinement.providerId = options.refinementProviderId;
-    QString *speechModel = speechModelSetting(settings.speech, settings.speech.providerId);
-    if (speechModel && !options.speechModel.isEmpty()) {
-        *speechModel = options.speechModel;
+    settings.speech.services = settings.speech.services.withMain(options.speechProviderId);
+    if (servicePicksModel(ProviderRole::Speech, options.speechProviderId) && !options.speechModel.isEmpty()) {
+        settings.speech.services.choice(options.speechProviderId).model = options.speechModel;
     }
-    if (!options.refinementModel.isEmpty()) {
-        setRefinementModel(settings.refinement, options.refinementModel);
+    // The batch refines with the service it names, or not at all, whatever
+    // Clean up my words says.
+    settings.refinement.enabled = options.refinementProviderId != kNoRefinementProvider;
+    if (settings.refinement.enabled) {
+        settings.refinement.services = settings.refinement.services.withMain(options.refinementProviderId);
+        if (!options.refinementModel.isEmpty()) {
+            settings.refinement.services.choice(options.refinementProviderId).model = options.refinementModel;
+        }
     }
     return settings;
 }
@@ -577,7 +582,7 @@ void FileTranscriptionSession::refine(const QString &raw)
     if (batch != m_batch) {
         return;
     }
-    m_refinementChain->begin(m_options.refinementProviderId, m_batchSettings.refinement.fallbackProviderIds);
+    m_refinementChain->begin(serviceChain(m_batchSettings.refinement));
     m_refinementChain->prepare(m_batchSettings, refinement);
 }
 

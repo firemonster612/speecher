@@ -100,7 +100,7 @@ void SpeechStream::prepare(const AppSettings &settings)
     ++m_generation;
     m_settings = settings;
     SpeechChain *chain = m_attempts->chain();
-    chain->begin(m_settings.speech.providerId, m_settings.speech.fallbackProviderIds);
+    chain->begin(serviceChain(m_settings.speech));
     if (const QString problem =
             spokenLanguageProblem(speechSettings(), m_providers->speechProviderLabel(chain->currentId()));
         !problem.isEmpty()) {

@@ -62,9 +62,7 @@ public:
     static OpenAiAuthProvider forSpeech(const AccountSettings &accounts);
     // The sign-in OpenAI refinement uses with these settings; secretStore
     // reads the saved API key.
-    static OpenAiAuthProvider forRefinement(SecretStore *secretStore,
-                                            const AccountSettings &accounts,
-                                            const RefinementSettings &refinement);
+    static OpenAiAuthProvider forRefinement(SecretStore *secretStore, const AccountSettings &accounts);
 
     OpenAiAuth resolve(bool refreshExpired = true) const;
     OpenAiAuthStatus status() const;

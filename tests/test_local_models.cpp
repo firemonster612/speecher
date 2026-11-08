@@ -140,36 +140,44 @@ private slots:
                                                   QStringLiteral("0.34.4"), QStringLiteral("http://127.0.0.1:11434/v1"),
                                                   {QStringLiteral("gemma4:e4b")}}});
         settings.edit([](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("anthropic");
+            draft.refinement.services.order = {QStringLiteral("anthropic")};
             return true;
         });
 
         const QString anthropic = QStringLiteral("anthropic");
         const QStringList full{QStringLiteral("openai"), QStringLiteral("endpoint")};
-        settings.edit([&](AppSettings &draft) { draft.refinement.fallbackProviderIds = full; return true; });
+        settings.edit([&](AppSettings &draft) { draft.refinement.services.order = QStringList{draft.refinement.services.main()} + full; return true; });
         setup.acceptSetupFallbackOffer(ProviderRole::Refinement, anthropic);
-        QCOMPARE(settings.dictationSnapshot().refinement.fallbackProviderIds, full);
+        QCOMPARE(settings.dictationSnapshot().refinement.services.order.mid(1), full);
         QCOMPARE(settings.dictationSnapshot().refinement.localRunner, LocalRunnerSettings{});
 
-        settings.edit([](AppSettings &draft) { draft.refinement.fallbackProviderIds = {}; return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {draft.refinement.services.main()}; return true; });
         setup.acceptSetupFallbackOffer(ProviderRole::Refinement, anthropic);
-        QCOMPARE(settings.dictationSnapshot().refinement.providerId, anthropic);
-        QCOMPARE(settings.dictationSnapshot().refinement.fallbackProviderIds, QStringList{QStringLiteral("local")});
-        QCOMPARE(settings.dictationSnapshot().refinement.localRunner.model, QStringLiteral("gemma4:e4b"));
+        QCOMPARE(settings.dictationSnapshot().refinement.services.main(), anthropic);
+        QCOMPARE(settings.dictationSnapshot().refinement.services.order.mid(1), QStringList{QStringLiteral("local")});
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("local")).model, QStringLiteral("gemma4:e4b"));
 
-        // Already a fallback.
-        settings.edit([](AppSettings &draft) { draft.refinement.localRunner = {}; return true; });
+        // Already in the order.
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.localRunner = {};
+            draft.refinement.services.choice(QStringLiteral("local")).model.clear();
+            return true;
+        });
         setup.acceptSetupFallbackOffer(ProviderRole::Refinement, anthropic);
-        QCOMPARE(settings.dictationSnapshot().refinement.fallbackProviderIds, QStringList{QStringLiteral("local")});
+        QCOMPARE(settings.dictationSnapshot().refinement.services.order.mid(1), QStringList{QStringLiteral("local")});
         QCOMPARE(settings.dictationSnapshot().refinement.localRunner, LocalRunnerSettings{});
 
-        // Setup's choice, saved with the fallback: with None saved, a chain
-        // behind it could hold no fallback at all.
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
-        QVERIFY(settings.dictationSnapshot().refinement.fallbackProviderIds.isEmpty());
+        // Setup's choice, saved with the offer, turns Clean up my words back
+        // on with that service first.
+        settings.edit([&](AppSettings &draft) {
+            draft.refinement.enabled = false;
+            draft.refinement.services.order = {anthropic};
+            return true;
+        });
         setup.acceptSetupFallbackOffer(ProviderRole::Refinement, QStringLiteral("openai"));
-        QCOMPARE(settings.dictationSnapshot().refinement.providerId, QStringLiteral("openai"));
-        QCOMPARE(settings.dictationSnapshot().refinement.fallbackProviderIds, QStringList{QStringLiteral("local")});
+        QVERIFY(settings.dictationSnapshot().refinement.enabled);
+        QCOMPARE(settings.dictationSnapshot().refinement.services.order,
+                 (QStringList{QStringLiteral("openai"), anthropic, QStringLiteral("local")}));
     }
 
     void endpointChecksDiscardSupersededResults_data()
@@ -192,7 +200,7 @@ private slots:
         QVERIFY(slow.listen(QHostAddress::LocalHost));
         QVERIFY(fast.listen(QHostAddress::LocalHost));
         const auto endpoint = [](quint16 port) {
-            SpeechEndpointSettings result;
+            ServerSettings result;
             result.baseUrl = QString("http://127.0.0.1:%1").arg(port);
             return result;
         };
@@ -201,16 +209,16 @@ private slots:
             return refinement ? facts.refinementEndpointModels : facts.speechEndpointModels;
         };
         const auto check = [&](AppSettings &snapshot) {
-            snapshot.refinement.endpoint.baseUrl = snapshot.speech.endpoint.baseUrl;
+            snapshot.refinement.server.baseUrl = snapshot.speech.server.baseUrl;
             settings.applySnapshot(snapshot);
-            if (refinement) setup.checkRefinementEndpoint(snapshot.refinement);
-            else setup.checkSpeechEndpoint(snapshot.speech.endpoint);
+            if (refinement) setup.checkRefinementEndpoint(resolvedRefinementEndpoint(snapshot.refinement, snapshot.accounts));
+            else setup.checkSpeechEndpoint(snapshot.speech.server);
         };
         auto snapshot = settings.snapshot();
-        snapshot.speech.endpoint = endpoint(slow.serverPort());
+        snapshot.speech.server = endpoint(slow.serverPort());
         check(snapshot);
         QTRY_VERIFY(slow.hasPendingConnections());
-        snapshot.speech.endpoint = endpoint(fast.serverPort());
+        snapshot.speech.server = endpoint(fast.serverPort());
         check(snapshot);
         QTRY_VERIFY(fast.hasPendingConnections());
         serveOnce(fast, "200 OK", R"({"data":[{"id":"new-B"}]})");
@@ -219,12 +227,12 @@ private slots:
         QTest::qWait(100);
         QCOMPARE(modelsForCheck(), QStringList{"new-B"});
         // Picking a model keeps the verdict; another server does not.
-        snapshot.speech.endpoint.model = "picked";
-        snapshot.refinement.endpoint.model = "picked";
+        snapshot.speech.services.choice(QStringLiteral("endpoint")).model = "picked";
+        snapshot.refinement.services.choice(QStringLiteral("endpoint")).model = "picked";
         settings.applySnapshot(snapshot);
         QCOMPARE(modelsForCheck(), QStringList{"new-B"});
-        snapshot.speech.endpoint = endpoint(slow.serverPort());
-        snapshot.refinement.endpoint.baseUrl = snapshot.speech.endpoint.baseUrl;
+        snapshot.speech.server = endpoint(slow.serverPort());
+        snapshot.refinement.server.baseUrl = snapshot.speech.server.baseUrl;
         settings.applySnapshot(snapshot);
         const auto facts = setup.liveFacts();
         QVERIFY((refinement ? facts.refinementEndpointStatus : facts.speechEndpointStatus).isEmpty());
@@ -242,18 +250,18 @@ private slots:
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
         auto snapshot = settings.snapshot();
-        snapshot.refinement.providerId = "endpoint";
-        snapshot.refinement.endpoint.baseUrl = "http://127.0.0.1:1/v";
+        snapshot.refinement.services.order = {"endpoint"};
+        snapshot.refinement.server.baseUrl = "http://127.0.0.1:1/v";
         settings.applySnapshot(snapshot);
         // Still typing: the address grows before the pause.
-        snapshot.refinement.endpoint.baseUrl = QString("http://127.0.0.1:%1/v1").arg(server.serverPort());
+        snapshot.refinement.server.baseUrl = QString("http://127.0.0.1:%1/v1").arg(server.serverPort());
         settings.applySnapshot(snapshot);
         QVERIFY(setup.liveFacts().refinementEndpointStatus.isEmpty());
 
         QTRY_VERIFY(server.hasPendingConnections());
         QVERIFY(serveOnce(server, "200 OK", R"({"data":[{"id":"first"},{"id":"second"}]})")
                     .startsWith("GET /v1/models"));
-        QTRY_COMPARE(settings.dictationSnapshot().refinement.endpoint.model, QString("first"));
+        QTRY_COMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("endpoint")).model, QString("first"));
         QCOMPARE(setup.liveFacts().refinementEndpointStatus, QString("Connected. Models available: 2."));
         QCOMPARE(setup.liveFacts().refinementEndpointModels, QStringList({"first", "second"}));
         QVERIFY(!test::appRequestArrived(server, 1000));
@@ -330,17 +338,17 @@ private slots:
         unchanged.idleUnloadMinutes = 60;
         settings.edit([&](AppSettings &draft) { draft.speech.local = unchanged; return true; });
         QVERIFY(!settings.dictationSnapshot().speech.local.modelChosen);
-        const auto beforeProbe = settings.dictationSnapshot().speech.local.modelId;
+        const auto beforeProbe = localModelId(settings.dictationSnapshot().speech);
         setup.initializeSpeechModel();
         QVERIFY(!settings.dictationSnapshot().speech.local.modelChosen);
-        QCOMPARE(settings.dictationSnapshot().speech.local.modelId, beforeProbe);
+        QCOMPARE(localModelId(settings.dictationSnapshot().speech), beforeProbe);
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
         setup.probeHardware();
         // The first Metal device init compiles ggml's shaders, which took
         // about 45 s on a CI runner; the suite has 120 s.
         QTRY_VERIFY_WITH_TIMEOUT(setup.hardwareKnown(), 90000);
         const AppSettings probed = settings.dictationSnapshot();
-        QCOMPARE(probed.speech.local.modelId, setup.suggestedModel(probed).id);
+        QCOMPARE(localModelId(probed.speech), setup.suggestedModel(probed).id);
         QCOMPARE(setup.speechModelChoice(probed).id, setup.suggestedModel(probed).id);
         QVERIFY(!settings.dictationSnapshot().speech.local.modelChosen);
 #endif
@@ -365,9 +373,9 @@ private slots:
             QVERIFY(file.open(QIODevice::WriteOnly));
             QVERIFY(file.resize(model.sizeBytes));
         }
-        speech.providerId = "local";
+        speech.services.order = {QStringLiteral("local")};
         QVERIFY(setup.modelState(model, speech).inUse);
-        speech.providerId = "claude";
+        speech.services.order = {QStringLiteral("claude")};
         QVERIFY(!setup.modelState(model, speech).inUse);
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
         auto *provider = qobject_cast<LocalSpeechTranscriber *>(providers.speechProvider("local"));
@@ -494,7 +502,7 @@ private slots:
         }
         const QString speedKey = localSpeedTestKey(model.id, {QStringLiteral("cpu"), {}});
         settings.edit([&](AppSettings &draft) {
-            draft.speech.local.modelId = model.id;
+            localModelId(draft.speech) = model.id;
             draft.speech.local.speedTestSeconds.insert(speedKey, 0.8);
             return true;
         });
@@ -504,9 +512,9 @@ private slots:
         const auto restore = qScopeGuard([&] { folder.setPermissions(writable); });
 
         QVERIFY(!setup.removeModel(model));
-        const LocalSpeechSettings local = settings.dictationSnapshot().speech.local;
-        QCOMPARE(local.modelId, model.id);
-        QCOMPARE(local.speedTestSeconds.value(speedKey), 0.8);
+        const SpeechSettings speech = settings.dictationSnapshot().speech;
+        QCOMPARE(localModelId(speech), model.id);
+        QCOMPARE(speech.local.speedTestSeconds.value(speedKey), 0.8);
     }
 #endif
 
@@ -799,7 +807,7 @@ private slots:
         QSignalSpy timings(&transcriber, &SpeechTranscriber::attemptSegments);
 
         SpeechSettings settings;
-        settings.local.modelId = modelId;
+        localModelId(settings) = modelId;
         // Local models get no key terms. Given to Whisper as a prompt, terms
         // like these replaced whole clips with other text.
         settings.vocabulary = {QStringLiteral("Speecher"), QStringLiteral("Kirigami")};
@@ -900,7 +908,7 @@ private slots:
         QSignalSpy transcripts(&transcriber, &SpeechTranscriber::attemptTranscript);
         QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
         SpeechSettings settings;
-        settings.local.modelId = modelId;
+        localModelId(settings) = modelId;
         QFile clip(QStringLiteral(":/speedtest/librispeech-6930-75918-0018.s16le"));
         QVERIFY(clip.open(QIODevice::ReadOnly));
         const QByteArray pcm = clip.readAll();

@@ -105,12 +105,15 @@ private slots:
 
         settings.set(QStringLiteral("previewWords"), 12.0);
         settings.set(QStringLiteral("themeControl"), QStringLiteral("dark"));
-        settings.set(QStringLiteral("speechFallbackList"), QVariantList{QStringLiteral("codex")});
+        settings.set(QStringLiteral("speechServices"),
+                     QVariantList{QVariantMap{{QStringLiteral("service"), QStringLiteral("claude")}},
+                                  QVariantMap{{QStringLiteral("service"), QStringLiteral("codex")}}});
 
         SettingsStore another;
         QCOMPARE(another.dictationSnapshot().ui.previewWords, 12);
         QCOMPARE(another.dictationSnapshot().ui.theme, QStringLiteral("dark"));
-        QCOMPARE(another.dictationSnapshot().speech.fallbackProviderIds, QStringList{QStringLiteral("codex")});
+        QCOMPARE(another.dictationSnapshot().speech.services.order,
+                 (QStringList{QStringLiteral("claude"), QStringLiteral("codex")}));
         QCOMPARE(settings.values().value(QStringLiteral("previewWords")).toInt(), 12);
         QCOMPARE(settings.values().value(QStringLiteral("themeControl")).toString(), QStringLiteral("dark"));
         QVERIFY(changed.count() >= 1);
@@ -122,20 +125,21 @@ private slots:
         QuickSettings settings(&controller);
 
         settings.set(QStringLiteral("shortcutBehavior"), QStringLiteral("push_to_talk"));
-        settings.set(QStringLiteral("anthropicFastMode"), QStringLiteral("standard"));
-        settings.set(QStringLiteral("refinementEndpointServer"), QStringLiteral("cliproxy"));
+        settings.set(QStringLiteral("refinementServices"),
+                     QVariantList{QVariantMap{{QStringLiteral("service"), QStringLiteral("anthropic")},
+                                              {QStringLiteral("speed"), QStringLiteral("standard")}}});
         settings.set(QStringLiteral("localIdleUnload"), QStringLiteral("60"));
 
         SettingsStore another;
         QCOMPARE(another.dictationSnapshot().shortcutActivationMode, ShortcutActivationMode::PushToTalk);
-        QVERIFY(!another.dictationSnapshot().refinement.anthropicFastMode);
-        QCOMPARE(another.dictationSnapshot().refinement.endpoint.preset, QStringLiteral("cliproxy"));
+        const ServiceOrder refinement = another.dictationSnapshot().refinement.services;
+        QCOMPARE(refinement.order, QStringList{QStringLiteral("anthropic")});
+        QCOMPARE(refinement.choice(QStringLiteral("anthropic")).speed, QStringLiteral("standard"));
+        // A field the entry leaves out keeps the saved one.
+        QCOMPARE(refinement.choice(QStringLiteral("anthropic")).model, QStringLiteral("claude-opus-5-5"));
         QCOMPARE(another.dictationSnapshot().speech.local.idleUnloadMinutes, 60);
-
-        settings.set(QStringLiteral("refinementEndpointServer"), QStringLiteral("custom"));
-        QCOMPARE(SettingsStore().dictationSnapshot().refinement.endpoint.preset, QString());
-        QCOMPARE(settings.values().value(QStringLiteral("refinementEndpointServer")).toString(), QStringLiteral("custom"));
-        QCOMPARE(settings.values().value(QStringLiteral("anthropicFastMode")).toString(), QStringLiteral("standard"));
+        const QVariantMap entry = settings.values().value(QStringLiteral("refinementServices")).toList().value(0).toMap();
+        QCOMPARE(entry.value(QStringLiteral("speed")).toString(), QStringLiteral("standard"));
     }
 
     void updateIntervalIsListedOrCustom()
@@ -277,7 +281,7 @@ private slots:
         settings.set(QStringLiteral("localAcceleration"), QStringLiteral("vulkan"));
         settings.set(QStringLiteral("localRunner"), QStringLiteral("llama-server"));
         AppSettings saved = SettingsStore().dictationSnapshot();
-        QCOMPARE(saved.speech.local.modelId, QStringLiteral("qwen3-asr"));
+        QCOMPARE(localModelId(saved.speech), QStringLiteral("qwen3-asr"));
         QVERIFY(saved.speech.local.modelChosen);
         QCOMPARE(saved.speech.local.runsOn, (LocalRunsOn{QStringLiteral("vulkan"), first}));
         QCOMPARE(saved.refinement.localRunner.runner, QStringLiteral("llama-server"));
@@ -292,9 +296,10 @@ private slots:
 
         // LocalSetup saves a model it moves dictation to without a snapshot,
         // as deleting the one in use does, and the row follows its news.
-        LocalSpeechSettings local = controller.settings()->dictationSnapshot().speech.local;
-        local.modelId = QStringLiteral("parakeet");
-        controller.settings()->edit([&](AppSettings &draft) { draft.speech.local = local; return true; });
+        controller.settings()->edit([](AppSettings &draft) {
+            localModelId(draft.speech) = QStringLiteral("parakeet");
+            return true;
+        });
         emit controller.localSetup()->changed();
         QCOMPARE(settings.values().value(QStringLiteral("speechLocalModel")).toString(), QStringLiteral("parakeet"));
     }
@@ -465,7 +470,8 @@ private slots:
         QVERIFY2(!result.isError(), qPrintable(result.toString()));
 
         SettingsStore another;
-        QCOMPARE(another.dictationSnapshot().speech.fallbackProviderIds, QStringList{QStringLiteral("codex")});
+        QCOMPARE(another.dictationSnapshot().speech.services.order,
+                 (QStringList{QStringLiteral("claude"), QStringLiteral("codex")}));
         QCOMPARE(another.dictationSnapshot().audio.preRollMs, 300);
         QCOMPARE(another.dictationSnapshot().updates.checkIntervalMinutes, 120);
         QCOMPARE(another.dictationSnapshot().updates.checkIntervalUnit, QStringLiteral("hours"));

@@ -1502,7 +1502,6 @@ private slots:
     {
         QTemporaryDir dir;
         AppSettings settings;
-        RefinementSettings &refinement = settings.refinement;
         AccountSettings &accounts = settings.accounts;
         accounts.cliproxyOauthDir = dir.path();
         accounts.anthropicAuthMode = AnthropicAuthMode::Cliproxy;
@@ -1540,12 +1539,12 @@ private slots:
         QCOMPARE(checkSignIn(SignInService::Anthropic, settings, nullptr).state, SignInState::SignedIn);
 
         // Through a server, its key is the whole sign-in.
-        refinement.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
+        accounts.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
         QCOMPARE(checkSignIn(SignInService::CliProxy, settings, nullptr).state, SignInState::Missing);
-        refinement.cliproxyApiKey = QStringLiteral("server-key");
+        accounts.cliproxyApiKey = QStringLiteral("server-key");
         cliproxy = checkSignIn(SignInService::CliProxy, settings, nullptr);
         QCOMPARE(cliproxy.state, SignInState::SignedIn);
-        QCOMPARE(cliproxy.server, refinement.cliproxyBaseUrl);
+        QCOMPARE(cliproxy.server, accounts.cliproxyBaseUrl);
         QVERIFY(!cliproxy.detail.contains(QStringLiteral("server-key")));
 
         // Claude Code's own sign-in.

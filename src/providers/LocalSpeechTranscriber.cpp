@@ -69,7 +69,7 @@ bool LocalSpeechTranscriber::requiresRefresh(const SpeechSettings &, const Accou
 std::optional<ProviderFailure> LocalSpeechTranscriber::prepare(const SpeechSettings &settings, const AccountSettings &)
 {
     QString error;
-    if (downloadedModelPath(settings.local.modelId, &error).isEmpty()) {
+    if (downloadedModelPath(localModelId(settings), &error).isEmpty()) {
         return ProviderFailure{ProviderFailureKind::Unavailable, error};
     }
     return std::nullopt;
@@ -86,7 +86,7 @@ void LocalSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSetting
         m_pendingPcm.clear();
     }
     QString error;
-    const QString modelPath = downloadedModelPath(settings.local.modelId, &error);
+    const QString modelPath = downloadedModelPath(localModelId(settings), &error);
     if (modelPath.isEmpty()) {
         reportEnd(attemptId, [this, attemptId, error] {
             emit failed({attemptId, error, false, SpeechPhase::Load, ProviderFailureKind::Unavailable});

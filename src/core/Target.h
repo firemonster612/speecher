@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/ServiceOrder.h"
+
 #include <QByteArray>
 #include <QList>
 #include <QHash>
@@ -61,14 +63,12 @@ struct WritingProfileSettings {
     // The language refinement writes in, by name, such as "Spanish". Empty
     // writes in the language that was spoken.
     QString outputLanguage;
-    // The speech service and refinement provider this profile uses ahead of
-    // the Dictation and Refinement pages' chains, by provider id; empty uses
-    // theirs. A model goes with its provider (see WritingProfileProviders.h);
-    // empty uses the provider's own.
-    QString speechProvider;
-    QString speechModel;
-    QString refinementProvider;
-    QString refinementModel;
+    // The speech and refinement service this profile tries first, ahead of
+    // the Speech to text and Refinement pages' Service Orders, with the
+    // model it asks of it; nullopt is the same as the page. An empty model
+    // is the order's entry's (see WritingProfileProviders.h).
+    std::optional<ServiceChoice> speechFirst;
+    std::optional<ServiceChoice> refinementFirst;
 
     bool operator==(const WritingProfileSettings &other) const = default;
 };

@@ -327,10 +327,8 @@ private slots:
     {
         ApplicationController controller(true);
         QuickSettings settings(&controller);
-        settings.set(QStringLiteral("speechProvider"), QStringLiteral("local"));
-        settings.set(QStringLiteral("speechFallbackList"), QStringList());
-        settings.set(QStringLiteral("refinementProvider"), QStringLiteral("none"));
-        settings.set(QStringLiteral("refinementFallbacks"), QStringList());
+        settings.set(QStringLiteral("speechServices"), QVariantList{QVariantMap{{QStringLiteral("service"), QStringLiteral("local")}}});
+        settings.set(QStringLiteral("refinementEnabled"), false);
         const QuickLibrary::ControllerScope library(&controller);
         QuickModels models(&controller);
         QuickAccounts accounts(&controller);
@@ -347,7 +345,7 @@ private slots:
         QSignalSpy changed(&accounts, &QuickAccounts::servicesChanged);
         AppSettings snapshot = controller.settings()->snapshot();
         QVERIFY(!snapshot.refinement.writingProfiles.isEmpty());
-        snapshot.refinement.writingProfiles.first().speechProvider = QStringLiteral("claude");
+        snapshot.refinement.writingProfiles.first().speechFirst = ServiceChoice{QStringLiteral("claude")};
         controller.settings()->applySnapshot(snapshot);
         QVERIFY(changed.count() > 0);
         QVERIFY(inUse());
@@ -360,10 +358,9 @@ private slots:
         ApplicationController controller(true);
         SettingsStore *store = controller.settings();
         store->edit([](AppSettings &draft) {
-            draft.speech.providerId = QStringLiteral("local");
-            draft.speech.fallbackProviderIds = {};
-            draft.refinement.providerId = QStringLiteral("none");
-            draft.refinement.fallbackProviderIds = {};
+            draft.speech.services.order = {QStringLiteral("local")};
+            draft.refinement.enabled = false;
+            draft.refinement.services.order = {draft.refinement.services.main()};
             return true;
         });
         QuickAccounts accounts(&controller);
@@ -377,7 +374,7 @@ private slots:
 
         QSignalSpy changed(&accounts, &QuickAccounts::servicesChanged);
         controller.localSetup()->acceptSetupFallbackOffer(ProviderRole::Refinement, QStringLiteral("anthropic"));
-        QCOMPARE(store->dictationSnapshot().refinement.providerId, QStringLiteral("anthropic"));
+        QCOMPARE(store->dictationSnapshot().refinement.services.main(), QStringLiteral("anthropic"));
         QVERIFY(changed.count() > 0);
         QVERIFY(inUse());
     }
@@ -493,14 +490,19 @@ private slots:
         QCOMPARE(readSecret(SettingsStore().secrets(), SecretStore::Secret::CliproxyApiKey), QString());
     }
 
-    // The CLI Proxy preset shows, at proxy-b, over the Custom server-a whose
-    // key the keyring holds, so dropping that key waits on the keyring. Set
-    // before the app starts, which then can't know the key yet.
-    static void showTheProxyPresetOverAKeyringKey()
+    // What the refinement server sends, as the saved settings have it.
+    static RefinementEndpoint sentEndpoint()
+    {
+        const AppSettings settings = SettingsStore().snapshot();
+        return resolvedRefinementEndpoint(settings.refinement, settings.accounts);
+    }
+
+    // The refinement server is server-a, whose key the keyring holds, so
+    // changing that key waits on the keyring. Set before the app starts,
+    // which then can't know the key yet.
+    static void serveRefinementFromAKeyringKey()
     {
         SettingsStore settings;
-        settings.raw().setValue(SettingsKeys::CliproxyBaseUrl, QStringLiteral("http://proxy-b.example:8317"));
-        settings.raw().setValue(SettingsKeys::RefinementEndpointPreset, QStringLiteral("cliproxy"));
         settings.raw().setValue(SettingsKeys::RefinementEndpointBaseUrl, QStringLiteral("http://server-a.example/v1"));
         settings.raw().setValue(SettingsKeys::SecretsInKeyring, QStringList{QStringLiteral("refinement-endpoint-key")});
         settings.raw().sync();
@@ -510,7 +512,7 @@ private slots:
     // after the key, so the endpoint reaches the new server without it.
     void aServerChangeDuringAKeySaveLeavesTheKeyBehind()
     {
-        showTheProxyPresetOverAKeyringKey();
+        serveRefinementFromAKeyringKey();
         ApplicationController controller(true);
         QuickAccounts accounts(&controller);
         SettingsStore &settings = *controller.settings();
@@ -528,7 +530,7 @@ private slots:
         QVERIFY(!changedDuringTheSave);
         QTRY_COMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(false));
         QVERIFY(changedDuringTheSave);
-        const RefinementEndpoint sent = resolvedRefinementEndpoint(SettingsStore().snapshot().refinement);
+        const RefinementEndpoint sent = sentEndpoint();
         QCOMPARE(sent.apiBase, QStringLiteral("http://server-c.example/v1"));
         QCOMPARE(sent.apiKey, QString());
     }
@@ -602,7 +604,7 @@ private slots:
         controller.settings()->edit([&replacement](AppSettings &draft) {
             draft.ui.previewWords = 13;
             if (!replacement.isEmpty()) {
-                draft.refinement.cliproxyApiKey = replacement;
+                draft.accounts.cliproxyApiKey = replacement;
             }
             return true;
         });
@@ -722,7 +724,7 @@ private slots:
         QTRY_COMPARE(field->property("text").toString(), typedMeanwhile);
         if (typedMeanwhile.isEmpty()) {
             QVERIFY(QMetaObject::invokeMethod(field, "editingFinished"));
-            const RefinementEndpoint sent = resolvedRefinementEndpoint(SettingsStore().snapshot().refinement);
+            const RefinementEndpoint sent = sentEndpoint();
             QCOMPARE(sent.apiBase, QStringLiteral("http://server-b.example/v1"));
             QCOMPARE(sent.apiKey, QString());
         }
@@ -756,7 +758,7 @@ private slots:
     // A key entered while the keyring makes an older one wait stands.
     void aKeyEnteredDuringAKeySaveStands()
     {
-        showTheProxyPresetOverAKeyringKey();
+        serveRefinementFromAKeyringKey();
         ApplicationController controller(true);
         QuickAccounts accounts(&controller);
         bool enteredDuringTheSave = false;
@@ -770,7 +772,7 @@ private slots:
         QVERIFY(!enteredDuringTheSave);
         QTRY_COMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(true));
         QVERIFY(enteredDuringTheSave);
-        QCOMPARE(resolvedRefinementEndpoint(SettingsStore().snapshot().refinement).apiKey, QStringLiteral("key-new"));
+        QCOMPARE(sentEndpoint().apiKey, QStringLiteral("key-new"));
     }
 
     // Moving the endpoint to another server drops its key, and its row says
@@ -789,46 +791,31 @@ private slots:
         QTRY_COMPARE(accounts.savedSecrets().value(QStringLiteral("refinementEndpointApiKey")), QVariant(false));
     }
 
-    // A key entered while the CLI Proxy preset shows belongs to the proxy's
-    // server: the endpoint turns Custom there, and the Custom server saved
-    // behind the preset never gets that key. Cleared, the endpoint sends the
-    // proxy's key again, being on the proxy's server.
-    void anEndpointKeyEnteredOnThePresetBelongsToTheProxysServer()
+    // The CLI Proxy API server, picked for the refinement server, sends the
+    // proxy's key, never the key entered for the server it had before.
+    void theCliproxyServerSendsTheProxysKey()
     {
         ApplicationController controller(true);
         QuickAccounts accounts(&controller);
+        QuickSettings quick(&controller);
         SettingsStore &settings = *controller.settings();
-        const auto sent = [] { return resolvedRefinementEndpoint(SettingsStore().snapshot().refinement); };
         QTest::ignoreMessage(QtWarningMsg,
                              "keyring unavailable, keeping cliproxy-api-key in the settings file: Keyring write denied");
         settings.edit([](AppSettings &draft) {
-            draft.refinement.cliproxyBaseUrl = QStringLiteral("http://proxy-b.example:8317");
-            draft.refinement.cliproxyApiKey = QStringLiteral("proxy-key");
-            draft.refinement.endpoint = {.baseUrl = QStringLiteral("http://server-a.example/v1")};
+            draft.accounts.cliproxyBaseUrl = QStringLiteral("http://proxy-b.example:8317");
+            draft.accounts.cliproxyApiKey = QStringLiteral("proxy-key");
+            draft.refinement.server = {.baseUrl = QStringLiteral("http://server-a.example/v1")};
             return true;
         });
-        const QString fallback =
-            "keyring unavailable, keeping refinement-endpoint-key in the settings file: Keyring write denied";
-        QTest::ignoreMessage(QtWarningMsg, fallback.toUtf8());
+        QTest::ignoreMessage(QtWarningMsg,
+                             "keyring unavailable, keeping refinement-endpoint-key in the settings file: Keyring write denied");
         accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("key-a"));
-        settings.edit([](AppSettings &draft) {
-            editRefinementEndpoint(draft, {.preset = QStringLiteral("cliproxy")});
-            return true;
-        });
+        QTRY_COMPARE(sentEndpoint().apiKey, QStringLiteral("key-a"));
 
-        QTest::ignoreMessage(QtWarningMsg, fallback.toUtf8());
-        accounts.saveSecret(QStringLiteral("refinementEndpointApiKey"), QStringLiteral("key-b"));
+        quick.act(QStringLiteral("useCliproxyServer"));
 
-        QTRY_COMPARE(sent().apiKey, QStringLiteral("key-b"));
-        QCOMPARE(sent().apiBase, QStringLiteral("http://proxy-b.example:8317/v1"));
-        settings.edit([](AppSettings &draft) {
-            editRefinementEndpoint(draft, {.preset = QString()});
-            return true;
-        });
-        QCOMPARE(sent().apiBase, QStringLiteral("http://proxy-b.example:8317/v1"));
-
-        accounts.clearSecret(QStringLiteral("refinementEndpointApiKey"));
-        QTRY_COMPARE(sent().apiKey, QStringLiteral("proxy-key"));
+        QTRY_COMPARE(sentEndpoint().apiKey, QStringLiteral("proxy-key"));
+        QCOMPARE(sentEndpoint().apiBase, QStringLiteral("http://proxy-b.example:8317/v1"));
     }
 
     // SchemaRow's secret field hands what was typed to Accounts and lets go
@@ -988,7 +975,7 @@ private slots:
         SettingsStore *store = controller.settings();
         store->edit([](AppSettings &draft) {
             draft.accounts.openAiAuthMode = OpenAiAuthMode::Settings;
-            draft.refinement.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
+            draft.accounts.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
             return true;
         });
         store->raw().setValue(SettingsKeys::SecretsInKeyring, QStringList{QStringLiteral("cliproxy-api-key")});

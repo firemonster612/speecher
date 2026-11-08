@@ -228,6 +228,8 @@ void migrateSavedSettings()
     }
     migrateRefinementModels(newSettings);
     migrateDeliverySteps(newSettings);
+    // After the model renames, which it carries into the orders.
+    SettingsCodecs().migrateServiceOrder();
 }
 
 SettingsStore::SettingsStore(QObject *parent)
@@ -334,25 +336,24 @@ QList<ProviderSecret> unreadProviderSecrets(const AppSettings &settings, Provide
     QList<ProviderSecret> secrets;
     // Speech uses local OAuth account files, never the remote proxy API key.
     if (role == ProviderRole::Speech && endpoint) {
-        secrets.append({Secret::SpeechEndpointKey, [](AppSettings &s) -> QString & { return s.speech.endpoint.apiKey; }});
+        secrets.append({Secret::SpeechEndpointKey, [](AppSettings &s) -> QString & { return s.speech.server.apiKey; }});
     }
     const RefinementSettings &refinement = settings.refinement;
     const bool refines = role == ProviderRole::Refinement;
-    const bool custom = endpoint && refinement.endpoint.preset.isEmpty();
     const auto endpointKey = SecretStore::settingsKey(Secret::RefinementEndpointKey);
-    if (refines && custom) {
+    if (refines && endpoint) {
         secrets.append(
-            {Secret::RefinementEndpointKey, [](AppSettings &s) -> QString & { return s.refinement.endpoint.apiKey; }});
+            {Secret::RefinementEndpointKey, [](AppSettings &s) -> QString & { return s.refinement.server.apiKey; }});
     }
-    // A Custom endpoint needs the proxy's key only once its own is known to
-    // be empty, as refinementEndpointKey picks.
-    const bool endpointProxyKey = endpoint
-        && (!custom || (!settings.unreadSecretKeys.contains(endpointKey) && usesProxyKey(refinement)));
-    const bool remoteProxy = !refinement.cliproxyBaseUrl.isEmpty()
+    // The server needs the proxy's key only once its own is known to be
+    // empty, as refinementEndpointKey picks.
+    const bool endpointProxyKey =
+        endpoint && !settings.unreadSecretKeys.contains(endpointKey) && usesProxyKey(refinement, settings.accounts);
+    const bool remoteProxy = !settings.accounts.cliproxyBaseUrl.isEmpty()
         && ((provider == ProviderId::OpenAi && settings.accounts.openAiAuthMode == OpenAiAuthMode::Cliproxy)
             || (provider == ProviderId::Anthropic && settings.accounts.anthropicAuthMode == AnthropicAuthMode::Cliproxy));
     if (refines && (endpointProxyKey || remoteProxy)) {
-        secrets.append({Secret::CliproxyApiKey, [](AppSettings &s) -> QString & { return s.refinement.cliproxyApiKey; }});
+        secrets.append({Secret::CliproxyApiKey, [](AppSettings &s) -> QString & { return s.accounts.cliproxyApiKey; }});
     }
     secrets.removeIf([&settings](const ProviderSecret &secret) {
         return !settings.unreadSecretKeys.contains(SecretStore::settingsKey(secret.secret));
@@ -400,10 +401,9 @@ AppSettings SettingsStore::snapshotReading(bool waitForKeyring) const
         }
         return value;
     };
-    settings.refinement.cliproxyApiKey = read(SecretStore::Secret::CliproxyApiKey);
-    settings.refinement.endpoint.apiKey =
-        read(SecretStore::Secret::RefinementEndpointKey);
-    settings.speech.endpoint.apiKey = read(SecretStore::Secret::SpeechEndpointKey);
+    settings.accounts.cliproxyApiKey = read(SecretStore::Secret::CliproxyApiKey);
+    settings.refinement.server.apiKey = read(SecretStore::Secret::RefinementEndpointKey);
+    settings.speech.server.apiKey = read(SecretStore::Secret::SpeechEndpointKey);
     return settings;
 }
 
@@ -442,11 +442,11 @@ bool SettingsStore::applySnapshot(const AppSettings &draft, const AppSettings &p
         return !QUrl(from.trimmed()).host().isEmpty() && !sameOrigin(from, to);
     };
     const std::tuple<Secret, QString, QString, bool> keys[] = {
-        {Secret::SpeechEndpointKey, draft.speech.endpoint.apiKey, previous.speech.endpoint.apiKey,
-         moved(previous.speech.endpoint.baseUrl, draft.speech.endpoint.baseUrl)},
-        {Secret::CliproxyApiKey, draft.refinement.cliproxyApiKey, previous.refinement.cliproxyApiKey,
-         moved(previous.refinement.cliproxyBaseUrl, draft.refinement.cliproxyBaseUrl)},
-        {Secret::RefinementEndpointKey, draft.refinement.endpoint.apiKey, previous.refinement.endpoint.apiKey, false},
+        {Secret::SpeechEndpointKey, draft.speech.server.apiKey, previous.speech.server.apiKey,
+         moved(previous.speech.server.baseUrl, draft.speech.server.baseUrl)},
+        {Secret::CliproxyApiKey, draft.accounts.cliproxyApiKey, previous.accounts.cliproxyApiKey,
+         moved(previous.accounts.cliproxyBaseUrl, draft.accounts.cliproxyBaseUrl)},
+        {Secret::RefinementEndpointKey, draft.refinement.server.apiKey, previous.refinement.server.apiKey, false},
     };
     QList<std::pair<Secret, QString>> secrets;
     for (const auto &[secret, value, before, movedServer] : keys) {

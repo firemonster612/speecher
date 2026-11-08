@@ -30,10 +30,10 @@ SpeechChain::SpeechChain(ProviderRegistry *providers, Acquire acquire, QObject *
     connect(m_runner, &PreparationRunner::secretsResolved, this, &SpeechChain::useResolvedSecrets);
 }
 
-void SpeechChain::begin(const QString &primary, const QStringList &fallbacks)
+void SpeechChain::begin(const QStringList &chain)
 {
     cancel();
-    m_providerIds = providerChain(ProviderRole::Speech, primary, fallbacks);
+    m_providerIds = serviceChain(ProviderRole::Speech, chain);
     m_index = 0;
     m_refinerRefreshed = false;
 }
@@ -149,7 +149,7 @@ void SpeechChain::walk()
         std::optional<PreparationJob> refinerJob;
         const RefinementSettings &refinement = m_settings.refinement;
         if (m_refiner && !m_refinerRefreshed
-            && !offlineFor(ProviderRole::Refinement, refinement.providerId, m_settings)) {
+            && !offlineFor(ProviderRole::Refinement, refinement.services.main(), m_settings)) {
             refinerJob = m_refiner->createRefreshJob(refinement, accounts);
         }
         // Applied only once a speech provider prepared; then not again this

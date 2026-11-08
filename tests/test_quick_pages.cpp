@@ -337,7 +337,7 @@ private slots:
         QCOMPARE(picker->property("shownId").toString(), QStringLiteral("fr"));
 
         QVERIFY(QMetaObject::invokeMethod(picker, "chosen", Q_ARG(QString, QString())));
-        QTRY_VERIFY(!controller.settings()->snapshot().speech.fallbackLanguages.contains(QStringLiteral("claude")));
+        QTRY_VERIFY(controller.settings()->snapshot().speech.services.choice(QStringLiteral("claude")).language.isEmpty());
         QTRY_COMPARE(picker->property("currentId").toString(), QString());
         QCOMPARE(picker->property("shownId").toString(), QStringLiteral("de"));
     }
@@ -362,7 +362,7 @@ private slots:
         auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         QVERIFY(navigation);
         const auto language = [&controller] { return controller.settings()->snapshot().speech.language; };
-        const auto service = [&controller] { return controller.settings()->snapshot().speech.providerId; };
+        const auto service = [&controller] { return controller.settings()->snapshot().speech.services.main(); };
         QCOMPARE(language(), QStringLiteral("en"));
 
         QObject *picker = nullptr;
@@ -964,7 +964,7 @@ private slots:
         controller.settings()->edit([](AppSettings &draft) {
             for (WritingProfileSettings &profile : draft.refinement.writingProfiles) {
                 if (profile.profile == QLatin1String("email")) {
-                    profile.speechProvider = QStringLiteral("endpoint");
+                    profile.speechFirst = ServiceChoice{QStringLiteral("endpoint")};
                 }
             }
             return true;

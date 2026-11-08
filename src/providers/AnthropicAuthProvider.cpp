@@ -26,10 +26,9 @@ AnthropicAuthProvider AnthropicAuthProvider::forSpeech(const AccountSettings &ac
     return AnthropicAuthProvider(accounts, {}, {});
 }
 
-AnthropicAuthProvider AnthropicAuthProvider::forRefinement(const AccountSettings &accounts,
-                                                           const RefinementSettings &refinement)
+AnthropicAuthProvider AnthropicAuthProvider::forRefinement(const AccountSettings &accounts)
 {
-    return AnthropicAuthProvider(accounts, refinement.cliproxyBaseUrl, refinement.cliproxyApiKey);
+    return AnthropicAuthProvider(accounts, accounts.cliproxyBaseUrl, accounts.cliproxyApiKey);
 }
 
 AnthropicAuth AnthropicAuthProvider::resolve(bool refreshExpired) const

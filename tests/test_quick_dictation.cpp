@@ -333,7 +333,7 @@ private slots:
         QuickDictation::setErrorDismissMs(50);
         // Not built in here, so the dictation cannot start.
         SettingsStore().edit([](AppSettings &draft) {
-            draft.speech.providerId = QStringLiteral("local");
+            draft.speech.services.order = {QStringLiteral("local")};
             return true;
         });
         ApplicationController controller(true);

@@ -5,7 +5,8 @@
 
 namespace speecher {
 
-// The refinement Custom Endpoint with its preset applied.
+// The refinement server as a request reaches it: its format, API base, the
+// key it sends and the "endpoint" entry's model.
 struct RefinementEndpoint {
     QString format;
     QString apiBase;
@@ -14,16 +15,13 @@ struct RefinementEndpoint {
     bool operator==(const RefinementEndpoint &) const = default;
 };
 
-RefinementEndpoint resolvedRefinementEndpoint(const RefinementSettings &settings);
-// The key a Custom endpoint sends: its own when it has one, else the CLI
+RefinementEndpoint resolvedRefinementEndpoint(const RefinementSettings &refinement, const AccountSettings &accounts);
+// The key the refinement server sends: its own when it has one, else the CLI
 // Proxy key while it is on the proxy's server (usesProxyKey), else none.
-QString refinementEndpointKey(const RefinementSettings &settings);
-// Whether a Custom endpoint without a key of its own sends the proxy's: it
-// is on the proxy's server.
-bool usesProxyKey(const RefinementSettings &settings);
-// Turns the CLI Proxy preset into a Custom endpoint at the proxy's address,
-// with no key of its own.
-void detachRefinementEndpoint(AppSettings &settings);
+QString refinementEndpointKey(const RefinementSettings &refinement, const AccountSettings &accounts);
+// Whether the refinement server, without a key of its own, sends the
+// proxy's: it is on the proxy's server.
+bool usesProxyKey(const RefinementSettings &refinement, const AccountSettings &accounts);
 
 // Only engaged fields are user edits. The key is saved apart, through
 // Accounts.
@@ -31,8 +29,10 @@ struct RefinementEndpointEdit {
     std::optional<QString> format;
     std::optional<QString> baseUrl;
     std::optional<QString> model;
-    std::optional<QString> preset;
 };
 void editRefinementEndpoint(AppSettings &settings, const RefinementEndpointEdit &edit);
+// Points the refinement server at the CLI Proxy API server the sign-in
+// names, with no key of its own, so it sends the proxy's.
+void useCliproxyServer(AppSettings &settings);
 
 } // namespace speecher

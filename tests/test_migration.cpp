@@ -16,6 +16,7 @@
 #include "common/test_suites.h"
 
 #include "app/ApplicationController.h"
+#include "core/ProviderChain.h"
 #include "core/InsightsLog.h"
 #include "core/LocalModelCatalog.h"
 #include "core/PasteRules.h"
@@ -127,21 +128,23 @@ QVariant readField(ApplicationController &controller, const QString &name)
     Target unruled;
     unruled.applicationId = QStringLiteral("org.fixture.unruled");
     const std::map<QString, std::function<QVariant()>> fields{
-        {QStringLiteral("openAiSpeed"), [&] { return settings.refinement.openAiSpeed; }},
-        {QStringLiteral("speechProvider"), [&] { return settings.speech.providerId; }},
+        {QStringLiteral("openAiSpeed"), [&] { return settings.refinement.services.choice(QStringLiteral("openai")).speed; }},
+        {QStringLiteral("speechProvider"), [&] { return settings.speech.services.main(); }},
         {QStringLiteral("savedSpeechProvider"), [&] { return store.raw().value(SettingsKeys::SpeechProvider); }},
-        {QStringLiteral("speechFallbacks"), [&] { return settings.speech.fallbackProviderIds.join(QLatin1Char(',')); }},
-        {QStringLiteral("refinementProvider"), [&] { return settings.refinement.providerId; }},
+        {QStringLiteral("speechFallbacks"), [&] { return settings.speech.services.order.mid(1).join(QLatin1Char(',')); }},
+        // "none" once Clean up my words is off.
+        {QStringLiteral("refinementProvider"),
+         [&] { return serviceChain(settings.refinement).value(0, kNoRefinementProvider); }},
         {QStringLiteral("savedRefinementProvider"), [&] { return store.raw().value(SettingsKeys::RefinementProvider); }},
         {QStringLiteral("refinementFallbacks"),
-         [&] { return settings.refinement.fallbackProviderIds.join(QLatin1Char(',')); }},
+         [&] { return settings.refinement.services.order.mid(1).join(QLatin1Char(',')); }},
         {QStringLiteral("deliverySteps"), [&] { return DeliveryPlan{settings.output.steps}.route().join(u' '); }},
         {QStringLiteral("terminalDelivery"), [&] { return delivery(terminal); }},
         {QStringLiteral("kateDelivery"), [&] { return delivery(kate); }},
         {QStringLiteral("unruledDelivery"), [&] { return delivery(unruled); }},
-        {QStringLiteral("cliproxyBaseUrl"), [&] { return settings.refinement.cliproxyBaseUrl; }},
-        {QStringLiteral("openAiModel"), [&] { return settings.refinement.openAiModel; }},
-        {QStringLiteral("anthropicModel"), [&] { return settings.refinement.anthropicModel; }},
+        {QStringLiteral("cliproxyBaseUrl"), [&] { return settings.accounts.cliproxyBaseUrl; }},
+        {QStringLiteral("openAiModel"), [&] { return settings.refinement.services.choice(QStringLiteral("openai")).model; }},
+        {QStringLiteral("anthropicModel"), [&] { return settings.refinement.services.choice(QStringLiteral("anthropic")).model; }},
         {QStringLiteral("savedShortcut"), [&] { return store.raw().value(SettingsKeys::GlobalShortcut); }},
         {QStringLiteral("shortcut"), [&] { return controller.globalShortcut().toString(); }},
         {QStringLiteral("theme"), [&] { return settings.ui.theme; }},
@@ -379,7 +382,7 @@ private:
         // The old window's layout is left alone, unread.
         QVERIFY(store.raw().contains(QStringLiteral("ui/appWindow/a/geometry")));
 
-        QCOMPARE(settings.speech.providerId, QStringLiteral("codex"));
+        QCOMPARE(settings.speech.services.main(), QStringLiteral("codex"));
         QVERIFY(!settings.speech.codexFinalRetranscribe);
         QCOMPARE(settings.accounts.claudeCredentialsPath, QStringLiteral("/tmp/speecher-fixture-claude/.credentials.json"));
         QCOMPARE(settings.speech.claudeEndpointBase, QStringLiteral("https://claude.fixture.test"));
@@ -417,7 +420,7 @@ private:
         QCOMPARE(settings.learnedCorrections[0].evidenceCount, 3);
         QCOMPARE(settings.learnedCorrections[0].lastObservedAtMs, 1757100000000);
 
-        QCOMPARE(settings.refinement.providerId, QStringLiteral("anthropic"));
+        QCOMPARE(settings.refinement.services.main(), QStringLiteral("anthropic"));
         QCOMPARE(settings.refinement.defaultWritingProfile, QStringLiteral("work"));
         QCOMPARE(profile(settings, QStringLiteral("work")).cleanupStrength, QStringLiteral("light_cleanup"));
         QCOMPARE(profile(settings, QStringLiteral("work")).tone, QStringLiteral("formal"));
@@ -431,20 +434,20 @@ private:
         QVERIFY(settings.refinement.includeScreenshotContext);
 
         // 0.2.0's default models move to the ones that replaced them.
-        QCOMPARE(settings.refinement.openAiModel, QStringLiteral("gpt-6-luna"));
-        QCOMPARE(settings.refinement.anthropicModel, QStringLiteral("claude-opus-5-5"));
+        QCOMPARE(settings.refinement.services.choice(QStringLiteral("openai")).model, QStringLiteral("gpt-6-luna"));
+        QCOMPARE(settings.refinement.services.choice(QStringLiteral("anthropic")).model, QStringLiteral("claude-opus-5-5"));
         QCOMPARE(settings.accounts.openAiAuthMode, OpenAiAuthMode::Settings);
-        QCOMPARE(settings.refinement.openAiEffort, QStringLiteral("medium"));
-        QCOMPARE(settings.refinement.openAiSpeed, QStringLiteral("standard"));
+        QCOMPARE(settings.refinement.services.choice(QStringLiteral("openai")).effort, QStringLiteral("medium"));
+        QCOMPARE(settings.refinement.services.choice(QStringLiteral("openai")).speed, QStringLiteral("standard"));
         QCOMPARE(settings.accounts.openAiCliproxyAccount, QStringLiteral("openai-fixture@example.com"));
         QCOMPARE(settings.accounts.anthropicAuthMode, AnthropicAuthMode::Cliproxy);
-        QCOMPARE(settings.refinement.anthropicEffort, QStringLiteral("high"));
-        QVERIFY(!settings.refinement.anthropicFastMode);
+        QCOMPARE(settings.refinement.services.choice(QStringLiteral("anthropic")).effort, QStringLiteral("high"));
+        QCOMPARE(settings.refinement.services.choice(QStringLiteral("anthropic")).speed, QStringLiteral("standard"));
         QCOMPARE(settings.accounts.anthropicCliproxyAccount, QStringLiteral("claude-fixture@example.com"));
         QCOMPARE(settings.accounts.cliproxyOauthDirConfigured, QStringLiteral("/tmp/speecher-fixture-oauth"));
-        QCOMPARE(settings.refinement.cliproxyBaseUrl, QStringLiteral("http://127.0.0.1:8317"));
+        QCOMPARE(settings.accounts.cliproxyBaseUrl, QStringLiteral("http://127.0.0.1:8317"));
 
-        QCOMPARE(settings.refinement.cliproxyApiKey, QStringLiteral("fixture-proxy-key"));
+        QCOMPARE(settings.accounts.cliproxyApiKey, QStringLiteral("fixture-proxy-key"));
         QCOMPARE(readSecret(store.secrets(), SecretStore::Secret::OpenAiApiKey), openAiKey);
         // A key moves out of the settings file only once the keyring holds it.
         QCOMPARE(store.raw().contains(SettingsKeys::CliproxyApiKey), !keyringExpected());
@@ -477,10 +480,10 @@ private:
         QVERIFY(settings.setupCompleted);
 
         // Chosen again after the first model migration, Sonnet 5 moves to 5.5.
-        QCOMPARE(settings.refinement.anthropicModel, QStringLiteral("claude-sonnet-5-5"));
-        QCOMPARE(settings.refinement.openAiModel, QStringLiteral("gpt-6-luna"));
+        QCOMPARE(settings.refinement.services.choice(QStringLiteral("anthropic")).model, QStringLiteral("claude-sonnet-5-5"));
+        QCOMPARE(settings.refinement.services.choice(QStringLiteral("openai")).model, QStringLiteral("gpt-6-luna"));
         // A saved speed wins over the old fast-mode switch.
-        QCOMPARE(settings.refinement.openAiSpeed, QStringLiteral("standard"));
+        QCOMPARE(settings.refinement.services.choice(QStringLiteral("openai")).speed, QStringLiteral("standard"));
 
         // What the person never chose stays unchosen.
         QVERIFY(!store.raw().contains(SettingsKeys::RefinementProvider));
@@ -494,10 +497,8 @@ private:
         QCOMPARE(lab.outputLanguage, QStringLiteral("Spanish"));
         QCOMPARE(lab.cleanupStrength, QStringLiteral("custom_level_fixture1"));
         QCOMPARE(lab.tone, QStringLiteral("custom_tone_fixture1"));
-        QCOMPARE(lab.speechProvider, QStringLiteral("local"));
-        QCOMPARE(lab.speechModel, QStringLiteral("moonshine-small"));
-        QCOMPARE(lab.refinementProvider, QStringLiteral("anthropic"));
-        QCOMPARE(lab.refinementModel, QStringLiteral("claude-haiku-5-5"));
+        QCOMPARE(lab.speechFirst, (ServiceChoice{QStringLiteral("local"), QStringLiteral("moonshine-small")}));
+        QCOMPARE(lab.refinementFirst, (ServiceChoice{QStringLiteral("anthropic"), QStringLiteral("claude-haiku-5-5")}));
         QCOMPARE(profile(settings, QStringLiteral("work")).instructions, QStringLiteral("Use the team glossary."));
         QCOMPARE(settings.refinement.customTones,
                  (QList<CustomTone>{{QStringLiteral("custom_tone_fixture1"), QStringLiteral("Pirate"),
@@ -511,14 +512,14 @@ private:
         QCOMPARE(settings.appRecognitionRules.size(), 1);
         QCOMPARE(settings.appRecognitionRules[0].writingProfile, std::optional(customProfile));
 
-        QCOMPARE(settings.speech.providerId, QStringLiteral("local"));
-        QCOMPARE(settings.speech.fallbackProviderIds, QStringList{QStringLiteral("codex")});
+        QCOMPARE(settings.speech.services.main(), QStringLiteral("local"));
+        QCOMPARE(settings.speech.services.order.mid(1), QStringList{QStringLiteral("codex")});
         QCOMPARE(settings.speech.language, QStringLiteral("de"));
-        QCOMPARE(settings.speech.local.modelId, QStringLiteral("moonshine-small"));
+        QCOMPARE(localModelId(settings.speech), QStringLiteral("moonshine-small"));
         QVERIFY(settings.speech.local.modelChosen);
         // Read as native read it: the server, without the /v1 its path adds.
-        QCOMPARE(settings.speech.endpoint.baseUrl, QStringLiteral("http://127.0.0.1:9"));
-        QCOMPARE(settings.speech.endpoint.model, QStringLiteral("whisper-fixture"));
+        QCOMPARE(settings.speech.server.baseUrl, QStringLiteral("http://127.0.0.1:9"));
+        QCOMPARE(settings.speech.services.choice(QStringLiteral("endpoint")).model, QStringLiteral("whisper-fixture"));
         QCOMPARE(store.secrets()->secret(SecretStore::Secret::SpeechEndpointKey), QStringLiteral("fixture-speech-key"));
 
         QCOMPARE(settings.vocabulary.size(), 262);

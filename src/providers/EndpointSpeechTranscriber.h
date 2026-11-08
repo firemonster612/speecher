@@ -18,10 +18,11 @@ struct SpeechEndpointUpload {
     QHttpMultiPart *parts = nullptr;
 };
 
-// prompt goes in the OpenAI `prompt` field, left out when empty, and
-// spokenLanguage, a SpeechSettings::language, in `language`, left out for
-// Automatic.
-SpeechEndpointUpload speechEndpointUpload(const SpeechEndpointSettings &endpoint,
+// model goes in the OpenAI `model` field and prompt in `prompt`, each left
+// out when empty, and spokenLanguage, a SpeechSettings::language, in
+// `language`, left out for Automatic.
+SpeechEndpointUpload speechEndpointUpload(const ServerSettings &server,
+                                          const QString &model,
                                           const QByteArray &pcm16kMono,
                                           const QString &prompt,
                                           const QString &spokenLanguage);
@@ -76,7 +77,8 @@ private:
     ProviderFailureKind m_streamErrorKind = ProviderFailureKind::Server;
     QNetworkAccessManager m_network;
     QPointer<QNetworkReply> m_reply;
-    SpeechEndpointSettings m_endpoint;
+    ServerSettings m_server;
+    QString m_model;
     // The key terms, as each upload's prompt starts.
     QString m_vocabularyPrompt;
     QString m_spokenLanguage;

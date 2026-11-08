@@ -37,6 +37,15 @@ inline const QString UiRoundedCorners = QStringLiteral("ui/roundedCorners");
 inline const QString UiBoringMode = QStringLiteral("ui/boringMode");
 inline const QString UiPauseMedia = QStringLiteral("ui/pauseMediaDuringTranscription");
 inline const QString UiSoundsEnabled = QStringLiteral("ui/soundsEnabled");
+// The speech Service Order, as JSON (SettingsCodecs::speechServices).
+inline const QString SpeechServices = QStringLiteral("stt/services");
+// Read only by migrateServiceOrder, and kept a release for a downgrade: the
+// speech primary, its fallbacks and their languages, the Local Model and the
+// speech server's model, replaced by SpeechServices; the refinement
+// primary ("none" for none), its fallbacks, the per-provider models, efforts
+// and speeds, the Local Runner's and the server's model, replaced by
+// RefinementServices and RefinementEnabled; and the server's CLI Proxy
+// preset, now its URL.
 inline const QString SpeechProvider = QStringLiteral("stt/provider");
 inline const QString SpeechFallbackProviders = QStringLiteral("stt/fallbackProviders");
 // A group: one key per speech fallback's provider id, holding its Spoken Language.
@@ -73,6 +82,9 @@ inline const QString CorrectionLearningEnabled = QStringLiteral("vocabulary/corr
 inline const QString LearnedCorrections = QStringLiteral("vocabulary/learnedCorrections");
 inline const QString CorrectionEvidence = QStringLiteral("vocabulary/correctionEvidence");
 inline const QString InsightsEnabled = QStringLiteral("insights/enabled");
+// The refinement Service Order, as JSON, and Clean up my words.
+inline const QString RefinementServices = QStringLiteral("refinement/services");
+inline const QString RefinementEnabled = QStringLiteral("refinement/enabled");
 inline const QString RefinementProvider = QStringLiteral("refinement/provider");
 inline const QString RefinementFallbackProviders = QStringLiteral("refinement/fallbackProviders");
 inline const QString RefinementStyle = QStringLiteral("refinement/style");
@@ -146,6 +158,7 @@ inline const QString RecordingConsentNoticeShown = QStringLiteral("recording/con
 inline const QString IdentityMigrationVersion = QStringLiteral("migration/identityVersion");
 inline const QString RefinementModelMigrationVersion = QStringLiteral("migration/refinementModelVersion");
 inline const QString DeliveryStepsMigrationVersion = QStringLiteral("migration/deliveryStepsVersion");
+inline const QString ServiceOrderMigrationVersion = QStringLiteral("migration/serviceOrderVersion");
 inline const QString ClaudeCredentialsPath = QStringLiteral("claude/credentialsPath");
 inline const QString ClaudeEndpointBase = QStringLiteral("claude/endpointBase");
 inline const QString ClaudeVoicePath = QStringLiteral("claude/voicePath");

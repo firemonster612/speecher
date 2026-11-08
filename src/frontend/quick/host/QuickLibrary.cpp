@@ -60,16 +60,23 @@ void setProfileFields(WritingProfileSettings &profile, const QVariantMap &fields
             profile.outputLanguage = value;
         } else if (it.key() == QLatin1String("instructions")) {
             profile.instructions = value;
-        } else if (it.key() == QLatin1String("speech")) {
-            profile.speechProvider = value;
-        } else if (it.key() == QLatin1String("speechModel")) {
-            profile.speechModel = value;
-        } else if (it.key() == QLatin1String("refinement")) {
-            profile.refinementProvider = value;
-        } else if (it.key() == QLatin1String("refinementModel")) {
-            profile.refinementModel = value;
         }
     }
+    // A service of its own, or "" for the page's order; its model goes with
+    // it, and only with it.
+    const auto setFirst = [&fields](std::optional<ServiceChoice> &first, const char *serviceField, const char *modelField) {
+        const QString serviceKey = QLatin1String(serviceField);
+        if (fields.contains(serviceKey)) {
+            const QString service = fields.value(serviceKey).toString();
+            first = service.isEmpty() ? std::nullopt : std::optional(ServiceChoice{service});
+        }
+        const QString modelKey = QLatin1String(modelField);
+        if (first && fields.contains(modelKey)) {
+            first->model = fields.value(modelKey).toString();
+        }
+    };
+    setFirst(profile.speechFirst, "speech", "speechModel");
+    setFirst(profile.refinementFirst, "refinement", "refinementModel");
 }
 
 void setToneFields(CustomTone &tone, const QVariantMap &fields)
@@ -506,10 +513,10 @@ void QuickLibrary::refresh()
             {QStringLiteral("tone"), profile.tone},
             {QStringLiteral("language"), profile.outputLanguage},
             {QStringLiteral("instructions"), profile.instructions},
-            {QStringLiteral("speech"), profile.speechProvider},
-            {QStringLiteral("speechModel"), profile.speechModel},
-            {QStringLiteral("refinement"), profile.refinementProvider},
-            {QStringLiteral("refinementModel"), profile.refinementModel},
+            {QStringLiteral("speech"), profile.speechFirst ? profile.speechFirst->service : QString()},
+            {QStringLiteral("speechModel"), profile.speechFirst ? profile.speechFirst->model : QString()},
+            {QStringLiteral("refinement"), profile.refinementFirst ? profile.refinementFirst->service : QString()},
+            {QStringLiteral("refinementModel"), profile.refinementFirst ? profile.refinementFirst->model : QString()},
         });
     }
     QVariantList tones;
@@ -557,7 +564,7 @@ void QuickLibrary::refresh()
          recognitionRulesWithMigratedProfileOverrides(settings.appRecognitionRules, refinement.writingProfileOverrides)) {
         rules.append(ruleRecord(rule));
     }
-    const QString &speech = settings.speech.providerId;
+    const QString speech = settings.speech.services.main();
     const bool takesKeyTerms = VocabularyLimit::takesKeyterms(speech);
     const int keyTermsSent = int(VocabularyLimit::speechKeyterms(keyTerms, speech).size());
 

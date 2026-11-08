@@ -31,7 +31,7 @@ public:
                 const QString &accountId,
                 const QString &model,
                 const QString &effort,
-                // "standard", "fast" or "ultrafast", as RefinementSettings::openAiSpeed.
+                // "standard", "fast" or "ultrafast", as ServiceChoice::speed.
                 const QString &speed,
                 const QString &refinementStyle,
                 const RefinementContext &context);

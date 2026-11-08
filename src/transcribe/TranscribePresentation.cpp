@@ -90,14 +90,14 @@ QString transcriptSaveError(const QString &path, const QString &reason)
 
 QString refinementModel(const QString &providerId, const RefinementSettings &settings)
 {
-    const QString *model = refinementModelSetting(settings, providerId);
-    return model ? *model : QString();
+    return servicePicksModel(ProviderRole::Refinement, providerId) ? settings.services.choice(providerId).model
+                                                                   : QString();
 }
 
 QString speechModel(const SpeechSettings &speech)
 {
-    const QString *model = speechModelSetting(speech, speech.providerId);
-    return model ? *model : QString();
+    const QString service = speech.services.main();
+    return servicePicksModel(ProviderRole::Speech, service) ? speech.services.choice(service).model : QString();
 }
 
 bool refinesTranscripts(const TranscribeOptions &options, const RefinementSettings &settings)

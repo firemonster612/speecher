@@ -1,5 +1,6 @@
 #include "transcribe/TranscribeQueue.h"
 
+#include "core/ProviderChain.h"
 #include "core/SettingsStore.h"
 #include "providers/ProviderRegistry.h"
 
@@ -189,8 +190,8 @@ void TranscribeQueue::chooseProfile(const QString &profile)
         writingProfileSettingsFor(settings.refinement.writingProfiles, writingProfileFromName(profile));
     const AppSettings resolved = m_providers->withProfileProviders(settings, chosen);
     m_options.writingProfile = profile;
-    m_options.speechProviderId = resolved.speech.providerId;
-    m_options.refinementProviderId = resolved.refinement.providerId;
+    m_options.speechProviderId = resolved.speech.services.main();
+    m_options.refinementProviderId = serviceChain(resolved.refinement).value(0, kNoRefinementProvider);
     m_options.cleanupStrength = profileCleanupLevel(chosen, settings.refinement.customCleanupLevels);
     m_options.tone = chosen.tone;
     m_options.speechModel.clear();

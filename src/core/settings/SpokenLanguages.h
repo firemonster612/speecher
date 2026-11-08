@@ -7,7 +7,7 @@
 
 namespace speecher {
 
-// The Spoken Languages the chosen speech service, or the chosen Local Model,
+// The Spoken Languages the first speech service, or its Local Model,
 // listens for, as language codes in no particular order, with
 // kAutomaticSpokenLanguage among them where it detects the language itself.
 // docs/research/0007-speech-languages.md has where each list comes from.
@@ -18,22 +18,23 @@ QStringList spokenLanguages(const SpeechSettings &speech);
 // names none.
 QString requestedSpokenLanguage(const QString &language);
 
-// Whether the chosen service, or the chosen Local Model, listens for the
+// Whether the first service, or its Local Model, listens for the
 // stored Spoken Language, by its own list. A service with no list, or a
 // Local Model not in the catalog, takes any.
 bool listensForSpokenLanguage(const SpeechSettings &speech);
 
-// Empty while the chosen service listens for the stored Spoken Language;
+// Empty while the first service listens for the stored Spoken Language;
 // otherwise the sentence that says it does not, naming the language in
 // English and the service by serviceLabel, or a Local Model by its own name.
 // Speecher never switches the language itself.
 QString spokenLanguageProblem(const SpeechSettings &speech, const QString &serviceLabel);
 
-// speech as providerId takes it in the chain speech.providerId leads: the
-// primary keeps the Spoken Language, and a fallback gets its own. A fallback
-// with none chosen listens for the Spoken Language where it can, otherwise,
-// while that is Automatic, for English where it can; otherwise it keeps the
-// Spoken Language, which listensForSpokenLanguage() then turns down.
+// speech as providerId runs it once the walk reaches it, providerId first
+// in its order: the first service keeps the Spoken Language, and a later one
+// gets its own. A later one with none chosen listens for the Spoken Language
+// where it can, otherwise, while that is Automatic, for English where it
+// can; otherwise it keeps the Spoken Language, which
+// listensForSpokenLanguage() then turns down.
 SpeechSettings chainSpeechSettings(const SpeechSettings &speech, const QString &providerId);
 
 // Every code some service or Local Model offers, and kAutomaticSpokenLanguage,

@@ -37,7 +37,7 @@ AppSettings recordingSettings(const AppSettings &settings, const ProviderRegistr
     AppSettings recording = settings;
     const AppSettings profiled = providers.withProfileProviders(
         settings, writingProfileSettingsFor(settings.refinement.writingProfiles, WritingProfile::Other));
-    if (profiled.speech.providerId == settings.speech.providerId) {
+    if (profiled.speech.services.main() == settings.speech.services.main()) {
         recording.speech = profiled.speech;
     }
     recording.speech.vocabulary = TranscriptPipeline::speechVocabulary(recording, {WritingProfile::Other, vocabulary},
@@ -359,11 +359,11 @@ void RecordingSession::start(const QString &path,
     }
     const AppSettings settings = m_settings->dictationSnapshot();
     const SpeechSettings &speech = settings.speech;
-    const SpeechTranscriber *provider = m_providers->speechProvider(speech.providerId);
+    const SpeechTranscriber *provider = m_providers->speechProvider(speech.services.main());
     // Local Models finalize runs of words rather than utterances, and their
     // tail only in a whole-attempt transcript, so they say no.
     if (!provider || !provider->streamsFinalText(speech)) {
-        done(recordingSpeechProviderRefusal(m_providers->speechProviderLabel(speech.providerId)));
+        done(recordingSpeechProviderRefusal(m_providers->speechProviderLabel(speech.services.main())));
         return;
     }
     QString error;

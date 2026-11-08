@@ -2,32 +2,22 @@
 
 #include "core/AppSettings.h"
 
-#include <QString>
-
 #include <optional>
 
 namespace speecher {
 
-// Whether a Writing Profile that picks this speech provider may pick its
-// model too: a Local Model. The other providers use the model their settings
-// page names.
-bool profilePicksSpeechModel(const QString &providerId);
-
-// Makes refinement's chosen provider run model, where it has one to choose
-// (OpenAI, Anthropic, the Local Runner, a Custom Endpoint).
-void setRefinementModel(RefinementSettings &refinement, const QString &model);
-
-// The speech settings the profile's own service runs with: its provider and
-// model over the Dictation page's settings. Nullopt when the profile uses the
-// Dictation page's choice.
+// The speech settings the profile's own service runs with: its choice first,
+// over the Speech to text page's entry for that service, then the page's
+// whole order after it. Nullopt when the profile uses the page's order.
 std::optional<SpeechSettings> profileSpeechSettings(const SpeechSettings &speech,
                                                     const WritingProfileSettings &profile);
 
 // What a Dictation Session under this profile runs with: the profile's
-// speech service and refinement provider, with their models, first in each
-// chain, then the Dictation and Refinement pages' chains. A profile's speech
+// speech and refinement services, with their models, first in each order,
+// then the Speech to text and Refinement pages' orders. A profile's speech
 // service that can't listen for the Spoken Language is passed over, as an
-// unsupported fallback is, and the Dictation page's chain runs as it is.
+// unsupported fallback is, and the page's order runs as it is. With Clean up
+// my words off nothing refines, whatever the profile picks.
 AppSettings withWritingProfileProviders(AppSettings settings, const WritingProfileSettings &profile);
 
 } // namespace speecher

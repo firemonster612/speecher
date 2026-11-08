@@ -52,8 +52,8 @@ AppSettings sampleSettings()
                                                 QStringLiteral("Cut filler.")}};
     settings.refinement.additionalInstructions = QStringLiteral("Use British spelling.");
     // Credentials, which must never leave the computer.
-    settings.refinement.cliproxyApiKey = QStringLiteral("proxy-secret");
-    settings.speech.endpoint.apiKey = QStringLiteral("speech-secret");
+    settings.accounts.cliproxyApiKey = QStringLiteral("proxy-secret");
+    settings.speech.server.apiKey = QStringLiteral("speech-secret");
     return settings;
 }
 

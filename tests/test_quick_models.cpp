@@ -176,7 +176,7 @@ private slots:
         // What the Speech page's fallback pickers show: whether a service
         // offers Automatic, and the language it listens for in the chain.
         AppSettings draft = controller.settings()->dictationSnapshot();
-        draft.speech.fallbackLanguages = {{QStringLiteral("codex"), QStringLiteral("cy")}};
+        draft.speech.services.choice(QStringLiteral("codex")).language = QStringLiteral("cy");
         controller.settings()->applySnapshot(draft);
         const QVariantMap codex = entry(models.speechServices(), QStringLiteral("codex"));
         QVERIFY(codex.value(QStringLiteral("detects")).toBool());
@@ -243,8 +243,8 @@ private slots:
         models.use(QStringLiteral("whisper-turbo"));
         QCOMPARE(saved.count(), 1);
         const AppSettings stored = SettingsStore().dictationSnapshot();
-        QCOMPARE(stored.speech.providerId, QStringLiteral("local"));
-        QCOMPARE(stored.speech.local.modelId, QStringLiteral("whisper-turbo"));
+        QCOMPARE(stored.speech.services.main(), QStringLiteral("local"));
+        QCOMPARE(localModelId(stored.speech), QStringLiteral("whisper-turbo"));
         QVERIFY(stored.speech.local.modelChosen);
         QCOMPARE(settings.values().value(QStringLiteral("speechLocalModel")).toString(), QStringLiteral("whisper-turbo"));
         QCOMPARE(models.localModelChoice(), QStringLiteral("whisper-turbo"));
@@ -253,7 +253,7 @@ private slots:
 
         QTest::ignoreMessage(QtWarningMsg, "Models.use: made-up is not a Local Model");
         models.use(QStringLiteral("made-up"));
-        QCOMPARE(SettingsStore().dictationSnapshot().speech.local.modelId, QStringLiteral("whisper-turbo"));
+        QCOMPARE(localModelId(SettingsStore().dictationSnapshot().speech), QStringLiteral("whisper-turbo"));
     }
 
     // A role setup doesn't offer a fallback for changes nothing.
@@ -294,7 +294,7 @@ private slots:
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
         AppSettings draft = controller.settings()->dictationSnapshot();
-        draft.speech.endpoint.baseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+        draft.speech.server.baseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
         controller.settings()->applySnapshot(draft);
         QVERIFY(!models.speechEndpoint().value(QStringLiteral("checked")).toBool());
 
@@ -310,7 +310,7 @@ private slots:
 
         // Port 1, where nothing listens: a port let go could be taken by a
         // server in another test process.
-        draft.speech.endpoint.baseUrl = QStringLiteral("http://127.0.0.1:1");
+        draft.speech.server.baseUrl = QStringLiteral("http://127.0.0.1:1");
         controller.settings()->applySnapshot(draft);
         models.testSpeechEndpoint();
         QTRY_VERIFY(!models.speechEndpoint().value(QStringLiteral("checking")).toBool());

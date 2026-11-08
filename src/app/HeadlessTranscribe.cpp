@@ -1,5 +1,6 @@
 #include "app/HeadlessTranscribe.h"
 
+#include "core/ProviderChain.h"
 #include "core/ProviderTable.h"
 #include "core/SettingsStore.h"
 #include "core/Target.h"
@@ -70,10 +71,11 @@ TranscribeOptions resolveOptions(const HeadlessTranscribeOptions &options,
         settings.speech.language = *options.spokenLanguage;
     }
     settings = providers.withProfileProviders(settings, profile);
-    resolved.speechProviderId = options.speechProviderId.value_or(settings.speech.providerId);
+    resolved.speechProviderId = options.speechProviderId.value_or(settings.speech.services.main());
     resolved.applyVocabulary = options.applyVocabulary;
     resolved.addedVocabulary = options.addedVocabulary;
-    resolved.refinementProviderId = options.refinementProviderId.value_or(settings.refinement.providerId);
+    resolved.refinementProviderId = options.refinementProviderId.value_or(
+        serviceChain(settings.refinement).value(0, kNoRefinementProvider));
     resolved.cleanupStrength = options.cleanupStrength.value_or(profile.cleanupStrength);
     resolved.tone = options.tone.value_or(profile.tone);
     resolved.spokenLanguage = options.spokenLanguage;

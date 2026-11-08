@@ -57,9 +57,9 @@ bool toneOffered(const QString &id, const RefinementSettings &refinement)
 }
 
 // An empty service is the one the Speech to text or Refinement page chose.
-bool serviceOffered(ProviderRole role, const QString &id)
+bool serviceOffered(ProviderRole role, const std::optional<ServiceChoice> &first)
 {
-    return id.isEmpty() || isChainProviderId(role, id);
+    return !first || isChainProviderId(role, first->service);
 }
 
 QString profileId(const WritingProfileSettings &profile)
@@ -84,8 +84,11 @@ EditRefusal checkProfile(WritingProfileSettings &profile, const WritingProfileSe
                          const RefinementSettings &refinement)
 {
     profile.outputLanguage = profile.outputLanguage.trimmed();
-    profile.speechModel = profile.speechModel.trimmed();
-    profile.refinementModel = profile.refinementModel.trimmed();
+    for (std::optional<ServiceChoice> *first : {&profile.speechFirst, &profile.refinementFirst}) {
+        if (*first) {
+            (*first)->model = (*first)->model.trimmed();
+        }
+    }
     if (isBuiltInWritingProfile(profile.profile)) {
         if (stored && profile.name != stored->name) {
             return EditRefusal::BuiltIn;
@@ -105,14 +108,18 @@ EditRefusal checkProfile(WritingProfileSettings &profile, const WritingProfileSe
     const auto kept = [stored](QString WritingProfileSettings::*field, const QString &value) {
         return stored && stored->*field == value;
     };
+    const auto keptService = [stored, &profile](std::optional<ServiceChoice> WritingProfileSettings::*field) {
+        const auto service = [](const std::optional<ServiceChoice> &first) { return first ? first->service : QString(); };
+        return stored && service(stored->*field) == service(profile.*field);
+    };
     const bool offered =
         (kept(&WritingProfileSettings::cleanupStrength, profile.cleanupStrength)
          || levelOffered(profile.cleanupStrength, refinement))
         && (kept(&WritingProfileSettings::tone, profile.tone) || toneOffered(profile.tone, refinement))
-        && (kept(&WritingProfileSettings::speechProvider, profile.speechProvider)
-            || serviceOffered(ProviderRole::Speech, profile.speechProvider))
-        && (kept(&WritingProfileSettings::refinementProvider, profile.refinementProvider)
-            || serviceOffered(ProviderRole::Refinement, profile.refinementProvider));
+        && (keptService(&WritingProfileSettings::speechFirst)
+            || serviceOffered(ProviderRole::Speech, profile.speechFirst))
+        && (keptService(&WritingProfileSettings::refinementFirst)
+            || serviceOffered(ProviderRole::Refinement, profile.refinementFirst));
     return offered ? EditRefusal::None : EditRefusal::Missing;
 }
 

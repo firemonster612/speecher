@@ -3,6 +3,7 @@
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
 #include "app/ProviderAvailability.h"
+#include "core/EndpointSettings.h"
 #include "core/ProviderRatings.h"
 #include "core/ProviderTable.h"
 #include "core/SettingsStore.h"
@@ -334,7 +335,7 @@ void QuickModels::refresh()
     assign(m_speechRatings, ratings(ProviderRole::Speech, speechIds, hardware, settings));
     assign(m_refinementRatings, ratings(ProviderRole::Refinement, refinementIds, hardware, settings));
     assign(m_spokenLanguageProblem,
-           speecher::spokenLanguageProblem(settings.speech, registry.speechProviderLabel(settings.speech.providerId)));
+           speecher::spokenLanguageProblem(settings.speech, registry.speechProviderLabel(settings.speech.services.main())));
     assign(m_hardwareKnown, local.hardwareKnown());
     assign(m_computer, computerEntry(local));
     assign(m_accelerationOptions, accelerationOptions);
@@ -474,12 +475,13 @@ void QuickModels::openModelFolder()
 
 void QuickModels::testSpeechEndpoint()
 {
-    m_controller->localSetup()->checkSpeechEndpoint(m_controller->settings()->dictationSnapshot().speech.endpoint);
+    m_controller->localSetup()->checkSpeechEndpoint(m_controller->settings()->dictationSnapshot().speech.server);
 }
 
 void QuickModels::testRefinementEndpoint()
 {
-    m_controller->localSetup()->checkRefinementEndpoint(m_controller->settings()->dictationSnapshot().refinement);
+    const AppSettings settings = m_controller->settings()->dictationSnapshot();
+    m_controller->localSetup()->checkRefinementEndpoint(resolvedRefinementEndpoint(settings.refinement, settings.accounts));
 }
 
 void QuickModels::detectRunners()

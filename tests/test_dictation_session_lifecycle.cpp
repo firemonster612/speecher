@@ -339,7 +339,7 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("none");
+            draft.refinement.enabled = false;
             draft.refinement.defaultWritingProfile = WritingProfile::Work;
             return true;
         });
@@ -369,7 +369,7 @@ private slots:
         settings.edit([](AppSettings &draft) {
             draft.ui.previewWords = 7;
             draft.ui.pauseMediaDuringTranscription = true;
-            draft.refinement.providerId = QStringLiteral("none");
+            draft.refinement.enabled = false;
             return true;
         });
         settings.edit([](AppSettings &draft) { draft.vocabulary = {{QStringLiteral("Speecher")}}; return true; });
@@ -418,7 +418,7 @@ private slots:
         // transcriber; its destructor must not call into the freed object.
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
         auto delivery = std::make_unique<FakeDelivery>();
@@ -448,7 +448,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -473,7 +473,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -499,7 +499,7 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("none");
+            draft.refinement.enabled = false;
             draft.output.completionStatusDurationMs = 900;
             return true;
         });
@@ -565,7 +565,7 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("none");
+            draft.refinement.enabled = false;
             draft.output.format = OutputFormat::PlainText;
             return true;
         });
@@ -607,7 +607,7 @@ private slots:
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
             draft.ui.pauseMediaDuringTranscription = true;
-            draft.refinement.providerId = QStringLiteral("none");
+            draft.refinement.enabled = false;
             return true;
         });
 
@@ -649,7 +649,7 @@ private slots:
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
             draft.ui.pauseMediaDuringTranscription = true;
-            draft.refinement.providerId = QStringLiteral("none");
+            draft.refinement.enabled = false;
             return true;
         });
 
@@ -675,7 +675,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -706,7 +706,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -739,7 +739,7 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("none");
+            draft.refinement.enabled = false;
             draft.output.format = OutputFormat::PlainText;
             return true;
         });
@@ -769,7 +769,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
         // The person's own rule outranks Kate's built-in Code editor match.
         settings.edit([](AppSettings &draft) {
             draft.appRecognitionRules = {
@@ -824,7 +824,7 @@ private slots:
         QFETCH(bool, stoppedMeanwhile);
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
         FakeAudioInput audio;
         FakeMediaController media;
         FakeTargetProvider targetProvider;
@@ -878,7 +878,7 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([&](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("none");
+            draft.refinement.enabled = false;
             draft.insightsEnabled = enabled;
             return true;
         });
@@ -926,7 +926,7 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("none");
+            draft.refinement.enabled = false;
             draft.speech.language = QStringLiteral("cy");
             return true;
         });
@@ -959,7 +959,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
         AppSettings draft = settings.snapshot();
         draft.refinement.writingProfiles.append({QStringLiteral("custom_stand_up"), QStringLiteral("balanced"),
                                                  QStringLiteral("none"), QString(), QStringLiteral("Stand up")});
@@ -1001,7 +1001,7 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("openai");
+            draft.refinement.services.order = {QStringLiteral("openai")};
             draft.insightsEnabled = true;
             return true;
         });
@@ -1043,7 +1043,7 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("none");
+            draft.refinement.enabled = false;
             draft.insightsEnabled = true;
             return true;
         });
@@ -1071,7 +1071,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -1113,7 +1113,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -1175,7 +1175,7 @@ private slots:
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
             draft.ui.pauseMediaDuringTranscription = true;
-            draft.refinement.providerId = QStringLiteral("openai");
+            draft.refinement.services.order = {QStringLiteral("openai")};
             return true;
         });
 
@@ -1217,7 +1217,7 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("none");
+            draft.refinement.enabled = false;
             return true;
         });
         auto audio = std::make_unique<FakeAudioInput>();
@@ -1254,7 +1254,7 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("none");
+            draft.refinement.enabled = false;
             return true;
         });
         auto audio = std::make_unique<FakeAudioInput>();
@@ -1286,7 +1286,7 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("none");
+            draft.refinement.enabled = false;
             return true;
         });
         auto audio = std::make_unique<FakeAudioInput>();
@@ -1316,7 +1316,7 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("none");
+            draft.refinement.enabled = false;
             return true;
         });
         auto audio = std::make_unique<FakeAudioInput>();
@@ -1363,7 +1363,7 @@ private slots:
             settings.edit([](AppSettings &draft) {
                 draft.ui.pauseMediaDuringTranscription = true;
                 draft.insightsEnabled = true;
-                draft.refinement.providerId = QStringLiteral("openai");
+                draft.refinement.services.order = {QStringLiteral("openai")};
                 draft.output.completionStatusDurationMs = 300;
                 return true;
             });
@@ -1755,7 +1755,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
         FakeAudioInput audio;
         FakeMediaController media;
         FakeDelivery delivery;
@@ -2481,7 +2481,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
         auto delivery = std::make_unique<FakeDelivery>();
@@ -2602,7 +2602,7 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("openai");
+            draft.refinement.services.order = {QStringLiteral("openai")};
             draft.refinement.includeScreenshotContext = true;
             return true;
         });
@@ -2680,7 +2680,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -2707,7 +2707,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -2745,7 +2745,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -2790,7 +2790,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();

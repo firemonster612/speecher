@@ -5,7 +5,6 @@
 #include "core/EndpointSettings.h"
 #include "core/EndpointUrl.h"
 #include "core/PasteRules.h"
-#include "core/ProviderChain.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QmlValues.h"
 
@@ -80,6 +79,44 @@ void setCategoryPasteRuleValue(AppSettings &s, const QString &category, const QV
     setPasteRule(s.output.pasteRules, PasteRuleScope::Category, category, pasteMethodFromName(method));
 }
 
+// A Service Order as QML holds it: [{service, model, language, effort,
+// speed}], the first service first.
+QVariant serviceOrderValue(const ServiceOrder &services)
+{
+    QVariantList entries;
+    for (const QString &id : services.order) {
+        const ServiceChoice choice = services.choice(id);
+        entries.append(QVariantMap{{QStringLiteral("service"), id},
+                                   {QStringLiteral("model"), choice.model},
+                                   {QStringLiteral("language"), choice.language},
+                                   {QStringLiteral("effort"), choice.effort},
+                                   {QStringLiteral("speed"), choice.speed}});
+    }
+    return entries;
+}
+
+// The order QML hands back. A field an entry leaves out keeps the stored
+// choice's, and a service left out of the order keeps its choice for when
+// it comes back.
+void setServiceOrder(ServiceOrder &services, const QVariant &v)
+{
+    services.order.clear();
+    for (const QVariant &value : v.toList()) {
+        const QVariantMap entry = value.toMap();
+        const QString id = entry.value(QStringLiteral("service")).toString();
+        services.order.append(id);
+        ServiceChoice &choice = services.choice(id);
+        for (const auto &[name, field] : {std::pair{"model", &ServiceChoice::model},
+                                          std::pair{"language", &ServiceChoice::language},
+                                          std::pair{"effort", &ServiceChoice::effort},
+                                          std::pair{"speed", &ServiceChoice::speed}}) {
+            if (entry.contains(QLatin1String(name))) {
+                choice.*field = entry.value(QLatin1String(name)).toString();
+            }
+        }
+    }
+}
+
 // A delivery step's row: its switch, which can't turn off the last step on.
 #define DELIVERY_STEP_ROW(rowId, step)                                                       \
     {rowId, [](const AppSettings &s) { return QVariant(s.output.steps.has(step)); },        \
@@ -142,47 +179,26 @@ const SettingRow settingRows[] = {
     FIELD_ROW("vadEnabled", audio.vadEnabled),
     FIELD_ROW("vadThresholdPercent", audio.vadThresholdPercent),
 
-    // A new primary keeps the fallbacks that are not it.
-    {"speechProvider", [](const AppSettings &s) { return QVariant(s.speech.providerId); },
-     [](AppSettings &s, const QVariant &v) {
-         s.speech.providerId = v.toString();
-         s.speech.fallbackProviderIds =
-             normalizedFallbackProviders(ProviderRole::Speech, s.speech.providerId, s.speech.fallbackProviderIds);
-     }},
-    {"speechFallbackList", [](const AppSettings &s) { return QVariant(s.speech.fallbackProviderIds); },
-     [](AppSettings &s, const QVariant &v) {
-         s.speech.fallbackProviderIds =
-             normalizedFallbackProviders(ProviderRole::Speech, s.speech.providerId, v.toStringList());
-     }},
-    // The Spoken Languages a person chose for speech fallbacks, by provider
-    // id: { local: "en" }. Models' speech services say what each runs with.
-    {"speechFallbackLanguages",
-     [](const AppSettings &s) {
-         QVariantMap languages;
-         for (auto it = s.speech.fallbackLanguages.cbegin(); it != s.speech.fallbackLanguages.cend(); ++it) {
-             languages.insert(it.key(), it.value());
-         }
-         return QVariant(languages);
-     },
-     [](AppSettings &s, const QVariant &v) {
-         const QVariantMap languages = v.toMap();
-         s.speech.fallbackLanguages.clear();
-         for (auto it = languages.cbegin(); it != languages.cend(); ++it) {
-             s.speech.fallbackLanguages.insert(it.key(), it.value().toString());
-         }
-     }},
+    // [{service, model, language}], the first service first.
+    {"speechServices", [](const AppSettings &s) { return serviceOrderValue(s.speech.services); },
+     [](AppSettings &s, const QVariant &v) { setServiceOrder(s.speech.services, v); }},
     FIELD_ROW("spokenLanguage", speech.language),
     FIELD_ROW("codexFinalRetranscribe", speech.codexFinalRetranscribe),
-    // Choosing a model marks it chosen, so the hardware default stops
-    // replacing it.
-    {"speechLocalModel", [](const AppSettings &s) { return QVariant(s.speech.local.modelId); },
+    // The "local" entry's model, in the order or out of it. Choosing one
+    // marks it chosen, so the hardware default stops replacing it.
+    {"speechLocalModel", [](const AppSettings &s) { return QVariant(localModelId(s.speech)); },
      [](AppSettings &s, const QVariant &v) {
-         s.speech.local.modelId = v.toString();
+         localModelId(s.speech) = v.toString();
          s.speech.local.modelChosen = true;
      }},
-    FIELD_ROW("speechEndpointUrl", speech.endpoint.baseUrl),
-    FIELD_ROW("speechEndpointPath", speech.endpoint.path),
-    FIELD_ROW("speechEndpointModel", speech.endpoint.model),
+    // The speech server among Your servers; its model is the "endpoint" entry's.
+    FIELD_ROW("speechEndpointUrl", speech.server.baseUrl),
+    FIELD_ROW("speechEndpointPath", speech.server.path),
+    {"speechEndpointModel",
+     [](const AppSettings &s) { return QVariant(s.speech.services.choice(providerKey(ProviderId::Endpoint)).model); },
+     [](AppSettings &s, const QVariant &v) {
+         s.speech.services.choice(providerKey(ProviderId::Endpoint)).model = v.toString().trimmed();
+     }},
 
     FIELD_ROW("showLiveText", ui.transcriptionPreviewEnabled),
     FIELD_ROW("showRefinementText", ui.refinementPreviewEnabled),
@@ -192,48 +208,27 @@ const SettingRow settingRows[] = {
     FIELD_ROW("playSounds", ui.soundsEnabled),
     FIELD_ROW("pauseMedia", ui.pauseMediaDuringTranscription),
 
-    // None clears the fallbacks.
-    {"refinementProvider", [](const AppSettings &s) { return QVariant(s.refinement.providerId); },
-     [](AppSettings &s, const QVariant &v) {
-         s.refinement.providerId = v.toString();
-         s.refinement.fallbackProviderIds = normalizedFallbackProviders(
-             ProviderRole::Refinement, s.refinement.providerId, s.refinement.fallbackProviderIds);
-     }},
-    {"refinementFallbacks", [](const AppSettings &s) { return QVariant(s.refinement.fallbackProviderIds); },
-     [](AppSettings &s, const QVariant &v) {
-         s.refinement.fallbackProviderIds =
-             normalizedFallbackProviders(ProviderRole::Refinement, s.refinement.providerId, v.toStringList());
-     }},
-    FIELD_ROW("openAiModel", refinement.openAiModel),
-    FIELD_ROW("openAiEffort", refinement.openAiEffort),
-    FIELD_ROW("openAiSpeed", refinement.openAiSpeed),
-    FIELD_ROW("anthropicModel", refinement.anthropicModel),
-    FIELD_ROW("anthropicEffort", refinement.anthropicEffort),
-    {"anthropicFastMode",
-     [](const AppSettings &s) {
-         return QVariant(s.refinement.anthropicFastMode ? QStringLiteral("fast") : QStringLiteral("standard"));
-     },
-     [](AppSettings &s, const QVariant &v) { s.refinement.anthropicFastMode = v.toString() == QLatin1String("fast"); }},
+    // Clean up my words.
+    FIELD_ROW("refinementEnabled", refinement.enabled),
+    // [{service, model, effort, speed}], the first service first.
+    {"refinementServices", [](const AppSettings &s) { return serviceOrderValue(s.refinement.services); },
+     [](AppSettings &s, const QVariant &v) { setServiceOrder(s.refinement.services, v); }},
     FIELD_ROW("localRunner", refinement.localRunner.runner),
-    FIELD_ROW("localRunnerModel", refinement.localRunner.model),
-    // Core stores the custom server as no preset.
-    {"refinementEndpointServer",
-     [](const AppSettings &s) {
-         const QString preset = s.refinement.endpoint.preset;
-         return QVariant(preset.isEmpty() ? QStringLiteral("custom") : preset);
-     },
+    // The "local" entry's cleanup model, in the order or out of it.
+    {"localRunnerModel",
+     [](const AppSettings &s) { return QVariant(s.refinement.services.choice(providerKey(ProviderId::Local)).model); },
      [](AppSettings &s, const QVariant &v) {
-         const QString server = v.toString();
-         editRefinementEndpoint(s, {.preset = server == QLatin1String("custom") ? QString() : server});
+         s.refinement.services.choice(providerKey(ProviderId::Local)).model = v.toString().trimmed();
      }},
-    {"refinementEndpointFormat",
-     [](const AppSettings &s) { return QVariant(resolvedRefinementEndpoint(s.refinement).format); },
+    // The refinement server among Your servers.
+    {"refinementEndpointFormat", [](const AppSettings &s) { return QVariant(s.refinement.server.format); },
      [](AppSettings &s, const QVariant &v) { editRefinementEndpoint(s, {.format = v.toString()}); }},
-    {"refinementEndpointUrl",
-     [](const AppSettings &s) { return QVariant(resolvedRefinementEndpoint(s.refinement).apiBase); },
+    {"refinementEndpointUrl", [](const AppSettings &s) { return QVariant(s.refinement.server.baseUrl); },
      [](AppSettings &s, const QVariant &v) { editRefinementEndpoint(s, {.baseUrl = v.toString()}); }},
     {"refinementEndpointModel",
-     [](const AppSettings &s) { return QVariant(resolvedRefinementEndpoint(s.refinement).model); },
+     [](const AppSettings &s) {
+         return QVariant(s.refinement.services.choice(providerKey(ProviderId::Endpoint)).model);
+     },
      [](AppSettings &s, const QVariant &v) { editRefinementEndpoint(s, {.model = v.toString()}); }},
     FIELD_ROW("targetContextControl", refinement.useTargetContext),
     FIELD_ROW("includeScreenshotContext", refinement.includeScreenshotContext),
@@ -288,8 +283,8 @@ const SettingRow settingRows[] = {
     // What was typed, not the directory detected from it.
     {"cliproxyOauthDir", [](const AppSettings &s) { return QVariant(s.accounts.cliproxyOauthDirConfigured); },
      [](AppSettings &s, const QVariant &v) { s.accounts.cliproxyOauthDirConfigured = v.toString().trimmed(); }},
-    {"cliproxyBaseUrl", [](const AppSettings &s) { return QVariant(s.refinement.cliproxyBaseUrl); },
-     [](AppSettings &s, const QVariant &v) { s.refinement.cliproxyBaseUrl = endpointServerBase(v.toString()); }},
+    {"cliproxyBaseUrl", [](const AppSettings &s) { return QVariant(s.accounts.cliproxyBaseUrl); },
+     [](AppSettings &s, const QVariant &v) { s.accounts.cliproxyBaseUrl = endpointServerBase(v.toString()); }},
 
     {"localIdleUnload", [](const AppSettings &s) { return QVariant(QString::number(s.speech.local.idleUnloadMinutes)); },
      [](AppSettings &s, const QVariant &v) { s.speech.local.idleUnloadMinutes = v.toString().toInt(); }},
@@ -376,6 +371,8 @@ const struct ShortcutRow {
 };
 
 const QString runSetupAction = QStringLiteral("runSetup");
+// Points the refinement server at the CLI Proxy API server the sign-in names.
+const QString useCliproxyServerAction = QStringLiteral("useCliproxyServer");
 
 // The id of the shortcut row for role.
 QString shortcutRowId(GlobalShortcutRole role)
@@ -469,6 +466,13 @@ void QuickSettings::act(const QString &id)
 {
     if (id == runSetupAction) {
         m_controller->showSetup();
+        return;
+    }
+    if (id == useCliproxyServerAction) {
+        m_controller->settings()->edit([](AppSettings &draft) {
+            useCliproxyServer(draft);
+            return true;
+        });
         return;
     }
     if (desktopPicksKeys(id)) {
