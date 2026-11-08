@@ -9,29 +9,16 @@
 
 namespace speecher {
 
-// Trims, deduplicates case-insensitively, and orders by send priority: key
-// terms with Priority first, then most used, then most recent. Keeps every entry; the service cap
-// is applied where terms are sent, not where they are stored.
+// Tidies each entry and drops one with no term. Spellings come first, one
+// per term ignoring case, in send priority: starred key terms, then most
+// used, then most recent. Replacements follow in their own order, each kept:
+// two may share a phrase under different limits. Keeps every spelling; the
+// service cap is applied where terms are sent, not where they are stored.
 QList<VocabularyEntry> normalizeVocabularyEntries(const QList<VocabularyEntry> &entries);
+// The entries, each without an id given a fresh one.
+QList<VocabularyEntry> withVocabularyIds(QList<VocabularyEntry> entries);
 QList<VocabularyEntry> parseVocabularyCsv(const QByteArray &csv, QString *error = nullptr);
 bool containsVocabularyTerm(const QString &text, const QString &term);
-// Whether the entry takes part in a dictation under the Writing Profile: it is
-// limited to none, or to that one among others.
-bool vocabularyEntryApplies(const VocabularyEntry &entry, const QString &writingProfile);
-// Whether `entries` limit `term` (ignoring case) to profiles other than
-// `writingProfile`, which keeps it out even as a Learned Correction's text.
-bool vocabularyTermExcluded(const QList<VocabularyEntry> &entries,
-                            const QString &term,
-                            const QString &writingProfile);
-// The terms a speech request carries under the Writing Profile:
-// `leadingTerms` in their order, then the key terms that apply to it, then
-// the enabled Learned Corrections for terms the list does not hold, each term
-// once and within the caps. An empty profile takes every entry, for a request
-// made before one is known.
-QStringList speechVocabulary(const QList<VocabularyEntry> &entries,
-                             const QList<LearnedCorrection> &corrections,
-                             const QString &writingProfile,
-                             const QStringList &leadingTerms = {});
 // The entry's profiles without the ones `profiles` no longer holds. One left
 // with none applies to every profile, as a recognition rule whose profile was
 // deleted loses it.

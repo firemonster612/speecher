@@ -4,10 +4,8 @@
 #include "core/ProviderChain.h"
 #include "core/settings/SettingsKeys.h"
 
-#include "core/BindingProcessor.h"
 #include "core/CliToolDiscovery.h"
 #include "core/Vocabulary.h"
-#include "core/VocabularyLimit.h"
 #include "core/settings/CorrectionSettingsCodec.h"
 #include "core/settings/AppsSettingsCodec.h"
 #include "core/settings/VocabularySettingsCodec.h"
@@ -536,8 +534,8 @@ void SettingsCodecs::setLocalRunnerSettings(const LocalRunnerSettings &value)
     m_settings.setValue(SettingsKeys::LocalRunner, known ? value.runner : QString());
 }
 
-// Terms lose the profiles the settings no longer hold, on the way in and out,
-// so a profile recreated under a deleted one's id does not inherit its terms.
+// Entries lose the profiles the settings no longer hold, on the way in and
+// out, so a profile recreated under a deleted one's id does not inherit them.
 static QList<VocabularyEntry> withOfferedProfiles(QList<VocabularyEntry> entries,
                                                   const QList<WritingProfileSettings> &profiles)
 {
@@ -589,7 +587,7 @@ std::optional<QStringList> SettingsCodecs::addVocabularyTerms(const QStringList 
         // A term limited to some Writing Profiles counts too: adding it again
         // for every profile would list it twice.
         const bool listed = std::any_of(entries.cbegin(), entries.cend(), [&cleaned](const VocabularyEntry &entry) {
-            return entry.term.compare(cleaned, Qt::CaseInsensitive) == 0;
+            return !entry.isReplacement() && entry.term.compare(cleaned, Qt::CaseInsensitive) == 0;
         });
         if (listed) {
             held.append(term);
@@ -664,50 +662,6 @@ void SettingsCodecs::setApps(const AppsSettings &value)
     AppsSettingsCodec::store(m_settings, withoutDeletedProfiles(value, writingProfileSettings()));
 }
 
-QList<BindingRule> SettingsCodecs::bindingRules() const
-{
-    const QString stored = value(SettingsKeys::BindingRules, QString()).toString();
-    const QJsonDocument document = QJsonDocument::fromJson(stored.toUtf8());
-    if (!document.isArray()) {
-        return {};
-    }
-
-    QList<BindingRule> rules;
-    const QJsonArray array = document.array();
-    rules.reserve(array.size());
-    for (const QJsonValue &value : array) {
-        const QJsonObject object = value.toObject();
-        const QString phrase = object.value(QStringLiteral("phrase")).toString().trimmed();
-        const QString replacement = object.value(QStringLiteral("replacement")).toString();
-        if (!phrase.isEmpty() && !replacement.trimmed().isEmpty()) {
-            rules.append({phrase, replacement});
-        }
-    }
-    return BindingProcessor::validateRules(rules).rules;
-}
-
-bool SettingsCodecs::setBindingRules(const QList<BindingRule> &rules, QString *error)
-{
-    const BindingValidationResult validated = BindingProcessor::validateRules(rules);
-    if (!validated.ok()) {
-        if (error) {
-            *error = validated.messages().join(QStringLiteral("\n"));
-        }
-        return false;
-    }
-
-    QJsonArray array;
-    for (const BindingRule &rule : validated.rules) {
-        array.append(QJsonObject{
-            {QStringLiteral("phrase"), rule.phrase},
-            {QStringLiteral("replacement"), rule.replacement},
-        });
-    }
-    m_settings.setValue(SettingsKeys::BindingRules,
-                        QString::fromUtf8(QJsonDocument(array).toJson(QJsonDocument::Compact)));
-    return true;
-}
-
 bool SettingsCodecs::correctionLearningEnabled() const
 {
     return CorrectionSettingsCodec::learningEnabled(m_settings);
@@ -726,16 +680,6 @@ bool SettingsCodecs::insightsEnabled() const
 void SettingsCodecs::setInsightsEnabled(bool enabled)
 {
     m_settings.setValue(SettingsKeys::InsightsEnabled, enabled);
-}
-
-QList<LearnedCorrection> SettingsCodecs::learnedCorrections() const
-{
-    return CorrectionSettingsCodec::load(m_settings);
-}
-
-void SettingsCodecs::setLearnedCorrections(const QList<LearnedCorrection> &corrections)
-{
-    CorrectionSettingsCodec::store(m_settings, corrections);
 }
 
 bool SettingsCodecs::refinementEnabled() const

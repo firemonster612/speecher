@@ -2,6 +2,7 @@
 #include "common/test_doubles.h"
 #include "common/delivery_waits.h"
 #include "common/apps_fixtures.h"
+#include "common/vocabulary_entries.h"
 #include "core/settings/AppsMigration.h"
 #include "core/settings/AppsSettingsCodec.h"
 #include "output/HelperPath.h"
@@ -674,9 +675,7 @@ fi
         }
         settings.vocabulary.append({QStringLiteral("Starred"), QStringLiteral("manual"), true});
         settings.speech.vocabulary = {QStringLiteral("only speech")};
-        settings.learnedCorrections = {
-            {QStringLiteral("0"), QStringLiteral("cute"), QStringLiteral("Qt"), QString(), 1, 0.98, true, 1, 1},
-        };
+        settings.vocabulary.append(test::learnedEntry(QStringLiteral("cute"), QStringLiteral("Qt")));
 
         const QStringList refinement =
             TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language).refinementVocabulary;
@@ -703,9 +702,7 @@ fi
         VocabularyEntry lucia{QStringLiteral("Lúcia")};
         lucia.profiles = {WritingProfile::Personal};
         settings.vocabulary = {kubernetes, lucia, {QStringLiteral("Speecher")}};
-        settings.learnedCorrections = {
-            {QStringLiteral("0"), QStringLiteral("cute"), QStringLiteral("Qt"), QString(), 1, 0.98, true, 1, 1},
-        };
+        settings.vocabulary.append(test::learnedEntry(QStringLiteral("cute"), QStringLiteral("Qt")));
 
         const TranscriptPipelineResult work =
             TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language);
@@ -723,8 +720,8 @@ fi
         pr.context = QStringLiteral("Pull request.");
         pr.profiles = {WritingProfile::AiCoding};
         settings.vocabulary.append(pr);
-        settings.learnedCorrections.append(
-            {QStringLiteral("1"), QStringLiteral("pee are"), QStringLiteral("pr"), QString(), 1, 0.98, true, 1, 1});
+        settings.vocabulary.append(
+            test::learnedEntry(QStringLiteral("pee are"), QStringLiteral("pr")));
         QVERIFY(!TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language)
                      .refinementVocabulary.contains(QStringLiteral("pr")));
         QVERIFY(!TranscriptPipeline::speechVocabulary(settings, {}, Target{}).contains(QStringLiteral("pr")));
@@ -739,19 +736,20 @@ fi
                      .refinementContext.vocabularyContext.value(QStringLiteral("pr")),
                  QStringLiteral("Pull request."));
         settings.vocabulary.removeLast();
-        settings.learnedCorrections.removeLast();
+        settings.vocabulary.removeLast();
 
         // A term that is not a key term goes to refinement only, even when a
         // correction writes it.
+        settings.vocabulary = normalizeVocabularyEntries(settings.vocabulary);
         settings.vocabulary[2].keyTerm = false;
-        settings.learnedCorrections.append(
-            {QStringLiteral("2"), QStringLiteral("speaker"), QStringLiteral("speecher"), QString(), 1, 0.98, true, 1, 1});
+        settings.vocabulary.append(
+            test::learnedEntry(QStringLiteral("speaker"), QStringLiteral("speecher")));
         QVERIFY(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language)
                     .refinementVocabulary.contains(QStringLiteral("Speecher"), Qt::CaseInsensitive));
         QVERIFY(!TranscriptPipeline::speechVocabulary(settings, {}, Target{}).contains(QStringLiteral("Speecher"),
                                                                                    Qt::CaseInsensitive));
         settings.vocabulary[2].keyTerm = true;
-        settings.learnedCorrections.removeLast();
+        settings.vocabulary.removeLast();
 
         const RunChoices personalProfile{WritingProfile::Personal};
         const TranscriptPipelineResult personal =
@@ -836,18 +834,12 @@ fi
     void transcriptPipelineScopesLearnedCorrectionsAndPreservesUserBindingPrecedence()
     {
         AppSettings settings;
-        settings.bindings = {
-            {QStringLiteral("cute"), QStringLiteral("user choice")},
-        };
-        settings.learnedCorrections = {
-            {QStringLiteral("0"), QStringLiteral("post grass"), QStringLiteral("global choice"),
-             QString(), 1, 0.98, true, 1, 1},
-            {QStringLiteral("1"), QStringLiteral("cute"), QStringLiteral("Qt"),
-             QStringLiteral("org.kde.kate"), 1, 0.98, true, 1, 1},
-            {QStringLiteral("2"), QStringLiteral("post grass"), QStringLiteral("Postgres"),
-             QStringLiteral("org.kde.kate"), 1, 0.75, true, 2, 2},
-            {QStringLiteral("3"), QStringLiteral("open ai"), QStringLiteral("OpenAI"),
-             QString(), 1, 0.98, true, 2, 2},
+        settings.vocabulary = {
+            test::replacementEntry(QStringLiteral("cute"), QStringLiteral("user choice")),
+            test::learnedEntry(QStringLiteral("post grass"), QStringLiteral("global choice")),
+            test::learnedEntry(QStringLiteral("cute"), QStringLiteral("Qt"), QStringLiteral("org.kde.kate")),
+            test::learnedEntry(QStringLiteral("post grass"), QStringLiteral("Postgres"), QStringLiteral("org.kde.kate")),
+            test::learnedEntry(QStringLiteral("open ai"), QStringLiteral("OpenAI")),
         };
 
         Target kate;
@@ -866,13 +858,17 @@ fi
             QStringLiteral("cute uses post grass and open ai"), settings, {}, firefox, settings.speech.language);
         QCOMPARE(inFirefox.bindingResult.boundText,
                  QStringLiteral("user choice uses global choice and OpenAI"));
+        // A correction learned in Kate is limited to Kate, as a hint too.
+        QVERIFY(!inFirefox.refinementVocabulary.contains(QStringLiteral("Postgres")));
+        QVERIFY(!TranscriptPipeline::speechVocabulary(settings, {}, firefox).contains(QStringLiteral("Postgres")));
+        QVERIFY(TranscriptPipeline::speechVocabulary(settings, {}, kate).contains(QStringLiteral("Postgres")));
     }
 
     void snippetDateAndTimeAreFilledAndSurviveRefinement()
     {
         AppSettings settings;
-        settings.bindings = {
-            {QStringLiteral("sign off"), QStringLiteral("Sent {date} at {time} {clipboard} {date")},
+        settings.vocabulary = {
+            test::replacementEntry(QStringLiteral("sign off"), QStringLiteral("Sent {date} at {time} {clipboard} {date")),
         };
         const auto expansionAt = [](const QDateTime &now) {
             return QStringLiteral("Sent %1 at %2 {clipboard} {date")
@@ -900,10 +896,7 @@ fi
                  std::optional<QString>(expansion + QStringLiteral(".")));
 
         // A Learned Correction is not a Snippet: its braces stay as typed.
-        settings.learnedCorrections = {
-            {QStringLiteral("0"), QStringLiteral("stamp"), QStringLiteral("{date}"),
-             QString(), 1, 0.98, true, 1, 1},
-        };
+        settings.vocabulary = {test::learnedEntry(QStringLiteral("stamp"), QStringLiteral("{date}"))};
         QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("stamp"), settings, {}, Target{}, settings.speech.language)
                      .bindingResult.boundText,
                  QStringLiteral("{date}"));
@@ -953,7 +946,7 @@ fi
         // A binding's placeholder that is also the document's text could be
         // restored over the document's literal, so the edit is refused.
         AppSettings withBinding;
-        withBinding.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
+        withBinding.vocabulary = {test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com"))};
         selection.selectedText = QStringLiteral("\"SPEECHER_BINDING_0 SPEECHER_BINDING_1\"");
         selection.selectionEnd = selection.selectedText.size();
         const TranscriptPipelineResult colliding = TranscriptPipeline::prepare(

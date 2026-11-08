@@ -1,5 +1,6 @@
 #include "core/settings/VocabularySettingsCodec.h"
 #include "core/settings/SettingsKeys.h"
+#include "core/BindingProcessor.h"
 #include "core/Vocabulary.h"
 #include <QDateTime>
 #include <QJsonArray>
@@ -7,71 +8,94 @@
 #include <QJsonObject>
 
 namespace speecher::VocabularySettingsCodec {
+namespace {
+
+QStringList strings(const QJsonValue &value)
+{
+    QStringList list;
+    for (const QJsonValue &item : value.toArray()) {
+        list.append(item.toString());
+    }
+    return list;
+}
+
+// A replacement the dictation's matcher would refuse can't be kept.
+bool usable(const VocabularyEntry &entry)
+{
+    return !entry.isReplacement() || BindingProcessor::validateRules({{entry.term, entry.replacement}}).ok();
+}
+
+QList<VocabularyEntry> fromJson(const QJsonArray &array)
+{
+    QList<VocabularyEntry> entries;
+    for (const QJsonValue &value : array) {
+        const QJsonObject object = value.toObject();
+        VocabularyEntry entry;
+        entry.id = object.value(QStringLiteral("id")).toString();
+        entry.term = object.value(QStringLiteral("term")).toString();
+        entry.replacement = object.value(QStringLiteral("replacement")).toString();
+        entry.source = object.value(QStringLiteral("source")).toString(QStringLiteral("manual"));
+        entry.starred = object.value(QStringLiteral("starred")).toBool(false);
+        entry.frequency = object.value(QStringLiteral("frequency")).toInt(0);
+        entry.lastUsedMs = qint64(object.value(QStringLiteral("lastUsedMs")).toDouble());
+        entry.context = object.value(QStringLiteral("context")).toString();
+        entry.profiles = strings(object.value(QStringLiteral("profiles")));
+        entry.apps = strings(object.value(QStringLiteral("apps")));
+        // Stored only when off, so every term saved before the setting
+        // existed stays a key term.
+        entry.keyTerm = object.value(QStringLiteral("keyTerm")).toBool(true);
+        entry.enabled = object.value(QStringLiteral("enabled")).toBool(true);
+        entry.confidence = object.value(QStringLiteral("confidence")).toDouble();
+        entry.evidenceCount = object.value(QStringLiteral("evidenceCount")).toInt();
+        entry.createdAtMs = qint64(object.value(QStringLiteral("createdAtMs")).toDouble());
+        entry.lastObservedAtMs = qint64(object.value(QStringLiteral("lastObservedAtMs")).toDouble());
+        if (usable(entry)) {
+            entries.append(entry);
+        }
+    }
+    return withVocabularyIds(normalizeVocabularyEntries(entries));
+}
+
+} // namespace
 
 QList<VocabularyEntry> load(const QSettings &settings)
 {
-    const QByteArray stored = settings.value(SettingsKeys::VocabularyEntries, QByteArray()).toByteArray();
-    const QJsonDocument document = QJsonDocument::fromJson(stored);
-    QList<VocabularyEntry> entries;
-    if (document.isArray()) {
-        for (const QJsonValue &value : document.array()) {
-            const QJsonObject object = value.toObject();
-            QStringList profiles;
-            for (const QJsonValue &profile : object.value(QStringLiteral("profiles")).toArray()) {
-                profiles.append(profile.toString());
-            }
-            entries.append({
-                object.value(QStringLiteral("term")).toString(),
-                object.value(QStringLiteral("source")).toString(QStringLiteral("manual")),
-                object.value(QStringLiteral("starred")).toBool(false),
-                object.value(QStringLiteral("frequency")).toInt(0),
-                qint64(object.value(QStringLiteral("lastUsedMs")).toDouble()),
-                object.value(QStringLiteral("context")).toString(),
-                profiles,
-                // Stored only when off, so every term saved before the
-                // setting existed stays a key term.
-                object.value(QStringLiteral("keyTerm")).toBool(true),
-            });
-        }
-    } else {
-        for (const QString &term : settings.value(
-                 SettingsKeys::LegacyVocabulary,
-                 QStringList()).toStringList()) {
-            entries.append({term, QStringLiteral("legacy"), false, 0, 0});
-        }
-    }
-    return normalizeVocabularyEntries(entries);
+    return fromJson(QJsonDocument::fromJson(settings.value(SettingsKeys::Vocabulary).toByteArray()).array());
 }
 
 void store(QSettings &settings, const QList<VocabularyEntry> &entries)
 {
-    const QList<VocabularyEntry> normalized = normalizeVocabularyEntries(entries);
     QJsonArray array;
-    QStringList legacyTerms;
-    for (const VocabularyEntry &entry : normalized) {
+    for (const VocabularyEntry &entry : withVocabularyIds(normalizeVocabularyEntries(entries))) {
+        if (!usable(entry)) {
+            continue;
+        }
         QJsonObject object{
+            {QStringLiteral("id"), entry.id},
             {QStringLiteral("term"), entry.term},
             {QStringLiteral("source"), entry.source},
-            {QStringLiteral("starred"), entry.starred},
-            {QStringLiteral("frequency"), entry.frequency},
-            {QStringLiteral("lastUsedMs"), double(entry.lastUsedMs)},
         };
-        if (!entry.context.isEmpty()) {
-            object.insert(QStringLiteral("context"), entry.context);
-        }
-        if (!entry.profiles.isEmpty()) {
-            object.insert(QStringLiteral("profiles"), QJsonArray::fromStringList(entry.profiles));
-        }
-        if (!entry.keyTerm) {
-            object.insert(QStringLiteral("keyTerm"), false);
-        }
+        const auto insertWhen = [&object](bool set, const char *key, const QJsonValue &value) {
+            if (set) {
+                object.insert(QLatin1String(key), value);
+            }
+        };
+        insertWhen(entry.isReplacement(), "replacement", entry.replacement);
+        insertWhen(entry.starred, "starred", true);
+        insertWhen(entry.frequency > 0, "frequency", entry.frequency);
+        insertWhen(entry.lastUsedMs > 0, "lastUsedMs", double(entry.lastUsedMs));
+        insertWhen(!entry.context.isEmpty(), "context", entry.context);
+        insertWhen(!entry.profiles.isEmpty(), "profiles", QJsonArray::fromStringList(entry.profiles));
+        insertWhen(!entry.apps.isEmpty(), "apps", QJsonArray::fromStringList(entry.apps));
+        insertWhen(!entry.keyTerm, "keyTerm", false);
+        insertWhen(!entry.enabled, "enabled", false);
+        insertWhen(entry.isLearned(), "confidence", entry.confidence);
+        insertWhen(entry.isLearned(), "evidenceCount", entry.evidenceCount);
+        insertWhen(entry.createdAtMs > 0, "createdAtMs", double(entry.createdAtMs));
+        insertWhen(entry.lastObservedAtMs > 0, "lastObservedAtMs", double(entry.lastObservedAtMs));
         array.append(object);
-        legacyTerms.append(entry.term);
     }
-    settings.setValue(
-        SettingsKeys::VocabularyEntries,
-        QJsonDocument(array).toJson(QJsonDocument::Compact));
-    settings.setValue(SettingsKeys::LegacyVocabulary, legacyTerms);
+    settings.setValue(SettingsKeys::Vocabulary, QJsonDocument(array).toJson(QJsonDocument::Compact));
 }
 
 bool recordUsage(QSettings &settings, const QString &text)
@@ -82,7 +106,7 @@ bool recordUsage(QSettings &settings, const QString &text)
     QList<VocabularyEntry> entries = load(settings);
     bool changed = false;
     for (VocabularyEntry &entry : entries) {
-        if (containsVocabularyTerm(text, entry.term)) {
+        if (!entry.isReplacement() && containsVocabularyTerm(text, entry.term)) {
             ++entry.frequency;
             entry.lastUsedMs = QDateTime::currentMSecsSinceEpoch();
             changed = true;

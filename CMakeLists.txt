@@ -261,6 +261,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/settings/SettingsFields.cpp
   src/core/settings/SettingsFile.cpp
   src/core/settings/SpokenLanguages.cpp
+  src/core/settings/VocabularyMigration.cpp
   src/core/settings/VocabularySettingsCodec.cpp
   src/core/SecretStore.cpp
   src/core/TranscriptState.cpp
@@ -269,6 +270,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/VocabularyLimit.cpp
   src/core/Vocabulary.cpp
   src/core/VocabularyEdits.cpp
+  src/core/VocabularyScope.cpp
   src/core/WordPreview.cpp
   src/core/AppEdits.cpp
   src/core/WritingProfileEdits.cpp
@@ -314,6 +316,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/settings/SettingsFile.h
   src/core/settings/SettingsKeys.h
   src/core/settings/SpokenLanguages.h
+  src/core/settings/VocabularyMigration.h
   src/core/settings/VocabularySettingsCodec.h
   src/core/SecretStore.h
   src/core/SettingsEdit.h
@@ -323,6 +326,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/VocabularyLimit.h
   src/core/Vocabulary.h
   src/core/VocabularyEdits.h
+  src/core/VocabularyScope.h
   src/core/WordPreview.h
   src/core/WordSpacing.h
   src/core/AppEdits.h

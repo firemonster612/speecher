@@ -100,10 +100,31 @@ bool isVirtualBridge(const QNetworkInterface &interface)
 
 } // namespace
 
+QList<VocabularyEntry> phoneTerms(const AppSettings &settings)
+{
+    QList<VocabularyEntry> terms;
+    std::copy_if(settings.vocabulary.cbegin(), settings.vocabulary.cend(), std::back_inserter(terms),
+                 [](const VocabularyEntry &entry) {
+                     return !entry.isReplacement() && entry.enabled && entry.apps.isEmpty();
+                 });
+    return terms;
+}
+
+QList<VocabularyEntry> phoneReplacements(const AppSettings &settings)
+{
+    QList<VocabularyEntry> replacements;
+    std::copy_if(settings.vocabulary.cbegin(), settings.vocabulary.cend(), std::back_inserter(replacements),
+                 [](const VocabularyEntry &entry) {
+                     return entry.isReplacement() && !entry.isLearned() && entry.enabled && entry.apps.isEmpty()
+                         && entry.profiles.isEmpty();
+                 });
+    return replacements;
+}
+
 QByteArray phoneTransferBundle(const AppSettings &settings, const QString &computerName)
 {
     QJsonArray vocabulary;
-    for (const VocabularyEntry &entry : settings.vocabulary) {
+    for (const VocabularyEntry &entry : phoneTerms(settings)) {
         vocabulary.append(QJsonObject{
             {QStringLiteral("term"), entry.term},
             {QStringLiteral("context"), entry.context},
@@ -116,10 +137,10 @@ QByteArray phoneTransferBundle(const AppSettings &settings, const QString &compu
         });
     }
     QJsonArray replacements;
-    for (const BindingRule &rule : settings.bindings) {
+    for (const VocabularyEntry &entry : phoneReplacements(settings)) {
         replacements.append(QJsonObject{
-            {QStringLiteral("phrase"), rule.phrase},
-            {QStringLiteral("text"), rule.replacement},
+            {QStringLiteral("phrase"), entry.term},
+            {QStringLiteral("text"), entry.replacement},
         });
     }
     const RefinementSettings &refinement = settings.refinement;
