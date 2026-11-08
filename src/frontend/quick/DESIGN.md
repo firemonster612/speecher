@@ -61,7 +61,9 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   missing (`Schema.pasting.needs` words them, as "<need>: <state>"),
   `rulePlan(method)` what a paste rule leaves of the steps and the off step
   it relies on, and `pastingOutcome` where the words end up: `delivers`,
-  `clipboard` or `nothing`. `Phone`'s code lives from `Phone.start()` to `Phone.stop()`,
+  `clipboard` or `nothing`. All of them read the settings as `Settings`
+  shows them (`QuickSettings::shown`), so setup's draft shows in them as
+  in the rows. `Phone`'s code lives from `Phone.start()` to `Phone.stop()`,
   and `QrCode` draws it through the host's `image://qr` provider.
   `Removal.start(keepSettings)` reports in `Removal.report` by part and
   outcome, and `RemovalReport` words it: under General's row, and alone in
@@ -73,8 +75,8 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   as data: speech services and refinement providers with a `state` and
   core's `problem` sentence, their ratings as `{ measure, value }` bars, the
   Local Model catalog with fits, speeds, downloads and Speed Tests, the
-  hardware, the Local Runners and the Ollama pull, both servers' checks
-  and setup's fallback offers. Each speech service and Local Model
+  hardware, the Local Runners and the Ollama pull, and both servers'
+  checks. Each speech service and Local Model
   carries the language codes it listens for, from core's lists
   (`SpokenLanguages`, the catalog). `QuickModels.h` documents each field.
   `ModelText` (in Speecher.App) words all of it and looks entries up by id,
@@ -134,6 +136,17 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   time: the row says why in `errors` and keeps listening. Where the desktop
   picks the keys (`Settings.desktopPicksKeys(id)`, the portal), the row
   records nothing and `Settings.act(id)` opens the desktop's chooser.
+- While the setup assistant is open, the rows its steps choose (the two
+  Service Orders, Clean up my words, the Spoken Language and the delivery
+  steps) are drafted: `Settings.startDraft(ids)` opens the draft, and
+  `set` keeps those rows' edits in it, in order, as one `SettingsEdit`
+  rather than saving them. `values` shows the draft over the saved
+  settings, on every page, and a save from anywhere else shows under it.
+  `saveDraft()` saves it in one go (Finish, Set up later) and
+  `dropDraft()` drops it (the host, when setup closes). Every other row,
+  the microphone, the shortcuts and whatever a Fix sheet changes, saves at
+  once, so the microphone test, the bound keys and the sign-in and server
+  checks test what was chosen.
 - `Settings.errors[id]` says why a row's last save was refused, such as a
   shortcut another app owns. SchemaRow shows it in place of its help; a page
   that gives a shortcut row its own help sets `note`, not `help`.
@@ -346,11 +359,8 @@ Choosing:
 
 - Speech to text and Refinement put their services in order with
   `ServiceOrderList`: each service first to last with its status, its own
-  choices under it (`ServiceChoiceRow`) and a Fix while it can't run. One
-  service for a setup step is chosen with `ServiceCards`: a grid of cards,
-  each with its icon, name, a line of help, its status and its ratings, and
-  a check on the chosen one. A narrow place gets fewer, smaller columns, not
-  another layout.
+  choices under it (`ServiceChoiceRow`) and a Fix while it can't run.
+  Setup's steps show the same lists.
 - A value a narrower place may change (an App's or App Type's, a Writing
   Profile's first services, one Transcribe batch's) is an `InheritSelect`
   whose first option is the wider place's value, "Same as <place>
@@ -375,7 +385,7 @@ Choosing:
   search, wherever it is chosen. `Chip`s are for choosing several at once or
   inserting a snippet.
 - A count of languages a service or Local Model listens for is a link
-  (`LinkedText`, or `helpLink` on ServiceCards and SettingRow) that opens
+  (`LinkedText`, or `helpLink` on SettingRow) that opens
   `LanguageList`, the same popover showing only those languages. Following
   it never chooses or opens the card it sits on.
 - Languages are named once, in the `spokenLanguage` row's options (English,
@@ -399,8 +409,8 @@ Press, hover, selection:
   pointer, `fillStrong` while pressed (`surfaceHover`/`surfacePressed` on
   raised buttons and fields). Nothing grows under the pointer.
 - Only a button or a whole-card choice shrinks when pressed: text buttons
-  and chips to 0.965, icon buttons to 0.92, `ChoiceCard`s (`OptionCards`,
-  `ServiceCards`) and theme thumbnails to 0.98, over `Theme.fast` springy.
+  and chips to 0.965, icon buttons to 0.92, `ChoiceCard`s (`OptionCards`)
+  and theme thumbnails to 0.98, over `Theme.fast` springy.
   Rows, menus, segments, fields and the header of a card that opens never
   shrink.
 - A card that opens is a `Card` whose header has the row wash and a chevron
@@ -503,6 +513,19 @@ Layout:
   keyboard never has a row of its own, and accessibility has one only
   while no delivery step that is on relies on it. While all pass the card
   is one line; Run setup again shows either way.
+- Setup is the pages, in order. After Welcome, each step shows the page's
+  own sections and writes the same settings: Speech to text's Spoken
+  language and Service Order, Microphone's test and Input card, Pasting's
+  Steps, Refinement's sample, Clean up my words and Service Order, and
+  Dictation's shortcut recorder and what pressing it does; Ready lists the
+  steps still open. A step has no control or wording of its own: the part
+  a page shares with setup lives in `pages/<area>/` (or `App/` when two
+  areas share it, as `ServiceOrderSection` does) and both use it. What the
+  steps choose waits in `Settings`' draft until Finish or Set up later
+  saves it, so setup, the pages and Home's readiness read one set of
+  values. Speech, the microphone and a delivery that gets the words
+  somewhere are needed; Finish is always there and names what is missing,
+  and no button rewrites a setting to get past a step.
 
 Things to avoid, because they read as generated:
 
@@ -611,8 +634,7 @@ Choosing:
 - `LanguageSelect { options; currentId; shownId; placeholder; searchText; clearText; emptyText; chosen(id) }`: the current language's flag and name, opening a `LanguagePopover` to choose from. `shownId` is what the button shows when the checked option stands for another language, as a later speech service's "Same as Spoken language" does.
 - `LanguagePopover { languages; currentId; choosing; searchText; clearText; emptyText; align; openFrom(item); chosen(id) }`: languages with their flags under a search field that filters by English name, own name or code; arrows, Return and Escape. `choosing` checks `currentId` and picks; without it the list only shows. It grows from what opened it, as menus do. An option's `icon` stands in for the flag (Automatic).
 - `CompactChoice { options; currentId; stretch; chosen(id) }`: segments for up to four options, a Select for more.
-- `OptionCards { options; currentId; activated(id) }`: a few choices as cards with help.
-- `ServiceCards { options; currentId; unratedText; helpLinkActivated(id, at) }`: a provider or service as a grid of cards inside a Section's card, each with its icon, help, status, ratings and a note on them, and a check when chosen; an option's `helpLink` makes that part of its help a link. `ChoiceCard` is the card both it and OptionCards use.
+- `OptionCards { options; currentId; activated(id) }`: a few choices as cards with help. `ChoiceCard` is its card.
 - `Chip { text; iconName; checkable }`: small choices or snippet buttons in a Flow.
 - `OrderedList { ids; options; statusOf; rowControl; rowDetail; minCount; maxCount; addLabel; emptyText }`: an ordered list to drag, reorder, add to and remove from; `rowControl` puts a control at each row's end, such as a Fix, and `rowDetail` a line of choices under its name; `minCount` rows always stay.
 - `EditableList { items; emptyTitle; emptyText; formOpen }`: things a person made, with edit and delete.
@@ -660,7 +682,8 @@ In Speecher.App, besides SchemaRow:
 - `AccessibilityNotice { text }`: the note at the top of a card whose rows need desktop accessibility.
 - `HealthRow { rowId; checkId }`: a schema row showing one of `System.checks` with its fix; items inside follow the fix button. `AccessibilityMenu` is the desktopAccessibility row's menu that stops keeping it on. `StateText { stateId }` words a sign-in or check state, and `States` (states.js) maps states to tones: a state to sign in to, turn on or set up is `warning`, one that failed or can't be used `negative`.
 - `ServiceOrderList { role }`: a job's Service Order, speech or refinement, on an `OrderedList`: each service with its status and a Fix while it can't run, its `ServiceChoiceRow` under it, saving as it changes. `ServiceChoiceRow` is one entry's choices: its model (picked where the service lets you, else named), a later speech service's Spoken language with "Same as Spoken language" first, and ChatGPT's and Claude's thinking and speed.
-- `ServiceStatus { role; serviceId }`: under the cards that choose one service (setup) and under Transcribe's profile, what it still needs and how to sign in, with Check again and Fix; folded away while it is ready and before the first check answers.
+- `ServiceOrderSection { role }`: a ServiceOrderList under the order row's label and help, as Speech to text, Refinement and their setup steps show it.
+- `ServiceStatus { role; serviceId }`: under Transcribe's profile, what a service the batch runs with still needs and how to sign in, with Check again and Fix; folded away while it is ready and before the first check answers.
 - `FixSheet { openFor(role, serviceId) }`: the Services card that fixes one service (ChatGPT's or Claude's sign-in, This computer's part for the job, or the job's server) in a modal sheet over the page, with Open Services, which leads back to setup when opened from there.
 - `ErrorDetails { text }`: a failure's own words behind a Details link, under its plain sentence.
 - `ShortcutRecorder { rowId }`: a shortcut setting's ShortcutField wired to Settings, for the shortcut rows and Dictation's hero, which is where the dictation shortcut is set.

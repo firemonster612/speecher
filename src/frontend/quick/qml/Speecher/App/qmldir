@@ -19,6 +19,7 @@ ShortcutRecorder 1.0 ShortcutRecorder.qml
 CommandChip 1.0 CommandChip.qml
 ErrorDetails 1.0 ErrorDetails.qml
 ServiceOrderList 1.0 ServiceOrderList.qml
+ServiceOrderSection 1.0 ServiceOrderSection.qml
 ServiceChoiceRow 1.0 ServiceChoiceRow.qml
 ServiceStatus 1.0 ServiceStatus.qml
 FixSheet 1.0 FixSheet.qml

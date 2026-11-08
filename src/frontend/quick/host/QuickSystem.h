@@ -13,6 +13,7 @@ namespace speecher {
 
 class ApplicationController;
 class QuickRemoval;
+class QuickSettings;
 struct DeliverySteps;
 
 // The UI's System singleton: what Speecher knows and does about the computer
@@ -20,6 +21,8 @@ struct DeliverySteps;
 // keyboard's setup and typing test, the delivery steps and what each needs, the clipboard
 // and opening links, and what the computer can do, which the UI's needs read.
 // It carries states and step ids; the UI words them (health.js, the pages).
+// The delivery steps are the settings as Settings shows them, so a draft
+// the setup assistant holds shows in the outcomes as in the rows.
 // The virtual keyboard and removing Speecher are Linux's: elsewhere
 // hasVirtualKeyboard and canRemove are false and checks has no keyboard row.
 class QuickSystem final : public QObject, public HostSingleton<QuickSystem> {
@@ -46,10 +49,10 @@ class QuickSystem final : public QObject, public HostSingleton<QuickSystem> {
     Q_PROPERTY(QString desktop READ desktop CONSTANT)
 
 public:
-    // virtualKeyboard and removal must outlive this. No fix or keyboard
-    // operation starts while removal runs.
-    QuickSystem(ApplicationController *controller, VirtualKeyboardSetup *virtualKeyboard, const QuickRemoval *removal,
-                QObject *parent = nullptr);
+    // settings, virtualKeyboard and removal must outlive this. No fix or
+    // keyboard operation starts while removal runs.
+    QuickSystem(ApplicationController *controller, const QuickSettings *settings, VirtualKeyboardSetup *virtualKeyboard,
+                const QuickRemoval *removal, QObject *parent = nullptr);
 
     // Desktop accessibility is on, so Speecher can tell which app it pastes into.
     bool accessibility() const;
@@ -93,9 +96,6 @@ public:
     // that is on gets them into the app), clipboard (none can, and Keep
     // leaves them there) or nothing.
     QString pastingOutcome() const;
-    // deliverySteps and pastingOutcome for these switches rather than the
-    // saved ones, as {steps, outcome}: the setup assistant's drafts.
-    Q_INVOKABLE QVariantMap deliveryWith(bool insert, bool press, bool keep) const;
     // What a Paste Rule with this method (core's name, such as
     // terminal_paste; any other, such as inherit, is Standard paste) does
     // with the steps: {route, usable, needs}, route the steps it leaves on
@@ -167,6 +167,7 @@ private:
     void clearFailures(const QString &id);
 
     ApplicationController *m_controller;
+    const QuickSettings *m_settings;
     VirtualKeyboardSetup *m_virtualKeyboard;
     const QuickRemoval *m_removal;
     // Each check's failures, by check id, as checks shows them.

@@ -126,60 +126,6 @@ private slots:
         QVERIFY(!settings.secrets()->isSecretKnown(SecretStore::Secret::SpeechEndpointKey));
     }
 
-    // Setup's fallback offer joins the chain behind the primary, and changes
-    // nothing, not even the runner selection, when the chain would drop it.
-    void setupFallbackOfferJoinsOnlyAChainThatWouldKeepIt()
-    {
-        SettingsStore settings;
-        settings.raw().clear();
-        ProviderRegistry providers;
-        QTemporaryDir directory;
-        LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
-        LocalSetup setup(settings, providers, models);
-        LocalSetupTestAccess::setRunners(setup, {{QStringLiteral("ollama"), QStringLiteral("Ollama"),
-                                                  QStringLiteral("0.34.4"), QStringLiteral("http://127.0.0.1:11434/v1"),
-                                                  {QStringLiteral("gemma4:e4b")}}});
-        settings.edit([](AppSettings &draft) {
-            draft.refinement.services.order = {QStringLiteral("anthropic")};
-            return true;
-        });
-
-        const QString anthropic = QStringLiteral("anthropic");
-        const QStringList full{QStringLiteral("openai"), QStringLiteral("endpoint")};
-        settings.edit([&](AppSettings &draft) { draft.refinement.services.order = QStringList{draft.refinement.services.main()} + full; return true; });
-        setup.acceptSetupFallbackOffer(ProviderRole::Refinement, anthropic);
-        QCOMPARE(settings.dictationSnapshot().refinement.services.order.mid(1), full);
-        QCOMPARE(settings.dictationSnapshot().refinement.localRunner, LocalRunnerSettings{});
-
-        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {draft.refinement.services.main()}; return true; });
-        setup.acceptSetupFallbackOffer(ProviderRole::Refinement, anthropic);
-        QCOMPARE(settings.dictationSnapshot().refinement.services.main(), anthropic);
-        QCOMPARE(settings.dictationSnapshot().refinement.services.order.mid(1), QStringList{QStringLiteral("local")});
-        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("local")).model, QStringLiteral("gemma4:e4b"));
-
-        // Already in the order.
-        settings.edit([](AppSettings &draft) {
-            draft.refinement.localRunner = {};
-            draft.refinement.services.choice(QStringLiteral("local")).model.clear();
-            return true;
-        });
-        setup.acceptSetupFallbackOffer(ProviderRole::Refinement, anthropic);
-        QCOMPARE(settings.dictationSnapshot().refinement.services.order.mid(1), QStringList{QStringLiteral("local")});
-        QCOMPARE(settings.dictationSnapshot().refinement.localRunner, LocalRunnerSettings{});
-
-        // Setup's choice, saved with the offer, turns Clean up my words back
-        // on with that service first.
-        settings.edit([&](AppSettings &draft) {
-            draft.refinement.enabled = false;
-            draft.refinement.services.order = {anthropic};
-            return true;
-        });
-        setup.acceptSetupFallbackOffer(ProviderRole::Refinement, QStringLiteral("openai"));
-        QVERIFY(settings.dictationSnapshot().refinement.enabled);
-        QCOMPARE(settings.dictationSnapshot().refinement.services.order,
-                 (QStringList{QStringLiteral("openai"), QStringLiteral("local")}));
-    }
-
     void endpointChecksDiscardSupersededResults_data()
     {
         QTest::addColumn<bool>("refinement");

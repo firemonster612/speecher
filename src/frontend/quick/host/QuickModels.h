@@ -117,10 +117,6 @@ class QuickModels final : public QObject, public HostSingleton<QuickModels> {
     // The rules refinement follows unless a custom prompt replaces them.
     Q_PROPERTY(QString builtInSystemPrompt READ builtInSystemPrompt CONSTANT)
 
-    // The local fallback setup suggests for each role, {modelId, name, joins}
-    // or empty, by role: speech and refinement. joins lists the primaries the
-    // offer would be added behind; behind any other the chain would drop it.
-    Q_PROPERTY(QVariantMap fallbackOffers READ fallbackOffers NOTIFY changed)
 
 public:
     explicit QuickModels(ApplicationController *controller, QObject *parent = nullptr);
@@ -155,7 +151,6 @@ public:
     bool offerPull() const { return m_offerPull; }
     QVariantMap pull() const;
     QString builtInSystemPrompt() const;
-    QVariantMap fallbackOffers() const { return m_fallbackOffers; }
 
     // Probes the hardware the first time: what a page that shows fits,
     // suggestions or ratings asks for when it opens. Probing loads the speech
@@ -191,10 +186,6 @@ public:
     // runner's model once it is there.
     Q_INVOKABLE void pullCleanupModel();
     Q_INVOKABLE void cancelPull();
-    // Adds the local fallback offered for a role, speech or refinement,
-    // behind primary, setup's choice for it, which is saved with it. Another
-    // role changes nothing and is logged.
-    Q_INVOKABLE void acceptFallbackOffer(const QString &role, const QString &primary);
 
 signals:
     void changed();
@@ -232,7 +223,6 @@ private:
     bool m_runnersChecked = false;
     QVariantMap m_cleanupSuggestion;
     bool m_offerPull = false;
-    QVariantMap m_fallbackOffers;
 };
 
 } // namespace speecher

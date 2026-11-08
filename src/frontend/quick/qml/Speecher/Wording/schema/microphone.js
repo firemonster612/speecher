@@ -23,7 +23,6 @@ var rows = [
       listeningText: "Listening to %1", noMicrophoneText: "No microphone found",
       accessOffText: "Microphone access is off.",
       heardText: "Speecher hears your microphone.", notHeardText: "Not heard yet",
-      setupHint: "Say a few words. If the bars stay flat, check that the microphone isn't muted, or pick another one.",
       noMicrophoneHint: "Plug in or turn on a microphone. It shows up here as soon as your computer sees it.",
       keywords: "level meter check volume hear input test" },
 

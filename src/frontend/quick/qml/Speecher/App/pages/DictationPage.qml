@@ -1,9 +1,9 @@
 import QtQuick
-import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
+import "dictation"
 
 // What starts, pauses and cancels a dictation, and how shortcuts reach
 // Speecher, then a way into the microphone and the popup, each row saying
@@ -19,9 +19,7 @@ Page {
     readonly property var t: ({
         recordsFrom: name => "Records from " + name,
         liveText: on => on ? "Live text on" : "Live text off",
-        sounds: on => on ? "sounds on" : "sounds off",
-        chooseShortcut: "Click to choose a shortcut",
-        changeShortcut: "Click to change"
+        sounds: on => on ? "sounds on" : "sounds off"
     })
 
     // How shortcuts reach Speecher: first where the command is the way in,
@@ -45,43 +43,12 @@ Page {
     }
     Reveal { open: page.noShortcuts; Reach {} }
 
-    // The dictation shortcut, big: the page's one picture, and where it is
-    // set: clicking the keys records new ones. Under them, that they can be
-    // clicked, or why the last keys were refused; the cards below say what
-    // pressing them does. With no shortcut to be had, the command above runs
+    // The dictation shortcut, where it is set; the cards below say what
+    // pressing it does. With no shortcut to be had, the command above runs
     // one dictation, so it folds away with the rows.
     Reveal {
         open: !page.noShortcuts
-        Plate {
-            id: hero
-            readonly property var spec: Schema.row("globalShortcut")
-            readonly property string refused: Settings.errors.globalShortcut || ""
-            height: 132
-            SearchLanding { rowIds: ["globalShortcut"]; target: hero; onLanded: recorder.forceActiveFocus() }
-
-            ShortcutRecorder {
-                id: recorder
-                objectName: "dictationShortcut"
-                rowId: "globalShortcut"
-                size: "large"
-                emptyText: page.t.chooseShortcut
-                width: Math.min(parent.width - Theme.space6 * 2, 480)
-                height: 72
-                anchors.horizontalCenter: parent.horizontalCenter
-                y: Theme.space4
-                Accessible.name: hero.spec.label
-            }
-            MorphText {
-                objectName: "shortcutCaption"
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.top: recorder.bottom
-                anchors.topMargin: Theme.space3
-                width: Math.min(implicitWidth, parent.width - Theme.space6 * 2)
-                elide: Text.ElideRight
-                text: hero.refused || (recorder.keys.length > 0 && !recorder.listening ? page.t.changeShortcut : "")
-                tone: hero.refused ? "negative" : "secondary"
-            }
-        }
+        ShortcutHero {}
     }
 
     // What pressing the shortcut does: with no shortcut to be had, the

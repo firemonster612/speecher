@@ -7,6 +7,7 @@
 #include "core/PasteKeys.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickRemoval.h"
+#include "frontend/quick/host/QuickSettings.h"
 #ifdef SPEECHER_WITH_WAYLAND
 #include "output/WaylandClipboardProcess.h"
 #include "output/WlClipboardDelivery.h"
@@ -233,17 +234,19 @@ bool clipboardHelperThere(const QString &need)
 
 } // namespace
 
-QuickSystem::QuickSystem(ApplicationController *controller, VirtualKeyboardSetup *virtualKeyboard,
-                         const QuickRemoval *removal, QObject *parent)
+QuickSystem::QuickSystem(ApplicationController *controller, const QuickSettings *settings,
+                         VirtualKeyboardSetup *virtualKeyboard, const QuickRemoval *removal, QObject *parent)
     : QObject(parent)
     , m_controller(controller)
+    , m_settings(settings)
     , m_virtualKeyboard(virtualKeyboard)
     , m_removal(removal)
 {
     connect(controller->accessibility(), &AccessibilityMonitor::stateChanged, this, &QuickSystem::changed);
     connect(controller, &ApplicationController::globalShortcutChanged, this, &QuickSystem::changed);
     connect(controller, &ApplicationController::globalShortcutSupportChanged, this, &QuickSystem::changed);
-    connect(controller->settings(), &SettingsStore::snapshotApplied, this, &QuickSystem::changed);
+    // Saved settings and the setup assistant's draft alike.
+    connect(settings, &QuickSettings::valuesChanged, this, &QuickSystem::changed);
     connect(m_virtualKeyboard, &VirtualKeyboardSetup::changed, this, &QuickSystem::changed);
     connect(m_virtualKeyboard, &VirtualKeyboardSetup::failed, this, [this](Failure failure, const QString &error) {
         m_failures[keyboardId].append(failureEntry(failureName(failure), error));
@@ -308,12 +311,12 @@ QString QuickSystem::virtualKeyboardTest() const
 
 QStringList QuickSystem::pasteRoute() const
 {
-    return DeliveryPlan{m_controller->settings()->dictationSnapshot().output.steps}.route();
+    return DeliveryPlan{m_settings->shown().output.steps}.route();
 }
 
 QVariantList QuickSystem::deliverySteps() const
 {
-    return stepEntries(m_controller->settings()->dictationSnapshot().output.steps);
+    return stepEntries(m_settings->shown().output.steps);
 }
 
 QVariantList QuickSystem::stepEntries(const DeliverySteps &steps) const
@@ -375,15 +378,9 @@ QString QuickSystem::pastingOutcome() const
     return outcomeOf(deliverySteps());
 }
 
-QVariantMap QuickSystem::deliveryWith(bool insert, bool press, bool keep) const
-{
-    const QVariantList steps = stepEntries({.insert = insert, .press = press, .keep = keep});
-    return {{QStringLiteral("steps"), steps}, {QStringLiteral("outcome"), outcomeOf(steps)}};
-}
-
 QVariantMap QuickSystem::rulePlan(const QString &method) const
 {
-    const DeliverySteps steps = m_controller->settings()->dictationSnapshot().output.steps;
+    const DeliverySteps steps = m_settings->shown().output.steps;
     const PasteMethod paste = pasteMethodFromName(method);
     const auto needs = speecher::stepRuleNeeds(steps, paste);
     const QStringList route = deliveryPlan(steps, paste).route();

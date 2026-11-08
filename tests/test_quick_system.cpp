@@ -708,19 +708,19 @@ private slots:
         QTRY_COMPARE(reason(), QStringLiteral("testing"));
     }
 
-    // Setup words where the words end up as Home does, from its drafts
-    // rather than the saved switches: the Pasting step passes once a step
-    // that is on gets them into the app, and is needed only while they get
-    // nowhere at all. Words left on the clipboard leave it open but not
-    // needed. Setup counts as complete only once no needed step is open,
-    // and no step's check holds back another.
-    void setupPastingFollowsTheSharedOutcomeOfItsDrafts()
+    // Setup words where the words end up from the one outcome Home and
+    // Pasting show, which follows its draft: the Pasting step passes once a
+    // step that is on gets them into the app, and is needed only while they
+    // get nowhere at all. Words left on the clipboard leave it open but not
+    // needed. The saved switches stay until setup saves. Setup counts as
+    // complete only once no needed step is open, and no step's check holds
+    // back another.
+    void setupPastingFollowsTheOutcomeOfItsDraft()
     {
         ApplicationController controller(true);
         QVERIFY(!controller.accessibility()->enabled());
         // The pages read Library, which works through this controller.
         const QuickLibrary::ControllerScope library(&controller);
-        QuickSettings settings(&controller);
         FakeKeyboard keyboard;
         keyboard.installed = YdotoolSetupState::NeedsSignOut;
         keyboard.managed = true;
@@ -749,20 +749,19 @@ private slots:
         QVERIFY(!delivery().value(QStringLiteral("needed")).toBool());
         QCOMPARE(delivery().value(QStringLiteral("verdict")).toString(), QStringLiteral("Your words stay on the clipboard"));
 
-        // Keep off in the drafts leaves nothing, though the saved switches
-        // still keep the words.
-        choices->setProperty("keep", false);
+        // Keep off in the draft leaves nothing, in setup and in System
+        // alike, though the saved switches still keep the words.
+        standIn.settings.set(QStringLiteral("keepOnClipboard"), false);
         QVERIFY(delivery().value(QStringLiteral("needed")).toBool());
         QCOMPARE(delivery().value(QStringLiteral("verdict")).toString(), QStringLiteral("Nothing can deliver your words"));
-        QCOMPARE(standIn.system.pastingOutcome(), QStringLiteral("clipboard"));
-        QCOMPARE(plain(choices->property("delivery")).toMap().value(QStringLiteral("outcome")).toString(),
-                 standIn.system.deliveryWith(true, true, false).value(QStringLiteral("outcome")).toString());
+        QCOMPARE(standIn.system.pastingOutcome(), QStringLiteral("nothing"));
+        QVERIFY(controller.settings()->dictationSnapshot().output.steps.keep);
 
         // A keyboard that is ready gets them in with Press alone, Keep off.
         keyboard.installed = YdotoolSetupState::Ready;
         controller.settings()->setYdotoolEnabled(true);
         standIn.virtualKeyboard.refresh();
-        choices->setProperty("insert", false);
+        standIn.settings.set(QStringLiteral("insertThroughAccessibility"), false);
         QTRY_VERIFY(delivery().value(QStringLiteral("done")).toBool());
         QVERIFY(!delivery().value(QStringLiteral("needed")).toBool());
         QCOMPARE(delivery().value(QStringLiteral("verdict")).toString(), QStringLiteral("Paste keys"));
@@ -776,26 +775,41 @@ private slots:
         QVERIFY(!choices->property("complete").toBool());
     }
 
-    // The outcome for given switches is the one for the saved switches
-    // once they are saved.
-    void deliveryWithAnswersForTheSwitchesItIsGiven()
+    // System's delivery steps and outcome are the settings as Settings
+    // shows them: with a draft's switches over the saved ones until it is
+    // dropped, and saved once it is saved. A row the draft doesn't hold
+    // saves at once, and a save from elsewhere shows under the draft.
+    void deliveryFollowsTheSettingsDraft()
     {
         ApplicationController controller(true);
         FakeKeyboard keyboard;
         StandInSystem standIn(&controller, keyboard);
-        const auto outcome = [&standIn](bool insert, bool press, bool keep) {
-            return standIn.system.deliveryWith(insert, press, keep).value(QStringLiteral("outcome")).toString();
-        };
-        QCOMPARE(outcome(true, true, true), QStringLiteral("clipboard"));
-        QCOMPARE(outcome(true, true, false), QStringLiteral("nothing"));
-        QCOMPARE(outcome(false, false, true), QStringLiteral("clipboard"));
+        QuickSettings &settings = standIn.settings;
+        const auto saved = [&controller] { return controller.settings()->dictationSnapshot(); };
+        QCOMPARE(standIn.system.pastingOutcome(), QStringLiteral("clipboard"));
+
+        settings.startDraft({QStringLiteral("keepOnClipboard")});
+        settings.set(QStringLiteral("keepOnClipboard"), false);
+        QCOMPARE(standIn.system.pastingOutcome(), QStringLiteral("nothing"));
+        QVERIFY(!settings.values().value(QStringLiteral("keepOnClipboard")).toBool());
+        QVERIFY(saved().output.steps.keep);
+        settings.dropDraft();
+        QCOMPARE(standIn.system.pastingOutcome(), QStringLiteral("clipboard"));
+        QVERIFY(settings.values().value(QStringLiteral("keepOnClipboard")).toBool());
+
+        settings.startDraft({QStringLiteral("keepOnClipboard")});
+        settings.set(QStringLiteral("keepOnClipboard"), false);
+        settings.set(QStringLiteral("outputFormat"), QStringLiteral("html"));
+        QCOMPARE(saved().output.format, OutputFormat::Html);
         controller.settings()->edit([](AppSettings &draft) {
-            draft.output.steps = {.insert = true, .press = true, .keep = false};
+            draft.output.steps = draft.output.steps.withStep(DeliveryStep::Press, false);
             return true;
         });
-        QCOMPARE(standIn.system.pastingOutcome(), outcome(true, true, false));
-        QCOMPARE(standIn.system.deliverySteps(),
-                 standIn.system.deliveryWith(true, true, false).value(QStringLiteral("steps")).toList());
+        QVERIFY(!settings.values().value(QStringLiteral("pressPasteKeys")).toBool());
+        QVERIFY(!settings.values().value(QStringLiteral("keepOnClipboard")).toBool());
+        settings.saveDraft();
+        QVERIFY((saved().output.steps == DeliverySteps{.insert = true, .press = false, .keep = false}));
+        QCOMPARE(standIn.system.pastingOutcome(), QStringLiteral("nothing"));
     }
 
     // Home shows pasting as one row, with what is missing by name: the

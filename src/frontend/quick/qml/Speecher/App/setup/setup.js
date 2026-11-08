@@ -1,21 +1,19 @@
 .pragma library
 
 // The setup assistant's wording: its steps in order, and the words around
-// them. The Pasting step asks for accessibility where its steps need it.
-
-var os = Qt.platform.os;
+// them. The steps show the pages' own sections, which word themselves.
 
 var steps = [
     { id: "welcome", title: "Welcome",
       description: "Speecher records a short dictation, turns it into text and sends it to the app you were using. This assistant checks everything dictation needs." },
     { id: "transcription", title: "Speech to text",
-      description: "Choose the service that turns your speech into text, and the language you speak." },
+      description: "Choose the language you speak, then the services that turn it into text, first to last." },
     { id: "microphone", title: "Microphone",
-      description: "Choose the microphone Speecher should record, then speak to check that the level moves." },
+      description: "Speak to check that Speecher hears you. If the level stays flat, choose another microphone below." },
     { id: "delivery", title: "Pasting",
-      description: "Choose how your words get into the app you're using. Speecher tries these in order, and needs only what the ones you keep rely on." },
+      description: "Choose how your words get into the app you're using." },
     { id: "refinement", title: "Refinement",
-      description: "Refinement cleans up what you said: punctuation, filler words and the formatting each app expects. Choose a service, or skip cleanup." },
+      description: "Refinement cleans up what you said: punctuation, filler words and the formatting each app expects. Turn it off to paste your words as spoken." },
     { id: "shortcut", title: "Shortcut",
       description: "Choose what starts dictation: a key combination, or one key on its own, such as Right Alt. Then choose what pressing it does." },
     { id: "ready", title: "Ready to dictate", description: "" }
@@ -49,18 +47,9 @@ var text = {
     welcomeHintCommand: "Once setup is done, run this from a terminal or your own keybinding, speak, and Speecher types what you said.",
     signInsFound: "Sign-ins found on this computer",
     noSignIns: "No sign-ins found yet. The next step helps you choose a service.",
-    downloadModel: "Download a model to continue",
-    downloadModelHelp: "The download keeps going while you finish setup.",
-    optional: "Optional.",
-    cleanupNotReady: "Cleanup isn't ready",
-    cleanupNotReadyHelp: "Until it works, Speecher pastes your words as spoken. Fix it above, or later on the Refinement page.",
     // The Pasting step's verdict once the words get into the app, by the
     // steps on; otherwise Schema.pasting.outcomes says where they end up.
     stepNames: { insert: "Insert", press: "Paste keys", keep: "Clipboard" },
-    // Under the steps, on Linux and macOS: what accessibility does besides.
-    accessibilityAlso: os === "osx"
-        ? "Accessibility also lets Speecher tell apps apart and read the text around your cursor."
-        : "Desktop accessibility also lets Speecher tell apps apart and read the text around your cursor.",
     commandOnly: "The speecher command",
     // Ready, where the desktop gives no shortcut.
     startWithCommand: "Run this from a terminal or your own keybinding to dictate.",

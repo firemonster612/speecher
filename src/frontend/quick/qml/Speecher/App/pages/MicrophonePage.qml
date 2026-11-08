@@ -13,7 +13,6 @@ Page {
     title: Schema.page("microphone").title
     subtitle: Schema.page("microphone").subtitle
 
-    readonly property var device: Schema.row("audioDevice")
     // The rows in the Advanced group, which opens for a search that lands
     // on one of them.
     readonly property var advancedRows: Schema.rows.filter(r => r.page === "microphone" && r.section === Schema.row("captureMode").section)
@@ -30,33 +29,7 @@ Page {
         SearchLanding { rowIds: ["microphoneTest"]; target: testSection }
     }
 
-    Section {
-        title: page.device.section
-        // Home lists the same check, and opens it here.
-        HealthRow { rowId: "microphoneAccess" }
-        SchemaRow {
-            rowId: "audioDevice"
-            // The system default says which microphone it is now.
-            note: !Settings.values.audioDevice && Audio.hasMicrophones
-                  ? spec.defaultLabel + ": " + spec.defaultHelp.arg(Microphones.deviceName) + "." : spec.help
-            Select {
-                placeholder: Words.choose
-                enabled: Audio.hasMicrophones
-                options: Microphones.deviceOptions
-                currentId: Settings.values.audioDevice || ""
-                onChosen: id => Settings.set("audioDevice", id)
-            }
-        }
-        Reveal {
-            open: Microphones.deviceMissing
-            Notice {
-                inset: Theme.rowInset
-                text: page.device.missingHelp
-                actionText: page.device.missingActionLabel
-                onAction: Settings.set("audioDevice", "")
-            }
-        }
-    }
+    MicrophoneInput {}
 
     Section {
         title: Schema.row("captureMode").section

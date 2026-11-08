@@ -195,24 +195,6 @@ QVariantMap computerEntry(const LocalSetup &local)
     };
 }
 
-QVariantMap fallbackOffer(const LocalSetup &local, ProviderRole role, const QStringList &primaries,
-                          const AppSettings &settings)
-{
-    const std::optional<SetupFallbackOffer> offer = local.setupFallbackOffer(role, settings);
-    if (!offer) {
-        return {};
-    }
-    QStringList joins;
-    for (const QString &primary : primaries) {
-        if (local.setupFallbackOfferJoins(role, primary, settings)) {
-            joins.append(primary);
-        }
-    }
-    return {{QStringLiteral("modelId"), offer->modelId},
-            {QStringLiteral("name"), offer->name},
-            {QStringLiteral("joins"), joins}};
-}
-
 QVariantList namedModels(const QString &providerId)
 {
     QVariantList models;
@@ -358,10 +340,6 @@ void QuickModels::refresh()
     assign(m_runnersChecked, facts.runnersChecked);
     assign(m_cleanupSuggestion, cleanupSuggestion);
     assign(m_offerPull, local.runnerChoice(settings).offerPull);
-    assign(m_fallbackOffers,
-           QVariantMap({{QStringLiteral("speech"), fallbackOffer(local, ProviderRole::Speech, speechIds, settings)},
-                        {QStringLiteral("refinement"),
-                         fallbackOffer(local, ProviderRole::Refinement, refinementIds, settings)}}));
     if (dirty) {
         emit changed();
     }
@@ -500,16 +478,6 @@ void QuickModels::pullCleanupModel()
 void QuickModels::cancelPull()
 {
     m_controller->localSetup()->cancelPull();
-}
-
-void QuickModels::acceptFallbackOffer(const QString &role, const QString &primary)
-{
-    if (role != u"speech" && role != u"refinement") {
-        qWarning().noquote() << "Models.acceptFallbackOffer: no role" << role;
-        return;
-    }
-    m_controller->localSetup()->acceptSetupFallbackOffer(
-        role == u"refinement" ? ProviderRole::Refinement : ProviderRole::Speech, primary);
 }
 
 } // namespace speecher

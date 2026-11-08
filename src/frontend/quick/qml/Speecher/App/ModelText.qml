@@ -24,12 +24,6 @@ QtObject {
     readonly property string mainRefiner: refiners[0] || "none"
     // A service's entry in its job's order, or one naming only it.
     function entry(role, id) { return entries(role).find(e => e.service === id) || { service: id } }
-    // The order with id first, in place of the first service: what setup's
-    // and a page's choice of the main service saves.
-    function withFirst(role, id) {
-        const rest = entries(role).slice(1).filter(e => e.service !== id)
-        return [entry(role, id)].concat(rest)
-    }
     // A service in either job, by role, with its wording.
     function serviceOf(role, id) { return role === "speech" ? service(id) : provider(id) }
     // The Services card that fixes a service: chatgpt, claude, computer or
@@ -113,36 +107,6 @@ QtObject {
     readonly property string notChecked: "Not checked yet"
     // A sign-in no check has vouched for yet, as Accounts says Unknown.
     readonly property string signInUnknown: "Sign-in unknown"
-    // The state a choice's status is toned by: an unknown one is being
-    // checked, its check failed, or, for a sign-in, unknown as Accounts
-    // tones it; something that doesn't sign in is waiting for its check.
-    function _shownState(provider) {
-        if (provider.state !== "unknown") return provider.state
-        return provider.signInChecking ? "checking" : provider.signInCheckFailure ? "checkFailed"
-             : provider.signsIn ? "unknown" : "notChecked"
-    }
-    // A provider as ServiceCards shows it, rated from ratings (Models'
-    // ratings by id), or with no rating at all when ratings is left out.
-    // note is the line under the ratings, its parts as sentences.
-    function _choice(provider, help, ratings, noteParts) {
-        const choice = { id: provider.id, label: provider.label, icon: provider.icon, help: help,
-                         state: _shownState(provider), status: status(provider) }
-        if (ratings) choice.bars = bars(ratings[provider.id])
-        if (noteParts) choice.note = noteParts.filter(t => !!t).join(". ")
-        return choice
-    }
-    // Speech services as a choice for Transcribe files and setup, saying
-    // what each is good at and what it was rated on.
-    function fileSpeechChoices(services) {
-        return services.map(s => _helpChoice(s.id, [ratedAsNote(Models.speechRatings[s.id])]))
-    }
-    // A service by what it is good at, the count of languages in that help
-    // linking to them.
-    function _helpChoice(id, noteParts) {
-        const s = service(id)
-        return Object.assign(_choice(s, s.help, Models.speechRatings, noteParts), { helpLink: s.languageLink })
-    }
-
     // What an order says under each service: { text, state }, its problem,
     // or where it stands once nothing stands in its way.
     function orderStatus(provider, index) {
@@ -161,11 +125,6 @@ QtObject {
     function bars(rating) { return rating ? rating.bars.map(b => ({ label: _measures[b.measure], value: b.value })) : null }
     // " Rated as Parakeet 0.6B on this computer.", after a role, or nothing.
     function ratedAsText(rating) { return rating && rating.ratedModel ? " Rated as " + rating.ratedModel + " on this computer." : "" }
-    // "Rated as Parakeet 0.6B", under a card's ratings, or nothing when
-    // they are the service's own.
-    function ratedAsNote(rating) { return rating && rating.ratedModel ? "Rated as " + rating.ratedModel : "" }
-    readonly property string unrated: "No rating"
-
     // Local Models ---------------------------------------------------------------
 
     // Whether this build runs Local Models at all: the registry has the
@@ -290,12 +249,6 @@ QtObject {
         const known = Models.refinementProviders.find(p => p.id === id) || { id: id, label: id, state: "unknown", problem: "" }
         return Object.assign({ icon: "circle", help: "" }, _refiners[id], known, { refines: true })
     }
-    // The providers, then None, as a choice, with what each was rated on.
-    function refinementChoices(providers) {
-        return providers.map(p => _choice(provider(p.id), provider(p.id).help, Models.refinementRatings,
-                                          [ratedAsNote(Models.refinementRatings[p.id])]))
-            .concat([_choice(provider("none"), _refiners.none.help)])
-    }
     // The models ChatGPT and Claude suggest, [{ id, label }]; none for
     // another service, whose model is typed or the runner's or server's.
     function suggestedModels(id) { return id === "openai" ? Models.openAiModels : id === "anthropic" ? Models.anthropicModels : [] }
@@ -324,6 +277,4 @@ QtObject {
         if (!s.name) return "Cleanup would be slow on this computer. A cloud service or skipping cleanup will feel faster."
         return "Suggested for this computer: " + s.name + ", " + size(s.sizeBytes) + "." + (pull.error ? " " + pull.error : "")
     }
-    function fallbackOfferText(offer) { return "Add " + offer.name + " as a fallback, on this computer." }
-    readonly property string addFallback: "Add"
 }

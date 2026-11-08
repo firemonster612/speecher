@@ -36,17 +36,6 @@ RunnerChoice resolveRunnerChoice(const RunnerSelection &saved,
                                 const QList<DetectedRunner> &runners,
                                 const std::optional<CleanupModel> &suggestion);
 
-// A local fallback this computer can run, which setup suggests adding.
-// LocalSetup::setupFallbackOffer() decides whether there is one;
-// LocalSetup::acceptSetupFallbackOffer() adds it.
-struct SetupFallbackOffer {
-    QString providerId;
-    // The Local Model to download, or the cleanup model the runner serves.
-    QString modelId;
-    // What the suggestion names: "Parakeet 0.6B", or "Ollama".
-    QString name;
-};
-
 // The machine as a model placed by runsOn sees it, for fit: the CPU budgets
 // system RAM, a chosen card its own memory, and Automatic the probe's pick.
 // A card that has gone away counts as the CPU, where nothing else would run.
@@ -163,20 +152,6 @@ public:
     void checkSpeechEndpoint(const ServerSettings &server);
     void checkRefinementEndpoint(const RefinementEndpoint &endpoint);
 
-    // The local fallback setup suggests for a role: the suggested Local Model
-    // once the hardware is known to fit it and it listens for the Spoken
-    // Language, or a running Local Runner with a cleanup model it serves.
-    std::optional<SetupFallbackOffer> setupFallbackOffer(ProviderRole role, const AppSettings &settings) const;
-    // Whether accepting that offer behind primary, in the first service's
-    // place, would add it: not when there is none, the order behind primary
-    // is full, or the offer is already in it.
-    bool setupFallbackOfferJoins(ProviderRole role, const QString &primary, const AppSettings &settings) const;
-    // Adds that service last in the order, behind primary, setup's choice
-    // for the role, which is saved first with it. A Local Model is chosen
-    // and downloaded the way the Local models page does it, a runner and
-    // its model are selected, and Clean up my words turns on.
-    void acceptSetupFallbackOffer(ProviderRole role, const QString &primary);
-
     // Adds reachability and the sign-ins last seen to liveFacts(), and
     // announces their changes as changed().
     void setProviderAvailability(const ProviderAvailability &availability);
@@ -195,10 +170,6 @@ signals:
 
 private:
     friend class LocalSetupTestAccess;
-    // The saved order behind primary with setup's offer last, or none where
-    // the order would drop it.
-    std::optional<QStringList> orderWithSetupOffer(ProviderRole role, const QString &primary,
-                                                   const AppSettings &settings) const;
     struct EndpointState {
         quint64 generation = 0;
         bool checking = false;

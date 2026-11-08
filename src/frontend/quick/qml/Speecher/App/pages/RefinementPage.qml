@@ -5,6 +5,7 @@ import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
+import "refinement"
 
 // What refinement does, shown on a sample; Clean up my words; the services
 // that clean up, in the order Speecher tries them, each with its model and
@@ -17,10 +18,8 @@ Page {
     subtitle: Schema.page("refinement").subtitle
 
     readonly property bool cleansUp: Settings.values.refinementEnabled !== false
-    readonly property string primary: ModelText.mainRefiner
     // Every service a dictation may use, profiles' own included.
     readonly property bool refines: ModelText.refinersInUse().length > 0
-    readonly property var orderSpec: Schema.row("refinementServices")
 
     Connections {
         target: Navigation
@@ -39,41 +38,9 @@ Page {
         promptCaption: "A custom system prompt. Most people keep the built-in rules.",
         customPrompt: "Custom prompt"
     })
-    // Under the sample, which is an example: who would clean it up, or that
-    // nothing does.
-    readonly property string sampleCaption: {
-        if (primary === "none") return "An example, pasted as spoken. Turn on Clean up my words to clean it up."
-        const model = ModelText.refinementModel(primary)
-        return "An example of cleanup by " + ModelText.provider(primary).label + (model ? " with " + model : "") + "."
-    }
-
     Component.onCompleted: { Models.checkComputer(); ModelText.checkUnknownSignIns() }
 
-    // What refinement does to a sentence, marked like a proof. With no
-    // provider the marks fade and it reads as it will be pasted.
-    Section {
-        plain: true
-        Plate {
-            height: sample.implicitHeight + Theme.space4 * 2
-            Column {
-                id: sample
-                x: Theme.space6
-                y: Theme.space4
-                width: parent.width - Theme.space6 * 2
-                spacing: Theme.space3
-                DiffText {
-                    segments: ModelText.refinementSample
-                    mode: page.primary === "none" ? "spoken" : "marked"
-                    variant: "lead"
-                }
-                MorphText {
-                    text: page.sampleCaption
-                    variant: "small"
-                    tone: "secondary"
-                }
-            }
-        }
-    }
+    RefinementSample {}
 
     Section {
         SchemaRow { rowId: "refinementEnabled" }
@@ -81,13 +48,7 @@ Page {
 
     Reveal {
         open: page.cleansUp
-        Section {
-            id: servicesSection
-            title: page.orderSpec.label
-            caption: page.orderSpec.help
-            SearchLanding { rowIds: ["refinementServices"]; target: servicesSection }
-            ServiceOrderList { role: "refinement" }
-        }
+        ServiceOrderSection { role: "refinement" }
     }
 
     Reveal {

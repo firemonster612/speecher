@@ -53,7 +53,6 @@ ScrollBar 1.0 ScrollBar.qml
 SearchField 1.0 SearchField.qml
 Section 1.0 Section.qml
 SegmentedControl 1.0 SegmentedControl.qml
-ServiceCards 1.0 ServiceCards.qml
 Select 1.0 Select.qml
 Settle 1.0 Settle.qml
 SettingRow 1.0 SettingRow.qml
