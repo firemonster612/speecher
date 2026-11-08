@@ -4,10 +4,10 @@
 #include "core/ProviderChain.h"
 #include "core/settings/SettingsKeys.h"
 
-#include "core/CliToolDiscovery.h"
 #include "core/Vocabulary.h"
 #include "core/settings/CorrectionSettingsCodec.h"
 #include "core/settings/AppsSettingsCodec.h"
+#include "core/settings/ServiceOrderSettingsCodec.h"
 #include "core/settings/VocabularySettingsCodec.h"
 
 #include <QDateTime>
@@ -53,17 +53,6 @@ QString normalizedEndpointPath(const QString &path)
     return trimmed.startsWith(QLatin1Char('/')) ? trimmed : QLatin1Char('/') + trimmed;
 }
 
-QString defaultRefinementProvider()
-{
-    if (CliToolDiscovery::isCodexInstalled()) {
-        return providerKey(ProviderId::OpenAi);
-    }
-    if (CliToolDiscovery::isClaudeCodeInstalled()) {
-        return providerKey(ProviderId::Anthropic);
-    }
-    return providerKey(ProviderId::OpenAi);
-}
-
 QString profileKey(ProviderRole role, const char *field)
 {
     return QLatin1String(role == ProviderRole::Speech ? "speech" : "refinement") + QLatin1String(field);
@@ -72,14 +61,6 @@ QString profileKey(ProviderRole role, const char *field)
 // A Writing Profile's own provider for a role and its model. An id no chain
 // can hold reads as the page's choice, and a model as the provider's own
 // without a provider of the profile's to go with.
-// Haiku 4.5, dated or not, has left the picker for Haiku 5.5.
-QString replacedAnthropicModel(const QString &model)
-{
-    return model == QStringLiteral("claude-haiku-4-5") || model == QStringLiteral("claude-haiku-4-5-20251001")
-        ? QStringLiteral("claude-haiku-5-5")
-        : model;
-}
-
 std::optional<ServiceChoice> readProfileProvider(const QJsonObject &object, ProviderRole role)
 {
     const QString provider = object.value(profileKey(role, "Provider")).toString();
@@ -88,7 +69,7 @@ std::optional<ServiceChoice> readProfileProvider(const QJsonObject &object, Prov
     }
     ServiceChoice first{provider, object.value(profileKey(role, "Model")).toString().trimmed()};
     if (parseProviderId(provider) == ProviderId::Anthropic) {
-        first.model = replacedAnthropicModel(first.model);
+        first.model = ServiceOrderSettingsCodec::replacedAnthropicModel(first.model);
     }
     return first;
 }
@@ -104,94 +85,6 @@ void writeProfileProvider(QJsonObject &object, ProviderRole role, const std::opt
     if (!first->model.trimmed().isEmpty()) {
         object.insert(profileKey(role, "Model"), first->model.trimmed());
     }
-}
-
-bool isOpenAiEffort(const QString &effort)
-{
-    return effort == QStringLiteral("none") || effort == QStringLiteral("low") || effort == QStringLiteral("medium")
-        || effort == QStringLiteral("high") || effort == QStringLiteral("xhigh");
-}
-
-bool isAnthropicEffort(const QString &effort)
-{
-    return effort == QStringLiteral("low") || effort == QStringLiteral("medium") || effort == QStringLiteral("high")
-        || effort == QStringLiteral("xhigh") || effort == QStringLiteral("max");
-}
-
-bool isOpenAiSpeed(const QString &speed)
-{
-    return speed == QStringLiteral("standard") || speed == QStringLiteral("fast")
-        || speed == QStringLiteral("ultrafast");
-}
-
-// ChatGPT's and Claude's choices with a model, an effort and a speed each
-// can run, the defaults' where the stored one is missing or unknown.
-ServiceOrder withValidRefinementChoices(ServiceOrder services)
-{
-    const ServiceOrder defaults = defaultRefinementServices();
-    for (const ProviderId id : {ProviderId::OpenAi, ProviderId::Anthropic}) {
-        const bool openAi = id == ProviderId::OpenAi;
-        const ServiceChoice fallback = defaults.choice(providerKey(id));
-        ServiceChoice &choice = services.choice(providerKey(id));
-        choice.model = choice.model.trimmed();
-        if (choice.model.isEmpty()) {
-            choice.model = fallback.model;
-        } else if (!openAi) {
-            choice.model = replacedAnthropicModel(choice.model);
-        }
-        if (!(openAi ? isOpenAiEffort(choice.effort) : isAnthropicEffort(choice.effort))) {
-            choice.effort = fallback.effort;
-        }
-        const bool knownSpeed = openAi ? isOpenAiSpeed(choice.speed)
-                                       : choice.speed == QStringLiteral("standard") || choice.speed == QStringLiteral("fast");
-        if (!knownSpeed) {
-            choice.speed = fallback.speed;
-        }
-    }
-    return services;
-}
-
-// A Service Order as stored: {"order": [...], "choices": {key: {"model",
-// "language", "effort", "speed"}}}, empty fields left out.
-QByteArray serviceOrderToJson(const ServiceOrder &services)
-{
-    QJsonObject choices;
-    for (auto it = services.choices.cbegin(); it != services.choices.cend(); ++it) {
-        QJsonObject choice;
-        const auto put = [&choice](const char *name, const QString &value) {
-            if (!value.isEmpty()) choice.insert(QLatin1String(name), value);
-        };
-        put("model", it->model.trimmed());
-        put("language", it->language);
-        put("effort", it->effort);
-        put("speed", it->speed);
-        choices.insert(it.key(), choice);
-    }
-    return QJsonDocument(QJsonObject{{QStringLiteral("order"), QJsonArray::fromStringList(services.order)},
-                                     {QStringLiteral("choices"), choices}})
-        .toJson(QJsonDocument::Compact);
-}
-
-// The stored order over defaults: a service the file has no choice for keeps
-// its default one. Nothing stored, or something that isn't an order, reads
-// as the defaults.
-ServiceOrder serviceOrderFromJson(const QByteArray &encoded, ServiceOrder defaults)
-{
-    const QJsonObject object = QJsonDocument::fromJson(encoded).object();
-    if (!object.value(QStringLiteral("order")).isArray()) {
-        return defaults;
-    }
-    defaults.order.clear();
-    for (const QJsonValue &id : object.value(QStringLiteral("order")).toArray()) {
-        defaults.order.append(id.toString());
-    }
-    const QJsonObject choices = object.value(QStringLiteral("choices")).toObject();
-    for (auto it = choices.constBegin(); it != choices.constEnd(); ++it) {
-        const QJsonObject choice = it.value().toObject();
-        const auto field = [&choice](const char *name) { return choice.value(QLatin1String(name)).toString(); };
-        defaults.choices.insert(it.key(), {it.key(), field("model"), field("language"), field("effort"), field("speed")});
-    }
-    return defaults;
 }
 
 } // namespace
@@ -376,49 +269,12 @@ void SettingsCodecs::setSoundsEnabled(bool value)
 
 ServiceOrder SettingsCodecs::speechServices() const
 {
-    return normalizedServiceOrder(
-        ProviderRole::Speech,
-        serviceOrderFromJson(value(SettingsKeys::SpeechServices, QByteArray()).toByteArray(), defaultSpeechServices()));
+    return ServiceOrderSettingsCodec::speech(m_settings);
 }
 
 void SettingsCodecs::setSpeechServices(const ServiceOrder &value)
 {
-    ServiceOrder services = normalizedServiceOrder(ProviderRole::Speech, value);
-    // Another Local Model is a choice, which the hardware's suggestion no
-    // longer replaces (LocalSpeechSettings::modelChosen).
-    if (localModelId(SpeechSettings{services}) != localModelId(SpeechSettings{speechServices()})) {
-        m_settings.setValue(SettingsKeys::LocalModelChosen, true);
-    }
-    if (services.order.isEmpty()) {
-        services.order = defaultSpeechServices().order;
-    }
-    m_settings.setValue(SettingsKeys::SpeechServices, serviceOrderToJson(services));
-}
-
-QString SettingsCodecs::legacySpeechProvider() const
-{
-    const QString fallback = providerKey(ProviderId::Claude);
-    const QString provider = value(SettingsKeys::SpeechProvider, fallback).toString();
-    return provider.isEmpty() ? fallback : provider;
-}
-
-ServiceOrder SettingsCodecs::legacySpeechServices() const
-{
-    ServiceOrder services = defaultSpeechServices();
-    services.order = QStringList{legacySpeechProvider()}
-        + value(SettingsKeys::SpeechFallbackProviders, QStringList()).toStringList();
-    // Settings saved before fallbacks had their own language have none.
-    const QString prefix = SettingsKeys::SpeechFallbackLanguages + QLatin1Char('/');
-    for (const QString &key : m_settings.allKeys()) {
-        if (key.startsWith(prefix)) {
-            services.choice(key.mid(prefix.size())).language = m_settings.value(key).toString();
-        }
-    }
-    services.choice(providerKey(ProviderId::Local)).model =
-        value(SettingsKeys::LocalModel, localModelId(SpeechSettings{})).toString();
-    services.choice(providerKey(ProviderId::Endpoint)).model =
-        value(SettingsKeys::SpeechEndpointModel, QString()).toString().trimmed();
-    return normalizedServiceOrder(ProviderRole::Speech, services);
+    ServiceOrderSettingsCodec::storeSpeech(m_settings, value);
 }
 
 bool SettingsCodecs::codexFinalRetranscribe() const
@@ -742,54 +598,12 @@ void SettingsCodecs::setRefinementEnabled(bool value)
 
 ServiceOrder SettingsCodecs::refinementServices() const
 {
-    ServiceOrder defaults = defaultRefinementServices();
-    if (!m_settings.contains(SettingsKeys::RefinementServices)) {
-        defaults.order = {defaultRefinementProvider()};
-    }
-    return withValidRefinementChoices(normalizedServiceOrder(
-        ProviderRole::Refinement,
-        serviceOrderFromJson(value(SettingsKeys::RefinementServices, QByteArray()).toByteArray(), defaults)));
+    return ServiceOrderSettingsCodec::refinement(m_settings);
 }
 
 void SettingsCodecs::setRefinementServices(const ServiceOrder &value)
 {
-    ServiceOrder services = withValidRefinementChoices(normalizedServiceOrder(ProviderRole::Refinement, value));
-    // Saving a snapshot that still holds the default leaves it a default,
-    // which the setup assistant may replace; only a different order is a
-    // choice.
-    if (!m_settings.contains(SettingsKeys::RefinementServices) && services == refinementServices()) return;
-    if (services.order.isEmpty()) {
-        services.order = {defaultRefinementProvider()};
-    }
-    m_settings.setValue(SettingsKeys::RefinementServices, serviceOrderToJson(services));
-}
-
-ServiceOrder SettingsCodecs::legacyRefinementServices(bool *enabled) const
-{
-    const QString key = SettingsKeys::RefinementProvider;
-    const QString provider = m_settings.contains(key) ? value(key, providerKey(ProviderId::OpenAi)).toString()
-                                                      : defaultRefinementProvider();
-    *enabled = provider != kNoRefinementProvider;
-    ServiceOrder services = defaultRefinementServices();
-    // None kept no order; Clean up my words turned on again starts from the
-    // default.
-    services.order = *enabled ? QStringList{provider}
-            + value(SettingsKeys::RefinementFallbackProviders, QStringList()).toStringList()
-                              : QStringList{defaultRefinementProvider()};
-    services.choice(providerKey(ProviderId::OpenAi)) = {providerKey(ProviderId::OpenAi), legacyOpenAiModel(),
-                                                        {}, legacyOpenAiEffort(), legacyOpenAiSpeed()};
-    services.choice(providerKey(ProviderId::Anthropic)) = {
-        providerKey(ProviderId::Anthropic), legacyAnthropicModel(), {}, legacyAnthropicEffort(),
-        value(SettingsKeys::AnthropicFastMode, true).toBool() ? QStringLiteral("fast") : QStringLiteral("standard")};
-    services.choice(providerKey(ProviderId::Local)).model =
-        value(SettingsKeys::LocalRunnerModel, QString()).toString().trimmed();
-    services.choice(providerKey(ProviderId::Endpoint)).model =
-        value(SettingsKeys::RefinementEndpointModel, QString()).toString().trimmed();
-    services = normalizedServiceOrder(ProviderRole::Refinement, services);
-    if (services.order.isEmpty()) {
-        services.order = {defaultRefinementProvider()};
-    }
-    return withValidRefinementChoices(services);
+    ServiceOrderSettingsCodec::storeRefinement(m_settings, value);
 }
 
 QString SettingsCodecs::refinementStyle() const
@@ -1027,12 +841,6 @@ void SettingsCodecs::setCustomCleanupLevels(const QList<CustomCleanupLevel> &val
                         QJsonDocument(array).toJson(QJsonDocument::Compact));
 }
 
-QString SettingsCodecs::legacyOpenAiModel() const
-{
-    const QString model = value(SettingsKeys::OpenAiModel, QStringLiteral("gpt-6-luna")).toString().trimmed();
-    return model.isEmpty() ? QStringLiteral("gpt-6-luna") : model;
-}
-
 OpenAiAuthMode SettingsCodecs::openAiAuthMode() const
 {
     const QString mode = value(SettingsKeys::OpenAiAuthMode, QString()).toString();
@@ -1052,30 +860,6 @@ void SettingsCodecs::setOpenAiAuthMode(OpenAiAuthMode value)
     m_settings.setValue(SettingsKeys::OpenAiAuthMode, openAiAuthModeName(value));
 }
 
-QString SettingsCodecs::legacyOpenAiEffort() const
-{
-    const QString effort = value(SettingsKeys::OpenAiEffort, QStringLiteral("none")).toString();
-    return isOpenAiEffort(effort) ? effort : QStringLiteral("none");
-}
-
-QString SettingsCodecs::legacyOpenAiSpeed() const
-{
-    const QString legacy = value(SettingsKeys::OpenAiFastMode, true).toBool()
-        ? QStringLiteral("fast")
-        : QStringLiteral("standard");
-    const QString speed = value(SettingsKeys::OpenAiSpeed, legacy).toString();
-    return isOpenAiSpeed(speed) ? speed : legacy;
-}
-
-QString SettingsCodecs::legacyAnthropicModel() const
-{
-    const QString model = value(SettingsKeys::AnthropicModel, QStringLiteral("claude-opus-5-5")).toString().trimmed();
-    if (model.isEmpty()) {
-        return QStringLiteral("claude-opus-5-5");
-    }
-    return replacedAnthropicModel(model);
-}
-
 AnthropicAuthMode SettingsCodecs::anthropicAuthMode() const
 {
     return anthropicAuthModeFromName(value(SettingsKeys::AnthropicAuthMode, QString()).toString());
@@ -1084,12 +868,6 @@ AnthropicAuthMode SettingsCodecs::anthropicAuthMode() const
 void SettingsCodecs::setAnthropicAuthMode(AnthropicAuthMode value)
 {
     m_settings.setValue(SettingsKeys::AnthropicAuthMode, anthropicAuthModeName(value));
-}
-
-QString SettingsCodecs::legacyAnthropicEffort() const
-{
-    const QString effort = value(SettingsKeys::AnthropicEffort, QStringLiteral("low")).toString();
-    return isAnthropicEffort(effort) ? effort : QStringLiteral("low");
 }
 
 DeliverySteps SettingsCodecs::deliverySteps() const
@@ -1420,51 +1198,6 @@ QString SettingsCodecs::cliproxyBaseUrl() const
 void SettingsCodecs::setCliproxyBaseUrl(const QString &value)
 {
     m_settings.setValue(SettingsKeys::CliproxyBaseUrl, endpointServerBase(value));
-}
-
-void SettingsCodecs::migrateServiceOrder()
-{
-    constexpr int currentMigrationVersion = 1;
-    if (value(SettingsKeys::ServiceOrderMigrationVersion, 0).toInt() >= currentMigrationVersion) {
-        return;
-    }
-    m_settings.setValue(SettingsKeys::ServiceOrderMigrationVersion, currentMigrationVersion);
-    const auto storedAny = [this](std::initializer_list<QString> keys) {
-        return std::any_of(keys.begin(), keys.end(), [this](const QString &key) { return m_settings.contains(key); });
-    };
-    const bool fallbackLanguages = std::ranges::any_of(m_settings.allKeys(), [](const QString &key) {
-        return key.startsWith(SettingsKeys::SpeechFallbackLanguages + QLatin1Char('/'));
-    });
-    if (!m_settings.contains(SettingsKeys::SpeechServices)
-        && (fallbackLanguages
-            || storedAny({SettingsKeys::SpeechProvider, SettingsKeys::SpeechFallbackProviders, SettingsKeys::LocalModel,
-                          SettingsKeys::SpeechEndpointModel}))) {
-        setSpeechServices(legacySpeechServices());
-    }
-    if (!m_settings.contains(SettingsKeys::RefinementServices)
-        && storedAny({SettingsKeys::RefinementProvider, SettingsKeys::RefinementFallbackProviders,
-                      SettingsKeys::OpenAiModel, SettingsKeys::OpenAiEffort, SettingsKeys::OpenAiSpeed,
-                      SettingsKeys::OpenAiFastMode, SettingsKeys::AnthropicModel, SettingsKeys::AnthropicEffort,
-                      SettingsKeys::AnthropicFastMode, SettingsKeys::LocalRunnerModel,
-                      SettingsKeys::RefinementEndpointModel})) {
-        bool enabled = true;
-        // Written as it is, even when it matches the default: the person's
-        // saved order is a choice.
-        m_settings.setValue(SettingsKeys::RefinementServices, serviceOrderToJson(legacyRefinementServices(&enabled)));
-        setRefinementEnabled(enabled);
-    }
-    // The CLI Proxy preset becomes the server at the proxy's address with no
-    // key of its own, which sends the proxy's (usesProxyKey). A key kept for
-    // a Custom server entered before is let go, so it doesn't go to the
-    // proxy; the preset stays for an older release.
-    if (value(SettingsKeys::RefinementEndpointPreset, QString()).toString() == QStringLiteral("cliproxy")) {
-        m_settings.setValue(SettingsKeys::RefinementEndpointBaseUrl, endpointApiBase(cliproxyBaseUrl()));
-        m_settings.remove(SettingsKeys::RefinementEndpointApiKey);
-        QStringList inKeyring = value(SettingsKeys::SecretsInKeyring, QStringList()).toStringList();
-        if (inKeyring.removeAll(QStringLiteral("refinement-endpoint-key")) > 0) {
-            m_settings.setValue(SettingsKeys::SecretsInKeyring, inKeyring);
-        }
-    }
 }
 
 QString defaultClaudeCredentialsPath()

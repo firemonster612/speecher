@@ -37,7 +37,7 @@ inline const QString UiRoundedCorners = QStringLiteral("ui/roundedCorners");
 inline const QString UiBoringMode = QStringLiteral("ui/boringMode");
 inline const QString UiPauseMedia = QStringLiteral("ui/pauseMediaDuringTranscription");
 inline const QString UiSoundsEnabled = QStringLiteral("ui/soundsEnabled");
-// The speech Service Order, as JSON (SettingsCodecs::speechServices).
+// The speech Service Order, as JSON (ServiceOrderSettingsCodec).
 inline const QString SpeechServices = QStringLiteral("stt/services");
 // Read only by migrateServiceOrder, and kept a release for a downgrade: the
 // speech primary, its fallbacks and their languages, the Local Model and the

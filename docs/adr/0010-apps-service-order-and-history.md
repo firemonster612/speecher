@@ -49,8 +49,10 @@ has one Server, which replaces its Custom Endpoint. A Writing Profile names
 at most one first service per job, and one resolver (`planDictation`)
 settles every run over the layers (the page, the App Type, the App, the
 Writing Profile, the run) and records where each value came from.
-`migrateServiceOrder` writes the orders from the primary and fallback keys
-and leaves the old keys readable for a release, for a downgrade.
+`migrateServiceOrder` (`core/settings/ServiceOrderMigration`) writes the
+orders from the primary and fallback keys and leaves the old keys readable
+for a release, for a downgrade; deleting those keys later touches that file
+alone.
 
 **History in SQLite.** History (`core/history/HistoryStore`) is one SQLite
 file, `history.sqlite3`, opened through Qt Sql's SQLite driver, with an FTS5

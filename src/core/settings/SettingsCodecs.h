@@ -52,8 +52,8 @@ public:
     HistorySettings historySettings() const; void setHistorySettings(const HistorySettings &value);
     RecordingSettings recordingSettings() const; void setRecordingSettings(const RecordingSettings &value);
     bool refinementEnabled() const; void setRefinementEnabled(bool value);
-    // Until one is saved, the order starts with ChatGPT where the Codex app
-    // is installed, else Claude where Claude Code is, else ChatGPT.
+    // Until one is saved, the order starts with defaultRefinementProvider
+    // (ServiceOrderSettingsCodec).
     ServiceOrder refinementServices() const; void setRefinementServices(const ServiceOrder &value);
     // The cleanup level an older release saved, which seeds the Writing
     // Profiles until they are saved. Nothing writes it now.
@@ -111,10 +111,6 @@ public:
     QString updatesPendingWhatsNewVersion() const; void setUpdatesPendingWhatsNewVersion(const QString &value);
     bool recordingConsentNoticeShown() const; void setRecordingConsentNoticeShown(bool value);
     QString claudeCredentialsPath() const; QString claudeEndpointBase() const; QString claudeVoicePath() const;
-    // Writes the speech and refinement Service Orders, Clean up my words and
-    // the refinement server from the keys an older release saved them in,
-    // once. The older keys stay for a release, so a downgrade reads them.
-    void migrateServiceOrder();
     // Every field fields() reads, from the file. The keyring keys stay empty.
     AppSettings snapshot() const;
     // Saves every stored field of draft, and nothing else.
@@ -129,16 +125,6 @@ private:
     static const std::vector<Field> &fields();
 
     QVariant value(const QString &key, const QVariant &fallback) const;
-
-    // What an older release saved, for migrateServiceOrder.
-    QString legacySpeechProvider() const;
-    ServiceOrder legacySpeechServices() const;
-    ServiceOrder legacyRefinementServices(bool *enabled) const;
-    QString legacyOpenAiModel() const;
-    QString legacyOpenAiEffort() const;
-    QString legacyOpenAiSpeed() const;
-    QString legacyAnthropicModel() const;
-    QString legacyAnthropicEffort() const;
 
 protected:
     SettingsFile m_settings;

@@ -5,6 +5,7 @@
 #include "core/ProviderChain.h"
 #include "core/ProviderReadiness.h"
 #include "core/WritingProfileEdits.h"
+#include "core/settings/ServiceOrderMigration.h"
 #include "core/settings/SpokenLanguages.h"
 #include "core/settings/SettingsKeys.h"
 #include "dictation/DictationPlan.h"
@@ -180,7 +181,7 @@ private slots:
         set(SettingsKeys::SecretsInKeyring, QStringList{QStringLiteral("refinement-endpoint-key")});
         settings.raw().sync();
 
-        SettingsCodecs().migrateServiceOrder();
+        migrateServiceOrder(settings.raw());
 
         const AppSettings migrated = SettingsStore().snapshot();
         const ServiceOrder &speech = migrated.speech.services;
@@ -218,7 +219,7 @@ private slots:
             draft.speech.services.order = {QStringLiteral("claude")};
             return true;
         });
-        SettingsCodecs().migrateServiceOrder();
+        migrateServiceOrder(settings.raw());
         QCOMPARE(SettingsStore().snapshot().speech.services.order, QStringList{QStringLiteral("claude")});
         settings.raw().clear();
     }
@@ -229,7 +230,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        SettingsCodecs().migrateServiceOrder();
+        migrateServiceOrder(settings.raw());
         QVERIFY(!settings.raw().contains(SettingsKeys::SpeechServices));
         QVERIFY(!settings.raw().contains(SettingsKeys::RefinementServices));
         settings.raw().clear();
@@ -644,7 +645,7 @@ private slots:
         // Fast mode turned off before Speed existed migrates as Standard.
         settings.raw().clear();
         settings.raw().setValue(QStringLiteral("openai/fastMode"), false);
-        SettingsCodecs().migrateServiceOrder();
+        migrateServiceOrder(settings.raw());
         QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("openai")).speed, QStringLiteral("standard"));
         settings.edit([](AppSettings &draft) {
             draft.refinement.services.choice(QStringLiteral("openai")).speed = QStringLiteral("ultrafast");

@@ -260,6 +260,8 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/settings/CorrectionSettingsCodec.cpp
   src/core/settings/AppsMigration.cpp
   src/core/settings/AppsSettingsCodec.cpp
+  src/core/settings/ServiceOrderMigration.cpp
+  src/core/settings/ServiceOrderSettingsCodec.cpp
   src/core/settings/SettingsCodecs.cpp
   src/core/settings/SettingsFields.cpp
   src/core/settings/SettingsFile.cpp
@@ -318,6 +320,8 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/settings/AppsMigration.h
   src/core/settings/StoredJson.h
   src/core/settings/AppsSettingsCodec.h
+  src/core/settings/ServiceOrderMigration.h
+  src/core/settings/ServiceOrderSettingsCodec.h
   src/core/settings/SettingsCodecs.h
   src/core/settings/SettingsFile.h
   src/core/settings/SettingsKeys.h
