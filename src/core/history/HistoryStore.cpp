@@ -451,6 +451,15 @@ void HistoryStore::prepareSearchIndex()
         exec(QStringLiteral("CREATE TABLE IF NOT EXISTS search_state (stale INTEGER)"));
         exec(QStringLiteral("DELETE FROM search_state"));
         exec(QStringLiteral("INSERT INTO search_state VALUES (1)"));
+        // An index an earlier open wrote would go on holding the words of
+        // entries deleted from here, so its segments and their terms go. The
+        // averages (1) and structure (10) records stay: without them the next
+        // open that can read the index finds it corrupt instead of rebuilding.
+        QSqlQuery index(QSqlDatabase::database(m_connection));
+        if (index.exec(QStringLiteral("SELECT 1 FROM sqlite_master WHERE name = 'entries_fts_idx'")) && index.next()) {
+            exec(QStringLiteral("DELETE FROM entries_fts_data WHERE id NOT IN (1, 10)"));
+            exec(QStringLiteral("DELETE FROM entries_fts_idx"));
+        }
         return;
     }
     exec(QStringLiteral("DROP TABLE temp.trigram_probe"));
@@ -808,16 +817,48 @@ void HistoryStore::finishUnfinishedRecordings()
     for (const auto &[id, transcriptPath, finishedAt] : std::as_const(unfinished)) {
         // Lines can reach the file and not History before a crash. Taken in
         // now, since finishing keeps the file's last change as in step.
-        if (const std::optional<QList<HistoryLine>> read = transcriptLines(transcriptPath)) {
-            for (const HistoryLine &line : read->mid(lines(id).size())) {
-                appendLine(id, line);
-            }
+        const std::optional<QList<HistoryLine>> read = transcriptLines(transcriptPath);
+        if (!read) {
+            continue;
         }
         const std::optional<HistoryEntry> found = entry(id);
-        const qint64 audioMs = found && found->startedAt.isValid() ? found->startedAt.msecsTo(finishedAt) : 0;
+        if (!found) {
+            continue;
+        }
+        const qint64 audioMs = found->startedAt.isValid() ? found->startedAt.msecsTo(finishedAt) : 0;
         RecordingEnd end;
         end.reason = RecordingEnd::Reason::Interrupted;
-        finishRecording(id, finishedAt, qMax<qint64>(0, audioMs), end, QString());
+        const auto [said, words] = textOf(*read);
+        QSqlDatabase db = QSqlDatabase::database(m_connection);
+        if (!db.transaction()) {
+            continue;
+        }
+        QSqlQuery removeLines(db);
+        removeLines.prepare(QStringLiteral("DELETE FROM lines WHERE entry_id = ?"));
+        removeLines.addBindValue(id);
+        bool written = removeLines.exec();
+        for (const HistoryLine &line : *read) {
+            if (written) {
+                written = appendLine(id, line);
+            }
+        }
+        QSqlQuery finish(db);
+        finish.prepare(QStringLiteral("UPDATE entries SET finished_at = ?, audio_ms = ?, words = ?, outcome = ?,"
+                                      " text = ?, audio_path = NULL, kept = 'text', ending = ?, transcript_mtime = ?"
+                                      " WHERE id = ? AND kind = 'recording' AND finished_at IS NULL"));
+        for (const QVariant &value : QVariantList{finishedAt.toMSecsSinceEpoch(), qMax<qint64>(0, audioMs), words,
+                                                   historyOutcomeName(HistoryOutcome::Complete), said,
+                                                   QString::fromUtf8(QJsonDocument(recordingEndJson(end)).toJson(
+                                                       QJsonDocument::Compact)),
+                                                   changedAt(transcriptPath), id}) {
+            finish.addBindValue(value);
+        }
+        written = written && finish.exec() && finish.numRowsAffected() == 1;
+        if (!written || !db.commit()) {
+            db.rollback();
+            continue;
+        }
+        emit changed();
     }
 }
 

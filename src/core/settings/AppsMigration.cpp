@@ -133,8 +133,12 @@ PastingChoice narrowedBy(PasteMethod method, const DeliverySteps &base)
         return {steps, terminalKeysDiffer ? PasteKeyCombo::Terminal : PasteKeyCombo::Standard};
     case PasteMethod::ClipboardOnly:
         steps.insert = false;
-        [[fallthrough]];
+        steps.press = false;
+        break;
     case PasteMethod::DirectInsert:
+        // The old delivery inserted for this rule whatever the output method,
+        // a keyboard-only one included, and never pressed keys after it.
+        steps.insert = true;
         steps.press = false;
         break;
     }
