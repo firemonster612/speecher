@@ -1574,7 +1574,7 @@ private slots:
                                      .evidenceCount = 3,
                                      .lastObservedAtMs = 2000}};
             s.correctionLearningEnabled = false;
-            s.insightsEnabled = false;
+            s.history = {HistoryKeep::Audio, 30, -1};
             s.bindings = {{.phrase = QStringLiteral("my email"), .replacement = QStringLiteral("efox@example.com")}};
             edited = s;
             return true;
@@ -1599,7 +1599,7 @@ private slots:
         QCOMPARE(saved.vocabulary, edited.vocabulary);
         QCOMPARE(saved.learnedCorrections, edited.learnedCorrections);
         QCOMPARE(saved.correctionLearningEnabled, edited.correctionLearningEnabled);
-        QCOMPARE(saved.insightsEnabled, edited.insightsEnabled);
+        QCOMPARE(saved.history, edited.history);
         settings.raw().clear();
     }
 

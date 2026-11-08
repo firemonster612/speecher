@@ -213,6 +213,27 @@ void migrateDeliverySteps(QSettings &settings)
     settings.remove(SettingsKeys::RestoreClipboardAfterTyping);
 }
 
+// What Speecher Keeps replaces Keep insights. An install that finished setup
+// promised "never text or audio", so it keeps stats (nothing where insights
+// were off) until the person chooses text; a new install keeps the default.
+void migrateHistory(QSettings &settings)
+{
+    constexpr int currentMigrationVersion = 1;
+    if (settings.value(SettingsKeys::HistoryMigrationVersion).toInt() >= currentMigrationVersion) {
+        return;
+    }
+    settings.setValue(SettingsKeys::HistoryMigrationVersion, currentMigrationVersion);
+    if (settings.contains(SettingsKeys::HistoryKeeps)) {
+        return;
+    }
+    const QVariant insights = settings.value(SettingsKeys::InsightsEnabled);
+    if (insights.isValid() && !insights.toBool()) {
+        settings.setValue(SettingsKeys::HistoryKeeps, historyKeepName(HistoryKeep::Nothing));
+    } else if (insights.isValid() || settings.value(SettingsKeys::SetupCompleted).toBool()) {
+        settings.setValue(SettingsKeys::HistoryKeeps, historyKeepName(HistoryKeep::Stats));
+    }
+}
+
 void migrateSavedSettings()
 {
     // The format SettingsFile opens, as olderSettings does.
@@ -236,6 +257,7 @@ void migrateSavedSettings()
     migrateRefinementModels(newSettings);
     migrateDeliverySteps(newSettings);
     migrateApps(newSettings);
+    migrateHistory(newSettings);
     // After the model renames, which it carries into the orders.
     SettingsCodecs().migrateServiceOrder();
 }

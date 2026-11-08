@@ -316,6 +316,18 @@ AppResolution resolveApp(const Target &target, const AppsSettings &apps)
         resolution.pasting = pasting;
         resolution.pastingFrom = AppLayer::Type;
     }
+
+    std::optional<HistoryKeep> history;
+    if (const AppEntry *entry = first(&AppEntry::history)) {
+        resolution.history = entry->history;
+        resolution.historyFrom = AppLayer::App;
+    } else if ((history = appTypeSettings(apps, resolution.type).history)) {
+        resolution.history = history;
+        resolution.historyFrom = AppLayer::Type;
+    } else if ((history = appTypeSettings(apps, AppCategory::General).history)) {
+        resolution.history = history;
+        resolution.historyFrom = AppLayer::Fallback;
+    }
     return resolution;
 }
 

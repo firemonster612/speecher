@@ -135,10 +135,11 @@ for plugin in "$STAGING_DIR/speecher.app/Contents/PlugIns/quick"/*.dylib; do
     rm -f "$plugin"
   fi
 done
-# The plugins macdeployqt deploys for Qt SQL, which LocalStorage brought:
-# its database drivers, some of which load client libraries from outside the
-# bundle. Speecher uses no SQL.
-rm -rf "$STAGING_DIR/speecher.app/Contents/PlugIns/sqldrivers"
+# Qt SQL's database drivers: History's SQLite one stays, and the others go,
+# since some load client libraries from outside the bundle.
+if [[ -d "$STAGING_DIR/speecher.app/Contents/PlugIns/sqldrivers" ]]; then
+  find "$STAGING_DIR/speecher.app/Contents/PlugIns/sqldrivers" -type f ! -name 'libqsqlite.dylib' -delete
+fi
 # Then the Qt frameworks nothing left in the bundle loads, which only the
 # dropped modules did. Dropping one can free another.
 while :; do
@@ -170,6 +171,11 @@ fi
 if [[ ! -f "$STAGING_DIR/speecher.app/Contents/PlugIns/networkinformation/libqscnetworkreachability.dylib" \
    && ! -f "$STAGING_DIR/speecher.app/Contents/PlugIns/networkinformation/libqapplenetworkinformation.dylib" ]]; then
   echo "macdeployqt did not bundle Qt's network reachability plugin." >&2
+  exit 1
+fi
+# History opens its database through it.
+if [[ ! -f "$STAGING_DIR/speecher.app/Contents/PlugIns/sqldrivers/libqsqlite.dylib" ]]; then
+  echo "macdeployqt did not bundle Qt's SQLite driver, which History needs." >&2
   exit 1
 fi
 # The UI draws its language flags through it.

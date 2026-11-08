@@ -50,7 +50,7 @@ public:
     AppsSettings apps() const; void setApps(const AppsSettings &value);
     QList<BindingRule> bindingRules() const; bool setBindingRules(const QList<BindingRule> &rules, QString *error = nullptr);
     bool correctionLearningEnabled() const; void setCorrectionLearningEnabled(bool value);
-    bool insightsEnabled() const; void setInsightsEnabled(bool value);
+    HistorySettings historySettings() const; void setHistorySettings(const HistorySettings &value);
     QList<LearnedCorrection> learnedCorrections() const; void setLearnedCorrections(const QList<LearnedCorrection> &corrections);
     bool refinementEnabled() const; void setRefinementEnabled(bool value);
     // Until one is saved, the order starts with ChatGPT where the Codex app

@@ -230,7 +230,12 @@ const SettingRow settingRows[] = {
     // General shows it only where Speecher can start at login
     // (System.canLaunchAtLogin).
     FIELD_ROW("launchAtLogin", launchAtLogin),
-    FIELD_ROW("insightsEnabled", insightsEnabled),
+    // Keep insights: whether What Speecher Keeps is at least Stats. Turned on
+    // it keeps stats, and leaves a level above that as it is.
+    {"insightsEnabled", [](const AppSettings &s) { return QVariant(s.history.keeps >= HistoryKeep::Stats); },
+     [](AppSettings &s, const QVariant &v) {
+         s.history.keeps = !v.toBool() ? HistoryKeep::Nothing : std::max(s.history.keeps, HistoryKeep::Stats);
+     }},
 
     {"updateChannel", [](const AppSettings &s) { return QVariant(updateChannelName(s.updates.channel)); },
      [](AppSettings &s, const QVariant &v) { s.updates.channel = updateChannelFromName(v.toString()); }},

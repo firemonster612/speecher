@@ -3,6 +3,7 @@
 #include "core/DeliverySteps.h"
 #include "core/OutputFormat.h"
 #include "core/Apps.h"
+#include "core/history/HistoryPolicy.h"
 #include "core/LearnedCorrection.h"
 #include "core/ProviderTable.h"
 #include "core/ServiceOrder.h"
@@ -459,7 +460,7 @@ struct AppSettings {
     QList<VocabularyEntry> vocabulary;
     QList<LearnedCorrection> learnedCorrections;
     bool correctionLearningEnabled = true;
-    bool insightsEnabled = true;
+    HistorySettings history;
 };
 
 } // namespace speecher

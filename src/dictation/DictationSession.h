@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/DictationRecord.h"
+#include "core/history/HistoryEntry.h"
 #include "core/ProviderReadiness.h"
 #include "dictation/DictationPorts.h"
 #include "dictation/DictationSpeech.h"
@@ -108,9 +109,11 @@ signals:
     void statusChanged(const QString &status);
     void previewChanged(const QString &transcript);
     void transcriptDelivered(const QString &text);
-    // A delivered Dictation Session while insights are on; the controller
-    // owns the log it goes into.
-    void dictationRecorded(const DictationRecord &record);
+    // A finished Dictation Session, delivered or not, with what History may
+    // keep of it: the least of What Speecher Keeps (as the session started
+    // and as it is now), the app's choice and a password field's Stats. Not
+    // while that is Nothing, nor for a cancelled session.
+    void dictationFinished(const speecher::HistoryEntry &entry);
     void previewDisplayChanged(const QString &preview);
     void audioLevelChanged(float level);
     void popupShowRequested(quint64 generation);
@@ -209,6 +212,9 @@ private:
     // The receipt, the record and the popup's outcome, once the delivery
     // deliverFinal asked for says what became of the words.
     void finishDelivery(const DeliveryResult &result);
+    // What History may keep of the session finishing now; read before the
+    // session forgets its settings and Target.
+    HistoryKeep historyKeepNow() const;
     void discard();
     void forgetSession();
     void clearScreenshotContext();
@@ -288,6 +294,8 @@ private:
         int completionStatusDurationMs = 0;
     };
     AwaitedDelivery m_awaitedDelivery;
+    // Offers History the delivery as an entry; raw is the Raw Transcript.
+    void recordHistory(const AwaitedDelivery &delivery, HistoryKeep keep, HistoryOutcome outcome, const QString &raw);
     // Deliveries asked for and not yet answered, a dropped one's included.
     int m_unansweredDeliveries = 0;
     // What the system last said about the internet.

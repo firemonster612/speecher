@@ -19,7 +19,8 @@
 #else
 #include "app/AppImageUpdater.h"
 #endif
-#include "core/InsightsLog.h"
+#include "core/history/HistoryImport.h"
+#include "core/history/HistoryStore.h"
 #include "core/SeenApps.h"
 #include "core/ProviderTable.h"
 #include "core/SecretStore.h"
@@ -79,7 +80,7 @@ QString shortcutTakenText(GlobalShortcutRole takenBy)
     return QStringLiteral("That is already the Global Shortcut for dictation.");
 }
 
-// Where recordings, insights and Local Models are kept.
+// Where recordings, History and Local Models are kept.
 QString dataFolder()
 {
     return QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
@@ -244,33 +245,53 @@ ApplicationController::ApplicationController(bool popupOnly,
     connect(m_fileTranscription, &FileTranscriptionSession::batchFinished, m_updates,
             &UpdateController::resumePendingRestart);
 
-    // A seed log stands in for real history in screenshots and demos, so it
-    // is never written; a pinned today makes those screenshots repeatable.
+    // Seeds stand in for real history in screenshots and demos: an insights
+    // log for Home's stats, a history seed for History's words. They go into
+    // a History in memory, so nothing is written; a pinned today makes those
+    // screenshots repeatable.
     const QString insightsSeed = qEnvironmentVariable("SPEECHER_INSIGHTS_SEED");
-    m_insightsLog = insightsSeed.isEmpty()
-        ? new InsightsLog(dataFolder() + QStringLiteral("/insights.jsonl"),
-                          InsightsLog::Access::ReadWrite,
-                          this)
-        : new InsightsLog(insightsSeed, InsightsLog::Access::ReadOnly, this);
-    m_seenApps = new SeenApps(insightsSeed.isEmpty() ? dataFolder() + QStringLiteral("/seen-apps.json") : QString(), this);
+    const QString historySeed = qEnvironmentVariable("SPEECHER_HISTORY_SEED");
+    const bool seeded = m_historySeeded = !insightsSeed.isEmpty() || !historySeed.isEmpty();
+    m_history = seeded ? new HistoryStore(QStringLiteral(":memory:"), QString(), this)
+                       : new HistoryStore(dataFolder() + QStringLiteral("/history.sqlite3"),
+                                          dataFolder() + QStringLiteral("/history/audio"), this);
+    if (!seeded) {
+        importInsightsLog(*m_history, dataFolder() + QStringLiteral("/insights.jsonl"));
+    }
+    for (const std::optional<QList<HistoryEntry>> &seed :
+         {insightsSeed.isEmpty() ? std::nullopt : readInsightsLog(insightsSeed),
+          historySeed.isEmpty() ? std::nullopt : readHistorySeed(historySeed)}) {
+        if (seed) {
+            m_history->addAll(*seed);
+        }
+    }
+    m_seenApps = new SeenApps(seeded ? QString() : dataFolder() + QStringLiteral("/seen-apps.json"), this);
     m_insightsToday =
         QDate::fromString(qEnvironmentVariable("SPEECHER_INSIGHTS_TODAY"), Qt::ISODate);
-    connect(m_session, &DictationSession::dictationRecorded, m_insightsLog, &InsightsLog::append);
-    connect(m_session, &DictationSession::dictationRecorded, m_seenApps, &SeenApps::record);
+    connect(m_session, &DictationSession::dictationFinished, this, &ApplicationController::keepInHistory);
+    // Retention runs at start, hourly, after each entry and as it changes;
+    // a seed's entries keep their words.
+    if (!seeded) {
+        pruneHistory();
+        auto *hourly = new QTimer(this);
+        hourly->start(60 * 60 * 1000);
+        connect(hourly, &QTimer::timeout, this, &ApplicationController::pruneHistory);
+        connect(m_settings, &SettingsStore::snapshotApplied, this, [this](const AppSettings &previous) {
+            if (m_settings->dictationSnapshot().history != previous.history) {
+                pruneHistory();
+            }
+        });
+    }
     // The record describes the transcript Home shows, so it goes whenever
     // that transcript does: a new session starting (which drops the last
     // transcript, delivered or not) and a delivery. The session reports a
-    // delivery first, then (while insights record it) its record.
+    // delivery first, then (while History keeps it) its entry.
     connect(m_session, &DictationSession::stateChanged, this, [this] {
         if (m_session->state() == DictationState::Starting) {
             forgetLastRecord();
         }
     });
     connect(m_session, &DictationSession::transcriptDelivered, this, &ApplicationController::forgetLastRecord);
-    connect(m_session, &DictationSession::dictationRecorded, this, [this](const DictationRecord &record) {
-        m_lastRecord = record;
-        emit lastRecordChanged();
-    });
 
     m_ipcCommands = new IpcCommandHandler(*this, *m_recording,
                                           ipc ? std::move(ipc) : std::make_unique<SingleInstanceIpc>(m_platform), this);
@@ -392,9 +413,28 @@ void ApplicationController::startRecording(const QString &path,
     });
 }
 
-InsightsLog *ApplicationController::insightsLog() const
+HistoryStore *ApplicationController::history() const
 {
-    return m_insightsLog;
+    return m_history;
+}
+
+void ApplicationController::keepInHistory(const HistoryEntry &entry)
+{
+    m_history->add(entry);
+    if (!m_historySeeded) {
+        pruneHistory();
+    }
+    if (entry.outcome == HistoryOutcome::Undelivered) {
+        return;
+    }
+    m_seenApps->record(entry.stats);
+    m_lastRecord = entry.stats;
+    emit lastRecordChanged();
+}
+
+void ApplicationController::pruneHistory()
+{
+    m_history->prune(QDateTime::currentDateTime(), m_settings->dictationSnapshot().history);
 }
 
 SeenApps *ApplicationController::seenApps() const
@@ -417,12 +457,16 @@ const std::optional<DictationRecord> &ApplicationController::lastRecord() const
     return m_lastRecord;
 }
 
-bool ApplicationController::clearInsights()
+bool ApplicationController::clearHistory(const QDateTime &from, const QDateTime &to, bool withStats)
 {
-    if (!m_insightsLog->clear() || !m_seenApps->clear()) {
+    // The apps first: a file that won't go leaves History as it was.
+    const bool everything = withStats && !from.isValid() && !to.isValid();
+    if ((everything && !m_seenApps->clear()) || !m_history->clear(from, to, withStats)) {
         return false;
     }
-    forgetLastRecord();
+    if (everything) {
+        forgetLastRecord();
+    }
     return true;
 }
 

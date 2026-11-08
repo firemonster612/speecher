@@ -19,6 +19,7 @@ const QString kValue = QStringLiteral("value");
 const QString kType = QStringLiteral("type");
 const QString kWritingProfile = QStringLiteral("writingProfile");
 const QString kPasting = QStringLiteral("pasting");
+const QString kHistory = QStringLiteral("history");
 
 QString matchKindName(AppMatchKind kind)
 {
@@ -68,8 +69,19 @@ std::optional<PasteMethod> pastingAt(const QJsonObject &object)
     return pasting.isEmpty() ? std::nullopt : std::optional(pasteMethodFromName(pasting));
 }
 
-void putSettings(QJsonObject &object, const std::optional<QString> &profile, const std::optional<PasteMethod> &pasting)
+// Only Stats and Nothing: an App can lower What Speecher Keeps, never raise it.
+std::optional<HistoryKeep> historyAt(const QJsonObject &object)
 {
+    const std::optional<HistoryKeep> keep = historyKeepFromName(object.value(kHistory).toString());
+    return keep && *keep <= HistoryKeep::Stats ? keep : std::nullopt;
+}
+
+void putSettings(QJsonObject &object, const std::optional<QString> &profile, const std::optional<PasteMethod> &pasting,
+                 const std::optional<HistoryKeep> &history)
+{
+    if (history) {
+        object.insert(kHistory, historyKeepName(*history));
+    }
     if (profile) {
         object.insert(kWritingProfile, *profile);
     }
@@ -87,7 +99,7 @@ AppsSettings load(const QSettings &settings)
     for (const QJsonValue &value : arrayAt(settings, SettingsKeys::AppsEntries)) {
         const QJsonObject object = value.toObject();
         AppEntry entry{object.value(kId).toString(), object.value(kName).toString(), object.value(kIcon).toString(),
-                       {}, typeAt(object), profileAt(object), pastingAt(object)};
+                       {}, typeAt(object), profileAt(object), pastingAt(object), historyAt(object)};
         for (const QJsonValue &match : object.value(kMatches).toArray()) {
             const std::optional<AppMatchKind> kind = matchKindFromName(match[kKind].toString());
             const QString text = match[kValue].toString().trimmed();
@@ -115,6 +127,7 @@ AppsSettings load(const QSettings &settings)
                 // "The steps" is no choice of its own for an App Type.
                 const std::optional<PasteMethod> pasting = pastingAt(object);
                 type.pasting = pasting == PasteMethod::StandardPaste ? std::nullopt : pasting;
+                type.history = historyAt(object);
                 break;
             }
         }
@@ -137,13 +150,13 @@ void store(QSettings &settings, const AppsSettings &apps)
         if (entry.type) {
             object.insert(kType, appCategoryName(*entry.type));
         }
-        putSettings(object, entry.writingProfile, entry.pasting);
+        putSettings(object, entry.writingProfile, entry.pasting, entry.history);
         entries.append(object);
     }
     QJsonArray types;
     for (const AppTypeSettings &type : apps.types) {
         QJsonObject object{{kType, appCategoryName(type.type)}};
-        putSettings(object, type.writingProfile, type.pasting);
+        putSettings(object, type.writingProfile, type.pasting, type.history);
         types.append(object);
     }
     settings.setValue(SettingsKeys::AppsEntries, QJsonDocument(entries).toJson(QJsonDocument::Compact));

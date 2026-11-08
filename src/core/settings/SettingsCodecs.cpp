@@ -718,14 +718,21 @@ void SettingsCodecs::setCorrectionLearningEnabled(bool enabled)
     CorrectionSettingsCodec::storeLearningEnabled(m_settings, enabled);
 }
 
-bool SettingsCodecs::insightsEnabled() const
+HistorySettings SettingsCodecs::historySettings() const
 {
-    return value(SettingsKeys::InsightsEnabled, true).toBool();
+    const HistorySettings defaults;
+    HistorySettings history;
+    history.keeps = historyKeepFromName(value(SettingsKeys::HistoryKeeps, QString()).toString()).value_or(defaults.keeps);
+    history.textDays = qMax(0, value(SettingsKeys::HistoryTextDays, defaults.textDays).toInt());
+    history.audioDays = qMax(-1, value(SettingsKeys::HistoryAudioDays, defaults.audioDays).toInt());
+    return history;
 }
 
-void SettingsCodecs::setInsightsEnabled(bool enabled)
+void SettingsCodecs::setHistorySettings(const HistorySettings &history)
 {
-    m_settings.setValue(SettingsKeys::InsightsEnabled, enabled);
+    m_settings.setValue(SettingsKeys::HistoryKeeps, historyKeepName(history.keeps));
+    m_settings.setValue(SettingsKeys::HistoryTextDays, history.textDays);
+    m_settings.setValue(SettingsKeys::HistoryAudioDays, history.audioDays);
 }
 
 QList<LearnedCorrection> SettingsCodecs::learnedCorrections() const

@@ -62,3 +62,11 @@ if [[ ! -s "$SHOT" || -n "$QML_ERRORS" ]]; then
   exit 1
 fi
 echo "The packaged Qt Quick UI opened Main."
+# History opens through the bundled SQLite driver, and its SQLite has the
+# FTS5 trigram tokenizer search is built on.
+if ! grep -q 'history store opened .*search=trigram' "$LOG"; then
+  echo "History did not open with trigram search:" >&2
+  grep 'history' "$LOG" >&2 || tail -n 20 "$LOG" >&2
+  exit 1
+fi
+echo "History opens, with trigram search."

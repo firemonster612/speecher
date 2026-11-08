@@ -24,12 +24,12 @@ class QuickInsights final : public QObject, public HostSingleton<QuickInsights> 
     Q_OBJECT
     QML_NAMED_ELEMENT(Insights)
     QML_SINGLETON
-    // ready, empty (nothing kept, or cleared) or off (Keep insights is off;
-    // what was kept stays until cleared).
+    // ready, empty (nothing kept, or cleared) or off (What Speecher Keeps is
+    // Nothing; what was kept stays until cleared).
     Q_PROPERTY(QString state READ state NOTIFY changed)
     Q_PROPERTY(bool hasData READ hasData NOTIFY changed)
-    // The dictations the log keeps, whether or not Insights is on, and the
-    // day of the first (null with none).
+    // The dictations History counts, whether or not it keeps new ones, and
+    // the day of the first (null with none).
     Q_PROPERTY(int kept READ kept NOTIFY changed)
     Q_PROPERTY(QVariant firstDictation READ firstDictation NOTIFY changed)
     // 7d, 30d, year or all; the figures, hours, apps and profiles cover it.
@@ -79,8 +79,8 @@ public:
     QVariantMap corrections() const;
     QVariant latest() const;
 
-    // Deletes the kept history. False, with the history kept, when its file
-    // could not be deleted.
+    // Deletes everything History kept, stats and all. False, with it kept,
+    // when the file refused.
     Q_INVOKABLE bool clear();
     // Puts Home's share text, which the page words, on the clipboard.
     Q_INVOKABLE void copyText(const QString &text);

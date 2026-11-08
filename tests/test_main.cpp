@@ -194,6 +194,8 @@ int main(int argc, char **argv)
     if (selected("vocabulary")) result |= runVocabularyTests(argc, argv);
     if (selected("phone_transfer")) result |= runPhoneTransferTests(argc, argv);
     if (selected("insights")) result |= runInsightsTests(argc, argv);
+    if (selected("history_store")) result |= runHistoryStoreTests(argc, argv);
+    if (selected("history_import")) result |= runHistoryImportTests(argc, argv);
     if (selected("provider_auth")) result |= runProviderAuthTests(argc, argv);
     if (selected("claude_voice")) result |= runClaudeVoiceTests(argc, argv);
     if (selected("codex_dictation")) result |= runCodexDictationTests(argc, argv);

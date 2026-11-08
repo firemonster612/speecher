@@ -47,6 +47,7 @@ REQUIRED_FILES=(
   usr/plugins/iconengines/libqsvgicon.so
   usr/plugins/imageformats/libqsvg.so
   usr/plugins/networkinformation/libqnetworkmanager.so
+  usr/plugins/sqldrivers/libqsqlite.so
   usr/qml/QtCore/qmldir
   usr/qml/QtQml/qmldir
   usr/qml/QtQuick/qmldir
@@ -106,6 +107,14 @@ if [[ ! -s "$UI_SHOT" ]] || grep -q ' QML: ' "$UI_LOG"; then
   exit 1
 fi
 echo "The packaged Qt Quick UI opened Main."
+# History opens through the bundled SQLite driver, and its SQLite has the
+# FTS5 trigram tokenizer search is built on.
+if ! grep -q 'history store opened .*search=trigram' "$UI_LOG"; then
+  echo "History did not open with trigram search:" >&2
+  grep 'history' "$UI_LOG" >&2 || tail -n 20 "$UI_LOG" >&2
+  exit 1
+fi
+echo "History opens, with trigram search."
 
 HELPER="$APPDIR/usr/libexec/speecher/speecher-ydotool-setup"
 if ldd "$HELPER" | grep -Fq 'libQt6'; then

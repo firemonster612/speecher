@@ -77,7 +77,8 @@ if(SPEECHER_RELEASE_BUILD AND (NOT SPEECHER_WITH_KDE OR NOT SPEECHER_WITH_QKEYCH
     "SPEECHER_RELEASE_BUILD requires SPEECHER_WITH_KDE=ON and SPEECHER_WITH_QKEYCHAIN=ON.")
 endif()
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Network Multimedia)
+# Sql is History, through its SQLite driver plugin, which packaging ships.
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Network Multimedia Sql)
 
 function(speecher_assert_single_qt_prefix context)
   get_filename_component(qt6_dir_real "${Qt6_DIR}" REALPATH)
@@ -236,7 +237,10 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/ColorSchemes.cpp
   src/core/DictationRecord.cpp
   src/core/InsightsExport.cpp
-  src/core/InsightsLog.cpp
+  src/core/history/HistoryEntry.cpp
+  src/core/history/HistoryImport.cpp
+  src/core/history/HistoryPolicy.cpp
+  src/core/history/HistoryStore.cpp
   src/core/InsightsSummary.cpp
   src/core/LearnedCorrection.cpp
   src/core/EndpointSettings.cpp
@@ -290,7 +294,10 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/DictationRecord.h
   src/core/EchoCanceller.h
   src/core/InsightsExport.h
-  src/core/InsightsLog.h
+  src/core/history/HistoryEntry.h
+  src/core/history/HistoryImport.h
+  src/core/history/HistoryPolicy.h
+  src/core/history/HistoryStore.h
   src/core/InsightsSummary.h
   src/core/LearnedCorrection.h
   src/core/LocalModelCatalog.h
@@ -752,7 +759,7 @@ qt_add_resources(speecher_domain release_history
 )
 target_include_directories(speecher_domain PUBLIC src)
 # Gui for QKeySequence, which ShortcutBinding carries for key combinations.
-target_link_libraries(speecher_domain PUBLIC Qt6::Core Qt6::Gui)
+target_link_libraries(speecher_domain PUBLIC Qt6::Core Qt6::Gui Qt6::Sql)
 
 add_library(speecher_workflow STATIC
   ${SPEECHER_WORKFLOW_SOURCES}
@@ -1509,6 +1516,8 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_vocabulary.cpp
     tests/test_phone_transfer.cpp
     tests/test_insights.cpp
+    tests/test_history_store.cpp
+    tests/test_history_import.cpp
     tests/test_provider_auth.cpp
     tests/test_claude_voice.cpp
     tests/test_codex_dictation.cpp
@@ -1621,6 +1630,8 @@ if(SPEECHER_BUILD_TESTS)
     vocabulary
     phone_transfer
     insights
+    history_store
+    history_import
     provider_auth
     claude_voice
     codex_dictation

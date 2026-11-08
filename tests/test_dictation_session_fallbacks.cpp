@@ -1273,14 +1273,14 @@ private slots:
         QFETCH(int, reachability);
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("endpoint")},
                      {QStringLiteral("openai"), QStringLiteral("local")});
-        rig.settings.edit([](AppSettings &draft) { draft.insightsEnabled = true; return true; });
+        rig.settings.edit([](AppSettings &draft) { draft.history.keeps = HistoryKeep::Text; return true; });
         rig.session->setReachability(Reachability(reachability));
         rig.speech[QStringLiteral("codex")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
         rig.refiners[QStringLiteral("openai")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
         rig.refiners[QStringLiteral("local")]->autoComplete = true;
         rig.refiners[QStringLiteral("local")]->autoCompleteText = QStringLiteral("Spoken words.");
         QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
-        QSignalSpy recorded(rig.session.get(), &DictationSession::dictationRecorded);
+        QSignalSpy recorded(rig.session.get(), &DictationSession::dictationFinished);
         rig.listen();
         rig.speech[QStringLiteral("endpoint")]->emitFinalText(QStringLiteral("spoken words"));
         rig.session->stopListening();
@@ -1288,7 +1288,7 @@ private slots:
         QTEST(outcome.first().at(0).toString(), "message");
         QCOMPARE(outcome.first().at(1).value<PopupOutcome>(), PopupOutcome::Fallback);
         QCOMPARE(outcome.first().at(2).value<PopupErrorAction>().fix, ErrorFix::None);
-        const DictationRecord record = recorded.first().first().value<DictationRecord>();
+        const DictationRecord record = recorded.first().first().value<HistoryEntry>().stats;
         QCOMPARE(record.speechProviders, QStringList{QStringLiteral("endpoint")});
         QCOMPARE(record.refinementProviders, QStringList{QStringLiteral("local")});
     }
@@ -1298,9 +1298,9 @@ private slots:
     void aSwitchMidDictationSaysWordsMayBeMissing()
     {
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
-        rig.settings.edit([](AppSettings &draft) { draft.insightsEnabled = true; return true; });
+        rig.settings.edit([](AppSettings &draft) { draft.history.keeps = HistoryKeep::Text; return true; });
         QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
-        QSignalSpy recorded(rig.session.get(), &DictationSession::dictationRecorded);
+        QSignalSpy recorded(rig.session.get(), &DictationSession::dictationFinished);
         rig.listen();
         rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("first"));
         for (int drop = 0; drop < 3; ++drop) {
@@ -1312,7 +1312,7 @@ private slots:
         QTRY_COMPARE(outcome.size(), 1);
         QCOMPARE(outcome.first().at(0).toString(),
                  QStringLiteral("Sent to the app • ChatGPT Codex dropped, so Local Model finished. A few words may be missing."));
-        QCOMPARE(recorded.first().first().value<DictationRecord>().speechProviders,
+        QCOMPARE(recorded.first().first().value<HistoryEntry>().stats.speechProviders,
                  (QStringList{QStringLiteral("codex"), QStringLiteral("local")}));
     }
 

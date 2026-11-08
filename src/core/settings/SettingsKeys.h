@@ -83,7 +83,13 @@ inline const QString ShortcutActivationMode = QStringLiteral("shortcuts/activati
 inline const QString CorrectionLearningEnabled = QStringLiteral("vocabulary/correctionLearningEnabled");
 inline const QString LearnedCorrections = QStringLiteral("vocabulary/learnedCorrections");
 inline const QString CorrectionEvidence = QStringLiteral("vocabulary/correctionEvidence");
+// Retired: migrateHistory turned it into HistoryKeeps, and leaves it for a
+// release so a downgrade still reads it.
 inline const QString InsightsEnabled = QStringLiteral("insights/enabled");
+// What Speecher Keeps (historyKeepName), and how many days text and audio stay.
+inline const QString HistoryKeeps = QStringLiteral("history/keeps");
+inline const QString HistoryTextDays = QStringLiteral("history/textDays");
+inline const QString HistoryAudioDays = QStringLiteral("history/audioDays");
 // The refinement Service Order, as JSON, and Clean up my words.
 inline const QString RefinementServices = QStringLiteral("refinement/services");
 inline const QString RefinementEnabled = QStringLiteral("refinement/enabled");
@@ -169,6 +175,7 @@ inline const QString RefinementModelMigrationVersion = QStringLiteral("migration
 inline const QString DeliveryStepsMigrationVersion = QStringLiteral("migration/deliveryStepsVersion");
 inline const QString AppsMigrationVersion = QStringLiteral("migration/appsVersion");
 inline const QString ServiceOrderMigrationVersion = QStringLiteral("migration/serviceOrderVersion");
+inline const QString HistoryMigrationVersion = QStringLiteral("migration/historyVersion");
 inline const QString ClaudeCredentialsPath = QStringLiteral("claude/credentialsPath");
 inline const QString ClaudeEndpointBase = QStringLiteral("claude/endpointBase");
 inline const QString ClaudeVoicePath = QStringLiteral("claude/voicePath");

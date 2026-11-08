@@ -3,7 +3,7 @@
 #include "common/test_system_singletons.h"
 
 #include "app/ApplicationController.h"
-#include "core/InsightsLog.h"
+#include "core/history/HistoryStore.h"
 #include "core/SeenApps.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
@@ -44,10 +44,33 @@ namespace {
 // Saturday 26 September 2026.
 const QDate kToday(2026, 9, 26);
 
-QString logPath()
+QString dataPath(const QString &name)
 {
-    return QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
-        + QStringLiteral("/insights.jsonl");
+    return QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + QLatin1Char('/') + name;
+}
+
+// What a controller left of History and the apps dictated into.
+void removeHistory()
+{
+    for (const char *name : {"history.sqlite3", "history.sqlite3-wal", "history.sqlite3-shm"}) {
+        QFile::remove(dataPath(QString::fromLatin1(name)));
+    }
+    QDir(dataPath(QStringLiteral("seen-apps.json"))).removeRecursively();
+    QFile::remove(dataPath(QStringLiteral("seen-apps.json")));
+}
+
+// A delivered dictation as the session reports it while History keeps stats.
+HistoryEntry finished(const DictationRecord &record)
+{
+    HistoryEntry entry;
+    entry.stats = record;
+    entry.kept = HistoryKeep::Stats;
+    return entry;
+}
+
+void addStats(ApplicationController &controller, const DictationRecord &record)
+{
+    controller.history()->add(finished(record));
 }
 
 DictationRecord recordOn(const QDate &date, int words, const QString &app = QStringLiteral("Kate"),
@@ -126,13 +149,12 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        QFile::remove(logPath());
+        removeHistory();
     }
 
     void cleanup()
     {
-        QDir(logPath()).removeRecursively();
-        QFile::remove(logPath());
+        removeHistory();
     }
 
     void stateFollowsTheLogAndKeepInsights()
@@ -144,7 +166,7 @@ private slots:
         QVERIFY(insights.firstDictation().isNull());
 
         QSignalSpy changed(&insights, &QuickInsights::changed);
-        controller.insightsLog()->append(recordOn(kToday.addDays(-3), 40));
+        addStats(controller, recordOn(kToday.addDays(-3), 40));
         QCOMPARE(insights.state(), QStringLiteral("ready"));
         QCOMPARE(insights.kept(), 1);
         QCOMPARE(dateOf(insights.firstDictation()), kToday.addDays(-3));
@@ -152,7 +174,7 @@ private slots:
 
         // Turned off, nothing shows, and what was kept stays until cleared.
         AppSettings settings = controller.settings()->snapshot();
-        settings.insightsEnabled = false;
+        settings.history.keeps = HistoryKeep::Nothing;
         controller.settings()->applySnapshot(settings);
         QCOMPARE(insights.state(), QStringLiteral("off"));
         QVERIFY(!insights.hasData());
@@ -163,9 +185,9 @@ private slots:
     void summaryCarriesCoresNumbersForThePeriod()
     {
         ApplicationController controller(true);
-        controller.insightsLog()->append(recordOn(kToday.addDays(-70), 500, QStringLiteral("Slack"), WritingProfile::Work));
-        controller.insightsLog()->append(recordOn(kToday.addDays(-1), 300, QStringLiteral("Slack"), WritingProfile::Work));
-        controller.insightsLog()->append(recordOn(kToday, 100, QStringLiteral("Kate"), WritingProfile::Email));
+        addStats(controller, recordOn(kToday.addDays(-70), 500, QStringLiteral("Slack"), WritingProfile::Work));
+        addStats(controller, recordOn(kToday.addDays(-1), 300, QStringLiteral("Slack"), WritingProfile::Work));
+        addStats(controller, recordOn(kToday, 100, QStringLiteral("Kate"), WritingProfile::Email));
         QuickInsights insights(&controller);
         QCOMPARE(insights.period(), QStringLiteral("30d"));
         QCOMPARE(dateOf(insights.today()), kToday);
@@ -210,9 +232,9 @@ private slots:
     {
         ApplicationController controller(true);
         // Yesterday: one long dictation. Today: three short ones.
-        controller.insightsLog()->append(recordOn(kToday.addDays(-1), 900));
+        addStats(controller, recordOn(kToday.addDays(-1), 900));
         for (int i = 0; i < 3; ++i) {
-            controller.insightsLog()->append(recordOn(kToday, 10));
+            addStats(controller, recordOn(kToday, 10));
         }
         QuickInsights insights(&controller);
         const qsizetype last = insights.heatmap().size() - 1;
@@ -234,22 +256,23 @@ private slots:
         ApplicationController controller(true);
         DictationRecord seen = recordOn(kToday, 10);
         seen.applicationId = QStringLiteral("org.kde.kate");
-        // The session's record, which it makes only while insights record,
-        // goes to the history and the apps dictated into.
-        emit controller.session()->dictationRecorded(seen);
+        // The session's entry, which it makes only while History keeps
+        // stats, goes to History and the apps dictated into.
+        emit controller.session()->dictationFinished(finished(seen));
         QCOMPARE(controller.seenApps()->apps().size(), 1);
         QuickInsights insights(&controller);
-        QVERIFY(QFile::exists(logPath()));
+        QCOMPARE(insights.kept(), 1);
 
-        // A non-empty directory where the log file was: it cannot be deleted.
-        QVERIFY(QFile::remove(logPath()));
-        QVERIFY(QDir().mkpath(logPath() + QStringLiteral("/keep")));
+        // A non-empty directory where the apps' file was: it cannot be
+        // deleted, and History stays as it was.
+        QVERIFY(QFile::remove(dataPath(QStringLiteral("seen-apps.json"))));
+        QVERIFY(QDir().mkpath(dataPath(QStringLiteral("seen-apps.json/keep"))));
         QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("could not be deleted")));
         QVERIFY(!insights.clear());
         QCOMPARE(insights.kept(), 1);
         QCOMPARE(insights.state(), QStringLiteral("ready"));
 
-        QVERIFY(QDir(logPath()).removeRecursively());
+        QVERIFY(QDir(dataPath(QStringLiteral("seen-apps.json"))).removeRecursively());
         QVERIFY(insights.clear());
         QCOMPARE(insights.kept(), 0);
         QVERIFY(controller.seenApps()->apps().isEmpty());
@@ -273,7 +296,7 @@ private slots:
 
         DictationRecord record = recordOn(kToday, 5, QStringLiteral("Slack"), WritingProfile::Work);
         record.applicationId = QStringLiteral("com.slack.Slack");
-        emit session->dictationRecorded(record);
+        emit session->dictationFinished(finished(record));
         latest = insights.latest().toMap();
         QCOMPARE(latest.value(QStringLiteral("app")).toString(), QStringLiteral("Slack"));
         QCOMPARE(latest.value(QStringLiteral("appId")).toString(), QStringLiteral("com.slack.Slack"));
@@ -294,8 +317,8 @@ private slots:
         controller.settings()->applySnapshot(settings);
         QuickInsights insights(&controller);
         emit controller.session()->transcriptDelivered(QStringLiteral("Hello."));
-        emit controller.session()->dictationRecorded(
-            recordOn(kToday, 1, QStringLiteral("Kate"), QStringLiteral("custom_notes")));
+        emit controller.session()->dictationFinished(
+            finished(recordOn(kToday, 1, QStringLiteral("Kate"), QStringLiteral("custom_notes"))));
         QCOMPARE(insights.latest().toMap().value(QStringLiteral("profile")).toString(), QStringLiteral("Notes"));
 
         QSignalSpy latestChanged(&insights, &QuickInsights::latestChanged);
@@ -309,7 +332,7 @@ private slots:
     void anUnrelatedSaveChangesNothing()
     {
         ApplicationController controller(true);
-        controller.insightsLog()->append(recordOn(kToday, 40));
+        addStats(controller, recordOn(kToday, 40));
         QuickInsights insights(&controller);
         QSignalSpy changed(&insights, &QuickInsights::changed);
         QSignalSpy latestChanged(&insights, &QuickInsights::latestChanged);
@@ -346,7 +369,7 @@ private slots:
     void jsonGoesToTheChosenFile()
     {
         ApplicationController controller(true);
-        controller.insightsLog()->append(recordOn(kToday, 120));
+        addStats(controller, recordOn(kToday, 120));
         QuickInsights insights(&controller);
         insights.setPeriod(QStringLiteral("7d"));
 
@@ -371,8 +394,8 @@ private slots:
     {
         failOnUnexpectedWarnings();
         ApplicationController controller(true);
-        controller.insightsLog()->append(recordOn(kToday.addDays(-2), 3033, QStringLiteral("Slack"), WritingProfile::Work));
-        controller.insightsLog()->append(recordOn(kToday, 120));
+        addStats(controller, recordOn(kToday.addDays(-2), 3033, QStringLiteral("Slack"), WritingProfile::Work));
+        addStats(controller, recordOn(kToday, 120));
         emit controller.session()->transcriptDelivered(QStringLiteral("Hello there."));
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
@@ -550,7 +573,7 @@ private slots:
     {
         failOnUnexpectedWarnings();
         ApplicationController controller(true);
-        controller.insightsLog()->append(recordOn(kToday, 120));
+        addStats(controller, recordOn(kToday, 120));
         QVERIFY(controller.settings()->recordCorrectionEvidence({QStringLiteral("cute"), QStringLiteral("Qt"), 0.95},
                                                                QStringLiteral("org.kde.kate")));
         QuickSettings settings(&controller);

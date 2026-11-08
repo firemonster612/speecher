@@ -10,6 +10,7 @@
 #include "app/PlatformComposition.h"
 #include "app/SingleInstanceIpc.h"
 #include "core/DictationRecord.h"
+#include "core/history/HistoryEntry.h"
 #include "core/ShortcutBinding.h"
 #include "dictation/DictationTypes.h"
 #include "platform/GlobalShortcutBinder.h"
@@ -27,7 +28,7 @@ class TranscribeQueue;
 class AudioInput;
 class SessionKeyGrab;
 class ShortcutGesture;
-class InsightsLog;
+class HistoryStore;
 class SeenApps;
 class IpcCommandHandler;
 class LocalModelStore;
@@ -96,19 +97,22 @@ public:
     bool popupOnly() const;
     SettingsStore *settings() const;
     UpdateController *updates() const;
-    InsightsLog *insightsLog() const;
-    // The apps dictated into lately, recorded while insights are.
+    // Everything kept of dictations and transcribed files, which Home
+    // summarizes and History lists.
+    HistoryStore *history() const;
+    // The apps dictated into lately, recorded while History keeps stats.
     SeenApps *seenApps() const;
     // The day Home summarizes up to. SPEECHER_INSIGHTS_TODAY pins it for
     // screenshots, so front ends ask here rather than reading the clock.
     QDate insightsToday() const;
-    // What insights recorded of the last delivered transcript: its app and
-    // day. Empty while insights did not record it.
+    // What History recorded of the last delivered transcript: its app and
+    // day. Empty while History did not record it.
     const std::optional<DictationRecord> &lastRecord() const;
-    // The Clear insights history action, once the person has confirmed it:
-    // the history, and the apps dictated into with it. False when a file
-    // could not be deleted.
-    bool clearInsights();
+    // Clearing History, once the person has confirmed it: the words and audio
+    // of what finished in [from, to) (an invalid bound is open), and with
+    // withStats the entries, and for everything the apps dictated into too.
+    // False when a file refused it.
+    bool clearHistory(const QDateTime &from, const QDateTime &to, bool withStats);
     WhatsNewTracker *whatsNew() const;
     SecretStore *secretStore() const;
     ProviderRegistry *providerRegistry() const;
@@ -227,6 +231,9 @@ signals:
 
 private:
     void forgetLastRecord();
+    void keepInHistory(const HistoryEntry &entry);
+    // Retention, as of now.
+    void pruneHistory();
     void notifyModelReady(const QString &modelId);
     void startWithMicrophone(std::function<void()> start);
     void runDeferredStartup();
@@ -263,7 +270,9 @@ private:
     // The main window is up only because a plain launch shows it.
     bool m_mainWindowByDefault = false;
     UpdateController *m_updates = nullptr;
-    InsightsLog *m_insightsLog = nullptr;
+    HistoryStore *m_history = nullptr;
+    // History runs on a seed, in memory, whose entries retention leaves be.
+    bool m_historySeeded = false;
     SeenApps *m_seenApps = nullptr;
     std::optional<DictationRecord> m_lastRecord;
     QString m_lastTranscript;

@@ -238,7 +238,7 @@ private slots:
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
             draft.refinement.services.order = {QStringLiteral("openai")};
-            draft.insightsEnabled = true;
+            draft.history.keeps = HistoryKeep::Text;
             return true;
         });
         FakeAudioInput audio;
@@ -255,7 +255,7 @@ private slots:
         registerFakeSpeechProvider(registry, &speech);
         registerFakeRefiner(registry, &refiner);
         DictationSession session(&settings, &audio, &media, &target, &delivery, &registry);
-        QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
+        QSignalSpy recorded(&session, &DictationSession::dictationFinished);
         bool acted = false;
         const auto turnReviewOff = [&settings] {
             settings.edit([](AppSettings &draft) {
@@ -312,7 +312,7 @@ private slots:
         QVERIFY(!session.reviewUp());
         QVERIFY(session.state() != DictationState::Reviewing);
         QCOMPARE(recorded.count(), 1);
-        QCOMPARE(recorded.first().first().value<DictationRecord>().words, followUp ? 5 : 3);
+        QCOMPARE(recorded.first().first().value<HistoryEntry>().stats.words, followUp ? 5 : 3);
     }
 
     void dictationSessionEditsSelectedTextFromSpokenInstructions()
@@ -499,7 +499,7 @@ private slots:
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
             draft.refinement.services.order = {QStringLiteral("openai")};
-            draft.insightsEnabled = true;
+            draft.history.keeps = HistoryKeep::Text;
             return true;
         });
         FakeAudioInput audio;
@@ -517,7 +517,7 @@ private slots:
         registerFakeRefiner(registry, &refiner);
         DictationSession session(&settings, &audio, &media, &target, &delivery, &registry);
         QSignalSpy reviews(&session, &DictationSession::popupSelectionEditReviewRequested);
-        QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
+        QSignalSpy recorded(&session, &DictationSession::dictationFinished);
         const auto lastReview = [&reviews] { return reviews.last().first().value<SelectionEditReview>(); };
 
         session.startListening();
@@ -558,8 +558,8 @@ private slots:
         QCOMPARE(delivery.lastTarget.selectionStart, 4);
         // Insights counts every instruction spoken for the edit.
         QCOMPARE(recorded.count(), 1);
-        QCOMPARE(recorded.first().first().value<DictationRecord>().words, 7);
-        QCOMPARE(recorded.first().first().value<DictationRecord>().refinementProviders,
+        QCOMPARE(recorded.first().first().value<HistoryEntry>().stats.words, 7);
+        QCOMPARE(recorded.first().first().value<HistoryEntry>().stats.refinementProviders,
                  QStringList{QStringLiteral("openai")});
     }
 

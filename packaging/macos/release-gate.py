@@ -410,6 +410,13 @@ def check_after_update(summary, evidence, candidate, csreq):
                   f'{"reads Saved" if saved else "does not read Saved"}; {windows}'
                   + (f'; it says: {asked}' if asked else ''))
 
+    # The shipped app had no History, so these lines are the candidate's: it
+    # opened History through the bundled SQLite driver, with trigram search.
+    log = LOG.read_text(errors='replace') if LOG.exists() else ''
+    opened = re.findall(r'history store (?:opened|could not open)[^\n]*', log)
+    summary.check('after.history_opens', any('search=trigram' in line for line in opened),
+                  '; '.join(opened[-2:]) or 'speecher.log says nothing about History')
+
     login = update.login_item()
     (evidence / 'login-item-after-gate.txt').write_text(login + '\n')
     apps = [block for block in re.split(r'\n\s*\n', login) if re.search(r'Type:\s*app', block)]

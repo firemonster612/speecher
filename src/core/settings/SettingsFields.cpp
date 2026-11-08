@@ -203,7 +203,7 @@ const std::vector<SettingsCodecs::Field> &SettingsCodecs::fields()
                  }),
         stored("correctionLearningEnabled", member(&A::correctionLearningEnabled), &C::correctionLearningEnabled,
                &C::setCorrectionLearningEnabled),
-        stored("insightsEnabled", member(&A::insightsEnabled), &C::insightsEnabled, &C::setInsightsEnabled),
+        stored("history", member(&A::history), &C::historySettings, &C::setHistorySettings),
         // The settings surface refuses invalid replacements before it saves,
         // so a rejection here is a bug rather than something a person typed.
         stored("bindings", member(&A::bindings), &C::bindingRules,
