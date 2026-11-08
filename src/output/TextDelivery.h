@@ -12,7 +12,15 @@ namespace speecher {
 
 class DeliveryBackend {
 public:
-    using Outcome = ClipboardCopied;
+    struct Outcome {
+        bool ok = false;
+        // A failure the backend knows sent no key, such as a keystroke it
+        // could not create or a batch Windows refused whole: the clipboard
+        // the paste borrowed goes back. Otherwise a failure after the gate
+        // let the keys go may have sent some, and the words stay copied.
+        bool noInputSent = false;
+        QString error;
+    };
     // Asked with a reply, which hears whether the keystroke may go out.
     using PasteGate = std::function<void(std::function<void(bool clear)>)>;
     virtual ~DeliveryBackend() = default;

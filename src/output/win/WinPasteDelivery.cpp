@@ -34,7 +34,8 @@ void WinPasteDelivery::waitForReleasedKeys()
 
 bool WinPasteDelivery::paste(PasteMethod method,
                              const std::function<bool()> &clearToInject,
-                             QString *error)
+                             QString *error,
+                             bool *inputSent)
 {
     const HWND foreground = GetForegroundWindow();
     // A key can be pressed after preparation. Never alter that physical state
@@ -84,6 +85,9 @@ bool WinPasteDelivery::paste(PasteMethod method,
         return false;
     }
     const UINT sent = SendInput(count, input, sizeof(INPUT));
+    if (inputSent) {
+        *inputSent = sent > 0;
+    }
     if (sent == UINT(count)) {
         return true;
     }

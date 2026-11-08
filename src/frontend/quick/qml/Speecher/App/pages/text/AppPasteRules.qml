@@ -8,7 +8,7 @@ import Speecher.App
 
 // The exceptions to the delivery steps, on the Pasting page: only the rules
 // that differ from them, app types first, then single apps, each with what
-// it leaves of the steps (System.rulePlan). An app type's rule is its
+// it does on this computer (result). An app type's rule is its
 // categoryPasteRule_<type> setting, where inherit is none; the rules for
 // single apps are the applicationPasteRules setting, [{ app, method,
 // enabled }], saved whole on every change. Add exception asks for the app
@@ -68,7 +68,15 @@ Section {
     }
     // The last part of a desktop ID, which is how most apps are known.
     function appName(app) { return app.split(".").pop() }
-    function result(method) { return Schema.pasting.planText(System.rulePlan(method), method) }
+    // What a rule with method does here, for an exception's row and the
+    // add form alike: the steps it leaves that this computer can run
+    // (System.rulePlan), or that it is off, for an app's exception turned
+    // off. AI coding apps running in a terminal follow a Terminals
+    // exception instead, as core ranks them (resolvePasteRule).
+    function result(method, typeId, off) {
+        const terminalWins = typeId === "ai_coding" && (Settings.values.categoryPasteRule_terminal || "inherit") !== "inherit"
+        return Schema.pasting.ruleResult(System.rulePlan(method), method, off, terminalWins)
+    }
 
     title: Schema.row("pasteExceptions").label
     caption: Schema.pasting.precedence
@@ -76,9 +84,11 @@ Section {
     SearchLanding { rowIds: ["pasteExceptions"]; target: section }
     SearchLanding { rowIds: ["addPasteException"]; target: section; onLanded: form.startAdd() }
 
+    // Insert's row above turns accessibility on, so this only says why.
     AccessibilityNotice {
-        open: section.exceptions.length > 0 && _check.reason === "off"
-        text: "Turn on desktop accessibility so Speecher can tell which app you're in. Exceptions apply once it can."
+        open: section.exceptions.length > 0 && (_check.reason === "off" || _check.reason === "unsupported")
+        offersFix: false
+        text: Schema.pasting.exceptionsNotice(System.identifiesAppsWithoutAccessibility)
     }
 
     InlineForm {
@@ -131,7 +141,7 @@ Section {
             FormField {
                 width: (parent.width - parent.spacing) / 2
                 label: section.t.rule
-                help: form.method ? section.t.result + section.result(form.method) : ""
+                help: form.method ? section.t.result + section.result(form.method, form.forApp ? "" : form.target, false) : ""
                 Select {
                     width: parent.width
                     placeholder: Words.choose
@@ -183,7 +193,11 @@ Section {
             objectName: "exception_" + key
             width: ListView.view.width
             first: index === 0 && list.first
-            height: Theme.rowHeight + Theme.space2
+            height: Math.max(Theme.rowHeight + Theme.space2, words.implicitHeight + 2 * Theme.space3)
+            // A search for this exception lands here and marks it a moment.
+            SearchLanding { rowIds: [exceptionRow.objectName]; target: exceptionRow; onLanded: landed.restart() }
+            selected: landed.running
+            Timer { id: landed; interval: Theme.ms(1300) }
 
             AppIcon {
                 anchors.verticalCenter: parent.verticalCenter
@@ -193,7 +207,10 @@ Section {
                 opacity: exceptionRow.dim
                 Behavior on opacity { Ease {} }
             }
+            // The name, an app's ID under it, and on a line of its own,
+            // which wraps, what the exception does.
             Column {
+                id: words
                 x: 42
                 width: parent.width - x - choices.width - Theme.space4
                 anchors.verticalCenter: parent.verticalCenter
@@ -206,11 +223,20 @@ Section {
                     text: exceptionRow.forApp ? section.appName(exceptionRow.exception.app) : exceptionRow.exception.type.label
                     variant: "label"
                 }
-                // What the exception leaves of the steps, after the app's ID.
                 Txt {
+                    visible: exceptionRow.forApp
                     width: parent.width
-                    elide: Text.ElideRight
-                    text: (exceptionRow.forApp ? exceptionRow.exception.app + " · " : "") + section.result(exceptionRow.exception.method)
+                    elide: Text.ElideMiddle
+                    text: exceptionRow.forApp ? exceptionRow.exception.app : ""
+                    variant: "small"
+                    tone: "tertiary"
+                }
+                Txt {
+                    objectName: "exceptionResult"
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: exceptionRow.forApp ? section.result(exceptionRow.exception.method, "", !exceptionRow.exception.enabled)
+                                              : section.result(exceptionRow.exception.method, exceptionRow.exception.type.id, false)
                     variant: "small"
                     tone: "secondary"
                 }

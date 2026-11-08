@@ -238,7 +238,7 @@ Page {
                     onClicked: Navigation.goToRow(Schema.row(learned.action.row).page, learned.action.row)
                 }
                 // Learning needs accessibility; the notice turns it on.
-                AccessibilityNotice { text: "Turn on desktop accessibility so Speecher can learn your corrections." }
+                AccessibilityNotice { text: "Learning your corrections needs desktop accessibility." }
                 Reveal {
                     width: parent.width
                     open: Insights.corrections.recent.length > 0

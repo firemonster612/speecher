@@ -136,6 +136,17 @@ bool ClipboardDelivery::canSnapshot() const
     return systemClipboard() != nullptr;
 }
 
+bool ClipboardDelivery::canRestore(const ClipboardSnapshot &snapshot) const
+{
+#ifdef SPEECHER_WITH_WAYLAND
+    if (WlClipboardDelivery::isWaylandSession()) {
+        return WlClipboardDelivery::canRestore(snapshot);
+    }
+#endif
+    Q_UNUSED(snapshot)
+    return true;
+}
+
 void ClipboardDelivery::capture(QObject *context, std::function<void(const ClipboardCaptured &)> done)
 {
 #ifdef SPEECHER_WITH_WAYLAND

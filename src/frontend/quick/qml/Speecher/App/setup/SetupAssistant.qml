@@ -25,8 +25,9 @@ ClientWindow {
 
     readonly property var steps: choices.steps
     readonly property bool _last: step === steps.length - 1
-    // The furthest step the gates let anyone reach.
-    readonly property int _limit: steps.findIndex(s => !s.done) < 0 ? steps.length - 1 : steps.findIndex(s => !s.done)
+    // The needed steps that don't pass, by title, which keep setup from
+    // counting as done.
+    readonly property var _missing: steps.filter(s => s.needed).map(s => s.title)
     readonly property var _files: ({
         welcome: "WelcomeStep.qml", transcription: "TranscriptionStep.qml", microphone: "MicrophoneStep.qml",
         delivery: "DeliveryStep.qml", refinement: "RefinementStep.qml",
@@ -41,12 +42,11 @@ ClientWindow {
         onGoTo: stepId => window.go(window.steps.findIndex(s => s.id === stepId))
     }
 
-    function go(index) { if (choices.reachable(index)) step = Math.max(0, Math.min(steps.length - 1, index)) }
-    // Finish writes the choices, says setup is done, then closes; later
-    // writes them and closes, and closing any way but finish leaves setup to
-    // run again.
-    function finish() { choices.finish(); Settings.completeSetup(); close() }
-    function later() { choices.finish(); close() }
+    function go(index) { step = Math.max(0, Math.min(steps.length - 1, index)) }
+    // Finish writes the choices and closes, and says setup is done once
+    // every needed step passes; until then it is later, which leaves setup
+    // to run again, as closing any other way does.
+    function finish() { choices.finish(); if (choices.complete) Settings.completeSetup(); close() }
     onStepChanged: stack.show()
 
     // Steps ------------------------------------------------------------
@@ -66,7 +66,6 @@ ClientWindow {
             width: parent.width - x - Theme.space6
             steps: window.steps
             current: window.step
-            limit: window._limit
             onPicked: index => window.go(index)
         }
 
@@ -134,29 +133,28 @@ ClientWindow {
             Rectangle { x: Theme.pageInset; width: parent.width - Theme.pageInset * 2; height: 1; color: Theme.rule }
 
             // Set up later saves what was chosen and closes, leaving setup to
-            // open again; once every step passes it becomes Skip, which
-            // finishes. Beside it, why Continue waits. Back fades where it
-            // stands rather than reflowing the footer; the main button's
-            // label rolls to its new wording.
+            // open again; once every needed step passes it becomes Skip,
+            // which finishes. On the last step, what still keeps setup from
+            // being done. Back fades where it stands rather than reflowing
+            // the footer; the main button's label rolls to its new wording.
             Row {
                 x: Theme.pageInset
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Theme.space4
-                opacity: window._last ? 0 : 1
-                visible: opacity > 0
-                Behavior on opacity { Ease {} }
                 Button {
-                    readonly property bool skips: window._limit === window.steps.length - 1
-                    text: skips ? Setup.text.skip : Setup.text.later
+                    opacity: window._last ? 0 : 1
+                    visible: opacity > 0
+                    Behavior on opacity { Ease {} }
+                    text: choices.complete ? Setup.text.skip : Setup.text.later
                     variant: "ghost"
                     anchors.verticalCenter: parent.verticalCenter
-                    onClicked: skips ? window.finish() : window.later()
+                    onClicked: window.finish()
                 }
                 Txt {
-                    text: Setup.text.waits
+                    text: Setup.text.stillMissing(window._missing)
                     tone: "secondary"
                     anchors.verticalCenter: parent.verticalCenter
-                    opacity: window._limit === window.step ? 1 : 0
+                    opacity: window._last && window._missing.length ? 1 : 0
                     Behavior on opacity { Ease {} }
                 }
             }
@@ -174,9 +172,10 @@ ClientWindow {
                     onClicked: window.go(window.step - 1)
                 }
                 Button {
-                    text: window.step === 0 ? Setup.text.getStarted : window._last ? Setup.text.finish : Setup.text.continue_
+                    text: window.step === 0 ? Setup.text.getStarted
+                        : !window._last ? Setup.text.continue_
+                        : choices.complete ? Setup.text.finish : Setup.text.finishForNow
                     variant: "primary"
-                    enabled: window._limit > window.step || window._last && window._limit === window.step
                     onClicked: window._last ? window.finish() : window.go(window.step + 1)
                 }
             }

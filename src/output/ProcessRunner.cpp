@@ -38,7 +38,7 @@ public:
         });
         connect(&m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
             if (error == QProcess::FailedToStart) {
-                answer({false, {}, QStringLiteral("Could not start %1").arg(m_command.tool)});
+                answer({false, {}, QStringLiteral("Could not start %1").arg(m_command.tool), true});
             }
         });
         connect(&m_process, &QProcess::readyReadStandardOutput, this, &RunningCommand::readOutput);

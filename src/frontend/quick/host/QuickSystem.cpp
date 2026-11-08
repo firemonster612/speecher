@@ -8,6 +8,7 @@
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickRemoval.h"
 #ifdef SPEECHER_WITH_WAYLAND
+#include "output/WaylandClipboardProcess.h"
 #include "output/WlClipboardDelivery.h"
 #endif
 
@@ -203,6 +204,23 @@ bool waylandClipboard()
 #endif
 }
 
+// Where words end up from these steps, as pastingOutcome words it.
+QString outcomeOf(const QVariantList &steps)
+{
+    bool keeps = false;
+    for (const QVariant &entry : steps) {
+        const QVariantMap step = entry.toMap();
+        if (!step.value(QStringLiteral("on")).toBool() || !step.value(QStringLiteral("ready")).toBool()) {
+            continue;
+        }
+        if (step.value(QStringLiteral("id")) != QLatin1String("keep")) {
+            return QStringLiteral("delivers");
+        }
+        keeps = true;
+    }
+    return keeps ? QStringLiteral("clipboard") : QStringLiteral("nothing");
+}
+
 bool clipboardHelperThere(const QString &need)
 {
 #ifdef SPEECHER_WITH_WAYLAND
@@ -295,7 +313,11 @@ QStringList QuickSystem::pasteRoute() const
 
 QVariantList QuickSystem::deliverySteps() const
 {
-    const DeliverySteps steps = m_controller->settings()->dictationSnapshot().output.steps;
+    return stepEntries(m_controller->settings()->dictationSnapshot().output.steps);
+}
+
+QVariantList QuickSystem::stepEntries(const DeliverySteps &steps) const
+{
     const QString accessibility = QStringLiteral("accessibility");
     const QString clipboard = QStringLiteral("clipboard");
     const QString clipboardSave = QStringLiteral("clipboardSave");
@@ -350,18 +372,13 @@ QVariantList QuickSystem::deliverySteps() const
 
 QString QuickSystem::pastingOutcome() const
 {
-    bool keeps = false;
-    for (const QVariant &entry : deliverySteps()) {
-        const QVariantMap step = entry.toMap();
-        if (!step.value(QStringLiteral("on")).toBool() || !step.value(QStringLiteral("ready")).toBool()) {
-            continue;
-        }
-        if (step.value(QStringLiteral("id")) != QLatin1String("keep")) {
-            return QStringLiteral("delivers");
-        }
-        keeps = true;
-    }
-    return keeps ? QStringLiteral("clipboard") : QStringLiteral("nothing");
+    return outcomeOf(deliverySteps());
+}
+
+QVariantMap QuickSystem::deliveryWith(bool insert, bool press, bool keep) const
+{
+    const QVariantList steps = stepEntries({.insert = insert, .press = press, .keep = keep});
+    return {{QStringLiteral("steps"), steps}, {QStringLiteral("outcome"), outcomeOf(steps)}};
 }
 
 QVariantMap QuickSystem::rulePlan(const QString &method) const
@@ -369,8 +386,42 @@ QVariantMap QuickSystem::rulePlan(const QString &method) const
     const DeliverySteps steps = m_controller->settings()->dictationSnapshot().output.steps;
     const PasteMethod paste = pasteMethodFromName(method);
     const auto needs = speecher::stepRuleNeeds(steps, paste);
-    return {{QStringLiteral("route"), deliveryPlan(steps, paste).route()},
+    const QStringList route = deliveryPlan(steps, paste).route();
+    QStringList usable;
+    for (const QVariant &entry : stepEntries(steps)) {
+        const QVariantMap step = entry.toMap();
+        const QString id = step.value(QStringLiteral("id")).toString();
+        if (route.contains(id) && step.value(QStringLiteral("ready")).toBool()) {
+            usable << id;
+        }
+    }
+    return {{QStringLiteral("route"), route},
+            {QStringLiteral("usable"), usable},
             {QStringLiteral("needs"), needs ? deliveryStepName(*needs) : QString()}};
+}
+
+bool QuickSystem::copiesFormatted() const
+{
+#ifdef SPEECHER_WITH_WAYLAND
+    return !waylandClipboard() || !WaylandClipboardProcess::helperExecutable().isEmpty();
+#else
+    return true;
+#endif
+}
+
+bool QuickSystem::waylandSession() const
+{
+    return waylandClipboard();
+}
+
+bool QuickSystem::identifiesAppsWithoutAccessibility() const
+{
+#ifdef Q_OS_LINUX
+    // The compositor fallback asks KWin (AtSpiTargetProvider).
+    return desktop() == u"kde";
+#else
+    return true;
+#endif
 }
 
 bool QuickSystem::hasVirtualKeyboard() const

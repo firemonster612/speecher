@@ -4,6 +4,7 @@
 #include "output/HelperPath.h"
 #ifdef SPEECHER_WITH_WAYLAND
 #include "output/WaylandClipboardOwner.h"
+#include "output/WaylandClipboardProcess.h"
 #endif
 #include "platform/ScreenshotImage.h"
 #include "setup/YdotoolSetupTransaction.h"
@@ -16,6 +17,7 @@
 
 #ifdef Q_OS_UNIX
 #include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 using namespace speecher::test;
@@ -114,7 +116,8 @@ private slots:
     void waylandClipboardFailures_data()
     {
         QTest::addColumn<QString>("scenario");
-        for (const char *scenario : {"new copy", "snapshot failure", "copy failure", "both fail", "slow snapshot", "clipboard gone"}) {
+        for (const char *scenario : {"new copy", "snapshot failure", "copy failure", "both fail", "slow snapshot", "clipboard gone",
+                                     "several formats"}) {
             QTest::newRow(scenario) << QString::fromLatin1(scenario);
         }
     }
@@ -123,9 +126,21 @@ private slots:
     {
         QFETCH(QString, scenario);
         if (QCoreApplication::instance()) {
+            // Speecher's clipboard helper is found beside the program, so a
+            // run without it is a hard link to this one in a folder of its
+            // own, on the same file system.
+            std::optional<QTemporaryDir> helperless;
+            QString program = QCoreApplication::applicationFilePath();
+            if (scenario == "several formats") {
+                helperless.emplace(QCoreApplication::applicationDirPath() + QStringLiteral("/t4-helperless-XXXXXX"));
+                QVERIFY(helperless->isValid());
+                const QString linked = helperless->filePath(QStringLiteral("speecher_tests"));
+                QVERIFY(::link(QFile::encodeName(program).constData(), QFile::encodeName(linked).constData()) == 0);
+                program = linked;
+            }
             QProcess child;
             child.setProcessChannelMode(QProcess::MergedChannels);
-            child.start(QCoreApplication::applicationFilePath(),
+            child.start(program,
                         {QStringLiteral("--t4-wayland"),
                          QStringLiteral("waylandClipboardFailures:") + scenario});
             QVERIFY(child.waitForFinished(10000));
@@ -172,7 +187,12 @@ if [ "$T4_SCENARIO" = "snapshot failure" ]; then
     echo 'snapshot read failed' >&2
     exit 1
 fi
-if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD"; fi
+if [ "$1" = "--list-types" ]; then
+    echo text/plain
+    if [ "$T4_SCENARIO" = "several formats" ]; then echo text/html; fi
+else
+    /bin/cat "$T4_CLIPBOARD"
+fi
 )"));
         const auto writeClipboard = [&](const QByteArray &text) {
             QFile file(dir.filePath("clipboard"));
@@ -202,7 +222,10 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         } else {
             // The snapshot scenarios press the keys, which borrow the
             // clipboard; the copy scenarios insert, with Keep copying first.
-            const bool presses = scenario == "snapshot failure" || scenario == "slow snapshot";
+            const bool presses = scenario == "snapshot failure" || scenario == "slow snapshot" || scenario == "several formats";
+            if (scenario == "several formats" && !WaylandClipboardProcess::helperExecutable().isEmpty()) {
+                QSKIP("Speecher's clipboard helper is installed on this computer");
+            }
             FakeTargetProvider provider;
             provider.directInsertionAvailable = !presses;
             provider.inserted = scenario != "both fail";
@@ -231,9 +254,16 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             QCOMPARE(provider.insertCalls, presses ? 0 : 1);
             // A failed copy stops the keys, which would paste something else,
             // and so does a clipboard Speecher could not save to put back.
-            QCOMPARE(result.ok, scenario != "both fail" && scenario != "slow snapshot" && scenario != "snapshot failure");
+            QCOMPARE(result.ok, !presses && scenario != "both fail");
             if (scenario == "snapshot failure") {
                 QVERIFY2(result.message.startsWith("Not delivered: your clipboard could not be saved first"),
+                         qPrintable(result.message));
+                QVERIFY(attempts.isEmpty());
+            }
+            // wl-copy could put back only one of the two formats, so the
+            // words never go on the clipboard and no keys follow.
+            if (scenario == "several formats") {
+                QVERIFY2(result.message.contains("putting them back needs Speecher's clipboard helper"),
                          qPrintable(result.message));
                 QVERIFY(attempts.isEmpty());
             }
@@ -402,7 +432,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
 
         QCOMPARE(stepRuleNeeds(pressOnly, PasteMethod::StandardPaste), std::nullopt);
         QCOMPARE(stepRuleNeeds(pressOnly, PasteMethod::TerminalPaste), std::nullopt);
-        QCOMPARE(stepRuleNeeds(pressOnly, PasteMethod::DirectInsert), std::optional(DeliveryStep::Insert));
+        QCOMPARE(stepRuleNeeds(pressOnly, PasteMethod::DirectInsert), std::nullopt);
         QCOMPARE(stepRuleNeeds(pressOnly, PasteMethod::ClipboardOnly), std::optional(DeliveryStep::Keep));
         QCOMPARE(stepRuleNeeds({.insert = true, .press = false, .keep = true}, PasteMethod::TerminalPaste),
                  std::optional(DeliveryStep::Press));
@@ -1581,7 +1611,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                 callsAtGate = ydotool.calls().size();
                 reply(clear);
             },
-            [&pasted](bool ok, const QString &) { pasted = ok; });
+            [&pasted](bool ok, bool, const QString &) { pasted = ok; });
         QTRY_VERIFY(pasted.has_value());
         ticker.stop();
 
@@ -1650,7 +1680,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         auto *delivery = new YdotoolDelivery;
         delivery->pasteFromClipboard(QStringLiteral("hello"), PasteMethod::StandardPaste,
                                      [](std::function<void(bool)> reply) { reply(true); },
-                                     [](bool, const QString &) {});
+                                     [](bool, bool, const QString &) {});
         // The paste keys are going out.
         QTRY_COMPARE(ydotool.calls().size(), 2);
         delete delivery;
@@ -1937,12 +1967,25 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
     // With Keep off, a paste that fails gives the borrowed clipboard back
     // when the backend never got as far as the keys; once they may have
     // gone out, the words stay where the paste can find them.
+    void aFailedPasteGivesTheClipboardBackOnlyWhenNoKeysWentOut_data()
+    {
+        QTest::addColumn<bool>("askGate");
+        QTest::addColumn<bool>("noInputSent");
+        QTest::addColumn<bool>("keysMayHaveGone");
+        QTest::newRow("before the gate") << false << false << false;
+        QTest::newRow("after the gate, none sent") << true << true << false;
+        QTest::newRow("after the gate, some may have gone") << true << false << true;
+    }
+
     void aFailedPasteGivesTheClipboardBackOnlyWhenNoKeysWentOut()
     {
-        for (const bool keysCleared : {false, true}) {
+        QFETCH(bool, askGate);
+        QFETCH(bool, noInputSent);
+        QFETCH(bool, keysMayHaveGone);
+        {
             QApplication::clipboard()->setText(QStringLiteral("previous clipboard"));
             struct FailingBackend final : DeliveryBackend {
-                explicit FailingBackend(bool askGate) : askGate(askGate) {}
+                FailingBackend(bool askGate, bool noInputSent) : askGate(askGate), noInputSent(noInputSent) {}
                 void deliver(const DeliveryContent &, const PasteGate &clearToInject,
                              std::function<void(const Outcome &)> done) override
                 {
@@ -1950,13 +1993,17 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                         done({false, false, QStringLiteral("Release the held keys before pasting")});
                         return;
                     }
-                    clearToInject([done](bool) { done({false, false, QStringLiteral("SendInput failed")}); });
+                    clearToInject([this, done](bool) {
+                        done({false, noInputSent,
+                              noInputSent ? QStringLiteral("Could not create the paste keystroke") : QStringLiteral("SendInput failed")});
+                    });
                 }
                 bool askGate;
+                bool noInputSent;
             };
             FakeTargetProvider targetProvider;
-            TextDelivery delivery([keysCleared](const QString &, const OutputSettings &, PasteMethod) {
-                return std::make_unique<FailingBackend>(keysCleared);
+            TextDelivery delivery([askGate, noInputSent](const QString &, const OutputSettings &, PasteMethod) {
+                return std::make_unique<FailingBackend>(askGate, noInputSent);
             }, &targetProvider);
             OutputSettings settings;
             settings.ydotoolEnabled = true;
@@ -1967,11 +2014,12 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             const DeliveryResult result = deliverAndWait(
                 delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
 
-            QCOMPARE(result.ok, keysCleared);
+            QCOMPARE(result.ok, keysMayHaveGone);
             QCOMPARE(QApplication::clipboard()->text(),
-                     keysCleared ? QStringLiteral("hello") : QStringLiteral("previous clipboard"));
-            if (!keysCleared) {
-                QCOMPARE(result.message, QStringLiteral("Not delivered: release the held keys before pasting"));
+                     keysMayHaveGone ? QStringLiteral("hello") : QStringLiteral("previous clipboard"));
+            if (!keysMayHaveGone) {
+                QCOMPARE(result.message, askGate ? QStringLiteral("Not delivered: could not create the paste keystroke")
+                                                 : QStringLiteral("Not delivered: release the held keys before pasting"));
             }
         }
     }

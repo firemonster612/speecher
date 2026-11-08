@@ -15,7 +15,6 @@ var text = {
     learnedCorrections: "Learned corrections",
     less: "Less",
     more: "More",
-    nothingYet: "Your next dictation appears here.",
     copy: "Copy",
     startDictation: "Start dictation",
     stop: "Stop",
@@ -25,9 +24,10 @@ var text = {
     ready: "Ready to dictate",
     notReady: "Not ready to dictate",
     checking: "Checking the speech service…",
-    // Where dictated words end up, by System.pastingOutcome, and what the
-    // delivery steps that are on wait for, by name.
-    pasting: { delivers: "Works", clipboard: "Your words stay on the clipboard", nothing: "Nothing can deliver your words" },
+    // A speech service nobody has checked yet: dictating tries it.
+    notChecked: "Speech to text isn't checked yet",
+    tryIt: "Start a dictation to try it.",
+    // What the delivery steps that are on wait for, by name.
     needs: labels => labels.length ? "Needs " + (labels.length > 1 ? labels.slice(0, -1).join(", ") + " and " + labels[labels.length - 1] : labels[0]) + "." : "",
     // The readiness card: one line while everything passes, else its groups.
     allWorking: "Everything Speecher checks works",

@@ -22,20 +22,22 @@ Section {
     // The desktop gives Speecher no shortcut, so there is none to set.
     readonly property bool noShortcuts: Health.noShortcuts(System.checks)
     // Every check that applies here, by id, in two groups: what dictation
-    // can't start without (a check core marks needed, such as microphone
-    // access) and what it works without. The virtual keyboard is Pasting's,
-    // and so is accessibility while a delivery step that is on relies on it.
+    // can't start without (a check core marks needed) and what it works
+    // without. The virtual keyboard is Pasting's, and so is accessibility
+    // while a delivery step that is on relies on it; microphone access is
+    // the Microphone row's.
     readonly property var steps: System.deliverySteps
     readonly property bool pastingNeedsAccessibility: steps.some(s => s.on && s.needs.includes("accessibility"))
     readonly property var checks: System.checks.filter(c => Health.applies(c) && c.id !== "virtualKeyboardHealth"
+                                                             && c.id !== "microphoneAccess"
                                                              && (c.id !== "desktopAccessibility" || !pastingNeedsAccessibility))
     readonly property var neededChecks: checks.filter(c => c.needed).map(c => c.id)
     readonly property var optionalChecks: checks.filter(c => !c.needed).map(c => c.id)
 
     // The speech chain, the service then its fallbacks: dictation works while
     // any of them does. Checking while none works and one is being checked;
-    // a service nobody has checked yet stands in nobody's way, but one whose
-    // check failed does.
+    // a service nobody has checked yet isn't ready, though dictation can
+    // start to try it, and one whose check failed is missing.
     readonly property var chain: [Settings.values.speechProvider || ""]
         .concat(Settings.values.speechFallbackList || []).map(id => ModelText.service(id))
     readonly property var working: chain.find(s => s.state === "ready")
@@ -48,11 +50,19 @@ Section {
               : speechState === "checking" ? ModelText.checking
               : ModelText.status(chain.find(s => s.state === "unknown") || chain[0])
     })
+    // The microphone, one row: access first, with its fix, then whether
+    // the one chosen is there.
+    readonly property var access: Health.find(System.checks, "microphoneAccess")
+    readonly property bool accessFails: !Health.passes(access)
     readonly property var microphoneItem: ({
-        id: "microphone", title: Schema.page("microphone").title, page: "microphone", row: "audioDevice",
-        state: !Audio.hasMicrophones || Microphones.deviceMissing ? "missing" : "ok",
-        status: !Audio.hasMicrophones ? Schema.row("audioDevice").noneLabel
-              : Microphones.deviceMissing ? Schema.row("audioDevice").missingLabel : Microphones.deviceName
+        id: "microphone", title: Schema.page("microphone").title, page: "microphone", row: accessFails ? "microphoneAccess" : "audioDevice",
+        state: accessFails ? access.state : !Audio.hasMicrophones || Microphones.deviceMissing ? "missing" : "ok",
+        status: accessFails ? Health.status(access)
+              : !Audio.hasMicrophones ? Schema.row("audioDevice").noneLabel
+              : Microphones.deviceMissing ? Schema.row("audioDevice").missingLabel : Microphones.deviceName,
+        help: accessFails ? Health.failure(access) || Health.detail(access) : "",
+        fixLabel: accessFails ? Health.fix(access) : "",
+        fixCheck: "microphoneAccess"
     })
     // Pasting, one row while a step that is on waits for something: where
     // the words end up, what is missing by name, and the first fix.
@@ -62,8 +72,9 @@ Section {
     readonly property var pastingItem: ({
         id: "pasting", title: Schema.page("pasting").title, page: "pasting", row: "",
         state: System.pastingOutcome === "nothing" ? "off" : "attention",
-        status: t.pasting[System.pastingOutcome],
-        help: t.needs(waiting.map(n => Schema.pasting.needs[n].label)),
+        status: Schema.pasting.outcomes[System.pastingOutcome],
+        help: [t.needs(waiting.map(n => Schema.pasting.needs[n].label))]
+            .concat(waiting.map(n => Schema.pasting.needs[n].repair || "")).filter(s => s).join(" "),
         fixLabel: fixFor ? fixFor.fix || Health.fix(Health.find(System.checks, fixFor.check)) : "",
         fixCheck: fixFor ? fixFor.check : ""
     })
@@ -74,12 +85,13 @@ Section {
     // What dictation needs and doesn't have, as the caption names it, from
     // the same results as the rows.
     readonly property var missing: checks.filter(c => c.needed && !Health.passes(c)).map(c => Schema.row(c.id).label.toLowerCase())
-        .concat(!Audio.hasMicrophones ? [t.aMicrophone] : Microphones.deviceMissing ? [t.yourMicrophone] : [],
+        .concat(accessFails ? [Schema.row("microphoneAccess").label.toLowerCase()] : [],
+                !Audio.hasMicrophones ? [t.aMicrophone] : Microphones.deviceMissing ? [t.yourMicrophone] : [],
                 speechState === "attention" ? [t.aSpeechService] : [],
                 pastingNeeded ? [t.aWayToDeliver] : [])
     // Without microphone access or a microphone nothing can start; with no
     // working speech service it can, to try again, but isn't ready.
-    readonly property bool cantStart: checks.some(c => c.needed && !Health.passes(c)) || !Audio.hasMicrophones
+    readonly property bool cantStart: accessFails || checks.some(c => c.needed && !Health.passes(c)) || !Audio.hasMicrophones
     readonly property bool blocked: missing.length > 0
     readonly property bool allPass: !blocked && checks.every(Health.passes) && microphoneItem.state === "ok"
                                     && speechState === "ok" && !pastingDegraded
@@ -87,9 +99,10 @@ Section {
     readonly property var status: ({ starting: "Listening", listening: "Listening", paused: "Paused",
                                      transcribing: "Transcribing", refining: "Refining", error: "Dictation failed" })
 
-    title: status[Dictation.state] || (blocked ? t.notReady : speechState === "checking" ? t.checking : t.ready)
+    title: status[Dictation.state] || (blocked ? t.notReady : speechState === "checking" ? t.checking
+                                       : speechState === "notChecked" ? t.notChecked : t.ready)
     // What the listed things do to dictation, in words, else how to start.
-    caption: T.readiness(missing)
+    caption: T.readiness(missing) || (speechState === "notChecked" ? t.tryIt : "")
            || (hasShortcut ? t.pressShortcut : noShortcuts ? t.noShortcutHere : t.noShortcut)
     actions: Switcher {
         id: controls

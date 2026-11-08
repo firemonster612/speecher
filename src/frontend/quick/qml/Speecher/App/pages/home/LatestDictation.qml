@@ -6,11 +6,13 @@ import Speecher.Wording
 import "words.js" as T
 
 // The latest thing said, set large, with where it went and Copy, at the top
-// of Your dictation; before the first, where it will appear.
+// of Your dictation; nothing before the first, where the section's own
+// empty row says so.
 Column {
     id: root
     readonly property var latest: Insights.latest
 
+    visible: !!latest
     width: parent ? parent.width : implicitWidth
     padding: Theme.space5
     topPadding: Theme.space4
@@ -18,33 +20,28 @@ Column {
     spacing: Theme.space2
     Txt {
         width: root.width - 2 * root.padding
-        text: root.latest ? root.latest.text : T.text.nothingYet
-        tone: root.latest ? "primary" : "tertiary"
+        text: root.latest ? root.latest.text : ""
         variant: "lead"
         wrapMode: Text.WordWrap
     }
-    Reveal {
-        open: root.latest !== null
+    Item {
         width: root.width - 2 * root.padding
-        Item {
-            width: parent.width
-            height: copy.height
-            Txt {
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.latest ? T.latestDetail(root.latest, Insights.today) : ""
-                variant: "small"
-                tone: "secondary"
-            }
-            CopyButton {
-                id: copy
-                anchors.right: parent.right
-                anchors.rightMargin: -Theme.space1
-                text: T.text.copy
-                copiedText: Words.copied
-                size: "small"
-                variant: "ghost"
-                onCopied: Insights.copyLatest()
-            }
+        height: copy.height
+        Txt {
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.latest ? T.latestDetail(root.latest, Insights.today) : ""
+            variant: "small"
+            tone: "secondary"
+        }
+        CopyButton {
+            id: copy
+            anchors.right: parent.right
+            anchors.rightMargin: -Theme.space1
+            text: T.text.copy
+            copiedText: Words.copied
+            size: "small"
+            variant: "ghost"
+            onCopied: Insights.copyLatest()
         }
     }
 }

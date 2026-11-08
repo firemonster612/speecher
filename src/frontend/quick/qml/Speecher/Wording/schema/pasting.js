@@ -13,34 +13,46 @@ var terminalKeys = "Ctrl+Shift+V";
 // names: label names it in every status ("Virtual keyboard: Not set up"),
 // check is the System check whose state and fix it shows, and ready and
 // notReady are the state's words where the check's own don't fit or there
-// is no check.
+// is no check. grant marks a permission the system gives; repair says how
+// to get a missing tool that has no check to fix it.
 var needs = {
     accessibility: mac ? { label: "Accessibility", check: "desktopAccessibility", ready: "Granted", notReady: "Not granted",
-                           fix: "Open settings" }
-                       : { label: "Desktop accessibility", check: "desktopAccessibility" },
+                           fix: "Open settings", grant: true }
+                       : { label: "Desktop accessibility", check: "desktopAccessibility", grant: true },
     virtualKeyboard: { label: "Virtual keyboard", check: "virtualKeyboardHealth" },
-    clipboard: { label: "Clipboard helper or wl-copy", ready: "Available", notReady: "Missing" },
-    clipboardSave: { label: "wl-paste", ready: "Available", notReady: "Missing" }
+    clipboard: { label: "Clipboard helper or wl-copy", ready: "Available", notReady: "Missing",
+                 repair: "Install wl-clipboard for wl-copy, or reinstall Speecher to bring back its clipboard helper." },
+    clipboardSave: { label: "wl-paste", ready: "Available", notReady: "Missing",
+                     repair: "Install wl-clipboard for wl-paste." }
 };
-// A step that relies on nothing here says so instead of a need.
-var builtIn = windows ? "Built into Windows, no permission needed" : "Built in";
+// Under the steps where none of them needs anything here.
+var noNeeds = windows ? "Windows does all three itself, with no permission to grant." : "";
 // A step whose need an earlier step shows already, fix and all.
-function sameNeed(need) { return "Needs the same " + needs[need].label + " permission"; }
+function sameNeed(need) { return "Needs the same " + needs[need].label + (needs[need].grant ? " permission" : ""); }
 function waitingFor(need) { return "Waiting for " + needs[need].label; }
 // A step's switch, as search shows it read-only.
 var switchState = { on: "On", off: "Off" };
 
-// The line under each step's help about what it relies on here.
-var details = {
-    insert: linux ? "On Linux it can't replace selected text yet, so edits to a selection need the paste keys."
-          : mac ? "Needs Accessibility under Privacy & Security."
-          : "Fields that don't accept it get the paste keys instead.",
-    press: linux ? "Speecher's virtual keyboard presses the keys. On Wayland, copying needs Speecher's clipboard helper or wl-copy."
-         : mac ? "Needs the same Accessibility permission as inserting."
-         : "Windows presses the keys for Speecher.",
-    keep: linux ? "On Wayland this needs Speecher's clipboard helper or wl-copy, and with it off, wl-paste to save your clipboard first."
-        : ""
-};
+// Where dictated words end up, by System.pastingOutcome, as Home, setup
+// and the Pasting page say it.
+var outcomes = { delivers: "Works", clipboard: "Your words stay on the clipboard", nothing: "Nothing can deliver your words" };
+
+// The line under each step's help about how it works here. Wayland's
+// clipboard tools come up only in a Wayland session.
+function details(step, wayland) {
+    switch (step) {
+    case "insert":
+        return mac ? "Needs Accessibility under Privacy & Security."
+             : windows ? "Fields that don't accept it get the paste keys instead." : "";
+    case "press":
+        return mac ? "Needs the same Accessibility permission as inserting."
+             : windows ? "Windows presses the keys for Speecher."
+             : "Speecher's virtual keyboard presses the keys." + (wayland ? " Copying needs Speecher's clipboard helper or wl-copy." : "");
+    case "keep":
+        return linux && wayland ? "This needs Speecher's clipboard helper or wl-copy, and with it off, wl-paste to save your clipboard first." : "";
+    }
+    return "";
+}
 
 // Rule options, worded as what they do to the steps above. Ids are core's
 // paste methods. The first is the rule's "no change": for an app type no
@@ -92,19 +104,45 @@ var rowOf = { insert: "insertThroughAccessibility", press: "pressPasteKeys", kee
 var stepLabels = { insert: "Insert through accessibility", press: "Press the paste keys", keep: "Keep the words on the clipboard" };
 var stepShort = { insert: "Insert", press: "Press", keep: "Keep" };
 
-// What a rule leaves of the steps, from System.rulePlan(method): "Insert,
-// else press Ctrl+V, keep a copy", "Clipboard only", or "No delivery: Press
-// is off" where it relies on an off step and nothing is left.
-function planText(plan, method) {
+// What a rule does with the steps here, from System.rulePlan(method), as
+// its exception and the add form say it: the steps it leaves that can run
+// on this computer, in order ("Insert, else press Ctrl+V, keep a copy"),
+// then those that can't yet and an off step it relies on; "No delivery: …"
+// where nothing it allows can run. off is an app's exception turned off;
+// terminalWins an app type whose apps in a terminal follow a Terminals
+// exception instead.
+function ruleResult(plan, method, off, terminalWins) {
+    if (off) return "Off, so the app follows the other rules";
     const route = plan.route || [];
+    const usable = plan.usable || [];
+    const offStep = plan.needs ? stepShort[plan.needs] + " is off" : "";
+    if (!route.length) return "No delivery: " + (offStep || "it leaves no step on");
+    if (!usable.length) return "No delivery: nothing it allows can run here";
     const keys = method === "terminal_paste" ? terminalKeys : pasteKeys;
     const parts = [];
-    if (route.includes("insert")) parts.push("Insert");
-    if (route.includes("press")) parts.push((parts.length ? "else press " : "Press ") + keys);
-    if (route.includes("keep")) parts.push(parts.length ? "keep a copy" : "Clipboard only");
-    const off = plan.needs ? stepShort[plan.needs] + " is off" : "";
-    if (!parts.length) return off ? "No delivery: " + off : "No delivery with these settings";
-    return parts.join(", ") + (off ? ". " + off : "");
+    if (usable.includes("insert")) parts.push("Insert");
+    if (usable.includes("press")) parts.push((parts.length ? "else press " : "Press ") + keys);
+    if (usable.includes("keep")) parts.push(parts.length ? "keep a copy" : "Clipboard only");
+    const waiting = route.filter(id => !usable.includes(id)).map(id => stepShort[id]);
+    return [parts.join(", "),
+            waiting.length ? waiting.join(" and ") + " can't run here yet" : "",
+            offStep,
+            terminalWins ? "A Terminals exception wins for apps in a terminal" : ""].filter(s => s).join(". ");
+}
+
+// Over the exceptions while accessibility is off, by whether Speecher has
+// another way to tell apps apart; Insert's row carries the fix.
+function exceptionsNotice(identifiesApps) {
+    const access = mac ? "Accessibility" : "desktop accessibility";
+    return identifiesApps ? "Without " + access + ", app detection may be limited, so some exceptions may not apply (see Insert above)."
+                          : "Exceptions need " + access + " to tell apps apart (see Insert above).";
+}
+
+// What search matches a saved exception for a single app by, besides its
+// app ID: its rule's name and the words for an exception.
+function exceptionKeywords(method) {
+    const option = ruleOptions(true).find(o => o.id === method);
+    return (option ? option.label + " " : "") + "exception paste rule single app";
 }
 
 // The order rules win in, said once above the exceptions.
