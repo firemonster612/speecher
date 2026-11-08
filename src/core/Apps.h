@@ -59,6 +59,11 @@ struct AppEntry {
     // What History keeps of its dictations: Stats or Nothing, which can only
     // lower What Speecher Keeps. Unset follows its App Type.
     std::optional<HistoryKeep> history;
+    // Its type doesn't stop the built-in catalog choosing its profile. Only
+    // migration sets it, for an older recognition rule that set only a type,
+    // which left the profile to the catalog; an App the person types picks
+    // its type's profile.
+    bool catalogPicksProfile = false;
 
     bool operator==(const AppEntry &other) const = default;
 };

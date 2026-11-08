@@ -16,20 +16,6 @@ bool sameText(const QString &left, const QString &right)
     return left.compare(right, Qt::CaseInsensitive) == 0;
 }
 
-bool appLimitMatches(const QString &limit, const VocabularyScope &scope)
-{
-    if (!limit.startsWith(QStringLiteral("app:"))) {
-        return !scope.target.applicationId.isEmpty() && sameText(limit, scope.target.applicationId);
-    }
-    // An App removed meanwhile matches nothing (removeApp rewrites the limits
-    // it can, and leaves the rest on it).
-    const auto app = std::find_if(scope.apps.apps.cbegin(), scope.apps.apps.cend(),
-                                  [&limit](const AppEntry &entry) { return entry.id == limit; });
-    return app != scope.apps.apps.cend()
-        && std::any_of(app->matches.cbegin(), app->matches.cend(),
-                       [&scope](const AppMatch &match) { return appMatches(match, scope.target); });
-}
-
 bool listsSpelling(const QList<VocabularyEntry> &entries, const QString &term)
 {
     return std::any_of(entries.cbegin(), entries.cend(), [text = term.simplified()](const VocabularyEntry &entry) {
@@ -61,6 +47,20 @@ QString withVariablesFilled(QString text, const QDateTime &now)
 
 } // namespace
 
+bool appLimitMatches(const QString &limit, const Target &target, const AppsSettings &apps)
+{
+    if (!limit.startsWith(QStringLiteral("app:"))) {
+        return !target.applicationId.isEmpty() && sameText(limit, target.applicationId);
+    }
+    // An App removed meanwhile matches nothing (removeApp rewrites the limits
+    // it can, and leaves the rest on it).
+    const auto app = std::find_if(apps.apps.cbegin(), apps.apps.cend(),
+                                  [&limit](const AppEntry &entry) { return entry.id == limit; });
+    return app != apps.apps.cend()
+        && std::any_of(app->matches.cbegin(), app->matches.cend(),
+                       [&target](const AppMatch &match) { return appMatches(match, target); });
+}
+
 bool vocabularyEntryApplies(const VocabularyEntry &entry, const VocabularyScope &scope)
 {
     if (!entry.enabled) {
@@ -71,7 +71,7 @@ bool vocabularyEntryApplies(const VocabularyEntry &entry, const VocabularyScope 
     }
     return (entry.profiles.isEmpty() || entry.profiles.contains(scope.writingProfile))
         && (entry.apps.isEmpty() || std::any_of(entry.apps.cbegin(), entry.apps.cend(), [&scope](const QString &limit) {
-                return appLimitMatches(limit, scope);
+                return appLimitMatches(limit, scope.target, scope.apps);
             }));
 }
 

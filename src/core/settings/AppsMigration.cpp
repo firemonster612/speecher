@@ -91,59 +91,111 @@ DeliverySteps storedSteps(const QSettings &settings)
             settings.value(SettingsKeys::KeepOnClipboard, true).toBool()};
 }
 
-// What an older Pasting choice becomes, so a delivery takes the steps and
-// keys it took. One that followed the steps as they are leaves them unset
-// where unset still reaches the Pasting page's (stepsFollow), and takes a
-// copy of them otherwise. A narrowing that left no step on, which delivered
-// nothing, keeps the words on the clipboard.
-PastingChoice pastingFrom(PasteMethod method, const DeliverySteps &steps, bool stepsFollow)
+// The steps a delivery took under output/method and
+// output/restoreClipboardAfterTyping, as older releases stored them, before
+// any paste rule narrowed them.
+DeliverySteps unnarrowedSteps(const QSettings &settings)
 {
-    const std::optional<DeliverySteps> asTheyAre = stepsFollow ? std::nullopt : std::optional(steps);
-    DeliverySteps narrowed = steps;
+    // The stored names, older spellings included.
+    const QString method = settings.value(SettingsKeys::OutputMethod).toString();
+    const bool keyboardOnly = method == u"ydotool" || method == u"mac-paste" || method == u"win-paste";
+    const bool insertOnly = method == u"direct_insert";
+    const bool copyOnly = method == u"wl-copy" || method == u"clipboard" || method == u"qt-clipboard" || method == u"qt";
+    DeliverySteps steps{!keyboardOnly && !copyOnly, !insertOnly && !copyOnly, true};
+    // Restoring meant nothing where nothing was pasted, so the words stayed.
+    steps.keep = !settings.value(SettingsKeys::RestoreClipboardAfterTyping).toBool() || (!steps.insert && !steps.press);
+    return steps;
+}
+
+// The method of the global rule as older releases' delivery read it: the
+// first one turned on, and Clipboard only where none was.
+PasteMethod globalPasteMethod(const QList<LegacyPasteRule> &rules)
+{
+    for (const LegacyPasteRule &rule : rules) {
+        if (rule.scope == LegacyPasteRule::Scope::Global && rule.enabled) {
+            return rule.method;
+        }
+    }
+    return PasteMethod::ClipboardOnly;
+}
+
+// What a delivery under an older paste method did: the steps it narrowed
+// base to, and the keys it pressed, for the methods that named keys. A
+// narrowing that left no step on, which delivered nothing, kept the words
+// on the clipboard.
+PastingChoice narrowedBy(PasteMethod method, const DeliverySteps &base)
+{
+    DeliverySteps steps = base;
     switch (method) {
     case PasteMethod::StandardPaste:
-        return {asTheyAre, PasteKeyCombo::Standard};
+        return {steps, PasteKeyCombo::Standard};
     case PasteMethod::TerminalPaste:
-        return {asTheyAre, terminalKeysDiffer ? PasteKeyCombo::Terminal : PasteKeyCombo::Standard};
+        return {steps, terminalKeysDiffer ? PasteKeyCombo::Terminal : PasteKeyCombo::Standard};
     case PasteMethod::ClipboardOnly:
-        narrowed.insert = false;
+        steps.insert = false;
         [[fallthrough]];
     case PasteMethod::DirectInsert:
-        narrowed.press = false;
+        steps.press = false;
         break;
     }
-    if (!narrowed.any()) {
-        narrowed.keep = true;
+    if (!steps.any()) {
+        steps.keep = true;
     }
-    return {narrowed, std::nullopt};
+    return {steps, std::nullopt};
+}
+
+// The parts of choice a layer stores. A part the layer would inherit as it
+// is, the Pasting page's steps or the usual keys, stays unset so it follows
+// the page, unless a layer it would follow first sets that part (shadowing).
+PastingChoice ownParts(const PastingChoice &choice, const DeliverySteps &page, const PastingChoice &shadowing)
+{
+    PastingChoice own;
+    if (choice.steps != page || shadowing.steps) {
+        own.steps = choice.steps;
+    }
+    if (choice.keys && (choice.keys != PasteKeyCombo::Standard || shadowing.keys)) {
+        own.keys = choice.keys;
+    }
+    return own;
 }
 
 // Gives the Apps and App Types the older Pasting choices, by App id and by
-// App Type. Steps and keys now settle each on their own, so a choice that
-// followed the steps copies them wherever a later layer, Terminals' or a
-// type's, has steps of its own its old choice used to hide.
+// App Type, each as the steps and keys a delivery under it took: base
+// narrowed by the choice. page is the Pasting page's steps once migrated.
+// Steps and keys now settle each on their own, so a layer stores a part
+// wherever a layer it follows first has one of its own.
 void applyPastingChoices(AppsSettings &apps, const QHash<QString, PasteMethod> &forApps,
-                         const QMap<AppCategory, PasteMethod> &forTypes, const DeliverySteps &steps)
+                         const QMap<AppCategory, PasteMethod> &forTypes, const DeliverySteps &base,
+                         const DeliverySteps &page)
 {
-    const auto typeHasSteps = [&apps](AppCategory except) {
-        return std::any_of(apps.types.cbegin(), apps.types.cend(), [except](const AppTypeSettings &type) {
-            return type.type != except && type.pasting.steps;
-        });
+    // The parts some App Type other than except sets.
+    const auto setByTypesOtherThan = [&apps](AppCategory except) {
+        PastingChoice parts;
+        for (const AppTypeSettings &type : apps.types) {
+            if (type.type != except) {
+                parts.steps = parts.steps ? parts.steps : type.pasting.steps;
+                parts.keys = parts.keys ? parts.keys : type.pasting.keys;
+            }
+        }
+        return parts;
     };
     // Terminals come before the type of anything running in a terminal, so
     // they go last among the types.
     for (const bool terminals : {false, true}) {
         for (AppTypeSettings &type : apps.types) {
-            if ((type.type == AppCategory::Terminal) == terminals && forTypes.contains(type.type)) {
-                type.pasting = pastingFrom(forTypes.value(type.type), steps,
-                                           !terminals || !typeHasSteps(AppCategory::Terminal));
+            if ((type.type == AppCategory::Terminal) != terminals) {
+                continue;
             }
+            type.pasting = forTypes.contains(type.type)
+                ? ownParts(narrowedBy(forTypes.value(type.type), base), page,
+                           terminals ? setByTypesOtherThan(AppCategory::Terminal) : PastingChoice{})
+                : PastingChoice{};
         }
     }
-    const bool stepsFollow = !typeHasSteps(AppCategory::Unknown);
+    const PastingChoice setByTypes = setByTypesOtherThan(AppCategory::Unknown);
     for (AppEntry &entry : apps.apps) {
         if (forApps.contains(entry.id)) {
-            entry.pasting = pastingFrom(forApps.value(entry.id), steps, stepsFollow);
+            entry.pasting = ownParts(narrowedBy(forApps.value(entry.id), base), page, setByTypes);
         }
     }
 }
@@ -177,10 +229,9 @@ void migratePastingChoices(QSettings &settings)
         forTypes.insert(AppCategory::Terminal, PasteMethod::TerminalPaste);
     }
     AppsSettings apps = AppsSettingsCodec::load(settings);
-    for (AppTypeSettings &type : apps.types) {
-        type.pasting = {};
-    }
-    applyPastingChoices(apps, forApps, forTypes, storedSteps(settings));
+    // Version 1's choices narrowed the Pasting page's steps as they are.
+    const DeliverySteps page = storedSteps(settings);
+    applyPastingChoices(apps, forApps, forTypes, page, page);
     AppsSettingsCodec::store(settings, apps);
 }
 
@@ -189,12 +240,12 @@ void migratePastingChoices(QSettings &settings)
 QList<LegacyPasteRule> legacyPasteRules(const QSettings &settings)
 {
     const QJsonDocument document = QJsonDocument::fromJson(settings.value(SettingsKeys::PasteRules).toByteArray());
+    const QList<LegacyPasteRule> defaults{
+        {LegacyPasteRule::Scope::Category, appCategoryName(AppCategory::Terminal), PasteMethod::TerminalPaste, true},
+        {LegacyPasteRule::Scope::Global, QString(), PasteMethod::StandardPaste, true},
+    };
     if (!document.isArray()) {
-        if (!terminalKeysDiffer) {
-            return {};
-        }
-        return {{LegacyPasteRule::Scope::Category, appCategoryName(AppCategory::Terminal), PasteMethod::TerminalPaste,
-                 true}};
+        return defaults;
     }
     QList<LegacyPasteRule> rules;
     for (const QJsonValue &value : document.array()) {
@@ -204,7 +255,12 @@ QList<LegacyPasteRule> legacyPasteRules(const QSettings &settings)
                       pasteMethodFromName(object.value(QStringLiteral("method")).toString()),
                       object.value(QStringLiteral("enabled")).toBool(true)});
     }
-    return rules;
+    return rules.isEmpty() ? defaults : rules;
+}
+
+DeliverySteps legacyDeliverySteps(const QSettings &settings)
+{
+    return *narrowedBy(globalPasteMethod(legacyPasteRules(settings)), unnarrowedSteps(settings)).steps;
 }
 
 void storeLegacyPasteRules(QSettings &settings, const QList<LegacyPasteRule> &rules)
@@ -282,25 +338,38 @@ void migrateApps(QSettings &settings)
         if (!profile.isEmpty()) {
             entry.writingProfile = writingProfileFromName(profile);
             entry.matches.append({AppMatchKind::WindowTitle, match});
+        } else {
+            entry.catalogPicksProfile = true;
         }
         apps.apps.append(entry);
     }
 
-    // Unstored rules were the default, Terminals' keys (legacyPasteRules).
-    for (AppTypeSettings &type : apps.types) {
-        type.pasting = {};
-        for (const LegacyPasteRule &rule : pasteRules) {
-            if (rule.scope == LegacyPasteRule::Scope::Category && rule.enabled
-                && appCategoryFromName(rule.match) == type.type) {
-                // Standard paste was the same as no rule.
-                if (rule.method != PasteMethod::StandardPaste) {
-                    typePasting.insert(type.type, rule.method);
-                }
-                break;
-            }
+    // Each App Type took its own rule, the first turned on, or else the
+    // global one. Terminals without a rule of their own left anything in a
+    // terminal to its type's rule, as Terminals left unset still do.
+    const PasteMethod global = globalPasteMethod(pasteRules);
+    for (const AppCategory type : appTypes()) {
+        const auto own = std::find_if(pasteRules.cbegin(), pasteRules.cend(), [type](const LegacyPasteRule &rule) {
+            return rule.scope == LegacyPasteRule::Scope::Category && rule.enabled && appCategoryFromName(rule.match) == type;
+        });
+        if (own != pasteRules.cend()) {
+            typePasting.insert(type, own->method);
+        } else if (type != AppCategory::Terminal) {
+            typePasting.insert(type, global);
         }
     }
-    applyPastingChoices(apps, appPasting, typePasting, storedSteps(settings));
+    // Against the output settings as older releases stored them, which
+    // migrateDeliverySteps removes after this.
+    const DeliverySteps base = unnarrowedSteps(settings);
+    const PastingChoice globalChoice = narrowedBy(global, base);
+    applyPastingChoices(apps, appPasting, typePasting, base, *globalChoice.steps);
+    // Apps typed Terminals still took the global rule's keys.
+    for (AppTypeSettings &type : apps.types) {
+        if (type.type == AppCategory::Terminal && !typePasting.contains(type.type)
+            && globalChoice.keys == PasteKeyCombo::Terminal) {
+            type.pasting.keys = globalChoice.keys;
+        }
+    }
 
     if (settings.contains(SettingsKeys::DefaultWritingProfile)) {
         for (AppTypeSettings &type : apps.types) {

@@ -19,7 +19,7 @@
 namespace speecher {
 namespace {
 
-constexpr int schemaVersion = 2;
+constexpr int schemaVersion = 3;
 // Search terms shorter than a trigram can't use the index; alone, they scan
 // only this many of the newest entries.
 constexpr int shortSearchWindow = 2000;
@@ -68,6 +68,8 @@ const char *const schemaStatements[] = {
 const char *const schemaUpgrades[] = {
     // A Recording's RecordingEnd, as recordingEndJson.
     "ALTER TABLE entries ADD COLUMN ending TEXT",
+    // The files imported into History (importAll).
+    "CREATE TABLE IF NOT EXISTS imports (source TEXT PRIMARY KEY)",
 };
 
 // Columns are named with their table, since a search joins the index, whose
@@ -128,6 +130,32 @@ std::pair<QString, qsizetype> textOf(const QList<HistoryLine> &lines)
         words += line.text.split(QLatin1Char(' '), Qt::SkipEmptyParts).size();
     }
     return {said.join(QLatin1Char('\n')), words};
+}
+
+// A Recording's transcript file as lines ("[00:00:04] me: …"); none where it
+// won't open or holds anything else.
+std::optional<QList<HistoryLine>> transcriptLines(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return std::nullopt;
+    }
+    static const QRegularExpression lineFormat(QStringLiteral(R"(^\[(\d+):(\d{2}):(\d{2})\] ([^:]+): (.*)$)"));
+    QList<HistoryLine> read;
+    while (!file.atEnd()) {
+        const QString line = QString::fromUtf8(file.readLine()).trimmed();
+        if (line.isEmpty()) {
+            continue;
+        }
+        const QRegularExpressionMatch match = lineFormat.match(line);
+        if (!match.hasMatch()) {
+            return std::nullopt;
+        }
+        const qint64 seconds = (match.captured(1).toLongLong() * 60 + match.captured(2).toLongLong()) * 60
+            + match.captured(3).toLongLong();
+        read.append({seconds * 1000, match.captured(4), match.captured(5)});
+    }
+    return read;
 }
 
 // When a file last changed, as transcript_mtime keeps it; null without one.
@@ -258,7 +286,9 @@ Where searchWhere(const HistoryQuery &query, bool trigram)
     QStringList indexed;
     QStringList scanned;
     for (const QString &term : terms) {
-        (trigram && term.size() >= 3 ? indexed : scanned).append(term);
+        // The tokenizer counts characters, which a QString's size doesn't
+        // where one takes two UTF-16 units, as an emoji does.
+        (trigram && term.toUcs4().size() >= 3 ? indexed : scanned).append(term);
     }
     if (!indexed.isEmpty()) {
         for (QString &term : indexed) {
@@ -432,6 +462,13 @@ void HistoryStore::prepareSearchIndex()
     }
     exec(QStringLiteral("CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(text, raw_text, app_name, title,"
                         " content = 'entries', content_rowid = 'id', tokenize = 'trigram')"));
+    {
+        // Kept in the index's own config, so set again at each open in case
+        // an older SQLite wrote the index.
+        QSqlQuery secure(QSqlDatabase::database(m_connection));
+        m_secureIndexDelete =
+            secure.exec(QStringLiteral("INSERT INTO entries_fts(entries_fts, rank) VALUES ('secure-delete', 1)"));
+    }
     const QString fields = QStringLiteral("text, raw_text, app_name, title");
     exec(QStringLiteral("CREATE TEMP TRIGGER entries_fts_insert AFTER INSERT ON main.entries BEGIN"
                         " INSERT INTO entries_fts(rowid, %1) VALUES (new.id, new.text, new.raw_text, new.app_name, new.title);"
@@ -499,6 +536,24 @@ qint64 HistoryStore::add(const HistoryEntry &given)
 
 bool HistoryStore::addAll(const QList<HistoryEntry> &entries)
 {
+    return addAllMarking(entries, {});
+}
+
+bool HistoryStore::importAll(const QString &source, const QList<HistoryEntry> &entries)
+{
+    return addAllMarking(entries, source);
+}
+
+bool HistoryStore::imported(const QString &source) const
+{
+    QSqlQuery select(QSqlDatabase::database(m_connection));
+    select.prepare(QStringLiteral("SELECT 1 FROM imports WHERE source = ?"));
+    select.addBindValue(source);
+    return m_open && select.exec() && select.next();
+}
+
+bool HistoryStore::addAllMarking(const QList<HistoryEntry> &entries, const QString &source)
+{
     if (!m_open) {
         return false;
     }
@@ -511,12 +566,21 @@ bool HistoryStore::addAll(const QList<HistoryEntry> &entries)
     QSqlDatabase db = QSqlDatabase::database(m_connection);
     QSignalBlocker quiet(this);
     db.transaction();
+    // Refused by the key once source is marked.
+    const auto markImported = [&db, &source] {
+        QSqlQuery mark(db);
+        mark.prepare(QStringLiteral("INSERT INTO imports (source) VALUES (?)"));
+        mark.addBindValue(source);
+        return mark.exec();
+    };
+    bool added = source.isEmpty() || markImported();
     for (const HistoryEntry &entry : std::as_const(oldestFirst)) {
-        if (add(entry) == 0) {
-            db.rollback();
-            forgetRecords();
-            return false;
-        }
+        added = added && add(entry) != 0;
+    }
+    if (!added) {
+        db.rollback();
+        forgetRecords();
+        return false;
     }
     const bool committed = db.commit();
     forgetRecords();
@@ -693,33 +757,18 @@ bool HistoryStore::syncRecordingFile(qint64 id)
     if (stored.isNull()) {
         return keepChangedAt();
     }
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    const std::optional<QList<HistoryLine>> read = transcriptLines(path);
+    if (!read) {
         return false;
     }
-    static const QRegularExpression lineFormat(QStringLiteral(R"(^\[(\d+):(\d{2}):(\d{2})\] ([^:]+): (.*)$)"));
-    QList<HistoryLine> read;
-    while (!file.atEnd()) {
-        const QString line = QString::fromUtf8(file.readLine()).trimmed();
-        if (line.isEmpty()) {
-            continue;
-        }
-        const QRegularExpressionMatch match = lineFormat.match(line);
-        if (!match.hasMatch()) {
-            return false;
-        }
-        const qint64 seconds = (match.captured(1).toLongLong() * 60 + match.captured(2).toLongLong()) * 60
-            + match.captured(3).toLongLong();
-        read.append({seconds * 1000, match.captured(4), match.captured(5)});
-    }
-    const auto [said, words] = textOf(read);
+    const auto [said, words] = textOf(*read);
     QSqlDatabase db = QSqlDatabase::database(m_connection);
     db.transaction();
     QSqlQuery change(db);
     change.prepare(QStringLiteral("DELETE FROM lines WHERE entry_id = ?"));
     change.addBindValue(id);
     bool written = change.exec();
-    for (const HistoryLine &line : std::as_const(read)) {
+    for (const HistoryLine &line : *read) {
         written = written && appendLine(id, line);
     }
     change.prepare(QStringLiteral("UPDATE entries SET text = ?, words = ? WHERE id = ?"));
@@ -736,7 +785,12 @@ bool HistoryStore::syncRecordingFile(qint64 id)
 
 void HistoryStore::finishUnfinishedRecordings()
 {
-    QList<std::pair<qint64, QDateTime>> unfinished;
+    struct Unfinished {
+        qint64 id;
+        QString transcriptPath;
+        QDateTime finishedAt;
+    };
+    QList<Unfinished> unfinished;
     {
         QSqlQuery select(QSqlDatabase::database(m_connection));
         if (!m_open
@@ -746,12 +800,19 @@ void HistoryStore::finishUnfinishedRecordings()
         }
         while (select.next()) {
             const QFileInfo file(select.value(2).toString());
-            unfinished.append({select.value(0).toLongLong(),
+            unfinished.append({select.value(0).toLongLong(), file.filePath(),
                                file.exists() ? file.lastModified()
                                              : QDateTime::fromMSecsSinceEpoch(select.value(1).toLongLong())});
         }
     }
-    for (const auto &[id, finishedAt] : std::as_const(unfinished)) {
+    for (const auto &[id, transcriptPath, finishedAt] : std::as_const(unfinished)) {
+        // Lines can reach the file and not History before a crash. Taken in
+        // now, since finishing keeps the file's last change as in step.
+        if (const std::optional<QList<HistoryLine>> read = transcriptLines(transcriptPath)) {
+            for (const HistoryLine &line : read->mid(lines(id).size())) {
+                appendLine(id, line);
+            }
+        }
         const std::optional<HistoryEntry> found = entry(id);
         const qint64 audioMs = found && found->startedAt.isValid() ? found->startedAt.msecsTo(finishedAt) : 0;
         RecordingEnd end;
@@ -782,6 +843,7 @@ bool HistoryStore::remove(qint64 id)
     if (!m_open || !remove.exec() || remove.numRowsAffected() == 0) {
         return false;
     }
+    eraseDeletedText();
     forgetRecords();
     emit changed();
     return true;
@@ -821,7 +883,14 @@ void HistoryStore::purgeDeleted()
     }
     // An entry whose audio wouldn't go stays hidden, for the next purge.
     const QList<qint64> stayed = deleteAudioWhere(QStringLiteral("deleted_at IS NOT NULL"), {});
-    exec(QStringLiteral("DELETE FROM entries WHERE deleted_at IS NOT NULL") + except(stayed));
+    QSqlQuery purge(QSqlDatabase::database(m_connection));
+    if (!purge.exec(QStringLiteral("DELETE FROM entries WHERE deleted_at IS NOT NULL") + except(stayed))) {
+        qWarning().noquote() << "history could not purge deleted entries:" << purge.lastError().text();
+        return;
+    }
+    if (purge.numRowsAffected() > 0) {
+        eraseDeletedText();
+    }
 }
 
 int HistoryStore::countIn(const QDateTime &from, const QDateTime &to) const
@@ -859,14 +928,10 @@ bool HistoryStore::clear(const QDateTime &from, const QDateTime &to, bool withSt
         qWarning().noquote() << "history could not be cleared:" << change.lastError().text();
         return false;
     }
-    // Merging the index drops what it held of the deleted text, and with
-    // secure_delete the pages that held it are overwritten.
-    if (m_trigram) {
-        exec(QStringLiteral("INSERT INTO entries_fts(entries_fts) VALUES ('optimize')"));
-    }
     if (!from.isValid() && !to.isValid()) {
         exec(QStringLiteral("VACUUM"));
     }
+    eraseDeletedText();
     forgetRecords();
     emit changed();
     return stayed.isEmpty();
@@ -915,9 +980,7 @@ void HistoryStore::prune(const QDateTime &now, const HistorySettings &settings)
             cutoff);
     }
     if (changedRows > 0) {
-        if (m_trigram) {
-            exec(QStringLiteral("INSERT INTO entries_fts(entries_fts) VALUES ('optimize')"));
-        }
+        eraseDeletedText();
         emit changed();
     }
 }
@@ -970,6 +1033,17 @@ QList<qint64> HistoryStore::deleteAudioWhere(const QString &condition, const QVa
         }
     }
     return stayed;
+}
+
+void HistoryStore::eraseDeletedText()
+{
+    // Without secure-delete, merging the segments drops what they held of
+    // the deleted text, and with secure_delete the pages that held it are
+    // overwritten.
+    if (m_trigram && !m_secureIndexDelete) {
+        exec(QStringLiteral("INSERT INTO entries_fts(entries_fts) VALUES ('optimize')"));
+    }
+    exec(QStringLiteral("PRAGMA wal_checkpoint(TRUNCATE)"));
 }
 
 QStringList HistoryStore::deleteRecordingFiles(const HistoryEntry &entry) const

@@ -1,7 +1,6 @@
 #include "core/SettingsStore.h"
 #include "core/EndpointSettings.h"
 #include "core/EndpointUrl.h"
-#include "core/Apps.h"
 #include "core/DeliverySteps.h"
 #include "core/ProviderTable.h"
 #include "core/SecretStore.h"
@@ -16,7 +15,6 @@
 #include <QFileInfo>
 #include <QStandardPaths>
 
-#include <algorithm>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -146,68 +144,11 @@ void migrateDeliverySteps(QSettings &settings)
         return;
     }
     settings.setValue(SettingsKeys::DeliveryStepsMigrationVersion, currentMigrationVersion);
-    using Scope = LegacyPasteRule::Scope;
-    QList<LegacyPasteRule> rules = legacyPasteRules(settings);
-    // The global rule as delivery read it: the first one turned on, and
-    // Clipboard only where none was.
-    std::optional<PasteMethod> globalMethod;
-    bool storedGlobal = false;
-    for (const LegacyPasteRule &rule : rules) {
-        if (rule.scope == Scope::Global) {
-            storedGlobal = true;
-            if (rule.enabled && !globalMethod) {
-                globalMethod = rule.method;
-            }
-        }
-    }
-    if (!storedGlobal && !settings.contains(SettingsKeys::OutputMethod)
+    if (!settings.contains(SettingsKeys::PasteRules) && !settings.contains(SettingsKeys::OutputMethod)
         && !settings.contains(SettingsKeys::RestoreClipboardAfterTyping)) {
         return;
     }
-    const PasteMethod global = globalMethod.value_or(storedGlobal ? PasteMethod::ClipboardOnly : PasteMethod::StandardPaste);
-    // The stored names, older spellings included.
-    const QString method = settings.value(SettingsKeys::OutputMethod).toString();
-    const bool keyboardOnly = method == u"ydotool" || method == u"mac-paste" || method == u"win-paste";
-    const bool insertOnly = method == u"direct_insert";
-    const bool copyOnly = method == u"wl-copy" || method == u"clipboard" || method == u"qt-clipboard" || method == u"qt";
-
-    DeliverySteps steps;
-    steps.insert = !keyboardOnly && !copyOnly && global != PasteMethod::ClipboardOnly;
-    steps.press = !insertOnly && !copyOnly && global != PasteMethod::DirectInsert && global != PasteMethod::ClipboardOnly;
-    // Restoring meant nothing where nothing was pasted, so the words stayed.
-    steps.keep = !settings.value(SettingsKeys::RestoreClipboardAfterTyping).toBool() || (!steps.insert && !steps.press);
-
-    rules.removeIf([](const LegacyPasteRule &rule) { return rule.scope == Scope::Global; });
-    if constexpr (terminalKeysDiffer) {
-        // There is no global rule to choose now, so every app type that
-        // followed it keeps its keys with a rule of its own.
-        if (global == PasteMethod::TerminalPaste) {
-            for (const AppCategory category : appTypes()) {
-                const QString name = appCategoryName(category);
-                const auto own = std::find_if(rules.begin(), rules.end(), [&name](const LegacyPasteRule &rule) {
-                    return rule.scope == Scope::Category && rule.match.toLower() == name;
-                });
-                if (own == rules.end()) {
-                    rules.append({Scope::Category, name, PasteMethod::TerminalPaste, true});
-                } else if (!own->enabled) {
-                    *own = {Scope::Category, name, PasteMethod::TerminalPaste, true};
-                }
-            }
-        }
-    } else {
-        // A category with Standard paste is no rule of its own.
-        rules.removeIf([](const LegacyPasteRule &rule) {
-            return rule.scope == Scope::Category && rule.method == PasteMethod::TerminalPaste;
-        });
-        for (LegacyPasteRule &rule : rules) {
-            if (rule.method == PasteMethod::TerminalPaste) {
-                rule.method = PasteMethod::StandardPaste;
-            }
-        }
-    }
-    if (settings.contains(SettingsKeys::PasteRules)) {
-        storeLegacyPasteRules(settings, rules);
-    }
+    const DeliverySteps steps = legacyDeliverySteps(settings);
     settings.setValue(SettingsKeys::InsertThroughAccessibility, steps.insert);
     settings.setValue(SettingsKeys::PressPasteKeys, steps.press);
     settings.setValue(SettingsKeys::KeepOnClipboard, steps.keep);
@@ -278,8 +219,10 @@ void migrateSavedSettings()
         qWarning().noquote() << error;
     }
     migrateRefinementModels(newSettings);
-    migrateDeliverySteps(newSettings);
+    // Apps first: their paste rules deliver as they did under the output
+    // settings migrateDeliverySteps removes.
     migrateApps(newSettings);
+    migrateDeliverySteps(newSettings);
     migrateVocabulary(newSettings);
     migrateHistory(newSettings, existingInstall);
     migrateRecording(newSettings);

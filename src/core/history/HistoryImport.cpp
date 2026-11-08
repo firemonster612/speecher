@@ -15,6 +15,9 @@
 namespace speecher {
 namespace {
 
+// How History marks the insights log imported (HistoryStore::importAll).
+const QString insightsLogSource = QStringLiteral("insights.jsonl");
+
 // The stats both formats share, under the insights log's names.
 std::optional<DictationRecord> recordFrom(const QJsonObject &object)
 {
@@ -71,18 +74,21 @@ bool importInsightsLog(HistoryStore &store, const QString &path)
     if (!QFile::exists(path)) {
         return true;
     }
-    const std::optional<QList<HistoryEntry>> entries = readInsightsLog(path);
-    if (!entries || !store.addAll(*entries)) {
-        qWarning().noquote() << "insights log not imported into History; trying again next start path=" + path;
-        return false;
+    // The dictations and the mark that they came in commit together, so a
+    // log a crash or a refused rename left in place is never added twice.
+    if (!store.imported(insightsLogSource)) {
+        const std::optional<QList<HistoryEntry>> entries = readInsightsLog(path);
+        if (!entries || !store.importAll(insightsLogSource, *entries)) {
+            qWarning().noquote() << "insights log not imported into History; trying again next start path=" + path;
+            return false;
+        }
+        qInfo().noquote() << "insights log imported into History dictations=" << entries->size();
     }
     const QString imported = path + QStringLiteral(".imported");
     QFile::remove(imported);
-    // A log left in place would be imported again, twice the dictations.
     if (!QFile::rename(path, imported) && !QFile::remove(path)) {
-        qWarning().noquote() << "insights log imported but could not be renamed path=" + path;
+        qWarning().noquote() << "insights log imported but could not be renamed; trying again next start path=" + path;
     }
-    qInfo().noquote() << "insights log imported into History dictations=" << entries->size();
     return true;
 }
 

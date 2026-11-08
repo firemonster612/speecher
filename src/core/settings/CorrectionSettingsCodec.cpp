@@ -1,4 +1,6 @@
 #include "core/settings/CorrectionSettingsCodec.h"
+#include "core/VocabularyScope.h"
+#include "core/settings/AppsSettingsCodec.h"
 #include "core/settings/SettingsKeys.h"
 #include "core/settings/VocabularySettingsCodec.h"
 #include <QDateTime>
@@ -100,11 +102,14 @@ bool recordEvidence(QSettings &settings,
         correction.confidence = std::max(correction.confidence, evidence.confidence);
         VocabularySettingsCodec::store(settings, entries);
     };
+    Target target;
+    target.applicationId = application;
+    const AppsSettings apps = AppsSettingsCodec::load(settings);
     for (VocabularyEntry &correction : entries) {
         const bool sameOriginal = correction.isLearned() && sameText(correction.term, original);
         const bool sameScope = correction.apps.isEmpty()
             || std::any_of(correction.apps.cbegin(), correction.apps.cend(),
-                           [&application](const QString &app) { return sameText(app, application); });
+                           [&](const QString &limit) { return appLimitMatches(limit, target, apps); });
         if (!sameOriginal || !sameScope) {
             continue;
         }
@@ -115,10 +120,16 @@ bool recordEvidence(QSettings &settings,
         return true;
     }
 
-    // The same correction learned in another app is one for every app.
+    // The same correction learned in another app is one for every app,
+    // unless the person limited it to Apps of theirs: learning limits only
+    // to application ids.
     for (VocabularyEntry &correction : entries) {
         if (correction.isLearned() && sameText(correction.term, original)
             && sameText(correction.replacement, corrected)) {
+            if (std::any_of(correction.apps.cbegin(), correction.apps.cend(),
+                            [](const QString &limit) { return limit.startsWith(QStringLiteral("app:")); })) {
+                return false;
+            }
             correction.apps.clear();
             observed(correction);
             return true;

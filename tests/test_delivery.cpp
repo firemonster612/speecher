@@ -2014,18 +2014,20 @@ fi
         QTest::addColumn<QString>("globalRule");
         QTest::addColumn<bool>("restore");
         QTest::addColumn<QString>("route");
-        QTest::newRow("automatic") << "automatic" << "" << false << "insert press keep";
-        QTest::newRow("automatic, restoring") << "automatic" << "" << true << "insert press";
-        QTest::newRow("virtual keyboard only") << "ydotool" << "" << false << "press keep";
-        QTest::newRow("macOS keys only") << "mac-paste" << "" << true << "press";
-        QTest::newRow("direct insertion") << "direct_insert" << "" << false << "insert keep";
-        QTest::newRow("wl-copy") << "wl-copy" << "" << true << "keep";
-        QTest::newRow("qt clipboard") << "qt-clipboard" << "" << false << "keep";
+        QTest::newRow("automatic") << "automatic" << "standard_paste" << false << "insert press keep";
+        QTest::newRow("automatic, restoring") << "automatic" << "standard_paste" << true << "insert press";
+        QTest::newRow("virtual keyboard only") << "ydotool" << "standard_paste" << false << "press keep";
+        QTest::newRow("macOS keys only") << "mac-paste" << "standard_paste" << true << "press";
+        QTest::newRow("direct insertion") << "direct_insert" << "standard_paste" << false << "insert keep";
+        QTest::newRow("wl-copy") << "wl-copy" << "standard_paste" << true << "keep";
+        QTest::newRow("qt clipboard") << "qt-clipboard" << "standard_paste" << false << "keep";
         QTest::newRow("direct insertion rule") << "automatic" << "direct_insert" << false << "insert keep";
         QTest::newRow("clipboard only rule") << "automatic" << "clipboard_only" << true << "keep";
         QTest::newRow("standard paste rule") << "automatic" << "standard_paste" << false << "insert press keep";
         QTest::newRow("global rule off") << "automatic" << "off" << false << "keep";
-        QTest::newRow("only the restore switch") << "" << "" << true << "insert press";
+        QTest::newRow("only the restore switch") << "" << "standard_paste" << true << "insert press";
+        // A list without a global rule copied only.
+        QTest::newRow("no global rule") << "automatic" << "" << false << "keep";
     }
 
     void deliveryStepsMigrateFromTheStoredMethod()
@@ -2060,13 +2062,8 @@ fi
         QCOMPARE(DeliveryPlan{steps}.route().join(u' '), route);
         QVERIFY(!stored.contains(QStringLiteral("output/method")));
         QVERIFY(!stored.contains(QStringLiteral("output/restoreClipboardAfterTyping")));
-        // The global rule goes; on macOS, where terminals paste with ⌘V too,
-        // Terminal paste becomes Standard paste.
-        const QList<LegacyPasteRule> migrated = legacyPasteRules(stored);
-        const QList<LegacyPasteRule> expected = terminalKeysDiffer
-            ? rules.mid(0, 2)
-            : QList<LegacyPasteRule>{{Scope::Application, QStringLiteral("org.kde.kate"), PasteMethod::StandardPaste, true}};
-        QCOMPARE(migrated, expected);
+        // The rules stay as they were, for a downgrade.
+        QCOMPARE(legacyPasteRules(stored), rules);
 
         // Once migrated, it leaves the steps alone.
         stored.setValue(QStringLiteral("output/pressPasteKeys"), !steps.press);
@@ -2088,7 +2085,6 @@ fi
         QVERIFY(!stored.value(QStringLiteral("output/insertThroughAccessibility")).toBool());
         QVERIFY(!stored.value(QStringLiteral("output/pressPasteKeys")).toBool());
         QVERIFY(stored.value(QStringLiteral("output/keepOnClipboard")).toBool());
-        QVERIFY(legacyPasteRules(stored).isEmpty());
     }
 
     // A global Terminal paste rule becomes one for every app type that had
@@ -2106,14 +2102,14 @@ fi
             {Scope::Global, QString(), PasteMethod::TerminalPaste, true},
         });
 
+        migrateApps(stored);
         migrateDeliverySteps(stored);
 
         const DeliverySteps steps{stored.value(QStringLiteral("output/insertThroughAccessibility")).toBool(),
                                   stored.value(QStringLiteral("output/pressPasteKeys")).toBool(),
                                   stored.value(QStringLiteral("output/keepOnClipboard")).toBool()};
         QCOMPARE(steps, DeliverySteps{});
-        // As the App Types' paste keys once Apps migrate them.
-        migrateApps(stored);
+        // As the App Types' paste keys.
         const AppsSettings apps = AppsSettingsCodec::load(stored);
         for (const AppCategory category : {AppCategory::General, AppCategory::Email, AppCategory::Office,
                                            AppCategory::CodeEditor, AppCategory::AiCoding}) {

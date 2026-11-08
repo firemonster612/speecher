@@ -59,9 +59,12 @@ trigram tokenizer (before 3.34). What Speecher Keeps (Nothing, Stats, Text,
 Text and audio) decides what each entry holds when it is written, lowered
 by the App's or App Type's History choice and always Stats for a password
 field (`historyKeep`). Text and audio are deleted after their days; the
-stats stay. `secure_delete` is on, and an Everything clear runs `VACUUM`, so
-deleted text is overwritten in the file. Upgrades import `insights.jsonl`
-once and stay at Stats, or Nothing where insights were off, until the
+stats stay. `secure_delete` is on, the index deletes with FTS5's
+`secure-delete` (merging its segments where SQLite is older than 3.42),
+every permanent delete checkpoints the write-ahead log, and an Everything
+clear runs `VACUUM`, so deleted text is overwritten in the file. Upgrades
+import `insights.jsonl` once, marked imported in the same transaction as
+its dictations, and stay at Stats, or Nothing where insights were off, until the
 person turns text on; new installs keep text.
 
 ## Consequences

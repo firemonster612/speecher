@@ -1354,6 +1354,37 @@ private slots:
         QVERIFY(settings.dictationSnapshot().vocabulary.isEmpty());
     }
 
+    // A Learned Correction the person limited to an App stays limited to it:
+    // seen in that App it adds evidence, seen elsewhere it changes nothing.
+    void learningKeepsTheAppsAPersonLimitedACorrectionTo()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        VocabularyEntry limited;
+        limited.term = QStringLiteral("cute");
+        limited.replacement = QStringLiteral("Qt");
+        limited.source = QStringLiteral("learned");
+        limited.apps = {QStringLiteral("app:org.kde.kate")};
+        limited.evidenceCount = 1;
+        settings.edit([&limited](AppSettings &draft) {
+            draft.apps.apps = {test::idApp(QStringLiteral("org.kde.kate"))};
+            draft.vocabulary = {limited};
+            return true;
+        });
+        const CorrectionEvidence evidence{QStringLiteral("cute"), QStringLiteral("Qt"), 0.95};
+
+        QVERIFY(settings.recordCorrectionEvidence(evidence, QStringLiteral("org.kde.kate")));
+        QList<VocabularyEntry> corrections = test::learnedEntries(settings.dictationSnapshot().vocabulary);
+        QCOMPARE(corrections.size(), 1);
+        QCOMPARE(corrections.first().apps, limited.apps);
+        QCOMPARE(corrections.first().evidenceCount, 2);
+
+        QVERIFY(!settings.recordCorrectionEvidence(evidence, QStringLiteral("firefox")));
+        corrections = test::learnedEntries(settings.dictationSnapshot().vocabulary);
+        QCOMPARE(corrections.size(), 1);
+        QCOMPARE(corrections.first().apps, limited.apps);
+    }
+
     void correctionLearningSettingChangesAreObservableWithoutRestart()
     {
         SettingsStore settings;

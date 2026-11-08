@@ -24,13 +24,11 @@ void migrateRefinementModels(QSettings &settings);
 // Each stored choice turns off the steps it never used: Automatic keeps them
 // all, a keyboard-only method turns Insert off, Direct insertion turns Press
 // off, a clipboard method or a Clipboard only global rule turns both off,
-// and restoring the clipboard turns Keep off. A global Terminal paste rule
-// becomes Terminal paste for every app type without a rule of its own, where
-// terminals' keys differ; on macOS, where both press ⌘V, Terminal paste
-// rules become Standard paste. Runs once, as its marker records, and only
-// changes a file that stored one of the three; it removes them.
+// and restoring the clipboard turns Keep off (legacyDeliverySteps). Runs
+// once, as its marker records, and only changes a file that stored one of
+// the three; it removes the method and the switch, and leaves the rules for
+// a downgrade. migrateApps (AppsMigration.h) runs before it.
 void migrateDeliverySteps(QSettings &settings);
-// migrateApps (AppsMigration.h) runs after it.
 // Brings the settings an older Speecher saved up to date, before anything
 // reads them: the migrations above, in order, on the running instance's
 // store. Startup runs it once.

@@ -61,6 +61,28 @@ private slots:
         QLocale::setDefault(QLocale(QLocale::English, QLocale::UnitedStates));
     }
 
+    // A log a crash or a refused rename left in place, after its dictations
+    // came in, adds nothing the next start; the rename is tried again.
+    void anInterruptedImportAddsNothingTwice()
+    {
+        QTemporaryDir dir;
+        const QString log = dir.filePath(QStringLiteral("insights.jsonl"));
+        const QString database = dir.filePath(QStringLiteral("history.sqlite3"));
+        writeAll(log, R"({"finishedAt":"2026-09-26T09:55:00","audioMs":38000,"words":90,"app":"Thunderbird"})" "\n");
+        {
+            HistoryStore store(database, QString());
+            QVERIFY(importInsightsLog(store, log));
+            QCOMPARE(store.records().size(), 1);
+        }
+        QVERIFY(QFile::rename(log + QStringLiteral(".imported"), log));
+
+        HistoryStore restarted(database, QString());
+        QVERIFY(importInsightsLog(restarted, log));
+        QCOMPARE(restarted.records().size(), 1);
+        QVERIFY(!QFile::exists(log));
+        QVERIFY(QFile::exists(log + QStringLiteral(".imported")));
+    }
+
     // Every period's numbers, as Home's export writes them, are the same
     // from History as they were from the log.
     void homesNumbersSurviveTheImport()
