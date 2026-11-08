@@ -39,6 +39,12 @@ bool profileOffered(const std::optional<QString> &profile, const AppSettings &se
     return !profile || !offeredWritingProfile(*profile, settings.refinement.writingProfiles, {}).isEmpty();
 }
 
+// Steps of its own keep one on, as the Pasting page's do.
+bool stepsValid(const PastingChoice &pasting)
+{
+    return !pasting.steps || pasting.steps->any();
+}
+
 // Tidies the App at `self` of the settings' Apps (-1 for one being added)
 // and says what it can't hold.
 EditRefusal checkApp(AppEntry &app, qsizetype self, const AppSettings &settings)
@@ -59,6 +65,9 @@ EditRefusal checkApp(AppEntry &app, qsizetype self, const AppSettings &settings)
         if (i != self && sharesMatch(app, apps.at(i))) {
             return EditRefusal::Taken;
         }
+    }
+    if (!stepsValid(app.pasting)) {
+        return EditRefusal::Incomplete;
     }
     const bool typeOffered = !app.type || appTypes().contains(*app.type);
     return typeOffered && profileOffered(app.writingProfile, settings) ? EditRefusal::None : EditRefusal::Missing;
@@ -101,11 +110,14 @@ SettingsEdit removeApp(AppSettings &settings, const QString &id)
     if (index < 0) {
         return {};
     }
-    keepVocabularyLimitsOf(settings, apps.at(index));
+    const SettingsEdit limitsBack = keepVocabularyLimitsOf(settings, apps.at(index));
     const auto putBack = takeEntry(apps, index, [](const AppEntry &entry, const AppEntry &removed) {
         return entry.id == removed.id || sharesMatch(entry, removed);
     });
-    return [putBack](AppSettings &draft) { putBack(draft.apps.apps); };
+    return [putBack, limitsBack](AppSettings &draft) {
+        putBack(draft.apps.apps);
+        limitsBack(draft);
+    };
 }
 
 EditRefusal editAppType(AppSettings &settings, AppCategory type, const EntryChange<AppTypeSettings> &change)
@@ -116,8 +128,8 @@ EditRefusal editAppType(AppSettings &settings, AppCategory type, const EntryChan
     return changeEntry(types, found == types.cend() ? -1 : found - types.cbegin(), change,
                        [&settings, type](AppTypeSettings &edited, qsizetype) {
                            edited.type = type;
-                           if (edited.pasting == PasteMethod::StandardPaste) {
-                               edited.pasting.reset();
+                           if (!stepsValid(edited.pasting)) {
+                               return EditRefusal::Incomplete;
                            }
                            return profileOffered(edited.writingProfile, settings) ? EditRefusal::None
                                                                                    : EditRefusal::Missing;

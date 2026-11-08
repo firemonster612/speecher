@@ -239,7 +239,7 @@ Page {
                     onClicked: Navigation.goToRow(Schema.row(learned.action.row).page, learned.action.row)
                 }
                 // Learning needs accessibility; the notice turns it on.
-                AccessibilityNotice { text: "Learning your corrections needs desktop accessibility." }
+                AccessibilityNotice {}
                 Reveal {
                     width: parent.width
                     open: Insights.corrections.recent.length > 0

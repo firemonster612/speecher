@@ -11,6 +11,7 @@
 #include <QHash>
 #include <QIcon>
 #include <QLocale>
+#include <QRegularExpression>
 #include <QSet>
 #include <QStandardPaths>
 
@@ -99,8 +100,8 @@ QStringList execArguments(const QString &exec)
 }
 
 // The ids the program an Exec line starts may report: its name, past an
-// `env VAR=…` prefix; for `flatpak run`, the app id it runs and any
-// --command it names.
+// `env VAR=…` prefix, unless it is an interpreter or wrapper that runs other
+// apps too; for `flatpak run`, the app id it runs and any --command it names.
 QStringList execIds(const QString &exec)
 {
     QStringList arguments = execArguments(exec);
@@ -114,6 +115,14 @@ QStringList execIds(const QString &exec)
         return {};
     }
     const QString program = QFileInfo(arguments.first()).fileName();
+    // An interpreter or wrapper runs many apps, so its name would tie this
+    // one to all of them; the desktop file id and window class tell it apart.
+    static const QRegularExpression runsOthers(
+        QStringLiteral("^(sh|bash|dash|zsh|env|sudo|pkexec|xdg-open|gtk-launch|kioclient\\d*|wine|mono|electron\\d*|gjs|"
+                       "(python|perl|ruby|node|lua|java|php)[\\d.]*)$"));
+    if (runsOthers.match(program).hasMatch()) {
+        return {};
+    }
     if (program != u"flatpak" || arguments.value(1) != u"run") {
         return {program};
     }

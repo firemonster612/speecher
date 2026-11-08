@@ -115,18 +115,18 @@ QStringList YdotoolDelivery::commandArguments(const QString &text)
     };
 }
 
-QStringList YdotoolDelivery::pasteShortcutArguments(PasteMethod method)
+QStringList YdotoolDelivery::pasteShortcutArguments(PasteKeyCombo keys)
 {
     QStringList arguments{
         QStringLiteral("key"),
         QStringLiteral("--key-delay=%1").arg(shortcutKeyDelayMs),
         QStringLiteral("29:1"),
     };
-    if (method == PasteMethod::TerminalPaste) {
+    if (keys == PasteKeyCombo::Terminal) {
         arguments << QStringLiteral("42:1");
     }
     arguments << QStringLiteral("47:1") << QStringLiteral("47:0");
-    if (method == PasteMethod::TerminalPaste) {
+    if (keys == PasteKeyCombo::Terminal) {
         arguments << QStringLiteral("42:0");
     }
     arguments << QStringLiteral("29:0");
@@ -177,7 +177,7 @@ bool YdotoolDelivery::type(const QString &text, QString *error)
 }
 
 void YdotoolDelivery::pasteFromClipboard(const QString &text,
-                                         PasteMethod method,
+                                         PasteKeyCombo keys,
                                          const std::function<void(std::function<void(bool)>)> &clearToInject,
                                          PasteDone done)
 {
@@ -207,7 +207,7 @@ void YdotoolDelivery::pasteFromClipboard(const QString &text,
     ProcessCommand release = ydotool(modifierReleaseArguments(), modifierTimeoutMs);
     // A modifier left down would turn the person's next keys into shortcuts.
     release.finishesAtShutdown = true;
-    const ProcessCommand paste = ydotool(pasteShortcutArguments(method), shortcutTimeoutMs);
+    const ProcessCommand paste = ydotool(pasteShortcutArguments(keys), shortcutTimeoutMs);
     runProcess(release, this, [this, clearToInject, paste, release, done](const ProcessResult &) {
         const auto press = [self = QPointer<YdotoolDelivery>(this), paste, release, done](bool clear) {
             if (!self) {

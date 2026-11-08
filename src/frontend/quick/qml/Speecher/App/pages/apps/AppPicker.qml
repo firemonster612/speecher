@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Templates as T
 import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
@@ -7,9 +8,11 @@ import Speecher.Wording
 import Speecher.App
 
 // Add app: a search over the apps dictated into lately and the installed
-// apps, then two ways to add one the lists miss: switching to it, and
-// matching it by name or window title. Picking an app that has an App
-// already opens that one; picked carries the App's id either way.
+// apps, in a list of its own height that scrolls, then, always in view
+// under it, two ways to add one the lists miss: switching to it, and
+// matching it by name or window title. Launchers of one program list as
+// one. Picking an app that has an App already opens that one; picked
+// carries the App's id either way.
 Reveal {
     id: picker
 
@@ -19,6 +22,8 @@ Reveal {
     readonly property string query: search.text.trim().toLowerCase()
     // At most this many installed apps show; typing narrows the rest.
     readonly property int shownInstalled: 40
+    // The tallest the lists get before they scroll.
+    readonly property int listHeight: 340
     readonly property var recent: Apps.recent.filter(a => _found(a.name, [a.appId]))
     readonly property var installedFound: Apps.installed.filter(a => _found(a.name, a.ids))
     property bool matching: false
@@ -40,12 +45,14 @@ Reveal {
         const id = entry || Apps.add(app).id
         if (id) { close(); picked(id) }
     }
-    // What a listed app gets now, where that is not what any other app gets.
+    // What a listed app gets now, where that is not what any other app
+    // gets, and the other launchers it is one app with.
     function _detail(app) {
-        if (app.entry) return t.hasSettings
+        const also = app.also && app.also.length ? t.sameAppAs(app.also) : ""
+        if (app.entry) return [t.hasSettings, also].filter(s => s).join(". ")
         const type = app.type !== "general" && app.type !== "unknown" ? Schema.apps.type(app.type).one : ""
         const profile = app.profile !== (Apps.types.find(o => o.id === "general") || {}).profile ? Library.profileName(app.profile) + " profile" : ""
-        return [type, profile].filter(s => s).join(", ")
+        return [[type, profile].filter(s => s).join(", "), also].filter(s => s).join(". ")
     }
 
     Connections {
@@ -84,55 +91,74 @@ Reveal {
                 Button { id: cancel; anchors.right: parent.right; text: Words.cancel; variant: "ghost"; onClicked: picker.close() }
             }
 
-            Txt { visible: picker.recent.length > 0; text: picker.t.recent; variant: "small"; tone: "secondary" }
-            RowList {
-                id: recentList
+            // The lists scroll in a frame of their own, so the ways to add
+            // an app they miss stay in view.
+            Item {
                 width: parent.width
-                values: picker.recent
-                keyOf: a => a.appId
-                delegate: PickerRow {
-                    required property string key
-                    required property int index
-                    app: recentList.entry(key)
-                    first: index === 0
-                    detail: picker._detail(app)
-                    onClicked: picker._choose(app.entry, { name: app.name, icon: app.icon, ids: [app.appId] })
-                }
-            }
+                height: Math.min(lists.implicitHeight, picker.listHeight)
+                clip: true
+                Flickable {
+                    id: listsView
+                    anchors.fill: parent
+                    contentHeight: lists.implicitHeight
+                    boundsBehavior: Flickable.StopAtBounds
+                    T.ScrollBar.vertical: ScrollBar { persistent: true }
+                    Column {
+                        id: lists
+                        width: listsView.width
+                        spacing: Theme.space3
+                        Txt { visible: picker.recent.length > 0; text: picker.t.recent; variant: "small"; tone: "secondary" }
+                        RowList {
+                            id: recentList
+                            width: parent.width
+                            values: picker.recent
+                            keyOf: a => a.appId
+                            delegate: PickerRow {
+                                required property string key
+                                required property int index
+                                app: recentList.entry(key)
+                                first: index === 0
+                                detail: picker._detail(app)
+                                onClicked: picker._choose(app.entry, { name: app.name, icon: app.icon, ids: [app.appId] })
+                            }
+                        }
 
-            Txt { text: picker.t.installed; variant: "small"; tone: "secondary" }
-            Column {
-                    id: installedColumn
-                    width: parent.width
-                    RowList {
-                        id: installedList
-                        width: parent.width
-                        values: picker.installedFound.slice(0, picker.shownInstalled)
-                        keyOf: a => a.ids.join("|")
-                        delegate: PickerRow {
-                            required property string key
-                            required property int index
-                            app: installedList.entry(key)
-                            first: index === 0
-                            detail: picker._detail(app)
-                            onClicked: picker._choose(app.entry, { name: app.name, icon: app.icon, ids: app.ids })
+                        Txt { text: picker.t.installed; variant: "small"; tone: "secondary" }
+                        Column {
+                            id: installedColumn
+                            width: parent.width
+                            RowList {
+                                id: installedList
+                                width: parent.width
+                                values: picker.installedFound.slice(0, picker.shownInstalled)
+                                keyOf: a => a.ids.join("|")
+                                delegate: PickerRow {
+                                    required property string key
+                                    required property int index
+                                    app: installedList.entry(key)
+                                    first: index === 0
+                                    detail: picker._detail(app)
+                                    onClicked: picker._choose(app.entry, { name: app.name, icon: app.icon, ids: app.ids })
+                                }
+                            }
+                            Reveal {
+                                open: Apps.scanning || picker.installedFound.length === 0
+                                EmptyState { compact: true; title: Apps.scanning ? picker.t.scanning : picker.t.noMatch }
+                            }
+                            Reveal {
+                                open: picker.installedFound.length > picker.shownInstalled
+                                Txt {
+                                    x: Theme.rowInset
+                                    topPadding: Theme.space2
+                                    bottomPadding: Theme.space2
+                                    text: picker.t.moreInstalled(picker.installedFound.length - picker.shownInstalled)
+                                    variant: "small"
+                                    tone: "secondary"
+                                }
+                            }
                         }
                     }
-                    Reveal {
-                        open: Apps.scanning || picker.installedFound.length === 0
-                        EmptyState { compact: true; title: Apps.scanning ? picker.t.scanning : picker.t.noMatch }
-                    }
-                    Reveal {
-                        open: picker.installedFound.length > picker.shownInstalled
-                        Txt {
-                            x: Theme.rowInset
-                            topPadding: Theme.space2
-                            bottomPadding: Theme.space2
-                            text: picker.t.moreInstalled(picker.installedFound.length - picker.shownInstalled)
-                            variant: "small"
-                            tone: "secondary"
-                        }
-                    }
+                }
             }
 
             Txt { text: picker.t.notListed; variant: "small"; tone: "secondary" }

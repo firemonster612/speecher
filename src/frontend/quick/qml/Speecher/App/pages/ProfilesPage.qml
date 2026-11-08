@@ -30,12 +30,8 @@ Page {
         id: profilesSection
         SearchLanding { rowIds: ["writingProfileBehavior"]; target: profilesSection }
         // Without app detection, every dictation takes the profile for apps
-        // Speecher doesn't recognize; with another way to detect apps, only
-        // some may.
-        AccessibilityNotice {
-            text: System.identifiesAppsWithoutAccessibility ? Schema.row("writingProfileBehavior").limited
-                : Schema.row("writingProfileBehavior").undetected.arg(Library.profileName((Apps.types.find(o => o.id === "general") || { profile: "" }).profile))
-        }
+        // Speecher doesn't recognize.
+        AccessibilityNotice {}
         Item {
             width: parent.width
             height: Math.max(list.implicitHeight + Theme.space2, editorPane.implicitHeight + Theme.space5 * 2)

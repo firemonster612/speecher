@@ -2,8 +2,9 @@
 .import "pasting.js" as Pasting
 
 // The Apps page's rows and wording: the person's Apps, the App Types, and
-// the picker that adds an app. Type ids are core's category names, Pasting
-// choice ids its paste method names, and an empty id is "Same as …".
+// the picker that adds an app. Type ids are core's category names, paste
+// keys' ids its key names (Pasting.keyChoices), and an empty id is "Same as
+// …".
 
 var mac = Qt.platform.os === "osx";
 var windows = Qt.platform.os === "windows";
@@ -26,15 +27,15 @@ var types = [
 ];
 function type(id) { return types.find(t => t.id === id) || types[types.length - 1] }
 
-// What a Pasting choice does to the steps, by paste method. Terminals press
-// ⌘V on macOS too, so it has no Terminal keys.
-var pastingChoices = [
-    { id: "standard_paste", label: "Use the steps on Pasting", icon: "list-checks" },
-    { id: "terminal_paste", label: "Terminal keys", help: "The steps, pressing " + Pasting.terminalKeys + ".", icon: "square-terminal" },
-    { id: "direct_insert", label: "Skip paste keys", help: "Inserts through accessibility and never presses the paste keys.", icon: "text-cursor-input" },
-    { id: "clipboard_only", label: "Clipboard only", help: "Leaves the words on the clipboard for you to paste.", icon: "clipboard" }
-].filter(o => o.id !== "terminal_paste" || !mac);
-function pastingLabel(id) { return (pastingChoices.find(o => o.id === (id || "standard_paste")) || pastingChoices[0]).label }
+// The Pasting row's one choice besides "Same as …": steps of its own, the
+// Pasting page's three switches.
+var ownSteps = { id: "own", label: "Its own steps", icon: "list-checks" };
+// What an App's or App Type's own pasting adds to its row: "Own steps
+// (Insert, Keep)", and the keys where they're its own.
+function pastingSummary(settings) {
+    return [settings.steps ? "Own steps (" + Pasting.stepsText(settings.steps) + ")" : "",
+            settings.keys ? Pasting.keysLabel(settings.keys) : ""].filter(s => s)
+}
 
 // An App's or App Type's History choice, which can only lower what
 // Privacy & data keeps (General's historyKeeps, whose option ids these
@@ -69,17 +70,43 @@ var t = {
     profile: "Writing profile",
     pasting: "Pasting",
     history: "History",
-    leftOut: "Left out of History",
+    inHistory: id => historyLabel(id) + " in History",
     recognizedAs: "Recognized as",
     byName: "Name contains",
     byTitle: "Window title contains",
     titleOnlyType: "A window title says what a window shows, not which app it is, so it doesn't set the type.",
+    titleOnlyFollows: "What it follows depends on the app the window is in. Test it with that app open to see.",
+    precedence: "When several apps match one window, those recognized by id come first, then the rest in list order, and each setting comes from the first that sets it.",
+    editMatching: "Name and recognition",
+    appName: "Name",
+    matchKinds: [
+        { id: "id", label: "App id is" },
+        { id: "name", label: "Name contains" },
+        { id: "title", label: "Window title contains" }
+    ],
+    matchKindsHelp: "Any one matching is enough. A window title never sets the type.",
+    addMatch: "Add a match",
     terminalsNote: "Anything running in a terminal pastes like Terminals unless its app has its own Pasting.",
+    pasteKeys: "Paste keys",
+    pasteKeysHelp: "What Press paste keys presses.",
+    lastStepOn: "The last step on stays on.",
     remove: "Remove app",
-    removeHelp: "It goes back to Automatic everywhere. What Speecher learned in it stays.",
+    removeHelp: "It goes back to Automatic everywhere. What Speecher learned in it stays, and so do the words limited to it.",
     automatic: label => "Automatic (" + label + ")",
-    theSteps: "the steps on Pasting",
+    pastingPage: "Pasting",
     otherProfileHelp: "The profile for apps Speecher doesn't recognize.",
+    // Test's words.
+    test: "Test",
+    testTitle: "Test an app",
+    testAgain: "Test again",
+    close: "Close",
+    testHelp: "Switch to the app you want to test. Speecher captures it as dictation would, and changes nothing.",
+    testFailed: "Speecher couldn't tell which app that was.",
+    matchedApps: names => "Your apps that match it, in the order they count: " + names.join(", ") + ".",
+    matchedNone: "None of your apps match it, so it follows its type.",
+    from: place => place ? "from " + place : "",
+    builtInList: "the built-in list",
+    historyAsPrivacy: "As Privacy & data keeps",
     // The picker's words.
     search: "Search apps",
     recent: "Recently dictated into",
@@ -87,6 +114,7 @@ var t = {
     scanning: "Looking for installed apps…",
     noMatch: "No app by that name",
     hasSettings: "Has settings",
+    sameAppAs: names => "One app with " + names.join(", "),
     moreInstalled: count => count + " more. Type to narrow the list.",
     notListed: "Not in the list?",
     switchToIt: "Switch to it",
@@ -104,6 +132,7 @@ var t = {
 // Why Apps refused an edit, by core's reason.
 var refusals = {
     blank: "Type what to match the app by.",
+    incomplete: "Keep one step on.",
     taken: "Another app is matched by that already.",
     missing: "It, or the profile it picks, was deleted meanwhile.",
     invalid: "Speecher couldn't save this."
@@ -115,15 +144,15 @@ function summary(entry, profileName) {
     const parts = []
     if (entry.type) parts.push(type(entry.type).one)
     if (entry.profile) parts.push(profileName(entry.profile) + " profile")
-    if (entry.pasting) parts.push(pastingLabel(entry.pasting))
-    if (entry.history) parts.push(t.leftOut)
+    parts.push(...pastingSummary(entry))
+    if (entry.history) parts.push(t.inHistory(entry.history))
     return parts.length ? parts.join(", ") : "Same as " + type(entry.effective.type).label
 }
 // What an App Type's row says: its profile, Pasting and History choices.
 function typeSummary(settings, profileName) {
     const parts = [settings.profile ? profileName(settings.profile) + " profile" : "Same as Other apps"]
-    if (settings.pasting) parts.push(pastingLabel(settings.pasting))
-    if (settings.history) parts.push(t.leftOut)
+    parts.push(...pastingSummary(settings))
+    if (settings.history) parts.push(t.inHistory(settings.history))
     return parts.join(", ")
 }
 

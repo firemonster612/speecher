@@ -9,8 +9,8 @@ import "text"
 
 // How words get into apps: the delivery steps in the order core tries
 // them, each with what it relies on here; then the options, and a read-only
-// list of the Apps and App Types whose Pasting choice narrows the steps,
-// each opening in Apps.
+// list of the Apps and App Types with steps or paste keys of their own, each
+// opening in Apps.
 Page {
     id: page
     title: Schema.page("pasting").title
@@ -20,11 +20,10 @@ Page {
     function _runs(id) { return _steps.some(s => s.id === id && s.on && s.ready) }
     // The steps that are on, in words, each marked where this computer
     // can't run it yet: [{ icon, label, ready }].
-    readonly property var _route: _steps.filter(s => s.on).map(s => Object.assign({ id: s.id, ready: s.ready }, ({
-        insert: { icon: "text-cursor-input", label: "Insert" },
-        press: { icon: "keyboard", label: "Copy, press " + Schema.pasting.pasteKeys },
-        keep: { icon: "clipboard", label: "Keep on clipboard" }
-    })[s.id]))
+    readonly property var _route: _steps.filter(s => s.on).map(s => ({
+        id: s.id, ready: s.ready, icon: Schema.row(Schema.pasting.rowOf[s.id]).icon,
+        label: Schema.pasting.stepLabels[s.id] + (s.id === "press" ? " (" + Schema.pasting.pasteKeys + ")" : "")
+    }))
     // Where the words end up (System.pastingOutcome): the words reach the
     // app, or stay on a clipboard Keep can use.
     readonly property bool _reachesApp: System.pastingOutcome === "delivers"
@@ -57,7 +56,7 @@ Page {
         const applies = Qt.platform.os === "linux" ? _runs("press") : _reachesApp
         return [reads ? "" : "Reading the selection needs " + Schema.pasting.needs.accessibility.label
                              + (Qt.platform.os === "linux" ? ", which Insert above turns on." : "."),
-                applies ? "" : Qt.platform.os === "linux" ? "Applying an edit needs Press the paste keys, on and ready."
+                applies ? "" : Qt.platform.os === "linux" ? "Applying an edit needs Press paste keys, on and ready."
                                                           : "Applying an edit needs Insert or Press to run."]
             .filter(s => s).join(" ")
     }
@@ -94,14 +93,15 @@ Page {
     Section {
         id: differently
         objectName: "appsPasteDifferently"
-        // What each narrows the steps to here, App Types first.
-        readonly property var entries: Apps.types.filter(o => o.pasting).map(o => ({
+        // Those with steps or keys of their own, App Types first, with what
+        // they do here.
+        readonly property var entries: Apps.types.filter(o => o.steps || o.keys).map(o => ({
             id: "apptype:" + o.id, name: Schema.apps.type(o.id).label, typeIcon: Schema.apps.type(o.id).icon, icon: "",
-            method: o.pasting, terminalWins: o.id === "ai_coding" && Apps.types.some(o => o.id === "terminal" && o.pasting)
-        })).concat(Apps.entries.filter(e => e.pasting && e.pasting !== "standard_paste").map(e => ({
-            id: "appentry:" + e.id, name: e.name, typeIcon: "", icon: e.icon, method: e.pasting, terminalWins: false
+            own: o, effective: o.effective,
+            terminalWins: o.id === "ai_coding" && Apps.types.some(o => o.id === "terminal" && (o.steps || o.keys))
+        })).concat(Apps.entries.filter(e => e.steps || e.keys).map(e => ({
+            id: "appentry:" + e.id, name: e.name, typeIcon: "", icon: e.icon, own: e, effective: e.effective, terminalWins: false
         })))
-        readonly property var _check: Health.find(System.checks, "desktopAccessibility")
         title: Schema.row("appsPasteDifferently").label
         caption: Schema.row("appsPasteDifferently").help
         actions: [ Button { text: "Change in Apps"; size: "small"; onClicked: Navigation.follow("apps", "appTypes") } ]
@@ -109,9 +109,8 @@ Page {
 
         // Insert's row above turns accessibility on, so this only says why.
         AccessibilityNotice {
-            open: differently.entries.length > 0 && (differently._check.reason === "off" || differently._check.reason === "unsupported")
+            shown: differently.entries.length > 0
             offersFix: false
-            text: Schema.pasting.appsNotice(System.identifiesAppsWithoutAccessibility)
         }
         RowList {
             id: differentList
@@ -146,14 +145,11 @@ Page {
                     Txt {
                         objectName: "differentlyResult"
                         width: parent.width
-                        // The choice, then what it does here, unless that
-                        // already says it ("Clipboard only").
-                        text: {
-                            const method = differentRow.entry.method
-                            const label = Schema.apps.pastingLabel(method)
-                            const result = Schema.pasting.ruleResult(System.rulePlan(method), method, differentRow.entry.terminalWins)
-                            return result.startsWith(label) ? result : label + ": " + result
-                        }
+                        // What it sets, then what that does here.
+                        text: [Schema.apps.pastingSummary(differentRow.entry.own).join(", "),
+                               Schema.pasting.pastingResult(System.stepsPlan(differentRow.entry.effective.steps),
+                                                            differentRow.entry.effective.keys, differentRow.entry.terminalWins)]
+                            .join(": ")
                         variant: "small"
                         tone: "secondary"
                         wrapMode: Text.WordWrap
@@ -164,7 +160,7 @@ Page {
         }
         Reveal {
             open: differently.entries.length === 0
-            EmptyState { compact: true; title: "Every app follows the steps above"; text: "Give an app or app type its own way of pasting in Apps." }
+            EmptyState { compact: true; title: "Every app follows the steps above"; text: "Give an app or app type its own steps or paste keys in Apps." }
         }
     }
 

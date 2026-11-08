@@ -1,7 +1,5 @@
 #pragma once
 
-#include "core/PasteMethod.h"
-
 #include <QString>
 #include <QStringList>
 
@@ -9,21 +7,44 @@
 
 namespace speecher {
 
-// The three ways a delivery gets words out, in the order it tries them, and
-// the plan one delivery follows once its Paste Rule has narrowed them. The
-// Pasting page, the setup assistant, search and TextDelivery all read this,
-// so what the settings show is what a delivery does.
+// The three ways a delivery gets words out, in the order it tries them, the
+// paste keys Press presses, and the plan one delivery follows once its App's
+// Pasting choice has had its say. The Pasting page, the Apps page, the setup
+// assistant, search and TextDelivery all read this, so what the settings
+// show is what a delivery does.
 enum class DeliveryStep {
     // Writes the words into the focused field through accessibility.
     Insert,
     // Puts the words on the clipboard and presses the paste keys, when
-    // insertion is off, unavailable or rejected.
+    // insertion is off, unavailable or rejected. With Keep off it borrows
+    // the clipboard and puts the previous one back after a confirmed paste,
+    // so Press alone pastes and leaves the clipboard as it was.
     Press,
     // Leaves the words on the clipboard after delivery. Off, Speecher puts
     // the previous clipboard back after a confirmed paste and copies nothing
     // on its own.
     Keep,
 };
+
+// The keys Press presses: the usual paste keys (Ctrl+V, ⌘V on macOS), or a
+// terminal's Ctrl+Shift+V.
+enum class PasteKeyCombo {
+    Standard,
+    Terminal,
+};
+
+// Whether a terminal's paste keys differ from everyone else's. macOS presses
+// ⌘V everywhere, so it has no choice of keys.
+#ifdef Q_OS_MACOS
+inline constexpr bool terminalKeysDiffer = false;
+#else
+inline constexpr bool terminalKeysDiffer = true;
+#endif
+
+// "standard" or "terminal", as settings store the keys; anything else reads
+// as Standard.
+QString pasteKeyComboName(PasteKeyCombo keys);
+PasteKeyCombo pasteKeyComboFromName(const QString &name);
 
 // Which steps the person has on. At least one is: setting the last one off
 // is refused (withStep).
@@ -40,14 +61,23 @@ struct DeliverySteps {
     DeliverySteps withStep(DeliveryStep step, bool on) const;
 };
 
-// What one delivery does: the steps the settings allow after the winning
-// Paste Rule narrowed them, and which paste keys Press uses. A rule never
-// turns on a step the settings have off.
+// How an App or App Type gets its words out, its Pasting choice: steps of
+// its own, paste keys of its own, either or both. A part left unset is the
+// same as what the App or App Type follows, and in the end the Pasting
+// page's steps and the usual paste keys.
+struct PastingChoice {
+    std::optional<DeliverySteps> steps;
+    std::optional<PasteKeyCombo> keys;
+
+    bool operator==(const PastingChoice &other) const = default;
+    bool isSet() const { return steps || keys; }
+};
+
+// What one delivery does: its App's steps, or the Pasting page's, and the
+// keys Press presses.
 struct DeliveryPlan {
     DeliverySteps steps;
-    // Ctrl+Shift+V, a terminal's paste keys, rather than Ctrl+V. macOS
-    // presses ⌘V either way.
-    bool terminalKeys = false;
+    PasteKeyCombo keys = PasteKeyCombo::Standard;
 
     bool operator==(const DeliveryPlan &other) const = default;
     // The steps that are on, in the order delivery tries them, by name.
@@ -57,16 +87,9 @@ struct DeliveryPlan {
 // "insert", "press" or "keep", as settings rows and the UI name the steps.
 QString deliveryStepName(DeliveryStep step);
 
-// The plan for a Target whose winning rule says method: Standard paste
-// takes the steps as they are, Terminal paste the same with the terminal's
-// keys, Direct insertion skips Press, and Clipboard only skips Insert and
-// Press.
-DeliveryPlan deliveryPlan(const DeliverySteps &steps, PasteMethod method);
-
-// The step a rule with this method relies on that steps leave off, so the
-// rule can't do what it says: Terminal paste needs Press, Clipboard only
-// needs Keep. Nothing for Standard paste, which only follows the steps, nor
-// for Direct insertion, which only takes Press away.
-std::optional<DeliveryStep> stepRuleNeeds(const DeliverySteps &steps, PasteMethod method);
+// The plan for a Target whose App's Pasting choice, as resolveApp settles
+// it, is pasting: its steps where it has some, else steps, and its keys.
+// macOS presses ⌘V whichever keys it names.
+DeliveryPlan deliveryPlan(const DeliverySteps &steps, const PastingChoice &pasting);
 
 } // namespace speecher

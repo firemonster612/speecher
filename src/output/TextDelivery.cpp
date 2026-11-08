@@ -28,8 +28,8 @@ namespace {
 // The keyboard backends paste what TextDelivery::deliver already copied.
 class YdotoolBackend final : public DeliveryBackend {
 public:
-    explicit YdotoolBackend(PasteMethod pasteMethod)
-        : m_pasteMethod(pasteMethod)
+    explicit YdotoolBackend(PasteKeyCombo keys)
+        : m_keys(keys)
     {
     }
 
@@ -37,14 +37,14 @@ public:
                  const PasteGate &clearToInject,
                  std::function<void(const Outcome &)> done) override
     {
-        m_ydotool.pasteFromClipboard(content.plainText, m_pasteMethod, clearToInject,
+        m_ydotool.pasteFromClipboard(content.plainText, m_keys, clearToInject,
                                      [done](bool pasted, bool noInputSent, const QString &error) {
                                          done({pasted, noInputSent, error});
                                      });
     }
 
 private:
-    PasteMethod m_pasteMethod = PasteMethod::StandardPaste;
+    PasteKeyCombo m_keys = PasteKeyCombo::Standard;
     // Kept as long as the backend: its answer comes from ydotool's, later.
     YdotoolDelivery m_ydotool;
 };
@@ -87,8 +87,8 @@ public:
 #ifdef SPEECHER_WITH_WIN
 class WinPasteBackend final : public DeliveryBackend {
 public:
-    explicit WinPasteBackend(PasteMethod pasteMethod)
-        : m_pasteMethod(pasteMethod)
+    explicit WinPasteBackend(PasteKeyCombo keys)
+        : m_keys(keys)
     {
     }
 
@@ -98,13 +98,13 @@ public:
     {
         Outcome outcome;
         bool inputSent = false;
-        outcome.ok = WinPasteDelivery().paste(m_pasteMethod, askedNow(clearToInject), &outcome.error, &inputSent);
+        outcome.ok = WinPasteDelivery().paste(m_keys, askedNow(clearToInject), &outcome.error, &inputSent);
         outcome.noInputSent = !outcome.ok && !inputSent;
         done(outcome);
     }
 
 private:
-    PasteMethod m_pasteMethod = PasteMethod::StandardPaste;
+    PasteKeyCombo m_keys = PasteKeyCombo::Standard;
 };
 #endif // SPEECHER_WITH_WIN
 
@@ -141,13 +141,13 @@ void TextDelivery::useDefaultBackendFactory()
 {
     m_backendFactory = [](const QString &method,
                           const OutputSettings &settings,
-                          PasteMethod pasteMethod) -> std::unique_ptr<DeliveryBackend> {
+                          PasteKeyCombo keys) -> std::unique_ptr<DeliveryBackend> {
         Q_UNUSED(method)
         Q_UNUSED(settings)
-        Q_UNUSED(pasteMethod)
+        Q_UNUSED(keys)
 #ifdef SPEECHER_WITH_WAYLAND
         if (method == QString::fromLatin1(PasteKeys::Ydotool)) {
-            return std::make_unique<YdotoolBackend>(pasteMethod);
+            return std::make_unique<YdotoolBackend>(keys);
         }
 #endif
 #ifdef SPEECHER_WITH_MAC
@@ -157,7 +157,7 @@ void TextDelivery::useDefaultBackendFactory()
 #endif
 #ifdef SPEECHER_WITH_WIN
         if (method == QString::fromLatin1(PasteKeys::WinPaste)) {
-            return std::make_unique<WinPasteBackend>(pasteMethod);
+            return std::make_unique<WinPasteBackend>(keys);
         }
 #endif
         return nullptr;
@@ -434,8 +434,7 @@ private:
         const QString method = pressMethod(m_request.settings);
         m_backend = method.isEmpty() || !m_backendFactory
             ? nullptr
-            : m_backendFactory(method, m_request.settings,
-                               m_choice.plan.terminalKeys ? PasteMethod::TerminalPaste : PasteMethod::StandardPaste);
+            : m_backendFactory(method, m_request.settings, m_choice.plan.keys);
         if (!m_backend) {
             finishUndelivered(copiedMessage(), QStringLiteral("the paste keys can't be pressed on this computer yet"));
             return;
@@ -661,14 +660,14 @@ private:
 };
 
 TextDelivery::PlanChoice TextDelivery::choosePlan(const OutputSettings &settings,
-                                                  std::optional<PasteMethod> pasting,
+                                                  const PastingChoice &pasting,
                                                   const Target &target)
 {
-    PlanChoice choice{deliveryPlan(settings.steps, pasting.value_or(PasteMethod::StandardPaste))};
+    PlanChoice choice{deliveryPlan(settings.steps, pasting)};
     const bool trackableTarget = target.hasIdentity() || target.accessible;
     // Pasting blindly into whatever has focus is what the steps alone ask
     // for; an app's or app type's choice needs its app known.
-    choice.currentFocusFallback = !trackableTarget && !pasting && choice.plan.steps.press;
+    choice.currentFocusFallback = !trackableTarget && !pasting.isSet() && choice.plan.steps.press;
     if (target.secure || (!trackableTarget && !choice.currentFocusFallback)) {
         choice.plan.steps.insert = false;
         choice.plan.steps.press = false;
@@ -697,7 +696,7 @@ void TextDelivery::setAnswerDeadlineMs(int ms)
 void TextDelivery::deliver(const OutputSettings &settings,
                            const DeliveryContent &content,
                            const Target &target,
-                           std::optional<PasteMethod> pasting)
+                           const PastingChoice &pasting)
 {
     m_requests.append({settings, content, target, pasting});
     // Never inside this call: with a provider and backends that answer at

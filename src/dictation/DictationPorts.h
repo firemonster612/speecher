@@ -224,11 +224,11 @@ public:
     // Returns at once; delivered() follows with what became of the words,
     // never from inside deliver(). Deliveries are answered in the order they
     // were asked for. pasting is the Target's Pasting choice (resolveApp),
-    // unset where no App or App Type narrows the steps.
+    // each part unset where no App or App Type sets it.
     virtual void deliver(const OutputSettings &settings,
                          const DeliveryContent &content,
                          const Target &target,
-                         std::optional<PasteMethod> pasting) = 0;
+                         const PastingChoice &pasting) = 0;
 
 signals:
     void delivered(const speecher::DeliveryResult &result);

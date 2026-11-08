@@ -257,7 +257,7 @@ fi
             provider.verified = true;
             QList<QString> attempts;
             QHash<QString, bool> results{{virtualKeyboardMethod(), true}};
-            TextDelivery delivery([&attempts, &results](const QString &method, const OutputSettings &, PasteMethod) {
+            TextDelivery delivery([&attempts, &results](const QString &method, const OutputSettings &, PasteKeyCombo) {
                 return std::make_unique<FakeBackend>(method, &attempts, &results);
             }, &provider);
             OutputSettings settings;
@@ -434,33 +434,21 @@ fi
 #endif
     }
 
-    // A rule narrows the steps and never turns one on; the route lists
-    // what is left in the order delivery tries it.
-    void rulesNarrowTheDeliverySteps()
+    // An App's own steps replace the Pasting page's, and its keys are the
+    // ones Press presses; what it leaves unset is the page's and Ctrl+V.
+    void anAppsPastingChoiceSetsTheStepsAndKeys()
     {
-        const auto route = [](DeliverySteps steps, PasteMethod method) {
-            return deliveryPlan(steps, method).route().join(u' ');
-        };
         const DeliverySteps all;
-        QCOMPARE(route(all, PasteMethod::StandardPaste), QStringLiteral("insert press keep"));
-        QCOMPARE(route(all, PasteMethod::TerminalPaste), QStringLiteral("insert press keep"));
-        QVERIFY(deliveryPlan(all, PasteMethod::TerminalPaste).terminalKeys);
-        QVERIFY(!deliveryPlan(all, PasteMethod::StandardPaste).terminalKeys);
-        QCOMPARE(route(all, PasteMethod::DirectInsert), QStringLiteral("insert keep"));
-        QCOMPARE(route(all, PasteMethod::ClipboardOnly), QStringLiteral("keep"));
-
         // The owner's "only press Ctrl+V".
         const DeliverySteps pressOnly{.insert = false, .press = true, .keep = false};
-        QCOMPARE(route(pressOnly, PasteMethod::StandardPaste), QStringLiteral("press"));
-        QCOMPARE(route(pressOnly, PasteMethod::DirectInsert), QString());
-        QCOMPARE(route(pressOnly, PasteMethod::ClipboardOnly), QString());
-
-        QCOMPARE(stepRuleNeeds(pressOnly, PasteMethod::StandardPaste), std::nullopt);
-        QCOMPARE(stepRuleNeeds(pressOnly, PasteMethod::TerminalPaste), std::nullopt);
-        QCOMPARE(stepRuleNeeds(pressOnly, PasteMethod::DirectInsert), std::nullopt);
-        QCOMPARE(stepRuleNeeds(pressOnly, PasteMethod::ClipboardOnly), std::optional(DeliveryStep::Keep));
-        QCOMPARE(stepRuleNeeds({.insert = true, .press = false, .keep = true}, PasteMethod::TerminalPaste),
-                 std::optional(DeliveryStep::Press));
+        QCOMPARE(deliveryPlan(all, {}), (DeliveryPlan{all, PasteKeyCombo::Standard}));
+        QCOMPARE(deliveryPlan(all, {pressOnly, std::nullopt}), (DeliveryPlan{pressOnly, PasteKeyCombo::Standard}));
+        QCOMPARE(deliveryPlan(pressOnly, {std::nullopt, PasteKeyCombo::Terminal}),
+                 (DeliveryPlan{pressOnly, PasteKeyCombo::Terminal}));
+        QCOMPARE(DeliveryPlan{pressOnly}.route(), QStringList{QStringLiteral("press")});
+        QCOMPARE(DeliveryPlan{all}.route(), (QStringList{QStringLiteral("insert"), QStringLiteral("press"), QStringLiteral("keep")}));
+        QVERIFY(!PastingChoice{}.isSet());
+        QVERIFY((PastingChoice{std::nullopt, PasteKeyCombo::Standard}.isSet()));
     }
 
     // The last step on stays on.
@@ -476,15 +464,15 @@ fi
 
     void accessibleTerminalWithoutApplicationIdUsesTerminalPaste()
     {
-        PasteMethod attemptedMethod = PasteMethod::ClipboardOnly;
+        std::optional<PasteKeyCombo> attemptedKeys;
         QList<QString> attempts;
         QHash<QString, bool> results{{QString::fromLatin1(PasteKeys::Ydotool), true}};
         FakeTargetProvider targetProvider;
         TextDelivery delivery(
-            [&attemptedMethod, &attempts, &results](const QString &method,
-                                                   const OutputSettings &,
-                                                   PasteMethod pasteMethod) {
-                attemptedMethod = pasteMethod;
+            [&attemptedKeys, &attempts, &results](const QString &method,
+                                                 const OutputSettings &,
+                                                 PasteKeyCombo keys) {
+                attemptedKeys = keys;
                 return std::make_unique<FakeBackend>(method, &attempts, &results);
             },
             &targetProvider);
@@ -499,7 +487,7 @@ fi
                        resolveApp(target, {}).pasting);
 
         // macOS terminals take Cmd+V like everything else.
-        QCOMPARE(attemptedMethod, terminalKeysDiffer ? PasteMethod::TerminalPaste : PasteMethod::StandardPaste);
+        QCOMPARE(attemptedKeys, terminalKeysDiffer ? PasteKeyCombo::Terminal : PasteKeyCombo::Standard);
     }
 
     void aiCodingProcessesAreRecognizedByNameOrCommandLine()
@@ -1049,7 +1037,7 @@ fi
             QHash<QString, bool> results{{virtualKeyboardMethod(), true}};
             FakeTargetProvider targetProvider;
             targetProvider.directInsertionAvailable = true;
-            TextDelivery delivery([&attempts, &results](const QString &method, const OutputSettings &, PasteMethod) {
+            TextDelivery delivery([&attempts, &results](const QString &method, const OutputSettings &, PasteKeyCombo) {
                 return std::make_unique<FakeBackend>(method, &attempts, &results);
             }, &targetProvider);
             OutputSettings settings;
@@ -1104,7 +1092,7 @@ fi
             }
             bool &prepared;
         };
-        TextDelivery delivery([&](const QString &, const OutputSettings &, PasteMethod) {
+        TextDelivery delivery([&](const QString &, const OutputSettings &, PasteKeyCombo) {
             return std::make_unique<PasteBackend>(targetProvider.prepared);
         }, &targetProvider);
         OutputSettings settings;
@@ -1144,7 +1132,7 @@ fi
             }
             std::function<void(const Outcome &)> &held;
         };
-        TextDelivery delivery([&held](const QString &, const OutputSettings &, PasteMethod) {
+        TextDelivery delivery([&held](const QString &, const OutputSettings &, PasteKeyCombo) {
             return std::make_unique<Backend>(held);
         }, &targetProvider);
         delivery.setAnswerDeadlineMs(50);
@@ -1158,8 +1146,8 @@ fi
         target.applicationId = QStringLiteral("editor");
         const DeliveryContent content = makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText);
 
-        delivery.deliver(settings, content, target, std::nullopt);
-        delivery.deliver(settings, content, target, std::nullopt);
+        delivery.deliver(settings, content, target, {});
+        delivery.deliver(settings, content, target, {});
         QTRY_COMPARE(answers.size(), 2);
         QVERIFY(!answers.at(0).ok);
         QCOMPARE(answers.at(0).message, QStringLiteral("Delivery did not finish in time"));
@@ -1194,7 +1182,7 @@ fi
             bool &gone;
         };
         auto delivery = std::make_unique<TextDelivery>(
-            [&](const QString &, const OutputSettings &, PasteMethod) {
+            [&](const QString &, const OutputSettings &, PasteKeyCombo) {
                 return std::make_unique<Backend>(waiting, backendGone);
             },
             &targetProvider);
@@ -1203,7 +1191,7 @@ fi
         settings.ydotoolEnabled = true;
         Target target;
         target.applicationId = QStringLiteral("editor");
-        delivery->deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target, std::nullopt);
+        delivery->deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target, {});
         QTRY_VERIFY(waiting);
 
         delivery.reset();
@@ -1265,7 +1253,7 @@ fi
             }
             int &pressed;
         };
-        TextDelivery delivery([&pressed](const QString &, const OutputSettings &, PasteMethod) {
+        TextDelivery delivery([&pressed](const QString &, const OutputSettings &, PasteKeyCombo) {
             return std::make_unique<GatedBackend>(pressed);
         }, &targetProvider);
         delivery.setAnswerDeadlineMs(20);
@@ -1278,7 +1266,7 @@ fi
         Target target;
         target.applicationId = QStringLiteral("editor");
 
-        delivery.deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target, std::nullopt);
+        delivery.deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target, {});
         QTRY_COMPARE(answers.size(), 1);
         QCOMPARE(answers.first().message, QStringLiteral("Delivery did not finish in time"));
         QVERIFY(targetProvider.held);
@@ -1324,7 +1312,7 @@ fi
         targetProvider.insertsDirectly = insertsDirectly;
         QList<QString> attempts;
         QHash<QString, bool> results{{virtualKeyboardMethod(), true}};
-        TextDelivery delivery([&attempts, &results](const QString &method, const OutputSettings &, PasteMethod) {
+        TextDelivery delivery([&attempts, &results](const QString &method, const OutputSettings &, PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
         delivery.setAnswerDeadlineMs(20);
@@ -1338,7 +1326,7 @@ fi
         connect(&delivery, &TextDeliveryAdapter::delivered, this,
                 [&answers](const DeliveryResult &result) { answers << result.message; });
 
-        delivery.deliver(settings, makeDeliveryContent(QStringLiteral("dictation"), OutputFormat::PlainText), target, std::nullopt);
+        delivery.deliver(settings, makeDeliveryContent(QStringLiteral("dictation"), OutputFormat::PlainText), target, {});
         QTRY_COMPARE(answers.size(), 1);
         QCOMPARE(answers.first(), QStringLiteral("Delivery did not finish in time"));
         QVERIFY(targetProvider.held);
@@ -1405,7 +1393,7 @@ fi
             }
             int &pressed;
         };
-        auto *delivery = new TextDelivery([&pressed](const QString &, const OutputSettings &, PasteMethod) {
+        auto *delivery = new TextDelivery([&pressed](const QString &, const OutputSettings &, PasteKeyCombo) {
             return std::make_unique<Backend>(pressed);
         }, &targetProvider);
         int answers = 0;
@@ -1422,7 +1410,7 @@ fi
         Target target;
         target.applicationId = QStringLiteral("editor");
 
-        delivery->deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target, std::nullopt);
+        delivery->deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target, {});
         QTRY_VERIFY(!delivery);
         QTest::qWait(100);
         QCOMPARE(answers, goesMidCheck ? 0 : 1);
@@ -1453,7 +1441,7 @@ fi
         qsizetype callsAtGate = -1;
         std::optional<bool> pasted;
         delivery.pasteFromClipboard(
-            QStringLiteral("hello"), PasteMethod::StandardPaste,
+            QStringLiteral("hello"), PasteKeyCombo::Standard,
             [&](std::function<void(bool)> reply) {
                 callsAtGate = ydotool.calls().size();
                 reply(clear);
@@ -1525,7 +1513,7 @@ fi
         const FakeYdotool ydotool("0.1", "5");
         QVERIFY(ydotool.ready());
         auto *delivery = new YdotoolDelivery;
-        delivery->pasteFromClipboard(QStringLiteral("hello"), PasteMethod::StandardPaste,
+        delivery->pasteFromClipboard(QStringLiteral("hello"), PasteKeyCombo::Standard,
                                      [](std::function<void(bool)> reply) { reply(true); },
                                      [](bool, bool, const QString &) {});
         // The paste keys are going out.
@@ -1666,7 +1654,7 @@ fi
             }
             int &pressed;
         };
-        TextDelivery delivery([&pressed](const QString &, const OutputSettings &, PasteMethod) {
+        TextDelivery delivery([&pressed](const QString &, const OutputSettings &, PasteKeyCombo) {
             return std::make_unique<GatedBackend>(pressed);
         }, &targetProvider);
         OutputSettings settings;
@@ -1713,9 +1701,9 @@ fi
         Target editor;
         editor.applicationId = QStringLiteral("editor");
         const DeliveryContent content = makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText);
-        provider.duringVerification = [&] { delivery.deliver(settings, content, editor, std::nullopt); };
+        provider.duringVerification = [&] { delivery.deliver(settings, content, editor, {}); };
 
-        delivery.deliver(settings, content, editor, std::nullopt);
+        delivery.deliver(settings, content, editor, {});
         QVERIFY(receipts.isEmpty());
         QTRY_COMPARE(receipts.size(), 2);
         QCOMPARE(receipts, (QList<DeliveryReceipt>{DeliveryReceipt::AcceptedByTarget, DeliveryReceipt::VerifiedInTarget}));
@@ -1756,7 +1744,7 @@ fi
             }
             bool &pasted;
         };
-        TextDelivery delivery([&](const QString &, const OutputSettings &, PasteMethod) {
+        TextDelivery delivery([&](const QString &, const OutputSettings &, PasteKeyCombo) {
             return std::make_unique<GatedBackend>(pasted);
         }, &targetProvider);
 
@@ -1788,7 +1776,7 @@ fi
         TextDelivery delivery([&attempts, &results](
                                   const QString &method,
                                   const OutputSettings &,
-                                  PasteMethod) {
+                                  PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
 
@@ -1849,7 +1837,7 @@ fi
                 bool noInputSent;
             };
             FakeTargetProvider targetProvider;
-            TextDelivery delivery([askGate, noInputSent](const QString &, const OutputSettings &, PasteMethod) {
+            TextDelivery delivery([askGate, noInputSent](const QString &, const OutputSettings &, PasteKeyCombo) {
                 return std::make_unique<FailingBackend>(askGate, noInputSent);
             }, &targetProvider);
             OutputSettings settings;
@@ -1884,7 +1872,7 @@ fi
             TextDelivery delivery([&attempts, &results](
                                       const QString &backend,
                                       const OutputSettings &,
-                                      PasteMethod) {
+                                      PasteKeyCombo) {
                 return std::make_unique<FakeBackend>(backend, &attempts, &results);
             }, &targetProvider);
 
@@ -1916,7 +1904,7 @@ fi
         TextDelivery delivery([&attempts, &results](
                                   const QString &method,
                                   const OutputSettings &,
-                                  PasteMethod) {
+                                  PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
 
@@ -1944,7 +1932,7 @@ fi
         FakeTargetProvider targetProvider;
         targetProvider.directInsertionAvailable = true;
         targetProvider.verified = true;
-        TextDelivery delivery([&attempts, &results](const QString &method, const OutputSettings &, PasteMethod) {
+        TextDelivery delivery([&attempts, &results](const QString &method, const OutputSettings &, PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
         OutputSettings settings;
@@ -1970,7 +1958,7 @@ fi
         QApplication::clipboard()->setText(QStringLiteral("previous clipboard"));
         FakeTargetProvider targetProvider;
         targetProvider.directInsertionAvailable = false;
-        TextDelivery delivery([](const QString &, const OutputSettings &, PasteMethod) {
+        TextDelivery delivery([](const QString &, const OutputSettings &, PasteKeyCombo) {
             return std::unique_ptr<DeliveryBackend>();
         }, &targetProvider);
         OutputSettings settings;
@@ -1987,16 +1975,16 @@ fi
         QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("previous clipboard"));
     }
 
-    // A global switch that is off is a hard limit: a rule asking for the
-    // step gets nothing from it.
-    void aRuleCantTurnOnAStepThatIsOff()
+    // An App's own keys leave it the Pasting page's steps, here Keep alone;
+    // steps of its own are its steps, even one the page has off.
+    void anAppsOwnStepsReplaceThePagesAndItsKeysAloneDont()
     {
         QList<QString> attempts;
         QHash<QString, bool> results{{virtualKeyboardMethod(), true}};
         FakeTargetProvider targetProvider;
         targetProvider.directInsertionAvailable = true;
         targetProvider.inserted = true;
-        TextDelivery delivery([&attempts, &results](const QString &method, const OutputSettings &, PasteMethod) {
+        TextDelivery delivery([&attempts, &results](const QString &method, const OutputSettings &, PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
         OutputSettings settings;
@@ -2006,14 +1994,16 @@ fi
         kate.applicationId = QStringLiteral("org.kde.kate");
         Target konsole;
         konsole.applicationId = QStringLiteral("org.kde.konsole");
-        for (const auto &[target, pasting] : {std::pair{kate, PasteMethod::DirectInsert},
-                                              std::pair{konsole, PasteMethod::TerminalPaste}}) {
-            const DeliveryResult result = deliverAndWait(
-                delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target,
-                pasting);
-            QCOMPARE(result.receipt, DeliveryReceipt::Copied);
-        }
+        const DeliveryResult copied = deliverAndWait(
+            delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), konsole,
+            {std::nullopt, PasteKeyCombo::Terminal});
+        QCOMPARE(copied.receipt, DeliveryReceipt::Copied);
         QCOMPARE(targetProvider.insertCalls, 0);
+        const DeliveryResult inserted = deliverAndWait(
+            delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), kate,
+            {DeliverySteps{.insert = true, .press = false, .keep = true}, std::nullopt});
+        QCOMPARE(inserted.receipt, DeliveryReceipt::AcceptedByTarget);
+        QCOMPARE(targetProvider.insertCalls, 1);
         QVERIFY(attempts.isEmpty());
     }
 
@@ -2122,16 +2112,17 @@ fi
                                   stored.value(QStringLiteral("output/pressPasteKeys")).toBool(),
                                   stored.value(QStringLiteral("output/keepOnClipboard")).toBool()};
         QCOMPARE(steps, DeliverySteps{});
-        // As the App Types' Pasting choices once Apps migrate them.
+        // As the App Types' paste keys once Apps migrate them.
         migrateApps(stored);
         const AppsSettings apps = AppsSettingsCodec::load(stored);
         for (const AppCategory category : {AppCategory::General, AppCategory::Email, AppCategory::Office,
                                            AppCategory::CodeEditor, AppCategory::AiCoding}) {
             QCOMPARE(appTypeSettings(apps, category).pasting,
-                     terminalKeysDiffer ? std::optional(PasteMethod::TerminalPaste) : std::nullopt);
+                     (terminalKeysDiffer ? PastingChoice{std::nullopt, PasteKeyCombo::Terminal} : PastingChoice{}));
         }
-        // The browsers' own rule stays.
-        QCOMPARE(appTypeSettings(apps, AppCategory::Browser).pasting, PasteMethod::ClipboardOnly);
+        // The browsers' own rule stays, as Keep alone.
+        QCOMPARE(appTypeSettings(apps, AppCategory::Browser).pasting,
+                 (PastingChoice{DeliverySteps{.insert = false, .press = false, .keep = true}, std::nullopt}));
     }
 
     // Without anything from an older Speecher there is nothing to migrate,
@@ -2174,7 +2165,7 @@ fi
         TextDelivery delivery([&attempts, &results](
                                   const QString &method,
                                   const OutputSettings &,
-                                  PasteMethod) {
+                                  PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
 
@@ -2206,7 +2197,7 @@ fi
         TextDelivery delivery([&attempts, &results](
                                   const QString &method,
                                   const OutputSettings &,
-                                  PasteMethod) {
+                                  PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
 
@@ -2300,7 +2291,7 @@ fi
         TextDelivery delivery([&attempts, &results](
                                   const QString &method,
                                   const OutputSettings &,
-                                  PasteMethod) {
+                                  PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
 
@@ -2315,7 +2306,7 @@ fi
         const DeliveryResult result = deliverAndWait(
             delivery, settings,
             makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
-            target, PasteMethod::TerminalPaste);
+            target, {std::nullopt, PasteKeyCombo::Terminal});
 
         QVERIFY(attempts.isEmpty());
         QCOMPARE(result.receipt, DeliveryReceipt::Copied);
@@ -2334,7 +2325,7 @@ fi
         TextDelivery delivery([&attempts, &results](
                                   const QString &method,
                                   const OutputSettings &,
-                                  PasteMethod) {
+                                  PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
 
@@ -2345,7 +2336,7 @@ fi
         const DeliveryResult result = deliverAndWait(
             delivery, settings,
             makeDeliveryContent(QStringLiteral("insert me"), OutputFormat::PlainText),
-            target, PasteMethod::DirectInsert);
+            target, {DeliverySteps{.insert = true, .press = false, .keep = true}, std::nullopt});
 
         QCOMPARE(result.receipt, DeliveryReceipt::VerifiedInTarget);
         QCOMPARE(result.message, QStringLiteral("Pasted"));
@@ -2365,7 +2356,7 @@ fi
         TextDelivery delivery([&attempts, &results](
                                   const QString &method,
                                   const OutputSettings &,
-                                  PasteMethod) {
+                                  PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
 
@@ -2375,7 +2366,7 @@ fi
         const DeliveryResult result = deliverAndWait(
             delivery, settings,
             makeDeliveryContent(QStringLiteral("keep copied"), OutputFormat::PlainText),
-            target, PasteMethod::DirectInsert);
+            target, {DeliverySteps{.insert = true, .press = false, .keep = true}, std::nullopt});
 
         QCOMPARE(result.receipt, DeliveryReceipt::Copied);
         QCOMPARE(targetProvider.insertCalls, 1);
@@ -2397,7 +2388,7 @@ fi
         TextDelivery delivery([&attempts, &results](
                                   const QString &method,
                                   const OutputSettings &,
-                                  PasteMethod) {
+                                  PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
 
@@ -2440,7 +2431,7 @@ fi
         TextDelivery delivery([&attempts, &results](
                                   const QString &method,
                                   const OutputSettings &,
-                                  PasteMethod) {
+                                  PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
 
@@ -2494,7 +2485,7 @@ fi
         TextDelivery delivery([&attempts, &results](
                                   const QString &method,
                                   const OutputSettings &,
-                                  PasteMethod) {
+                                  PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
 
@@ -2627,7 +2618,7 @@ fi
             return arg.startsWith(QStringLiteral("--file="));
         }));
 
-        QCOMPARE(YdotoolDelivery::pasteShortcutArguments(PasteMethod::TerminalPaste),
+        QCOMPARE(YdotoolDelivery::pasteShortcutArguments(PasteKeyCombo::Terminal),
                  QStringList({QStringLiteral("key"),
                               QStringLiteral("--key-delay=2"),
                               QStringLiteral("29:1"),
@@ -2636,7 +2627,7 @@ fi
                               QStringLiteral("47:0"),
                               QStringLiteral("42:0"),
                               QStringLiteral("29:0")}));
-        QCOMPARE(YdotoolDelivery::pasteShortcutArguments(PasteMethod::StandardPaste),
+        QCOMPARE(YdotoolDelivery::pasteShortcutArguments(PasteKeyCombo::Standard),
                  QStringList({QStringLiteral("key"),
                               QStringLiteral("--key-delay=2"),
                               QStringLiteral("29:1"),

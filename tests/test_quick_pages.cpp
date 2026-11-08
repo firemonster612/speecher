@@ -13,7 +13,6 @@
 #include "app/ApplicationController.h"
 #include "app/PlatformComposition.h"
 #include "app/TrayIcon.h"
-#include "core/PasteMethod.h"
 #include "core/SettingsStore.h"
 #include "core/SeenApps.h"
 #include "core/Target.h"
@@ -316,8 +315,9 @@ private slots:
         controller.settings()->edit([](AppSettings &draft) {
             AppEntry gmail = test::textApp(QStringLiteral("Gmail"), std::nullopt, WritingProfile::Email);
             gmail.matches = {{AppMatchKind::WindowTitle, QStringLiteral("Gmail")}};
-            gmail.pasting = PasteMethod::ClipboardOnly;
-            draft.apps.apps = {test::idApp(QStringLiteral("org.kde.kate"), WritingProfile::Personal, PasteMethod::DirectInsert),
+            gmail.pasting.steps = DeliverySteps{.insert = false, .press = false, .keep = true};
+            draft.apps.apps = {test::idApp(QStringLiteral("org.kde.kate"), WritingProfile::Personal,
+                                           {DeliverySteps{.insert = true, .press = true, .keep = false}, PasteKeyCombo::Terminal}),
                                gmail};
             draft.apps.apps.first().name = QStringLiteral("Kate");
             // Privacy & data lists an app kept out of History.
@@ -1342,16 +1342,17 @@ private slots:
         QCOMPARE(instructionsOf(QStringLiteral("work")), QStringLiteral("Keep it short."));
     }
 
-    // Pasting lists the App Types and Apps whose Pasting choice narrows the
-    // steps, each with what it does here, and opens one in Apps with its
-    // editor open.
+    // Pasting lists the App Types and Apps with steps or keys of their own,
+    // each with what it does here, and opens one in Apps with its editor
+    // open.
     void pastingListsTheAppsThatPasteDifferently()
     {
         ApplicationController controller(true);
         controller.settings()->edit([](AppSettings &draft) {
-            draft.apps.apps = {test::idApp(QStringLiteral("org.example.FooEditor"), std::nullopt, PasteMethod::ClipboardOnly),
-                               test::idApp(QStringLiteral("org.example.Steps"), std::nullopt, PasteMethod::StandardPaste)};
-            draft.apps.types[5].pasting = PasteMethod::DirectInsert;
+            draft.apps.apps = {test::idApp(QStringLiteral("org.example.FooEditor"), std::nullopt,
+                                           {DeliverySteps{.insert = false, .press = false, .keep = true}, std::nullopt}),
+                               test::idApp(QStringLiteral("org.example.Steps"))};
+            draft.apps.types[5].pasting.steps = DeliverySteps{.insert = true, .press = false, .keep = true};
             return true;
         });
         TrayIcon tray(&controller);
@@ -1367,12 +1368,11 @@ private slots:
         QTRY_VERIFY((app = findItem(main->contentItem(), QStringLiteral("differently_appentry:app:org.example.FooEditor"))));
         QVERIFY(findItem(main->contentItem(), QStringLiteral("differently_apptype:ai_coding")));
         QVERIFY(findItem(main->contentItem(), QStringLiteral("differently_apptype:terminal")) == nullptr || terminalKeysDiffer);
-        // Using the steps is no different from them.
+        // Following them is no different from them.
         QVERIFY(!findItem(main->contentItem(), QStringLiteral("differently_appentry:app:org.example.Steps")));
         QQuickItem *result = findItem(app, QStringLiteral("differentlyResult"));
         QVERIFY(result);
-        QVERIFY(result->property("text").toString().startsWith(QLatin1String("Clipboard only")));
-        QVERIFY(!result->property("text").toString().startsWith(QLatin1String("Clipboard only: Clipboard only")));
+        QCOMPARE(result->property("text").toString(), QStringLiteral("Own steps (Keep): Clipboard only"));
 
         QMetaObject::invokeMethod(app, "clicked");
         QTRY_COMPARE(navigation->current(), QStringLiteral("apps"));
@@ -1389,7 +1389,7 @@ private slots:
     {
         ApplicationController controller(true);
         controller.settings()->edit([](AppSettings &draft) {
-            draft.apps.apps = {test::idApp(QStringLiteral("org.example.FooEditor"), std::nullopt, PasteMethod::ClipboardOnly)};
+            draft.apps.apps = {test::idApp(QStringLiteral("org.example.FooEditor"))};
             return true;
         });
         TrayIcon tray(&controller);
@@ -1454,10 +1454,33 @@ private slots:
         QQuickItem *row = nullptr;
         QTRY_VERIFY((row = findItem(main->contentItem(), QStringLiteral("appentry:") + id)));
         QTRY_VERIFY(row->parentItem()->property("open").toBool());
+        // Its own steps start from the ones it follows, the Pasting page's;
+        // then each switch is its own, and the last one on stays on.
         QQuickItem *pasting = findItem(row->parentItem(), QStringLiteral("appPasting"));
         QVERIFY(pasting);
-        QMetaObject::invokeMethod(pasting, "chosen", Q_ARG(QString, QStringLiteral("clipboard_only")));
-        QCOMPARE(controller.settings()->snapshot().apps.apps.first().pasting, PasteMethod::ClipboardOnly);
+        QMetaObject::invokeMethod(pasting, "chosen", Q_ARG(QString, QStringLiteral("own")));
+        QCOMPARE(controller.settings()->snapshot().apps.apps.first().pasting.steps, DeliverySteps{});
+        for (const char *step : {"insert", "press"}) {
+            QQuickItem *toggle = nullptr;
+            QTRY_VERIFY((toggle = findItem(row->parentItem(), QStringLiteral("appStep_") + QLatin1String(step))));
+            toggle->setProperty("checked", false);
+            QMetaObject::invokeMethod(toggle, "toggled");
+        }
+        QCOMPARE(controller.settings()->snapshot().apps.apps.first().pasting.steps,
+                 (DeliverySteps{.insert = false, .press = false, .keep = true}));
+        QTRY_VERIFY(!findItem(row->parentItem(), QStringLiteral("appStep_keep"))->property("enabled").toBool());
+        QMetaObject::invokeMethod(pasting, "chosen", Q_ARG(QString, QString()));
+        QCOMPARE(controller.settings()->snapshot().apps.apps.first().pasting, PastingChoice{});
+        // Name and recognition can change in place, keeping the App.
+        QCOMPARE(apps->update(id, {{QStringLiteral("name"), QStringLiteral("Gmail in Firefox")},
+                                   {QStringLiteral("matches"), QVariantList{QVariantMap{
+                                        {QStringLiteral("kind"), QStringLiteral("title")},
+                                        {QStringLiteral("value"), QStringLiteral("Inbox - Gmail")}}}}}),
+                 QString());
+        QCOMPARE(controller.settings()->snapshot().apps.apps.first().id, id);
+        QCOMPARE(controller.settings()->snapshot().apps.apps.first().matches,
+                 (QList<AppMatch>{{AppMatchKind::WindowTitle, QStringLiteral("Inbox - Gmail")}}));
+        QCOMPARE(apps->update(id, {{QStringLiteral("matches"), QVariantList{}}}), QStringLiteral("blank"));
         QCOMPARE(apps->update(id, {{QStringLiteral("type"), QStringLiteral("email")}}), QString());
 
         QSignalSpy posted(toaster, SIGNAL(posted(QVariant)));

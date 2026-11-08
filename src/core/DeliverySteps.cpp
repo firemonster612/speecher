@@ -56,33 +56,19 @@ QString deliveryStepName(DeliveryStep step)
     return QStringLiteral("keep");
 }
 
-DeliveryPlan deliveryPlan(const DeliverySteps &steps, PasteMethod method)
+QString pasteKeyComboName(PasteKeyCombo keys)
 {
-    DeliveryPlan plan{steps, method == PasteMethod::TerminalPaste};
-    if (method == PasteMethod::DirectInsert || method == PasteMethod::ClipboardOnly) {
-        plan.steps.press = false;
-    }
-    if (method == PasteMethod::ClipboardOnly) {
-        plan.steps.insert = false;
-    }
-    return plan;
+    return keys == PasteKeyCombo::Terminal ? QStringLiteral("terminal") : QStringLiteral("standard");
 }
 
-std::optional<DeliveryStep> stepRuleNeeds(const DeliverySteps &steps, PasteMethod method)
+PasteKeyCombo pasteKeyComboFromName(const QString &name)
 {
-    const auto needs = [&steps](DeliveryStep step) -> std::optional<DeliveryStep> {
-        return steps.has(step) ? std::nullopt : std::optional(step);
-    };
-    switch (method) {
-    case PasteMethod::TerminalPaste:
-        return needs(DeliveryStep::Press);
-    case PasteMethod::ClipboardOnly:
-        return needs(DeliveryStep::Keep);
-    case PasteMethod::StandardPaste:
-    case PasteMethod::DirectInsert:
-        break;
-    }
-    return std::nullopt;
+    return name == u"terminal" ? PasteKeyCombo::Terminal : PasteKeyCombo::Standard;
+}
+
+DeliveryPlan deliveryPlan(const DeliverySteps &steps, const PastingChoice &pasting)
+{
+    return {pasting.steps.value_or(steps), pasting.keys.value_or(PasteKeyCombo::Standard)};
 }
 
 } // namespace speecher

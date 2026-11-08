@@ -31,7 +31,8 @@ enum class EditRefusal {
     Taken,
     // Something besides its name that the entry needs is missing: a tone's
     // instruction, a Custom only level's instructions, a replacement's text,
-    // an app match's app type or profile, a correction's corrected text.
+    // an app match's app type or profile, a correction's corrected text, a step
+    // of an App's own steps left on.
     Incomplete,
     // The entry edited is gone, or a tone, cleanup level, profile or service
     // it picks is not offered.

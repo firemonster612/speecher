@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/PasteMethod.h"
+#include "core/DeliverySteps.h"
 
 #include <QString>
 
@@ -15,7 +15,7 @@ public:
     // without sending anything. inputSent says whether any key went out,
     // which a failure can still have done when Windows took only part of
     // the keystroke.
-    bool paste(PasteMethod method,
+    bool paste(PasteKeyCombo keys,
                const std::function<bool()> &clearToInject = {},
                QString *error = nullptr,
                bool *inputSent = nullptr);

@@ -60,8 +60,8 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   tries them (insert, press, keep), `deliverySteps` each step with whether
   it is on, what it relies on here by need id and which of those are
   missing (`Schema.pasting.needs` words them, as "<need>: <state>"),
-  `rulePlan(method)` what a paste rule leaves of the steps and the off step
-  it relies on, and `pastingOutcome` where the words end up: `delivers`,
+  `stepsPlan(steps)` which of some steps (an App's own, say) can run here,
+  and `pastingOutcome` where the words end up: `delivers`,
   `clipboard` or `nothing`. All of them read the settings as `Settings`
   shows them (`QuickSettings::shown`), so setup's draft shows in them as
   in the rows. `Phone`'s code lives from `Phone.start()` to `Phone.stop()`,
@@ -70,8 +70,11 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   outcome, and `RemovalReport` words it: under General's row, and alone in
   Main once the settings are deleted. The delivery steps are Settings rows
   (`insertThroughAccessibility`, `pressPasteKeys`, `keepOnClipboard`), and
-  core keeps one on. Apps' and App Types' Pasting choices narrow them;
-  Pasting lists those that do, read-only, each opening in Apps.
+  core keeps one on. An App or App Type may have steps of its own, the same
+  three switches, and its own paste keys; Pasting lists those that do,
+  read-only, each opening in Apps. Every step row shows each need it has
+  here, one status line apiece, and every page that needs accessibility
+  says the same one sentence (`AccessibilityNotice`).
 - `Models` is what core knows about the providers and running models here,
   as data: speech services and refinement providers with a `state` and
   core's `problem` sentence, their ratings as `{ measure, value }` bars, the
@@ -126,16 +129,19 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   where the tray and the shortcut open it. `pages/recordings/RecordingWords.js`
   words it. The popup's pill and Home's row read it too.
 - `Apps` is core's Apps and App Types (`core/Apps`) as the Apps page shows
-  them: each App with what it sets (its type, profile, Pasting and History
-  choices), what core makes of it (`effective`) and
+  them: each App with what it sets (its type, profile, steps, paste keys and
+  History choice), what core makes of it (`effective`) and
   what each value would be without its own (`inherited`, with where from),
   so the editor's "Same as …" options agree with dictation; the App Types,
   Other apps' profile always set; the installed apps the platform's
   `InstalledApps` lists, scanned off the UI thread once a session
   (`refresh()`); and the apps dictated into lately (core's `SeenApps`,
   kept only while History keeps stats). `add`, `update`, `updateType` and
-  `remove`/`undo` save through core's `AppEdits`; `captureNext(seconds)` is
-  Switch to it, which captures the app in front as dictation does. Icons
+  `remove`/`undo` save through core's `AppEdits`; `update` also changes an
+  App's name and matches. `captureNext(seconds)` is Switch to it, which
+  captures the app in front as dictation does, and `testNext(seconds)` is
+  Test, which answers `tested` with every App that matches it and where each
+  value comes from. Launchers of one program list as one installed app. Icons
   come from the host's `image://appicon` provider. `schema/apps.js` words
   all of it and holds the App Types' list.
 - `Settings.values.speechServices` and `refinementServices` are the two

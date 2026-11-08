@@ -1,0 +1,4 @@
+[Desktop Entry]
+Type=Application
+Name=IDLE
+Exec=/usr/bin/python3.12 /usr/lib/python3.12/idlelib/idle.pyw %F

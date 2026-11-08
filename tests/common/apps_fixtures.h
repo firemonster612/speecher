@@ -8,7 +8,7 @@
 namespace speecher::test {
 
 inline AppEntry idApp(const QString &id, std::optional<QString> profile = std::nullopt,
-                      std::optional<PasteMethod> pasting = std::nullopt)
+                      const PastingChoice &pasting = {})
 {
     return {QStringLiteral("app:") + id, id, {}, {{AppMatchKind::Id, id}}, std::nullopt, profile, pasting};
 }
@@ -17,7 +17,7 @@ inline AppEntry idApp(const QString &id, std::optional<QString> profile = std::n
 inline AppEntry textApp(const QString &match, std::optional<AppCategory> type,
                         std::optional<QString> profile = std::nullopt)
 {
-    AppEntry app{QStringLiteral("app:") + match, match, {}, {{AppMatchKind::Name, match}}, type, profile, std::nullopt};
+    AppEntry app{QStringLiteral("app:") + match, match, {}, {{AppMatchKind::Name, match}}, type, profile, {}};
     if (profile) {
         app.matches.append({AppMatchKind::WindowTitle, match});
     }

@@ -1551,9 +1551,9 @@ private slots:
                                         {AppMatchKind::WindowTitle, QStringLiteral("Gmail")}},
                             .type = AppCategory::Office,
                             .writingProfile = WritingProfile::Work,
-                            .pasting = PasteMethod::StandardPaste}};
+                            .pasting = {std::nullopt, PasteKeyCombo::Standard}}};
             test::setOtherAppsProfile(s.apps, WritingProfile::Work);
-            s.apps.types[1].pasting = PasteMethod::ClipboardOnly;
+            s.apps.types[1].pasting.steps = DeliverySteps{false, false, true};
             s.apps.types[0].writingProfile.reset();
             s.refinement.useTargetContext = false;
             s.refinement.includeScreenshotContext = true;

@@ -57,7 +57,7 @@ Page {
             id: contextSection
             title: Schema.row("targetContextControl").section
             caption: page.t.contextCaption
-            AccessibilityNotice { text: Schema.row("targetContextControl").disabledHelp }
+            AccessibilityNotice {}
             SchemaRow { rowId: "targetContextControl" }
             SchemaRow { id: screenshotRow; rowId: "includeScreenshotContext" }
             // macOS asks before Speecher captures the screen, a check only

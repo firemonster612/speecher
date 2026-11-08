@@ -51,9 +51,46 @@ QString typeName(const std::optional<AppCategory> &type)
     return type ? appCategoryName(*type) : QString();
 }
 
-QString pastingName(const std::optional<PasteMethod> &pasting)
+// Delivery Steps as the UI reads and edits them: { insert, press, keep }.
+QVariantMap stepsRecord(const DeliverySteps &steps)
 {
-    return pasting ? pasteMethodName(*pasting) : QString();
+    return {{QStringLiteral("insert"), steps.insert}, {QStringLiteral("press"), steps.press},
+            {QStringLiteral("keep"), steps.keep}};
+}
+
+// Steps of an App's or App Type's own, or null where it has none.
+QVariant ownSteps(const std::optional<DeliverySteps> &steps)
+{
+    return steps ? QVariant(stepsRecord(*steps)) : QVariant();
+}
+
+QString keysName(const std::optional<PasteKeyCombo> &keys)
+{
+    return keys ? pasteKeyComboName(*keys) : QString();
+}
+
+// An edit's steps: null, or a map without them, unsets them.
+std::optional<DeliverySteps> stepsFrom(const QVariant &value)
+{
+    const QVariantMap map = value.toMap();
+    if (map.isEmpty()) {
+        return std::nullopt;
+    }
+    return DeliverySteps{map.value(QStringLiteral("insert")).toBool(), map.value(QStringLiteral("press")).toBool(),
+                         map.value(QStringLiteral("keep")).toBool()};
+}
+
+// Applies the pasting parts of an App or App Type edit: steps and keys, each
+// unset by an empty value.
+void editPasting(PastingChoice &pasting, const QVariantMap &patch)
+{
+    if (patch.contains(QStringLiteral("steps"))) {
+        pasting.steps = stepsFrom(patch.value(QStringLiteral("steps")));
+    }
+    if (patch.contains(QStringLiteral("keys"))) {
+        const QString keys = patch.value(QStringLiteral("keys")).toString();
+        pasting.keys = keys.isEmpty() ? std::nullopt : std::optional(pasteKeyComboFromName(keys));
+    }
 }
 
 QString historyName(const std::optional<HistoryKeep> &history)
@@ -108,17 +145,26 @@ Target targetFor(const InstalledApp &app)
     return target;
 }
 
-QVariantMap resolved(const AppResolution &resolution)
+// What a delivery to a Target resolved this way does, with the Pasting
+// page's steps: { steps, keys }.
+QVariantMap planRecord(const DeliverySteps &steps, const PastingChoice &pasting)
 {
-    return {{QStringLiteral("type"), appCategoryName(resolution.type)},
-            {QStringLiteral("profile"), resolution.writingProfile},
-            {QStringLiteral("pasting"), pastingName(resolution.pasting)},
-            {QStringLiteral("history"), historyName(resolution.history)}};
+    const DeliveryPlan plan = deliveryPlan(steps, pasting);
+    return {{QStringLiteral("steps"), stepsRecord(plan.steps)}, {QStringLiteral("keys"), pasteKeyComboName(plan.keys)}};
+}
+
+QVariantMap resolved(const AppResolution &resolution, const DeliverySteps &steps)
+{
+    QVariantMap record = planRecord(steps, resolution.pasting);
+    record.insert(QStringLiteral("type"), appCategoryName(resolution.type));
+    record.insert(QStringLiteral("profile"), resolution.writingProfile);
+    record.insert(QStringLiteral("history"), historyName(resolution.history));
+    return record;
 }
 
 // What core makes of the App, now and with each of its own values unset in
-// turn.
-QVariantMap entryRecord(const AppEntry &app, const AppsSettings &apps)
+// turn, with the Pasting page's steps.
+QVariantMap entryRecord(const AppEntry &app, const AppsSettings &apps, const DeliverySteps &steps)
 {
     const Target target = targetFor(app);
     const auto without = [&](auto clear) {
@@ -132,7 +178,7 @@ QVariantMap entryRecord(const AppEntry &app, const AppsSettings &apps)
     };
     const AppResolution type = without([](AppEntry &entry) { entry.type.reset(); });
     const AppResolution profile = without([](AppEntry &entry) { entry.writingProfile.reset(); });
-    const AppResolution pasting = without([](AppEntry &entry) { entry.pasting.reset(); });
+    const AppResolution pasting = without([](AppEntry &entry) { entry.pasting = {}; });
     const AppResolution history = without([](AppEntry &entry) { entry.history.reset(); });
     QStringList ids;
     QVariantList matches;
@@ -155,15 +201,18 @@ QVariantMap entryRecord(const AppEntry &app, const AppsSettings &apps)
         {QStringLiteral("titleOnly"), titleOnly},
         {QStringLiteral("type"), typeName(app.type)},
         {QStringLiteral("profile"), app.writingProfile.value_or(QString())},
-        {QStringLiteral("pasting"), pastingName(app.pasting)},
+        {QStringLiteral("steps"), ownSteps(app.pasting.steps)},
+        {QStringLiteral("keys"), keysName(app.pasting.keys)},
         {QStringLiteral("history"), historyName(app.history)},
-        {QStringLiteral("effective"), resolved(resolveApp(target, apps))},
+        {QStringLiteral("effective"), resolved(resolveApp(target, apps), steps)},
         {QStringLiteral("inherited"),
          QVariantMap{{QStringLiteral("type"), appCategoryName(type.type)},
                      {QStringLiteral("profile"), profile.writingProfile},
                      {QStringLiteral("profileFrom"), layerName(profile.writingProfileFrom)},
-                     {QStringLiteral("pasting"), pastingName(pasting.pasting)},
-                     {QStringLiteral("pastingFrom"), layerName(pasting.pastingFrom)},
+                     {QStringLiteral("steps"), ownSteps(pasting.pasting.steps)},
+                     {QStringLiteral("stepsFrom"), layerName(pasting.stepsFrom)},
+                     {QStringLiteral("keys"), keysName(pasting.pasting.keys)},
+                     {QStringLiteral("keysFrom"), layerName(pasting.keysFrom)},
                      {QStringLiteral("history"), historyName(history.history)},
                      {QStringLiteral("historyFrom"), layerName(history.historyFrom)}}},
     };
@@ -180,6 +229,43 @@ const InstalledApp *installedWithId(const QList<InstalledApp> &installed, const 
         }
     }
     return nullptr;
+}
+
+// The matches of an add or edit: [{ kind: "id" | "name" | "title", value }].
+// Nullopt, with a warning, for a kind that isn't one.
+std::optional<QList<AppMatch>> matchesFrom(const QVariantList &values)
+{
+    QList<AppMatch> matches;
+    for (const QVariant &value : values) {
+        const QVariantMap match = value.toMap();
+        const QString kind = match.value(QStringLiteral("kind")).toString();
+        if (kind != u"id" && kind != u"name" && kind != u"title") {
+            qWarning().noquote() << "Apps takes no match of kind" << kind;
+            return std::nullopt;
+        }
+        matches.append({kind == u"id" ? AppMatchKind::Id : kind == u"name" ? AppMatchKind::Name : AppMatchKind::WindowTitle,
+                        match.value(QStringLiteral("value")).toString()});
+    }
+    return matches;
+}
+
+// Where a resolved value came from, for Test: { layer, app } with the id of
+// the App that set it, the first of matched to set it, where layer is app.
+QVariantMap sourceRecord(AppLayer layer, const QStringList &matched, const AppsSettings &apps,
+                         const std::function<bool(const AppEntry &)> &sets)
+{
+    QString app;
+    if (layer == AppLayer::App) {
+        for (const QString &id : matched) {
+            const auto entry = std::find_if(apps.apps.cbegin(), apps.apps.cend(),
+                                            [&id](const AppEntry &each) { return each.id == id; });
+            if (entry != apps.apps.cend() && sets(*entry)) {
+                app = id;
+                break;
+            }
+        }
+    }
+    return {{QStringLiteral("layer"), layerName(layer)}, {QStringLiteral("app"), app}};
 }
 
 // An App edit's field: empty unsets it.
@@ -253,7 +339,7 @@ void QuickApps::rebuild()
 
     QVariantList entries;
     for (const AppEntry &app : apps.apps) {
-        entries.append(entryRecord(app, apps));
+        entries.append(entryRecord(app, apps, settings.output.steps));
     }
     QVariantList types;
     for (const AppTypeSettings &type : apps.types) {
@@ -261,9 +347,11 @@ void QuickApps::rebuild()
         types.append(QVariantMap{
             {QStringLiteral("id"), appCategoryName(type.type)},
             {QStringLiteral("profile"), other ? fallbackWritingProfile(apps) : type.writingProfile.value_or(QString())},
-            {QStringLiteral("pasting"), pastingName(type.pasting)},
+            {QStringLiteral("steps"), ownSteps(type.pasting.steps)},
+            {QStringLiteral("keys"), keysName(type.pasting.keys)},
             {QStringLiteral("history"), historyName(type.history)},
             {QStringLiteral("effectiveProfile"), type.writingProfile.value_or(fallbackWritingProfile(apps))},
+            {QStringLiteral("effective"), planRecord(settings.output.steps, type.pasting)},
         });
     }
     QVariantList recent;
@@ -296,13 +384,37 @@ void QuickApps::rebuild()
 void QuickApps::rebuildInstalled()
 {
     const AppsSettings apps = m_controller->settings()->dictationSnapshot().apps;
-    QVariantList records;
+    // Launchers of one program are one app to an Id match, so they list as
+    // one, under the first one's name.
+    QList<QStringList> idLists;
     for (const InstalledApp &app : m_installed) {
-        const AppResolution resolution = resolveApp(targetFor(app), apps);
+        idLists.append(app.ids);
+    }
+    QVariantList records;
+    for (const QList<int> &group : sharedIdGroups(idLists)) {
+        const InstalledApp &first = m_installed.at(group.first());
+        QStringList ids;
+        QStringList also;
+        for (const int index : group) {
+            const InstalledApp &app = m_installed.at(index);
+            for (const QString &id : app.ids) {
+                if (std::none_of(ids.cbegin(), ids.cend(),
+                                 [&id](const QString &own) { return comparableAppId(own) == comparableAppId(id); })) {
+                    ids.append(id);
+                }
+            }
+            if (index != group.first() && app.name != first.name && !also.contains(app.name)) {
+                also.append(app.name);
+            }
+        }
+        InstalledApp grouped = first;
+        grouped.ids = ids;
+        const AppResolution resolution = resolveApp(targetFor(grouped), apps);
         records.append(QVariantMap{
-            {QStringLiteral("name"), app.name},
-            {QStringLiteral("icon"), app.icon},
-            {QStringLiteral("ids"), app.ids},
+            {QStringLiteral("name"), first.name},
+            {QStringLiteral("icon"), first.icon},
+            {QStringLiteral("ids"), ids},
+            {QStringLiteral("also"), also},
             {QStringLiteral("entry"), resolution.appId},
             {QStringLiteral("type"), appCategoryName(resolution.type)},
             {QStringLiteral("profile"), resolution.writingProfile},
@@ -329,16 +441,11 @@ QVariantMap QuickApps::add(const QVariantMap &app)
     for (const QString &id : app.value(QStringLiteral("ids")).toStringList()) {
         entry.matches.append({AppMatchKind::Id, id});
     }
-    for (const QVariant &value : app.value(QStringLiteral("matches")).toList()) {
-        const QVariantMap match = value.toMap();
-        const QString kind = match.value(QStringLiteral("kind")).toString();
-        if (kind != u"name" && kind != u"title") {
-            qWarning().noquote() << "Apps.add takes no match of kind" << kind;
-            return {{QStringLiteral("id"), QString()}, {QStringLiteral("refusal"), invalidRecord}};
-        }
-        entry.matches.append({kind == u"name" ? AppMatchKind::Name : AppMatchKind::WindowTitle,
-                              match.value(QStringLiteral("value")).toString()});
+    const std::optional<QList<AppMatch>> matches = matchesFrom(app.value(QStringLiteral("matches")).toList());
+    if (!matches) {
+        return {{QStringLiteral("id"), QString()}, {QStringLiteral("refusal"), invalidRecord}};
     }
+    entry.matches += *matches;
     QStringList taken;
     for (const QVariant &existing : std::as_const(m_entries)) {
         taken.append(existing.toMap().value(QStringLiteral("id")).toString());
@@ -355,15 +462,21 @@ QString QuickApps::update(const QString &id, const QVariantMap &patch)
         qWarning().noquote() << "Apps.update takes no History choice" << patch.value(QStringLiteral("history")).toString();
         return invalidRecord;
     }
+    const std::optional<QList<AppMatch>> matches = matchesFrom(patch.value(QStringLiteral("matches")).toList());
+    if (!matches) {
+        return invalidRecord;
+    }
     return saveUnlessRefused([&](AppSettings &s) {
-        return editApp(s, id, [&patch, &history](AppEntry &app) {
+        return editApp(s, id, [&patch, &history, &matches](AppEntry &app) {
+            editPasting(app.pasting, patch);
+            if (patch.contains(QStringLiteral("matches"))) {
+                app.matches = *matches;
+            }
             for (auto it = patch.cbegin(); it != patch.cend(); ++it) {
                 if (it.key() == u"type") {
                     app.type = optionalFrom<AppCategory>(it.value(), appCategoryFromName);
                 } else if (it.key() == u"profile") {
                     app.writingProfile = optionalFrom<QString>(it.value(), [](const QString &v) { return v; });
-                } else if (it.key() == u"pasting") {
-                    app.pasting = optionalFrom<PasteMethod>(it.value(), pasteMethodFromName);
                 } else if (it.key() == u"history") {
                     app.history = *history;
                 } else if (it.key() == u"name") {
@@ -410,9 +523,7 @@ QString QuickApps::updateType(const QString &type, const QVariantMap &patch)
                 settings.writingProfile =
                     optionalFrom<QString>(patch.value(QStringLiteral("profile")), [](const QString &v) { return v; });
             }
-            if (patch.contains(QStringLiteral("pasting"))) {
-                settings.pasting = optionalFrom<PasteMethod>(patch.value(QStringLiteral("pasting")), pasteMethodFromName);
-            }
+            editPasting(settings.pasting, patch);
             if (patch.contains(QStringLiteral("history"))) {
                 settings.history = *history;
             }
@@ -429,6 +540,20 @@ void QuickApps::setCapture(const QString &state)
 }
 
 void QuickApps::captureNext(int seconds)
+{
+    m_testing = false;
+    startCapture(seconds);
+}
+
+void QuickApps::testNext(int seconds)
+{
+    m_testing = true;
+    m_tested.clear();
+    emit testedChanged();
+    startCapture(seconds);
+}
+
+void QuickApps::startCapture(int seconds)
 {
     m_countdown = std::max(0, seconds);
     m_capture.clear();
@@ -455,6 +580,10 @@ void QuickApps::captureFront()
         if (m_capture != u"waiting") {
             return;
         }
+        if (m_testing) {
+            showTested(target);
+            return;
+        }
         if (target.applicationId.trimmed().isEmpty()) {
             setCapture(QStringLiteral("failed"));
             return;
@@ -474,6 +603,33 @@ void QuickApps::captureFront()
             emit captured(id);
         }
     });
+}
+
+void QuickApps::showTested(const Target &target)
+{
+    if (!target.hasIdentity()) {
+        setCapture(QStringLiteral("failed"));
+        return;
+    }
+    const AppSettings settings = m_controller->settings()->dictationSnapshot();
+    const AppsSettings &apps = settings.apps;
+    const AppResolution resolution = resolveApp(target, apps);
+    const QStringList matched = matchingAppIds(target, apps);
+    const auto source = [&](AppLayer layer, auto sets) { return sourceRecord(layer, matched, apps, sets); };
+    QVariantMap tested = resolved(resolution, settings.output.steps);
+    tested.insert(QStringLiteral("name"), !target.applicationName.isEmpty() ? target.applicationName : target.applicationId);
+    tested.insert(QStringLiteral("appId"), target.applicationId);
+    tested.insert(QStringLiteral("windowTitle"), target.windowTitle);
+    tested.insert(QStringLiteral("matched"), matched);
+    tested.insert(QStringLiteral("from"), QVariantMap{
+        {QStringLiteral("profile"), source(resolution.writingProfileFrom, [](const AppEntry &app) { return bool(app.writingProfile); })},
+        {QStringLiteral("steps"), source(resolution.stepsFrom, [](const AppEntry &app) { return bool(app.pasting.steps); })},
+        {QStringLiteral("keys"), source(resolution.keysFrom, [](const AppEntry &app) { return bool(app.pasting.keys); })},
+        {QStringLiteral("history"), source(resolution.historyFrom, [](const AppEntry &app) { return bool(app.history); })},
+    });
+    m_tested = tested;
+    setCapture({});
+    emit testedChanged();
 }
 
 } // namespace speecher

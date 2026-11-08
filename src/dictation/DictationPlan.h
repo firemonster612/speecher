@@ -32,12 +32,13 @@ struct DictationPlan {
     AppSettings settings;
     // The run's own terms, which lead the saved ones.
     QStringList addedVocabulary;
-    // Where each value came from, by field: writingProfile, pasting,
-    // outputFormat, speech, refinement, spokenLanguage, cleanup, tone,
+    // Where each value came from, by field: writingProfile, pasting (the
+    // steps), pasteKeys, outputFormat, speech, refinement, spokenLanguage, cleanup, tone,
     // outputLanguage, instructions, vocabulary. A source is "run",
     // "profile:<id>", an App's id ("app:<uuid>"), "builtin" (the catalog's
     // profile for a known app), "type:<App Type id>" or "default" (the
-    // field's own page: Other apps for the profile, the steps for pasting).
+    // field's own page: Other apps for the profile, the Pasting page's steps,
+    // the usual paste keys).
     QHash<QString, QString> sources;
 };
 

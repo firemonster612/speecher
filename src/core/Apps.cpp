@@ -1,10 +1,13 @@
 #include "core/Apps.h"
 
+#include <QHash>
 #include <QRegularExpression>
 #include <QSet>
 #include <QUuid>
 
 #include <algorithm>
+#include <functional>
+#include <numeric>
 
 namespace speecher {
 
@@ -134,11 +137,15 @@ QList<BuiltInApp> builtInApps()
                   "kilo code", "factory droid", "auggie", "kimi code", "pearai", "trae", "google antigravity",
                   "tabnine"})
         + typed(AppCategory::Terminal,
-                {"terminal", "konsole", "ghostty", "alacritty", "kitty", "wezterm", "foot", "rio", "xterm", "urxvt"})
-        + typed(AppCategory::Email, {"thunderbird", "kmail", "mail"})
-        + typed(AppCategory::Browser, {"firefox", "chrome", "chromium", "helium", "browser"})
-        + typed(AppCategory::Office, {"libreoffice", "soffice", "writer", "office"})
-        + typed(AppCategory::CodeEditor, {"kate", "code", "editor", "jetbrains"})
+                {"terminal", "konsole", "ghostty", "alacritty", "kitty", "wezterm", "foot", "rio", "xterm", "urxvt",
+                 "iterm2"})
+        + typed(AppCategory::Email, {"thunderbird", "kmail", "mail", "outlook"})
+        + typed(AppCategory::Browser, {"firefox", "chrome", "chromium", "helium", "browser", "safari", "msedge",
+                                       "microsoft edge"})
+        + typed(AppCategory::Office, {"libreoffice", "soffice", "writer", "office", "winword", "microsoft word",
+                                      "excel", "powerpnt", "powerpoint", "com.apple.iwork.pages",
+                                      "com.apple.iwork.numbers", "com.apple.iwork.keynote"})
+        + typed(AppCategory::CodeEditor, {"kate", "code", "editor", "jetbrains", "xcode", "devenv", "visual studio"})
         + profiled(WritingProfile::Personal, {"signal", "discord", "telegram", "whatsapp", "messenger", "element"})
         + profiled(WritingProfile::Work, {"slack", "microsoft teams", "linear", "notion"});
 }
@@ -153,12 +160,12 @@ QList<AppTypeSettings> defaultAppTypeSettings()
 {
     QList<AppTypeSettings> types;
     for (const AppCategory type : appTypes()) {
-        AppTypeSettings settings{type, std::nullopt, std::nullopt};
+        AppTypeSettings settings{type};
         switch (type) {
         case AppCategory::Terminal:
             settings.writingProfile = WritingProfile::Work;
             if (terminalKeysDiffer) {
-                settings.pasting = PasteMethod::TerminalPaste;
+                settings.pasting.keys = PasteKeyCombo::Terminal;
             }
             break;
         case AppCategory::Office:
@@ -190,7 +197,7 @@ AppTypeSettings appTypeSettings(const AppsSettings &apps, AppCategory type)
             return settings;
         }
     }
-    return {type, std::nullopt, std::nullopt};
+    return {type};
 }
 
 QString fallbackWritingProfile(const AppsSettings &apps)
@@ -207,6 +214,47 @@ QString comparableAppId(const QString &id)
         }
     }
     return comparable;
+}
+
+QList<QList<int>> sharedIdGroups(const QList<QStringList> &ids)
+{
+    // Each list's group, by the first list in it, merged as shared ids turn up.
+    QList<int> group(ids.size());
+    std::iota(group.begin(), group.end(), 0);
+    const auto root = [&group](int index) {
+        while (group[index] != index) {
+            index = group[index];
+        }
+        return index;
+    };
+    QHash<QString, int> firstWithId;
+    for (int i = 0; i < ids.size(); ++i) {
+        for (const QString &id : ids.at(i)) {
+            const QString comparable = comparableAppId(id);
+            if (comparable.isEmpty()) {
+                continue;
+            }
+            const auto seen = firstWithId.constFind(comparable);
+            if (seen == firstWithId.cend()) {
+                firstWithId.insert(comparable, i);
+                continue;
+            }
+            const int left = root(*seen);
+            const int right = root(i);
+            group[std::max(left, right)] = std::min(left, right);
+        }
+    }
+    QList<QList<int>> groups;
+    QHash<int, qsizetype> groupAt;
+    for (int i = 0; i < ids.size(); ++i) {
+        const int first = root(i);
+        if (!groupAt.contains(first)) {
+            groupAt.insert(first, groups.size());
+            groups.append(QList<int>());
+        }
+        groups[groupAt.value(first)].append(i);
+    }
+    return groups;
 }
 
 QString newAppId(const QStringList &taken)
@@ -234,6 +282,15 @@ bool appMatches(const AppMatch &match, const Target &target)
     return false;
 }
 
+QStringList matchingAppIds(const Target &target, const AppsSettings &apps)
+{
+    QStringList ids;
+    for (const MatchedEntry &match : matchedEntries(target, apps.apps)) {
+        ids.append(match.entry->id);
+    }
+    return ids;
+}
+
 AppResolution resolveApp(const Target &target, const AppsSettings &apps)
 {
     const QList<MatchedEntry> matched = matchedEntries(target, apps.apps);
@@ -241,9 +298,11 @@ AppResolution resolveApp(const Target &target, const AppsSettings &apps)
     if (!matched.isEmpty()) {
         resolution.appId = matched.first().entry->id;
     }
+    // The first matched entry that sets field, a member or a test of the
+    // entry.
     const auto first = [&matched](auto field, bool identityOnly = false) -> const AppEntry * {
         for (const MatchedEntry &match : matched) {
-            if ((match.entry->*field) && (match.byIdentity || !identityOnly)) {
+            if (std::invoke(field, *match.entry) && (match.byIdentity || !identityOnly)) {
                 return match.entry;
             }
         }
@@ -303,19 +362,27 @@ AppResolution resolveApp(const Target &target, const AppsSettings &apps)
         setProfile(fallbackWritingProfile(apps), AppLayer::Fallback);
     }
 
+    // Steps and keys settle on their own: Terminals may set only their keys
+    // and still follow the type's steps, or none.
     Target classified = target;
     classified.category = resolution.type;
-    std::optional<PasteMethod> pasting;
-    if (const AppEntry *entry = first(&AppEntry::pasting)) {
-        resolution.pasting = entry->pasting;
-        resolution.pastingFrom = AppLayer::App;
-    } else if (isTerminalTarget(classified) && (pasting = appTypeSettings(apps, AppCategory::Terminal).pasting)) {
-        resolution.pasting = pasting;
-        resolution.pastingFrom = AppLayer::Terminal;
-    } else if ((pasting = appTypeSettings(apps, resolution.type).pasting)) {
-        resolution.pasting = pasting;
-        resolution.pastingFrom = AppLayer::Type;
-    }
+    const bool inTerminal = isTerminalTarget(classified);
+    const PastingChoice terminals = appTypeSettings(apps, AppCategory::Terminal).pasting;
+    const PastingChoice own = appTypeSettings(apps, resolution.type).pasting;
+    const auto settle = [&](auto part, auto &value, AppLayer &from) {
+        if (const AppEntry *entry = first([part](const AppEntry &app) { return bool(app.pasting.*part); })) {
+            value = entry->pasting.*part;
+            from = AppLayer::App;
+        } else if (inTerminal && terminals.*part) {
+            value = terminals.*part;
+            from = AppLayer::Terminal;
+        } else if (own.*part) {
+            value = own.*part;
+            from = AppLayer::Type;
+        }
+    };
+    settle(&PastingChoice::steps, resolution.pasting.steps, resolution.stepsFrom);
+    settle(&PastingChoice::keys, resolution.pasting.keys, resolution.keysFrom);
 
     std::optional<HistoryKeep> history;
     if (const AppEntry *entry = first(&AppEntry::history)) {

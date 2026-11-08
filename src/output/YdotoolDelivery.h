@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/PasteMethod.h"
+#include "core/DeliverySteps.h"
 #include "output/ProcessRunner.h"
 
 #include <QObject>
@@ -29,13 +29,13 @@ public:
     // failure sent no paste key: refused, or ydotool never started.
     using PasteDone = std::function<void(bool pasted, bool noInputSent, const QString &error)>;
     void pasteFromClipboard(const QString &text,
-                            PasteMethod method,
+                            PasteKeyCombo keys,
                             const std::function<void(std::function<void(bool clear)>)> &clearToInject,
                             PasteDone done);
     static bool isAvailable();
     static QString socketPath();
     static QStringList commandArguments(const QString &text);
-    static QStringList pasteShortcutArguments(PasteMethod method);
+    static QStringList pasteShortcutArguments(PasteKeyCombo keys);
     static QString withoutTrailingWhitespace(const QString &text);
 
 private:

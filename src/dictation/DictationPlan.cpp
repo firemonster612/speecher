@@ -87,7 +87,8 @@ DictationPlan planDictation(const AppSettings &saved,
     sources.insert(QStringLiteral("outputLanguage"), fromProfile);
     sources.insert(QStringLiteral("instructions"), fromProfile);
 
-    sources.insert(QStringLiteral("pasting"), appSource(plan.app.pastingFrom, plan.app));
+    sources.insert(QStringLiteral("pasting"), appSource(plan.app.stepsFrom, plan.app));
+    sources.insert(QStringLiteral("pasteKeys"), appSource(plan.app.keysFrom, plan.app));
     if (run.outputFormat) {
         settings.output.format = *run.outputFormat;
     }
