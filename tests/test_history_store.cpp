@@ -578,6 +578,15 @@ private slots:
         HistoryQuery query;
         query.text = QStringLiteral("known");
         QCOMPARE(store.search(query).size(), 1);
+
+        // The file coming back is taken in at the next sync.
+        QFile file(recording.transcriptPath);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("[00:00:01] me: known words\n[00:00:02] me: found later\n");
+        file.close();
+        QVERIFY(store.syncRecordingFile(id));
+        query.text = QStringLiteral("found later");
+        QCOMPARE(store.search(query).size(), 1);
     }
 
     void recoveryReconcilesEveryTranscriptLine()

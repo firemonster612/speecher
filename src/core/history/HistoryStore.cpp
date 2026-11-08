@@ -849,7 +849,9 @@ void HistoryStore::finishUnfinishedRecordings()
                                                    historyOutcomeName(HistoryOutcome::Complete), said,
                                                    QString::fromUtf8(QJsonDocument(recordingEndJson(end)).toJson(
                                                        QJsonDocument::Compact)),
-                                                   changedAt(transcriptPath), id}) {
+                                                   // With no file read, a time no file has, so a
+                                                   // sync takes it in once it can be read again.
+                                                   read ? changedAt(transcriptPath) : QVariant(qint64(0)), id}) {
             finish.addBindValue(value);
         }
         written = written && finish.exec() && finish.numRowsAffected() == 1;
