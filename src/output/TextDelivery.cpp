@@ -24,6 +24,13 @@ namespace speecher {
 
 namespace {
 
+// How long a paste that can't be confirmed keeps the clipboard before the
+// previous one goes back. The keys are in the target's input queue once the
+// backend answers, and apps read the clipboard as they handle Ctrl+V, within
+// a frame or two even under load; half a second covers a busy app without
+// leaving the words on the clipboard long enough to be pasted again by hand.
+constexpr int unconfirmedPasteGraceMs = 500;
+
 #ifdef SPEECHER_WITH_WAYLAND
 // The keyboard backends paste what TextDelivery::deliver already copied.
 class YdotoolBackend final : public DeliveryBackend {
@@ -165,9 +172,9 @@ void TextDelivery::useDefaultBackendFactory()
 }
 
 // The clipboard as it was before a paste borrowed it, put back once the paste
-// is verified or no keys went out, and what the receipt says about it. Both
-// steps answer through next once the clipboard has, unless context is gone by
-// then.
+// is verified or had time to land, or no keys went out, and what the receipt
+// says about it. Both steps answer through next once the clipboard has,
+// unless context is gone by then.
 class TextDelivery::PreviousClipboard {
 public:
     explicit PreviousClipboard(ClipboardDelivery &clipboard)
@@ -253,9 +260,10 @@ private:
 // One delivery, step by step, as its plan says: copy first when Keep is on,
 // then insert straight into the app, else copy and press the paste keys.
 // When Keep is off the paste borrows the clipboard: only once the previous
-// one is saved, and it goes back after a verified paste or once the keys are
-// known not to have gone out. A step that waits on a helper goes on from its
-// answer. done hears the result once, and nothing runs after stop().
+// one is saved, and it goes back after the paste, verified or given time to
+// land, or once the keys are known not to have gone out. A step that waits on
+// a helper goes on from its answer. done hears the result once, and nothing
+// runs after stop().
 class TextDelivery::Run final : public QObject {
     // One of this run's frames on the stack. No step waits in a nested event
     // loop any more, but the run answers from inside a step, and a handler of
@@ -550,8 +558,9 @@ private:
                                           whileRunning([this](bool verified) { answerPaste(verified); }));
     }
 
-    // The paste went out; the answer says what showed of it, after putting
-    // the previous clipboard back for a verified paste when Keep is off.
+    // The paste went out; the answer says what showed of it. With Keep off
+    // the previous clipboard goes back: at once for a verified paste, else
+    // once the target has had time to read the words.
     void answerPaste(bool verified)
     {
         const auto answer = [this, verified](bool restoredClipboard) {
@@ -560,19 +569,27 @@ private:
             // "could not confirm" on every such dictation reads like a failure
             // when nothing went wrong.
             const bool verifiable = !m_request.target.compositorActive;
-            const QString message = !verified
-                ? verifiable ? QStringLiteral("Could not confirm the paste. Your dictation is on the clipboard.")
-                             : QStringLiteral("Sent. Your dictation is also on the clipboard.")
-                : restoredClipboard ? QStringLiteral("Sent to the app")
-                                    : QStringLiteral("Copied • Sent to the app");
+            const QString message = verified
+                ? restoredClipboard ? QStringLiteral("Sent to the app") : QStringLiteral("Copied • Sent to the app")
+                : !verifiable
+                ? restoredClipboard ? QStringLiteral("Sent to the app")
+                                    : QStringLiteral("Sent. Your dictation is also on the clipboard.")
+                : restoredClipboard ? QStringLiteral("Could not confirm the paste.")
+                                    : QStringLiteral("Could not confirm the paste. Your dictation is on the clipboard.");
             finish({true, verified ? DeliveryReceipt::VerifiedInTarget : DeliveryReceipt::InputSent,
                     m_copiedAsPlainText, m_previousClipboard.annotate(message)});
         };
-        if (verified && !steps().keep) {
-            m_previousClipboard.restore(this, whileRunning(answer));
-        } else {
+        if (steps().keep) {
             answer(false);
+            return;
         }
+        if (verified) {
+            m_previousClipboard.restore(this, whileRunning(answer));
+            return;
+        }
+        QTimer::singleShot(unconfirmedPasteGraceMs, this, whileRunning([this, answer] {
+            m_previousClipboard.restore(this, whileRunning(answer));
+        }));
     }
 
     QString copiedMessage() const

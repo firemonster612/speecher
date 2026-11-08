@@ -220,7 +220,7 @@ ApplicationController::ApplicationController(bool popupOnly,
                                   new ShortcutSuspendingDelivery(
                                       m_platform->createTextDelivery(targetProvider, this),
                                       {m_shortcutBinder, m_cancelShortcutBinder, m_pauseShortcutBinder,
-                                       m_pasteAgainShortcutBinder},
+                                       m_pasteAgainShortcutBinder, m_recordingShortcutBinder},
                                       this),
                                   this);
     connect(m_pasteAgain, &PasteAgain::finished, this, [this](bool ok, const QString &message) {
@@ -495,11 +495,23 @@ void ApplicationController::keepRecordingInHistory()
         entry.transcriptPath = path;
         entry.kept = HistoryKeep::Text;
         m_recordingEntry = m_history->add(entry);
+        for (const HistoryLine &line : std::exchange(m_startingRecordingLines, {})) {
+            m_history->appendLine(m_recordingEntry, line);
+        }
     });
     connect(m_recording, &RecordingSession::lineWritten, this,
             [this](qint64 atMs, const QString &speaker, const QString &text) {
+                if (m_recording->phase() == RecordingSession::Phase::Starting) {
+                    m_startingRecordingLines.append({atMs, speaker, text});
+                    return;
+                }
                 m_history->appendLine(m_recordingEntry, {atMs, speaker, text});
             });
+    connect(m_recording, &RecordingSession::phaseChanged, this, [this] {
+        if (m_recording->phase() == RecordingSession::Phase::Off) {
+            m_startingRecordingLines.clear();
+        }
+    });
     connect(m_recording, &RecordingSession::stopped, this, [this](const RecordingStatus &status) {
         m_history->finishRecording(m_recordingEntry, QDateTime::currentDateTime(), status.durationMs,
                                    recordingEnd(status), status.audioPath);

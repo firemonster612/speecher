@@ -746,11 +746,14 @@ private slots:
     {
         QTest::addColumn<bool>("selectionMoved");
         QTest::addColumn<bool>("focusMoved");
-        QTest::newRow("keep original") << false << false;
-        QTest::newRow("selection changed, then replace") << true << false;
+        QTest::addColumn<bool>("appHasSteps");
+        QTest::newRow("keep original") << false << false << false;
+        QTest::newRow("selection changed, then replace") << true << false << false;
         // Another control with the same selection is still not the one the
         // edit was made in.
-        QTest::newRow("another control focused, then replace") << false << true;
+        QTest::newRow("another control focused, then replace") << false << true << false;
+        // Steps of the App's own still give way to the clipboard.
+        QTest::newRow("selection changed in an app with its own steps") << true << false << true;
     }
 
     // Keep original leaves the selection alone and says nothing. Replace after
@@ -760,9 +763,18 @@ private slots:
     {
         QFETCH(bool, selectionMoved);
         QFETCH(bool, focusMoved);
+        QFETCH(bool, appHasSteps);
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
+        settings.edit([appHasSteps](AppSettings &draft) {
+            draft.refinement.services.order = {QStringLiteral("openai")};
+            for (AppTypeSettings &type : draft.apps.types) {
+                if (appHasSteps && type.type == AppCategory::CodeEditor) {
+                    type.pasting.steps = DeliverySteps{.insert = true, .press = true, .keep = false};
+                }
+            }
+            return true;
+        });
         FakeAudioInput audio;
         FakeMediaController media;
         FakeTargetProvider target;
@@ -806,7 +818,8 @@ private slots:
         QCOMPARE(delivery.calls, 1);
         QTRY_COMPARE(delivery.answers, 1);
         QCOMPARE(delivery.lastText, QStringLiteral("Keep the original"));
-        QCOMPARE(delivery.lastSettings.steps, (DeliverySteps{.insert = false, .press = false, .keep = true}));
+        QCOMPARE(deliveryPlan(delivery.lastSettings.steps, delivery.lastPasting).steps,
+                 (DeliverySteps{.insert = false, .press = false, .keep = true}));
         QCOMPARE(session.lastMessage(), QStringLiteral("Sent to the app • Your selection changed"));
     }
 

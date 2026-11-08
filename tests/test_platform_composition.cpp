@@ -33,6 +33,7 @@
 #include "app/LocalSetup.h"
 #include "providers/LocalModelStore.h"
 #include "providers/ProviderRegistry.h"
+#include "recording/RecordingSession.h"
 #include "platform/GlobalShortcutBinder.h"
 #include "platform/HotKeyShortcutBinder.h"
 #include "platform/RoutingShortcutBinder.h"
@@ -327,6 +328,16 @@ public:
         return audioInputs ? audioInputs(parent) : m_delegate->createAudioInput(settings, parent);
     }
 
+    bool recordsSystemAudio() const override
+    {
+        return bool(systemAudioInputs);
+    }
+
+    AudioInput *createSystemAudioInput(QObject *parent) const override
+    {
+        return systemAudioInputs ? systemAudioInputs(parent) : nullptr;
+    }
+
     void requestMicrophoneAccess(QObject *, std::function<void(bool)> completed) const override
     {
         microphoneAnswer = std::move(completed);
@@ -353,7 +364,7 @@ public:
 
     TextDeliveryAdapter *createTextDelivery(TargetProvider *targetProvider, QObject *parent) const override
     {
-        return m_delegate->createTextDelivery(targetProvider, parent);
+        return textDeliveries ? textDeliveries(parent) : m_delegate->createTextDelivery(targetProvider, parent);
     }
 
     PopupPositioner *createPopupPositioner(QObject *parent) const override
@@ -426,6 +437,11 @@ public:
     mutable std::function<void(bool)> microphoneAnswer;
     // Makes the microphones instead of the platform, when set.
     std::function<AudioInput *(QObject *parent)> audioInputs;
+    // Makes a Recording's system audio when set; unset, it records the
+    // microphone alone.
+    std::function<AudioInput *(QObject *parent)> systemAudioInputs;
+    // Makes the deliveries instead of the platform, when set.
+    std::function<TextDeliveryAdapter *(QObject *parent)> textDeliveries;
     mutable FakeGlobalShortcutBinder *binder = nullptr;
     mutable FakeGlobalShortcutBinder *cancelBinder = nullptr;
     mutable FakeGlobalShortcutBinder *pauseBinder = nullptr;
@@ -3282,6 +3298,42 @@ private slots:
         QCOMPARE(deliveredOk, std::optional<bool>(true));
     }
 
+    // Dictation and Paste Again both inject the paste keys, so every shortcut
+    // looks away while either delivers, the Recording Shortcut as well: bound
+    // to Ctrl+V, it would otherwise take the paste.
+    void everyDeliverySuspendsEveryShortcut()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        QList<FakeDelivery *> deliveries;
+        platform->textDeliveries = [&deliveries](QObject *parent) {
+            deliveries.append(new FakeDelivery(parent));
+            deliveries.last()->holdsAnswer = true;
+            return deliveries.last();
+        };
+        ApplicationController controller(true, platform);
+        const QList<FakeGlobalShortcutBinder *> binders{platform->binder, platform->cancelBinder, platform->pauseBinder,
+                                                       platform->pasteAgainBinder, platform->recordingBinder};
+        const QList<ShortcutSuspendingDelivery *> suspending =
+            controller.findChildren<ShortcutSuspendingDelivery *>(Qt::FindDirectChildrenOnly);
+        QCOMPARE(suspending.size(), 2);
+        QCOMPARE(deliveries.size(), 2);
+
+        for (qsizetype each = 0; each < suspending.size(); ++each) {
+            suspending[each]->deliver({}, {}, {}, {});
+            for (FakeGlobalShortcutBinder *binder : binders) {
+                QCOMPARE(binder->suspendCount - binder->resumeCount, 1);
+            }
+            for (FakeDelivery *delivery : deliveries) {
+                if (delivery->calls > delivery->answers) {
+                    delivery->answer();
+                }
+            }
+            for (FakeGlobalShortcutBinder *binder : binders) {
+                QCOMPARE(binder->suspendCount - binder->resumeCount, 0);
+            }
+        }
+    }
+
     // Deliveries that overlap share one suspension, which lifts with the last
     // answer: the binders do not count theirs.
     void overlappingDeliveriesKeepShortcutsSuspendedUntilTheLastAnswer()
@@ -3751,6 +3803,62 @@ private slots:
         QTRY_VERIFY(connected);
         QVERIFY(!controller.isRecording());
         QVERIFY(!QFileInfo::exists(path));
+    }
+
+    // A line the file takes while the recording still starts belongs to it:
+    // its History Entry gets the line once the start finishes. A start that
+    // fails takes its lines with it, so the next recording has only its own.
+    void linesWrittenWhileARecordingStartsGoToItsEntry()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        platform->audioInputs = [](QObject *parent) { return new test::FakeAudioInput(parent); };
+        platform->systemAudioInputs = [](QObject *parent) { return new test::FakeAudioInput(parent); };
+        ApplicationController controller(true, platform);
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.setupCompleted = true;
+            draft.speech.services.order = {QStringLiteral("codex")};
+            draft.history.keeps = HistoryKeep::Text;
+            return true;
+        });
+        // One stream for the microphone and one for system audio; until the
+        // second connects, the first already writes lines.
+        QList<QPointer<test::FakeSpeechTranscriber>> streams;
+        controller.providerRegistry()->registerSpeechProvider(
+            {QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")}, [&streams](QObject *parent) {
+                auto *codex = new test::FakeSpeechTranscriber(parent);
+                codex->providerId = QStringLiteral("codex");
+                codex->streamsFinals = true;
+                codex->onStartAttempt = [codex, &streams] { streams.append(codex); };
+                return codex;
+            });
+        QTemporaryDir dir;
+        const auto startWithOneStreamConnected = [&](const QString &name) {
+            streams.clear();
+            controller.startRecording({dir.filePath(name), {}}, [](const QString &) {});
+            platform->microphoneAnswer(true);
+            QTRY_COMPARE(streams.size(), 2);
+            streams.first()->emitConnected();
+            QCOMPARE(controller.recording()->phase(), RecordingSession::Phase::Starting);
+        };
+
+        startWithOneStreamConnected(QStringLiteral("failed.md"));
+        streams.first()->emitFinalText(QStringLiteral("Lost with the start."));
+        controller.recording()->stop();
+        QCOMPARE(controller.recording()->phase(), RecordingSession::Phase::Off);
+
+        startWithOneStreamConnected(QStringLiteral("call.md"));
+        streams.first()->emitFinalText(QStringLiteral("Said while it started."));
+        streams.last()->emitConnected();
+        QVERIFY(controller.isRecording());
+        streams.first()->emitFinalText(QStringLiteral("Said once it ran."));
+
+        QStringList texts;
+        for (const HistoryLine &line : controller.history()->lines(controller.recordingHistoryId())) {
+            texts.append(line.text);
+        }
+        QCOMPARE(texts, (QStringList{QStringLiteral("Said while it started."), QStringLiteral("Said once it ran.")}));
+        controller.recording()->stop();
+        QTRY_COMPARE(controller.recording()->phase(), RecordingSession::Phase::Off);
     }
 
     // Outside an AppImage, the AppImage updater's restart opens the release
