@@ -88,7 +88,7 @@ T.Popup {
         // Unless the card has its own button there.
         TextLink {
             objectName: "openServices"
-            visible: !card.item?.leadsToPage
+            visible: !(card.item as ComputerSection)?.leadsToPage
             text: sheet.card === "computer" ? Schema.row("speechLocalModel").actionLabel : Words.openServices
             onActivated: sheet.openPage()
         }
