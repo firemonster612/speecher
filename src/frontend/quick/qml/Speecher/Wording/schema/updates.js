@@ -57,5 +57,17 @@ var since = {
     reviewSelectionEdits: "0.2.1",
     spokenLanguage: "0.2.1",
     roundedCorners: "0.2.1",
-    boringMode: "0.2.1"
+    boringMode: "0.2.1",
+    // The settings redesign: Apps, Service Orders and History.
+    speechServices: "0.3.1",
+    refinementEnabled: "0.3.1",
+    refinementServices: "0.3.1",
+    apps: "0.3.1",
+    appTypes: "0.3.1",
+    appHistory: "0.3.1",
+    historyKeeps: "0.3.1",
+    historyTextDays: "0.3.1",
+    historyAudioDays: "0.3.1",
+    historyExcludedApps: "0.3.1",
+    pasteAgainShortcut: "0.3.1"
 };
