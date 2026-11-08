@@ -21,43 +21,45 @@
 namespace speecher {
 namespace {
 
-// What a connection check depends on. The model is picked from its answer,
-// so choosing one keeps the verdict and the list.
-template <typename Endpoint>
-Endpoint connection(Endpoint endpoint)
+// What a refinement server's connection check depends on. The model is
+// picked from its answer, so choosing one keeps the verdict and the list.
+RefinementEndpoint connection(RefinementEndpoint endpoint)
 {
     endpoint.model.clear();
     return endpoint;
 }
 
-// The endpoint dictation may use, as the primary or a fallback, once it has a
-// server to ask.
-std::optional<SpeechEndpointSettings> speechEndpointInUse(const AppSettings &settings)
+// The speech server dictation may use, anywhere in the order, once it has
+// an address to ask.
+std::optional<ServerSettings> speechEndpointInUse(const AppSettings &settings)
 {
-    const QStringList chain =
-        providerChain(ProviderRole::Speech, settings.speech.providerId, settings.speech.fallbackProviderIds);
-    if (!chain.contains(providerKey(ProviderId::Endpoint)) || settings.speech.endpoint.baseUrl.isEmpty()) {
+    if (!serviceChain(settings.speech).contains(providerKey(ProviderId::Endpoint))
+        || settings.speech.server.baseUrl.isEmpty()) {
         return std::nullopt;
     }
-    return connection(settings.speech.endpoint);
+    return settings.speech.server;
 }
 
 std::optional<RefinementEndpoint> refinementEndpointInUse(const AppSettings &settings)
 {
-    const RefinementEndpoint endpoint = resolvedRefinementEndpoint(settings.refinement);
-    const QStringList chain = providerChain(ProviderRole::Refinement, settings.refinement.providerId,
-                                            settings.refinement.fallbackProviderIds);
-    if (!chain.contains(providerKey(ProviderId::Endpoint)) || endpoint.apiBase.isEmpty()) {
+    const RefinementEndpoint endpoint = resolvedRefinementEndpoint(settings.refinement, settings.accounts);
+    if (!serviceChain(settings.refinement).contains(providerKey(ProviderId::Endpoint)) || endpoint.apiBase.isEmpty()) {
         return std::nullopt;
     }
     return connection(endpoint);
+}
+
+// The cleanup model the "local" refinement entry names.
+QString &runnerModel(AppSettings &settings)
+{
+    return settings.refinement.services.choice(providerKey(ProviderId::Local)).model;
 }
 
 constexpr int kEndpointCheckDelayMs = 800;
 
 } // namespace
 
-RunnerChoice resolveRunnerChoice(const LocalRunnerSettings &saved,
+RunnerChoice resolveRunnerChoice(const RunnerSelection &saved,
                                 const QList<DetectedRunner> &runners,
                                 const std::optional<CleanupModel> &suggestion)
 {
@@ -207,7 +209,7 @@ LocalSetup::LocalSetup(SettingsStore &settings,
         m_pull.running = false;
         m_settings.edit([this](AppSettings &settings) {
             settings.refinement.localRunner.runner = QStringLiteral("ollama");
-            settings.refinement.localRunner.model = ollamaListedName(m_pull.tag);
+            runnerModel(settings) = ollamaListedName(m_pull.tag);
             return true;
         });
         detectRunners();
@@ -253,9 +255,11 @@ LocalSetup::LocalSetup(SettingsStore &settings,
         delay->setInterval(kEndpointCheckDelayMs);
     }
     connect(&m_speechCheckDelay, &QTimer::timeout, this,
-            [this] { checkSpeechEndpoint(m_settings.dictationSnapshot().speech.endpoint); });
-    connect(&m_refinementCheckDelay, &QTimer::timeout, this,
-            [this] { checkRefinementEndpoint(m_settings.dictationSnapshot().refinement); });
+            [this] { checkSpeechEndpoint(m_settings.dictationSnapshot().speech.server); });
+    connect(&m_refinementCheckDelay, &QTimer::timeout, this, [this] {
+        const AppSettings settings = m_settings.dictationSnapshot();
+        checkRefinementEndpoint(resolvedRefinementEndpoint(settings.refinement, settings.accounts));
+    });
     connect(&m_settings, &SettingsStore::snapshotApplied, this, [this](const AppSettings &previous) {
         const AppSettings current = m_settings.dictationSnapshot();
         // A new Runs on choice changes what fits and which speeds were
@@ -379,10 +383,10 @@ bool LocalSetup::removeModel(const LocalModel &model)
         });
         // Dictation moves to another downloaded model rather than a missing
         // file. With none left it stays, and dictating says to download one.
-        if (local.modelId == model.id) {
+        if (localModelId(settings.speech) == model.id) {
             for (const LocalModel &other : localModelCatalog()) {
                 if (m_models.isDownloaded(other)) {
-                    local.modelId = other.id;
+                    localModelId(settings.speech) = other.id;
                     break;
                 }
             }
@@ -432,9 +436,8 @@ bool LocalSetup::speedTestRunning(const QString &modelId) const
 
 const LocalModel &LocalSetup::speechModelChoice(const AppSettings &settings) const
 {
-    const LocalSpeechSettings &saved = settings.speech.local;
-    const auto *model = findLocalModel(saved.modelId);
-    return saved.modelChosen && model ? *model : suggestedModel(settings);
+    const auto *model = findLocalModel(localModelId(settings.speech));
+    return settings.speech.local.modelChosen && model ? *model : suggestedModel(settings);
 }
 
 void LocalSetup::initializeSpeechModel()
@@ -443,7 +446,11 @@ void LocalSetup::initializeSpeechModel()
     if (!m_hardwareKnown || settings.speech.local.modelChosen) return;
     // The general settings setter treats a changed model as a user choice.
     // A hardware default must remain replaceable until the person chooses.
-    m_settings.raw().setValue(SettingsKeys::LocalModel, suggestedModel(settings).id);
+    const QString suggested = suggestedModel(settings).id;
+    m_settings.edit([&suggested](AppSettings &draft) {
+        localModelId(draft.speech) = suggested;
+        return true;
+    });
     m_settings.raw().setValue(SettingsKeys::LocalModelChosen, false);
 }
 
@@ -451,7 +458,7 @@ void LocalSetup::chooseSpeechModel(const QString &id)
 {
     if (!findLocalModel(id)) return;
     m_settings.edit([&id](AppSettings &settings) {
-        settings.speech.local.modelId = id;
+        localModelId(settings.speech) = id;
         settings.speech.local.modelChosen = true;
         return true;
     });
@@ -461,10 +468,9 @@ void LocalSetup::chooseSpeechModel(const QString &id)
 void LocalSetup::useSpeechModel(const QString &id)
 {
     if (!findLocalModel(id)) return;
-    // The store drops Local Model from the fallbacks once it is the primary.
     m_settings.edit([&id](AppSettings &settings) {
-        settings.speech.providerId = providerKey(ProviderId::Local);
-        settings.speech.local.modelId = id;
+        settings.speech.services = settings.speech.services.withMain(providerKey(ProviderId::Local));
+        localModelId(settings.speech) = id;
         settings.speech.local.modelChosen = true;
         return true;
     });
@@ -473,18 +479,22 @@ void LocalSetup::useSpeechModel(const QString &id)
 
 RunnerChoice LocalSetup::runnerChoice(const AppSettings &settings) const
 {
-    return resolveRunnerChoice(settings.refinement.localRunner, m_runners, suggestedCleanupModel());
+    return resolveRunnerChoice({settings.refinement.localRunner.runner,
+                                settings.refinement.services.choice(providerKey(ProviderId::Local)).model},
+                               m_runners, suggestedCleanupModel());
 }
 
 void LocalSetup::initializeRunner()
 {
     const AppSettings settings = m_settings.dictationSnapshot();
-    const LocalRunnerSettings &saved = settings.refinement.localRunner;
-    if (!saved.runner.isEmpty() || !saved.model.isEmpty()) return;
     const auto choice = runnerChoice(settings);
-    if (!choice.available) return;
+    if (!settings.refinement.localRunner.runner.isEmpty()
+        || !settings.refinement.services.choice(providerKey(ProviderId::Local)).model.isEmpty() || !choice.available) {
+        return;
+    }
     m_settings.edit([&choice](AppSettings &settings) {
-        settings.refinement.localRunner = choice.selection;
+        settings.refinement.localRunner.runner = choice.selection.runner;
+        runnerModel(settings) = choice.selection.model;
         return true;
     });
 }
@@ -494,7 +504,7 @@ LocalSetup::ModelState LocalSetup::modelState(const LocalModel &model, std::opti
     const SpeechSettings speech = draft ? *draft : m_settings.dictationSnapshot().speech;
     ModelState state;
     state.inUse = !m_models.isDownloading(model.id) && m_models.isDownloaded(model)
-        && parseProviderId(speech.providerId) == ProviderId::Local && speech.local.modelId == model.id;
+        && parseProviderId(speech.services.main()) == ProviderId::Local && localModelId(speech) == model.id;
     state.problem = m_downloadErrors.value(model.id, m_speedTestErrors.value(model.id));
     return state;
 }
@@ -554,11 +564,11 @@ LocalSetup::Pull LocalSetup::pull() const
     return m_pull;
 }
 
-void LocalSetup::checkSpeechEndpoint(const SpeechEndpointSettings &endpoint)
+void LocalSetup::checkSpeechEndpoint(const ServerSettings &endpoint)
 {
     m_speechCheckDelay.stop();
     const auto generation = ++m_speechEndpoint.generation;
-    m_checkedSpeech = connection(endpoint);
+    m_checkedSpeech = endpoint;
     m_speechEndpoint.result = {};
     m_speechEndpoint.checking = true;
     emit changed();
@@ -569,11 +579,12 @@ void LocalSetup::checkSpeechEndpoint(const SpeechEndpointSettings &endpoint)
                                         m_speechEndpoint.checking = false;
                                         m_speechEndpoint.result = check;
                                         // Only for the server that is saved, not one still being typed.
-                                        const SpeechEndpointSettings saved = m_settings.dictationSnapshot().speech.endpoint;
-                                        if (saved.model.isEmpty() && !check.models.isEmpty()
-                                            && connection(saved) == m_checkedSpeech) {
-                                            m_settings.edit([&check](AppSettings &settings) {
-                                                settings.speech.endpoint.model = check.models.first();
+                                        const SpeechSettings saved = m_settings.dictationSnapshot().speech;
+                                        const QString endpoint = providerKey(ProviderId::Endpoint);
+                                        if (saved.services.choice(endpoint).model.isEmpty() && !check.models.isEmpty()
+                                            && saved.server == m_checkedSpeech) {
+                                            m_settings.edit([&check, &endpoint](AppSettings &settings) {
+                                                settings.speech.services.choice(endpoint).model = check.models.first();
                                                 return true;
                                             });
                                         }
@@ -581,25 +592,27 @@ void LocalSetup::checkSpeechEndpoint(const SpeechEndpointSettings &endpoint)
                                     });
 }
 
-void LocalSetup::checkRefinementEndpoint(const RefinementSettings &settings)
+void LocalSetup::checkRefinementEndpoint(const RefinementEndpoint &endpoint)
 {
     m_refinementCheckDelay.stop();
     const auto generation = ++m_refinementEndpoint.generation;
-    m_checkedRefinement = connection(resolvedRefinementEndpoint(settings));
+    m_checkedRefinement = connection(endpoint);
     m_refinementEndpoint.result = {};
     m_refinementEndpoint.checking = true;
     emit changed();
     runProviderProbe<EndpointCheck>(&m_providers, this,
-                                    [settings] { return speecher::checkRefinementEndpoint(settings); },
+                                    [endpoint] { return speecher::checkRefinementEndpoint(endpoint); },
                                     [this, generation](const EndpointCheck &check) {
                                         if (generation != m_refinementEndpoint.generation) return;
                                         m_refinementEndpoint.checking = false;
                                         m_refinementEndpoint.result = check;
-                                        const RefinementSettings saved = m_settings.dictationSnapshot().refinement;
-                                        if (saved.endpoint.model.isEmpty() && !check.models.isEmpty()
-                                            && connection(resolvedRefinementEndpoint(saved)) == m_checkedRefinement) {
+                                        const AppSettings saved = m_settings.dictationSnapshot();
+                                        const RefinementEndpoint endpoint =
+                                            resolvedRefinementEndpoint(saved.refinement, saved.accounts);
+                                        if (endpoint.model.isEmpty() && !check.models.isEmpty()
+                                            && connection(endpoint) == m_checkedRefinement) {
                                             m_settings.edit([&check](AppSettings &settings) {
-                                                settings.refinement.endpoint.model = check.models.first();
+                                                editRefinementEndpoint(settings, {.model = check.models.first()});
                                                 return true;
                                             });
                                         }
@@ -630,29 +643,27 @@ std::optional<SetupFallbackOffer> LocalSetup::setupFallbackOffer(ProviderRole ro
     return SetupFallbackOffer{local, choice.selection.model, localRunnerName(choice.available->id)};
 }
 
-std::optional<QStringList> LocalSetup::fallbacksWithSetupOffer(ProviderRole role, const QString &primary,
-                                                               const AppSettings &settings) const
+std::optional<QStringList> LocalSetup::orderWithSetupOffer(ProviderRole role, const QString &primary,
+                                                           const AppSettings &settings) const
 {
     const std::optional<SetupFallbackOffer> offer = setupFallbackOffer(role, settings);
     if (!offer) {
         return std::nullopt;
     }
-    // A full chain, or the offer already the primary or a fallback, would drop it.
-    const QStringList kept = normalizedFallbackProviders(role, primary,
-                                                         role == ProviderRole::Speech
-                                                             ? settings.speech.fallbackProviderIds
-                                                             : settings.refinement.fallbackProviderIds);
-    const QStringList fallbacks = normalizedFallbackProviders(role, primary, QStringList(kept) << offer->providerId);
-    if (fallbacks.size() <= kept.size()) {
+    // Setup's choice takes the first service's place, as setup saves it.
+    const ServiceOrder &services = role == ProviderRole::Speech ? settings.speech.services : settings.refinement.services;
+    const QStringList kept = serviceChain(role, QStringList{primary} + services.order.mid(1)).mid(0, kMaxServices);
+    // A full order, or the offer already in it, would drop it.
+    if (kept.size() >= kMaxServices || kept.contains(offer->providerId)) {
         return std::nullopt;
     }
-    return fallbacks;
+    return kept + QStringList{offer->providerId};
 }
 
 bool LocalSetup::setupFallbackOfferJoins(ProviderRole role, const QString &primary,
                                          const AppSettings &settings) const
 {
-    return fallbacksWithSetupOffer(role, primary, settings).has_value();
+    return orderWithSetupOffer(role, primary, settings).has_value();
 }
 
 void LocalSetup::acceptSetupFallbackOffer(ProviderRole role, const QString &primary)
@@ -660,26 +671,26 @@ void LocalSetup::acceptSetupFallbackOffer(ProviderRole role, const QString &prim
     // Where the chain would drop the offer, nothing changes, not even the
     // model or the runner it names.
     const AppSettings settings = m_settings.dictationSnapshot();
-    const std::optional<QStringList> fallbacks = fallbacksWithSetupOffer(role, primary, settings);
-    if (!fallbacks) {
+    const std::optional<QStringList> order = orderWithSetupOffer(role, primary, settings);
+    if (!order) {
         return;
     }
     const SetupFallbackOffer offer = *setupFallbackOffer(role, settings);
     if (role == ProviderRole::Speech) {
         m_settings.edit([&](AppSettings &draft) {
-            draft.speech.providerId = primary;
-            draft.speech.fallbackProviderIds = *fallbacks;
+            draft.speech.services.order = *order;
             return true;
         });
         chooseSpeechModel(offer.modelId);
         download(*findLocalModel(offer.modelId));
         return;
     }
-    const LocalRunnerSettings runner = runnerChoice(settings).selection;
+    const RunnerSelection runner = runnerChoice(settings).selection;
     m_settings.edit([&](AppSettings &draft) {
-        draft.refinement.localRunner = runner;
-        draft.refinement.providerId = primary;
-        draft.refinement.fallbackProviderIds = *fallbacks;
+        draft.refinement.localRunner.runner = runner.runner;
+        runnerModel(draft) = runner.model;
+        draft.refinement.services.order = *order;
+        draft.refinement.enabled = true;
         return true;
     });
     emit changed();
@@ -699,13 +710,13 @@ LiveFacts LocalSetup::liveFacts() const
 LiveFacts LocalSetup::liveFacts(const AppSettings &draft) const
 {
     LiveFacts facts;
-    if (m_checkedSpeech == connection(draft.speech.endpoint)) {
+    if (m_checkedSpeech == draft.speech.server) {
         facts.speechEndpointStatus = endpointStatus(m_speechEndpoint);
         facts.speechEndpointModels = m_speechEndpoint.result.models;
         facts.speechEndpointChecking = m_speechEndpoint.checking;
         facts.speechEndpointOk = m_speechEndpoint.result.ok;
     }
-    if (m_checkedRefinement == connection(resolvedRefinementEndpoint(draft.refinement))) {
+    if (m_checkedRefinement == connection(resolvedRefinementEndpoint(draft.refinement, draft.accounts))) {
         facts.refinementEndpointStatus = endpointStatus(m_refinementEndpoint);
         facts.refinementEndpointModels = m_refinementEndpoint.result.models;
         facts.refinementEndpointChecking = m_refinementEndpoint.checking;

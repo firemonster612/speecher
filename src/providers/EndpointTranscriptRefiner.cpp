@@ -23,18 +23,14 @@ EndpointTranscriptRefiner::EndpointTranscriptRefiner(const QString &label, QObje
 }
 
 std::optional<ProviderFailure> EndpointTranscriptRefiner::prepare(const RefinementSettings &settings,
-                                                                  const AccountSettings &)
+                                                                  const AccountSettings &accounts)
 {
-    const RefinementEndpoint endpoint = resolvedRefinementEndpoint(settings);
+    const RefinementEndpoint endpoint = resolvedRefinementEndpoint(settings, accounts);
     if (endpoint.apiBase.isEmpty()) {
-        return ProviderFailure{ProviderFailureKind::Unavailable,
-                               settings.endpoint.preset == QStringLiteral("cliproxy")
-                                   ? QStringLiteral("Set the CLI Proxy API server URL for the custom endpoint.")
-                                   : QStringLiteral("Set the custom endpoint's server URL.")};
+        return ProviderFailure{ProviderFailureKind::Unavailable, QStringLiteral("Set your server's URL.")};
     }
     if (endpoint.model.isEmpty()) {
-        return ProviderFailure{ProviderFailureKind::Unavailable,
-                               QStringLiteral("Choose a model for the custom endpoint.")};
+        return ProviderFailure{ProviderFailureKind::Unavailable, QStringLiteral("Choose a model for your server.")};
     }
     return std::nullopt;
 }
@@ -49,7 +45,7 @@ void EndpointTranscriptRefiner::refine(const QString &rawTranscript,
         emit failed(*failure);
         return;
     }
-    const RefinementEndpoint endpoint = resolvedRefinementEndpoint(settings);
+    const RefinementEndpoint endpoint = resolvedRefinementEndpoint(settings, accounts);
     if (endpoint.format == QStringLiteral("anthropic")) {
         m_messages->refineWithApiKey(rawTranscript, vocabulary,
                                      endpoint.apiKey, endpoint.apiBase, endpoint.model,

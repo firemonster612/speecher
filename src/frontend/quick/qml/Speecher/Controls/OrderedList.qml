@@ -2,8 +2,8 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Speecher.Theme
 
-// An ordered list of fallbacks: drag a row by its grip or use its arrows to
-// reorder, remove one, or add one of the options left. Rows slide out of
+// An ordered list, first to last: drag a row by its grip or use its arrows
+// to reorder, remove one, or add one of the options left. Rows slide out of
 // each other's way as the order changes, and fold in and out as they come
 // and go. The page owns the data and adapts it:
 //   options: every option that may be listed, [{ id, label, icon?, status?, tone? }]
@@ -12,8 +12,12 @@ import Speecher.Theme
 //            depends on the row's place in the order
 //   rowControl: optional Component made at each row's end, before its
 //            buttons, with the row's id as its required modelData
-// emptyText and addLabel give the list its own empty and add rows; leave
-// them empty to put those elsewhere. edited fires with the new order.
+//   rowDetail: optional Component made under each row's name and status,
+//            as wide as they are, with the row's id and index as its
+//            required modelData and place, such as its own choices
+// minCount rows always stay: their remove button goes. emptyText and
+// addLabel give the list its own empty and add rows; leave them empty to
+// put those elsewhere. edited fires with the new order.
 Column {
     id: root
 
@@ -21,7 +25,10 @@ Column {
     property var options: []
     property var statusOf: null
     property Component rowControl: null
+    property Component rowDetail: null
+    property int minCount: 0
     property int maxCount: 99
+    // A row's height, without its detail.
     property int rowHeight: 60
     property string emptyText
     property string addLabel
@@ -64,13 +71,13 @@ Column {
             readonly property var status: root._status(key, index)
 
             width: ListView.view.width
-            height: root.rowHeight
+            height: root.rowHeight + (detail.item ? (detail.item as Item).implicitHeight + Theme.space3 : 0)
             onIndexChanged: if (grip.active) root._dragIndex = index
 
             // Another row dragged over this one takes its place.
             DropArea {
                 anchors.fill: parent
-                keys: ["fallback"]
+                keys: ["orderedRow"]
                 onEntered: if (root._dragIndex >= 0 && root._dragIndex !== slot.index) list.moveRow(root._dragIndex, slot.index)
             }
 
@@ -82,7 +89,7 @@ Column {
                 first: slot.index === 0 && list.first || grip.active
                 Drag.active: grip.active
                 Drag.source: row
-                Drag.keys: ["fallback"]
+                Drag.keys: ["orderedRow"]
                 Drag.hotSpot.y: height / 2
 
                 states: State {
@@ -163,6 +170,16 @@ Column {
                         text: slot.status.text
                         tone: slot.status.tone
                     }
+                    Loader {
+                        id: detail
+                        active: !!root.rowDetail
+                        width: parent.width
+                        sourceComponent: root.rowDetail
+                        onLoaded: {
+                            item.modelData = Qt.binding(() => slot.key)
+                            item.place = Qt.binding(() => slot.index)
+                        }
+                    }
                 }
 
                 trailing: [
@@ -185,6 +202,7 @@ Column {
                     IconButton {
                         iconName: "x"
                         tooltip: root.removeText
+                        visible: root.ids.length > root.minCount
                         onClicked: root.edited(root.ids.filter(id => id !== slot.key))
                     }
                 ]

@@ -34,12 +34,10 @@ Section {
     readonly property var neededChecks: checks.filter(c => c.needed).map(c => c.id)
     readonly property var optionalChecks: checks.filter(c => !c.needed).map(c => c.id)
 
-    // The speech chain, the service then its fallbacks: dictation works while
-    // any of them does. Checking while none works and one is being checked;
+    // The speech services in order: dictation works while any of them does. Checking while none works and one is being checked;
     // a service nobody has checked yet isn't ready, though dictation can
     // start to try it, and one whose check failed is missing.
-    readonly property var chain: [Settings.values.speechProvider || ""]
-        .concat(Settings.values.speechFallbackList || []).map(id => ModelText.service(id))
+    readonly property var chain: ModelText.order("speech").map(id => ModelText.service(id))
     readonly property var working: chain.find(s => s.state === "ready")
     readonly property string speechState: working ? "ok"
         : chain.some(s => s.signInChecking) ? "checking"

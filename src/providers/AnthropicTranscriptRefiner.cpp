@@ -26,7 +26,7 @@ std::optional<PreparationJob> AnthropicTranscriptRefiner::createRefreshJob(const
 {
     // As in OpenAiTranscriptRefiner: a handed-over token is for one preparation.
     m_authResolvedByJob = false;
-    const AnthropicAuthProvider signIn = AnthropicAuthProvider::forRefinement(accounts, settings);
+    const AnthropicAuthProvider signIn = AnthropicAuthProvider::forRefinement(accounts);
     auto accessToken = std::make_shared<QString>();
     PreparationJob job;
     // Whether the token is due is read on the worker, which renews it; this
@@ -58,7 +58,7 @@ std::optional<ProviderFailure> AnthropicTranscriptRefiner::prepare(const Refinem
     if (std::exchange(m_authResolvedByJob, false)) {
         return std::nullopt;
     }
-    const AnthropicAuth auth = AnthropicAuthProvider::forRefinement(accounts, settings).resolve(false);
+    const AnthropicAuth auth = AnthropicAuthProvider::forRefinement(accounts).resolve(false);
     m_accessToken = auth.accessToken;
     return auth.failure();
 }
@@ -69,8 +69,9 @@ void AnthropicTranscriptRefiner::refine(const QString &rawTranscript,
                                         const RefinementSettings &settings,
                                         const AccountSettings &accounts)
 {
+    const ServiceChoice choice = settings.services.choice(providerKey(ProviderId::Anthropic));
     qInfo().noquote() << "anthropic refinement mode=" + anthropicAuthModeName(accounts.anthropicAuthMode)
-            + " model=" + settings.anthropicModel;
+            + " model=" + choice.model;
     const bool cliproxy = accounts.anthropicAuthMode == AnthropicAuthMode::Cliproxy;
     if (m_accessToken.isEmpty() || cliproxy) {
         if (const std::optional<ProviderFailure> failure = prepare(settings, accounts)) {
@@ -78,15 +79,15 @@ void AnthropicTranscriptRefiner::refine(const QString &rawTranscript,
             return;
         }
     }
-    const bool remoteCliproxy = cliproxy && !settings.cliproxyBaseUrl.isEmpty();
+    const bool remoteCliproxy = cliproxy && !accounts.cliproxyBaseUrl.isEmpty();
     m_apiRefiner->refine(rawTranscript,
                          vocabulary,
                          m_accessToken,
-                         remoteCliproxy ? endpointApiBase(settings.cliproxyBaseUrl)
+                         remoteCliproxy ? endpointApiBase(accounts.cliproxyBaseUrl)
                                         : settings.anthropicEndpointBase,
-                         settings.anthropicModel,
-                         settings.anthropicEffort,
-                         settings.anthropicFastMode,
+                         choice.model,
+                         choice.effort,
+                         choice.speed == QStringLiteral("fast"),
                          settings.style,
                          context);
 }

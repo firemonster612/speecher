@@ -89,7 +89,7 @@ enum class FallbackProblem {
     NoModel,
     NoRunner,
     NoServer,
-    // A Custom Endpoint whose last connection check failed.
+    // A server whose last connection check failed.
     CheckFailed,
     // A speech fallback that can't listen for its Spoken Language is skipped.
     SpokenLanguage,
@@ -135,7 +135,7 @@ QList<ProviderReport> providerReports(const AppSettings &settings, const LiveFac
 QList<QStringList> providerReportTable(const QList<ProviderReport> &reports);
 
 // Whether a provider needs the internet to work: one that signs in, or a
-// Custom Endpoint whose server isn't on this computer or its network.
+// server that isn't on this computer or its network.
 bool needsInternet(ProviderRole role, const QString &providerId, const AppSettings &settings);
 // Why a provider that needs the internet is passed over while offline.
 ProviderFailure noInternetFailure();

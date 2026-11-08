@@ -5,10 +5,10 @@ import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
 
-// The speech Custom Endpoint's rows, on the Speech page and setup's
-// Transcription step: the server URL, path, key and model, and the
-// connection check, whose models the Model row suggests. Each row saves as
-// it changes.
+// The speech server's rows, among Your servers on Services, in its Fix
+// sheet and on setup's Transcription step: the server URL, path, key and
+// model, and the connection check, whose models the Model row suggests.
+// Each row saves as it changes.
 Column {
     width: parent ? parent.width : implicitWidth
 

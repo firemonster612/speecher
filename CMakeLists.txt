@@ -242,6 +242,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/EndpointSettings.cpp
   src/core/LocalModelCatalog.cpp
   src/core/ProviderChain.cpp
+  src/core/ServiceOrder.cpp
   src/core/ProviderTable.cpp
   src/core/OutputFormat.cpp
   src/core/PasteMethod.cpp
@@ -301,6 +302,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/ProviderAttemptIssueText.h
   src/core/ProviderReadiness.h
   src/core/ProviderRatings.h
+  src/core/ServiceOrder.h
   src/core/ReleaseNotes.h
   src/core/SeenApps.h
   src/core/SettingsStore.h

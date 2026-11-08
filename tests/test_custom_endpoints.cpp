@@ -50,6 +50,12 @@ extern "C" void __wrap__ZN9QSettings5clearEv(QSettings *settings)
 
 namespace {
 
+// The refinement server as a request reaches it.
+RefinementEndpoint sentEndpoint(const AppSettings &settings)
+{
+    return resolvedRefinementEndpoint(settings.refinement, settings.accounts);
+}
+
 QByteArray json(const QJsonObject &object)
 {
     return QJsonDocument(object).toJson(QJsonDocument::Compact);
@@ -74,7 +80,7 @@ void dictate(EndpointSpeechTranscriber &transcriber, const QString &origin, quin
              const QStringList &vocabulary = {})
 {
     SpeechSettings settings;
-    settings.endpoint.baseUrl = origin;
+    settings.server.baseUrl = origin;
     settings.vocabulary = vocabulary;
     transcriber.startAttempt(attempt, settings, {});
     transcriber.sendAudio(attempt, QByteArray(640, '\0'));
@@ -181,16 +187,16 @@ class CustomEndpointsTests : public QObject {
 private slots:
     void speechUploadIsA16kMonoWavWithTheOpenAiFields()
     {
-        SpeechEndpointSettings endpoint;
+        ServerSettings endpoint;
         endpoint.path = QStringLiteral("/inference");
-        endpoint.model = QStringLiteral("whisper-large-v3-turbo");
         endpoint.apiKey = QStringLiteral("speech-key");
         const QByteArray pcm(3200, '\x01');
 
         FakeServer server;
         server.route("POST /inference", httpResponse("200 OK", "application/json", "{\"text\":\"ok\"}"));
         endpoint.baseUrl = server.origin();
-        const SpeechEndpointUpload upload = speechEndpointUpload(endpoint, pcm, {}, QStringLiteral("de"));
+        const SpeechEndpointUpload upload = speechEndpointUpload(endpoint, QStringLiteral("whisper-large-v3-turbo"), pcm, {},
+                                                                 QStringLiteral("de"));
         QNetworkAccessManager network;
         QNetworkReply *reply = network.post(upload.request, upload.parts);
         upload.parts->setParent(reply);
@@ -240,7 +246,7 @@ private slots:
         EndpointSpeechTranscriber transcriber;
         QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
         SpeechSettings settings;
-        settings.endpoint.baseUrl = server.origin();
+        settings.server.baseUrl = server.origin();
         settings.language = QStringLiteral("auto");
         transcriber.startAttempt(1, settings, {});
         transcriber.sendAudio(1, QByteArray(640, '\0'));
@@ -285,7 +291,7 @@ private slots:
         const auto failure = failed.first().first().value<SpeechFailure>();
         QVERIFY2(failure.message.contains(QStringLiteral("redirect"), Qt::CaseInsensitive), qPrintable(failure.message));
 
-        SpeechEndpointSettings endpoint;
+        ServerSettings endpoint;
         endpoint.baseUrl = server.origin();
         const auto check = checkSpeechEndpoint(endpoint);
         QVERIFY(!check.ok);
@@ -507,7 +513,7 @@ private slots:
         QSignalSpy transcript(&transcriber, &SpeechTranscriber::attemptTranscript);
         QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
         SpeechSettings settings;
-        settings.endpoint.baseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+        settings.server.baseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
         settings.vocabulary = {QStringLiteral("Speecher")};
         transcriber.startAttempt(1, settings, {.cutIntoUtterances = true});
         transcriber.beginUtterance(1);
@@ -560,7 +566,7 @@ private slots:
         QSignalSpy finals(&transcriber, &SpeechTranscriber::finalTranscript);
         QSignalSpy dropped(&transcriber, &SpeechTranscriber::utteranceFailed);
         SpeechSettings settings;
-        settings.endpoint.baseUrl = server.origin();
+        settings.server.baseUrl = server.origin();
         transcriber.startAttempt(1, settings, {.cutIntoUtterances = true});
         // The first goes up at once; the rest wait for it to answer.
         const auto utterance = [&transcriber](char fill, int seconds) {
@@ -593,7 +599,7 @@ private slots:
         EndpointSpeechTranscriber transcriber;
         QSignalSpy finals(&transcriber, &SpeechTranscriber::finalTranscript);
         SpeechSettings settings;
-        settings.endpoint.baseUrl = server.origin();
+        settings.server.baseUrl = server.origin();
         transcriber.startAttempt(1, settings, {.cutIntoUtterances = true});
         transcriber.beginUtterance(1);
         transcriber.sendAudio(1, QByteArray(640, 'a'));
@@ -786,10 +792,10 @@ private slots:
                      httpResponse("200 OK", "text/event-stream",
                                   "event: message_delta\ndata: {\"delta\":{\"stop_reason\":\"max_tokens\"}}\n\n"));
         RefinementSettings settings;
-        settings.endpoint.format = QStringLiteral("anthropic");
-        settings.endpoint.baseUrl = server.origin() + QStringLiteral("/v1");
-        settings.endpoint.model = QStringLiteral("qwen3.5:4b");
-        settings.endpoint.apiKey = QStringLiteral("endpoint-key");
+        settings.server.format = QStringLiteral("anthropic");
+        settings.server.baseUrl = server.origin() + QStringLiteral("/v1");
+        settings.services.choice(QStringLiteral("endpoint")).model = QStringLiteral("qwen3.5:4b");
+        settings.server.apiKey = QStringLiteral("endpoint-key");
         EndpointTranscriptRefiner refiner(QStringLiteral("Custom Endpoint"));
         QSignalSpy completed(&refiner, &TranscriptRefiner::completed);
         QSignalSpy failed(&refiner, &TranscriptRefiner::failed);
@@ -829,9 +835,9 @@ private slots:
         server.route("POST /v1/messages", httpResponse("404 Not Found", "application/json",
             "{\"type\":\"error\",\"error\":{\"type\":\"not_found_error\",\"message\":\"model: m\"}}"));
         RefinementSettings settings;
-        settings.endpoint.format = QStringLiteral("anthropic");
-        settings.endpoint.baseUrl = server.origin() + QStringLiteral("/v1");
-        settings.endpoint.model = QStringLiteral("m");
+        settings.server.format = QStringLiteral("anthropic");
+        settings.server.baseUrl = server.origin() + QStringLiteral("/v1");
+        settings.services.choice(QStringLiteral("endpoint")).model = QStringLiteral("m");
         EndpointTranscriptRefiner refiner(QStringLiteral("Custom Endpoint"));
         QSignalSpy failed(&refiner, &TranscriptRefiner::failed);
         refiner.refine(QStringLiteral("x"), {}, {}, settings, {});
@@ -848,17 +854,17 @@ private slots:
                      httpResponse("200 OK", "application/json",
                                   "{\"object\":\"list\",\"data\":[{\"id\":\"llama3.2:3b\"},{\"id\":\"gemma4:e4b\"}]}"));
         RefinementSettings settings;
-        settings.endpoint.baseUrl = server.origin() + QStringLiteral("/v1");
-        const EndpointCheck check = checkRefinementEndpoint(settings, 2000);
+        settings.server.baseUrl = server.origin() + QStringLiteral("/v1");
+        const EndpointCheck check = checkRefinementEndpoint(resolvedRefinementEndpoint(settings, {}), 2000);
         QVERIFY2(check.ok, qPrintable(check.message));
         QCOMPARE(check.models, (QStringList{QStringLiteral("llama3.2:3b"), QStringLiteral("gemma4:e4b")}));
 
-        SpeechEndpointSettings speech;
+        ServerSettings speech;
         speech.baseUrl = server.origin();
         QCOMPARE(checkSpeechEndpoint(speech, 2000).models.size(), 2);
 
-        settings.endpoint.baseUrl = QStringLiteral("http://127.0.0.1:1/v1");
-        QVERIFY(!checkRefinementEndpoint(settings, 2000).ok);
+        settings.server.baseUrl = QStringLiteral("http://127.0.0.1:1/v1");
+        QVERIFY(!checkRefinementEndpoint(resolvedRefinementEndpoint(settings, {}), 2000).ok);
     }
 
     void ollamaIsIdentifiedByItsOwnBanner()
@@ -1009,39 +1015,39 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         AppSettings draft = settings.snapshot();
-        QCOMPARE(draft.speech.endpoint, SpeechEndpointSettings{});
-        QCOMPARE(draft.refinement.endpoint, RefinementEndpointSettings{});
+        QCOMPARE(draft.speech.server, ServerSettings{});
+        QCOMPARE(draft.refinement.server, ServerSettings{});
         QCOMPARE(draft.refinement.localRunner, LocalRunnerSettings{});
 
-        draft.speech.providerId = QStringLiteral("endpoint");
-        draft.speech.endpoint = {QStringLiteral(" http://whisper.local:8080/ "), QStringLiteral("inference"),
-                                 QStringLiteral("whisper-1"), {}};
-        draft.refinement.providerId = QStringLiteral("endpoint");
-        draft.refinement.endpoint = {QStringLiteral("cliproxy"), QStringLiteral("anthropic"),
-                                     QStringLiteral("http://localhost:11434/v1/"), QStringLiteral("gemma4:e4b"), {}};
-        draft.refinement.localRunner = {QStringLiteral("llama-server"), QStringLiteral("lfm")};
+        draft.speech.services.order = {QStringLiteral("endpoint")};
+        draft.speech.server = {.baseUrl = QStringLiteral(" http://whisper.local:8080/ "), .path = QStringLiteral("inference")};
+        draft.speech.services.choice(QStringLiteral("endpoint")).model = QStringLiteral("whisper-1");
+        draft.refinement.services.order = {QStringLiteral("endpoint")};
+        draft.refinement.server = {.baseUrl = QStringLiteral("http://localhost:11434/v1/"),
+                                   .format = QStringLiteral("anthropic")};
+        draft.refinement.services.choice(QStringLiteral("endpoint")).model = QStringLiteral("gemma4:e4b");
+        draft.refinement.localRunner = {QStringLiteral("llama-server")};
+        draft.refinement.services.choice(QStringLiteral("local")).model = QStringLiteral("lfm");
         settings.applySnapshot(draft);
 
         const AppSettings loaded = settings.snapshot();
-        QCOMPARE(loaded.speech.providerId, QStringLiteral("endpoint"));
-        QCOMPARE(loaded.speech.endpoint.baseUrl, QStringLiteral("http://whisper.local:8080"));
-        QCOMPARE(loaded.speech.endpoint.path, QStringLiteral("/inference"));
-        QCOMPARE(loaded.speech.endpoint.model, QStringLiteral("whisper-1"));
-        QCOMPARE(loaded.refinement.providerId, QStringLiteral("endpoint"));
-        QCOMPARE(loaded.refinement.endpoint.preset, QStringLiteral("cliproxy"));
-        QCOMPARE(loaded.refinement.endpoint.format, QStringLiteral("anthropic"));
-        QCOMPARE(loaded.refinement.endpoint.baseUrl, QStringLiteral("http://localhost:11434/v1"));
-        QCOMPARE(loaded.refinement.endpoint.model, QStringLiteral("gemma4:e4b"));
+        QCOMPARE(loaded.speech.services.main(), QStringLiteral("endpoint"));
+        QCOMPARE(loaded.speech.server.baseUrl, QStringLiteral("http://whisper.local:8080"));
+        QCOMPARE(loaded.speech.server.path, QStringLiteral("/inference"));
+        QCOMPARE(loaded.speech.services.choice(QStringLiteral("endpoint")).model, QStringLiteral("whisper-1"));
+        QCOMPARE(loaded.refinement.services.main(), QStringLiteral("endpoint"));
+        QCOMPARE(loaded.refinement.server.format, QStringLiteral("anthropic"));
+        QCOMPARE(loaded.refinement.server.baseUrl, QStringLiteral("http://localhost:11434/v1"));
+        QCOMPARE(loaded.refinement.services.choice(QStringLiteral("endpoint")).model, QStringLiteral("gemma4:e4b"));
         QCOMPARE(loaded.refinement.localRunner.runner, QStringLiteral("llama-server"));
-        QCOMPARE(loaded.refinement.localRunner.model, QStringLiteral("lfm"));
+        QCOMPARE(loaded.refinement.services.choice(QStringLiteral("local")).model, QStringLiteral("lfm"));
 
         settings.raw().setValue(SettingsKeys::RefinementEndpointFormat, QStringLiteral("bogus"));
-        QCOMPARE(settings.snapshot().refinement.endpoint.format, QStringLiteral("openai"));
+        QCOMPARE(settings.snapshot().refinement.server.format, QStringLiteral("openai"));
     }
 
-    // Changing a Custom endpoint's server leaves the CLI Proxy key behind,
-    // whether the endpoint uses it unread or holds the copy leaving the
-    // preset made.
+    // Moving the refinement server off the CLI Proxy API server leaves the
+    // proxy's key behind, whether it was read or not.
     void anotherServerDoesNotGetTheProxyKey_data()
     {
         QTest::addColumn<bool>("unread");
@@ -1053,23 +1059,22 @@ private slots:
     {
         QFETCH(bool, unread);
         AppSettings settings;
-        settings.refinement.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
-        settings.refinement.endpoint.preset = QStringLiteral("cliproxy");
+        settings.accounts.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
         if (unread) {
             settings.unreadSecretKeys = {SecretStore::settingsKey(SecretStore::Secret::CliproxyApiKey)};
         } else {
-            settings.refinement.cliproxyApiKey = QStringLiteral("proxy-key");
+            settings.accounts.cliproxyApiKey = QStringLiteral("proxy-key");
         }
-        editRefinementEndpoint(settings, {.preset = QString()});
+        useCliproxyServer(settings);
 
         editRefinementEndpoint(settings, {.baseUrl = QStringLiteral("http://other.example/v1")});
 
         // As a request reads it, the proxy key read by then.
-        settings.refinement.cliproxyApiKey = QStringLiteral("proxy-key");
-        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiKey, QString());
+        settings.accounts.cliproxyApiKey = QStringLiteral("proxy-key");
+        QCOMPARE(sentEndpoint(settings).apiKey, QString());
     }
 
-    // So does the copy leaving the preset made, after a restart that read
+    // So does a server moved off the proxy's after a restart that read
     // neither key yet.
     void anotherServerDoesNotGetTheCopiedProxyKeyAfterARestart()
     {
@@ -1078,13 +1083,12 @@ private slots:
             SettingsStore settings;
             settings.raw().clear();
             settings.edit([](AppSettings &draft) {
-                draft.refinement.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
-                draft.refinement.cliproxyApiKey = QStringLiteral("proxy-key");
-                draft.refinement.endpoint.preset = QStringLiteral("cliproxy");
+                draft.accounts.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
+                draft.accounts.cliproxyApiKey = QStringLiteral("proxy-key");
                 return true;
             });
             settings.edit([](AppSettings &draft) {
-                editRefinementEndpoint(draft, {.preset = QString()});
+                useCliproxyServer(draft);
                 return true;
             });
         }
@@ -1095,7 +1099,7 @@ private slots:
             return true;
         });
 
-        QCOMPARE(resolvedRefinementEndpoint(SettingsStore().snapshot().refinement).apiKey, QString());
+        QCOMPARE(sentEndpoint(SettingsStore().snapshot()).apiKey, QString());
     }
 
     // A Custom endpoint's key stays only while its server does: a new path
@@ -1120,13 +1124,13 @@ private slots:
         QFETCH(QString, url);
         QFETCH(QString, sent);
         AppSettings settings;
-        settings.refinement.cliproxyApiKey = QStringLiteral("proxy-key");
-        settings.refinement.endpoint.baseUrl = QStringLiteral("http://localhost:11434/v1");
-        settings.refinement.endpoint.apiKey = key;
+        settings.accounts.cliproxyApiKey = QStringLiteral("proxy-key");
+        settings.refinement.server.baseUrl = QStringLiteral("http://localhost:11434/v1");
+        settings.refinement.server.apiKey = key;
 
         editRefinementEndpoint(settings, {.baseUrl = url});
 
-        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiKey, sent);
+        QCOMPARE(sentEndpoint(settings).apiKey, sent);
     }
 
     // An earlier build marked a key typed on the proxy's server as unused
@@ -1142,10 +1146,10 @@ private slots:
         settings.raw().setValue(SecretStore::settingsKey(SecretStore::Secret::RefinementEndpointKey),
                                 QStringLiteral("typed-key"));
 
-        QCOMPARE(resolvedRefinementEndpoint(settings.snapshot().refinement).apiKey, QStringLiteral("typed-key"));
+        QCOMPARE(sentEndpoint(settings.snapshot()).apiKey, QStringLiteral("typed-key"));
 
         settings.edit([](AppSettings &draft) {
-            draft.refinement.endpoint.model = QStringLiteral("model");
+            draft.refinement.services.choice(QStringLiteral("endpoint")).model = QStringLiteral("model");
             return true;
         });
         QVERIFY(!settings.raw().contains(SettingsKeys::RefinementEndpointUseCliproxyKey));
@@ -1177,9 +1181,9 @@ private slots:
         QFETCH(bool, ownUnread);
         QFETCH(bool, readsAKey);
         AppSettings settings;
-        settings.refinement.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
-        settings.refinement.endpoint.baseUrl = url;
-        settings.refinement.endpoint.apiKey = ownKey;
+        settings.accounts.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
+        settings.refinement.server.baseUrl = url;
+        settings.refinement.server.apiKey = ownKey;
         settings.unreadSecretKeys = {SecretStore::settingsKey(SecretStore::Secret::CliproxyApiKey)};
         if (ownUnread) {
             settings.unreadSecretKeys.append(SecretStore::settingsKey(SecretStore::Secret::RefinementEndpointKey));
@@ -1194,16 +1198,15 @@ private slots:
     void anEndpointLeftAtAMovedProxySendsNoKey()
     {
         AppSettings settings;
-        settings.refinement.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
-        settings.refinement.cliproxyApiKey = QStringLiteral("proxy-key");
-        settings.refinement.endpoint.preset = QStringLiteral("cliproxy");
-        editRefinementEndpoint(settings, {.preset = QString()});
-        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiKey, QStringLiteral("proxy-key"));
+        settings.accounts.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
+        settings.accounts.cliproxyApiKey = QStringLiteral("proxy-key");
+        useCliproxyServer(settings);
+        QCOMPARE(sentEndpoint(settings).apiKey, QStringLiteral("proxy-key"));
 
-        settings.refinement.cliproxyBaseUrl = QStringLiteral("http://proxy-b.example:8317");
-        settings.refinement.cliproxyApiKey = QStringLiteral("key-b");
+        settings.accounts.cliproxyBaseUrl = QStringLiteral("http://proxy-b.example:8317");
+        settings.accounts.cliproxyApiKey = QStringLiteral("key-b");
 
-        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiKey, QString());
+        QCOMPARE(sentEndpoint(settings).apiKey, QString());
     }
 
     // Moving the speech endpoint or the CLI Proxy API server to another
@@ -1221,8 +1224,8 @@ private slots:
             savedSecret(secrets, proxy, {});
         });
         settings.edit([](AppSettings &draft) {
-            draft.speech.endpoint.baseUrl = QStringLiteral("http://server-a.example");
-            draft.refinement.cliproxyBaseUrl = QStringLiteral("http://proxy-a.example:8317");
+            draft.speech.server.baseUrl = QStringLiteral("http://server-a.example");
+            draft.accounts.cliproxyBaseUrl = QStringLiteral("http://proxy-a.example:8317");
             return true;
         });
         QVERIFY(savedSecret(secrets, proxy, QStringLiteral("proxy-key-a")));
@@ -1230,9 +1233,9 @@ private slots:
         secrets->saveSecret(speech, QStringLiteral("speech-key-a"));
 
         settings.edit([](AppSettings &draft) {
-            draft.speech.endpoint.baseUrl = QStringLiteral("http://server-b.example");
-            draft.refinement.cliproxyBaseUrl = QStringLiteral("http://proxy-b.example:8317");
-            draft.refinement.cliproxyApiKey = QStringLiteral("proxy-key-b");
+            draft.speech.server.baseUrl = QStringLiteral("http://server-b.example");
+            draft.accounts.cliproxyBaseUrl = QStringLiteral("http://proxy-b.example:8317");
+            draft.accounts.cliproxyApiKey = QStringLiteral("proxy-key-b");
             return true;
         });
 
@@ -1248,8 +1251,8 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         AppSettings draft = settings.snapshot();
-        draft.speech.endpoint.apiKey = QStringLiteral("speech-secret");
-        draft.refinement.endpoint.apiKey = QStringLiteral("refinement-secret");
+        draft.speech.server.apiKey = QStringLiteral("speech-secret");
+        draft.refinement.server.apiKey = QStringLiteral("refinement-secret");
         QSignalSpy finished(settings.secrets(), &SecretStore::saveFinished);
         settings.applySnapshot(draft);
         QTRY_COMPARE(finished.count(), 2);
@@ -1258,8 +1261,8 @@ private slots:
         readSecret(reopened.secrets(), SecretStore::Secret::SpeechEndpointKey);
         readSecret(reopened.secrets(), SecretStore::Secret::RefinementEndpointKey);
         const AppSettings loaded = reopened.snapshot();
-        QCOMPARE(loaded.speech.endpoint.apiKey, QStringLiteral("speech-secret"));
-        QCOMPARE(loaded.refinement.endpoint.apiKey, QStringLiteral("refinement-secret"));
+        QCOMPARE(loaded.speech.server.apiKey, QStringLiteral("speech-secret"));
+        QCOMPARE(loaded.refinement.server.apiKey, QStringLiteral("refinement-secret"));
         const bool inKeyring = reopened.raw().value(SettingsKeys::SecretsInKeyring).toStringList()
                                    .contains(QStringLiteral("speech-endpoint-key"));
         QCOMPARE(reopened.raw().contains(SettingsKeys::SpeechEndpointApiKey), !inKeyring);
@@ -1272,14 +1275,14 @@ private slots:
         // dictation finds keys it would otherwise wait for.
         SettingsStore prefetched;
         prefetched.secrets()->prefetch();
-        QTRY_COMPARE_WITH_TIMEOUT(prefetched.dictationSnapshot().speech.endpoint.apiKey,
+        QTRY_COMPARE_WITH_TIMEOUT(prefetched.dictationSnapshot().speech.server.apiKey,
                                   QStringLiteral("speech-secret"), 3000);
 
         draft = loaded;
-        draft.speech.endpoint.apiKey.clear();
-        draft.refinement.endpoint.apiKey.clear();
+        draft.speech.server.apiKey.clear();
+        draft.refinement.server.apiKey.clear();
         reopened.applySnapshot(draft);
-        QTRY_COMPARE(SettingsStore().snapshot().speech.endpoint.apiKey, QString());
+        QTRY_COMPARE(SettingsStore().snapshot().speech.server.apiKey, QString());
         QTRY_VERIFY(!reopened.raw().contains(SettingsKeys::SecretsInKeyring));
         QVERIFY(!reopened.raw().contains(SettingsKeys::SpeechEndpointApiKey));
     }
@@ -1490,7 +1493,7 @@ private slots:
             savedSecret(secrets, key, {});
         });
         settings.edit([](AppSettings &draft) {
-            draft.refinement.endpoint = {.baseUrl = QStringLiteral("http://server-a.example/v1")};
+            draft.refinement.server = {.baseUrl = QStringLiteral("http://server-a.example/v1")};
             return true;
         });
         QVERIFY(savedSecret(secrets, key, QStringLiteral("server-a-key")));
@@ -1501,7 +1504,7 @@ private slots:
                      .isEmpty());
 
         settings.raw().sync();
-        QCOMPARE(settings.dictationSnapshot().refinement.endpoint.baseUrl, QStringLiteral("http://server-b.example/v1"));
+        QCOMPARE(settings.dictationSnapshot().refinement.server.baseUrl, QStringLiteral("http://server-b.example/v1"));
         comparePeerRead(settings, key, QString());
     }
 
@@ -1531,7 +1534,7 @@ private slots:
             savedSecret(secrets, key, {});
         });
         settings.edit([](AppSettings &draft) {
-            draft.refinement.endpoint = {.baseUrl = QStringLiteral("http://server-a.example/v1")};
+            draft.refinement.server = {.baseUrl = QStringLiteral("http://server-a.example/v1")};
             return true;
         });
         QVERIFY(savedSecret(secrets, key, QStringLiteral("old-key")));
@@ -1586,11 +1589,11 @@ private slots:
         const auto moveTo = [key](const QString &server, const QString &enteredKey) {
             return [key, server, enteredKey](AppSettings &draft) {
                 if (key == SecretStore::Secret::SpeechEndpointKey) {
-                    draft.speech.endpoint.baseUrl = server;
-                    draft.speech.endpoint.apiKey = enteredKey;
+                    draft.speech.server.baseUrl = server;
+                    draft.speech.server.apiKey = enteredKey;
                 } else {
-                    draft.refinement.cliproxyBaseUrl = server;
-                    draft.refinement.cliproxyApiKey = enteredKey;
+                    draft.accounts.cliproxyBaseUrl = server;
+                    draft.accounts.cliproxyApiKey = enteredKey;
                 }
                 return true;
             };
@@ -1833,8 +1836,8 @@ private slots:
             QVERIFY(savedSecret(secrets, refinement, kept));
         }
         AppSettings draft = settings.snapshot();
-        draft.speech.endpoint.apiKey = QStringLiteral("speech-key");
-        draft.refinement.endpoint.apiKey = QStringLiteral("refinement-key");
+        draft.speech.server.apiKey = QStringLiteral("speech-key");
+        draft.refinement.server.apiKey = QStringLiteral("refinement-key");
 
         QVERIFY(storedAfter(secrets, refinement, [&] {
             settings.applySnapshot(draft);
@@ -1986,7 +1989,7 @@ private slots:
         });
         QVERIFY(savedSecret(secrets, proxy, QStringLiteral("old-key")));
         AppSettings draft = settings.snapshot();
-        draft.refinement.cliproxyApiKey.clear();
+        draft.accounts.cliproxyApiKey.clear();
         // So that, without a keyring too, clearing the key needs one.
         settings.raw().setValue(SettingsKeys::SecretsInKeyring, QStringList{QStringLiteral("cliproxy-api-key")});
         QTest::ignoreMessage(QtWarningMsg, "Could not clear cliproxy-api-key: Keyring deletion denied");
@@ -2413,7 +2416,7 @@ private slots:
         QVERIFY(!savedSecret(secrets, proxy, QStringLiteral("late-key")));
         QVERIFY(!savedApiKey(secrets, QStringLiteral("late-key")));
         QVERIFY(!settings.edit([](AppSettings &draft) {
-            draft.refinement.cliproxyApiKey = QStringLiteral("late-key");
+            draft.accounts.cliproxyApiKey = QStringLiteral("late-key");
             return true;
         }));
 
@@ -2612,7 +2615,7 @@ private slots:
         const AppSettings draft = settings.snapshot();
         QTRY_VERIFY(!settings.secrets()->readFailure(SecretStore::Secret::CliproxyApiKey).isEmpty());
         qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT");
-        QVERIFY(draft.refinement.cliproxyApiKey.isEmpty());
+        QVERIFY(draft.accounts.cliproxyApiKey.isEmpty());
         settings.secrets()->prefetch();
         QTRY_COMPARE(settings.secrets()->cachedSecret(SecretStore::Secret::CliproxyApiKey),
                      QStringLiteral("keep-me"));
@@ -2635,7 +2638,7 @@ private slots:
         SettingsStore reopened;
         reopened.secrets()->prefetch();
         QCOMPARE(readSecret(reopened.secrets(), SecretStore::Secret::CliproxyApiKey), QString());
-        QCOMPARE(reopened.snapshot().refinement.cliproxyApiKey, QString());
+        QCOMPARE(reopened.snapshot().accounts.cliproxyApiKey, QString());
     }
 
     // Each provider's key is read on the worker when that provider is tried,
@@ -2651,7 +2654,6 @@ private slots:
         const QString refinement = QStringLiteral("refinement");
         QTest::newRow("openai-proxy") << QStringLiteral("openai") << QStringLiteral("claude") << true << refinement;
         QTest::newRow("anthropic-proxy") << QStringLiteral("anthropic") << QStringLiteral("claude") << true << refinement;
-        QTest::newRow("proxy-preset") << QStringLiteral("endpoint") << QStringLiteral("claude") << true << refinement;
         QTest::newRow("inherited-proxy-key") << QStringLiteral("endpoint-inherited") << QStringLiteral("claude") << true << refinement;
         QTest::newRow("speech-endpoint") << QStringLiteral("none") << QStringLiteral("endpoint") << true << speech;
         QTest::newRow("none-inactive-proxy") << QStringLiteral("none") << QStringLiteral("claude") << true << QString();
@@ -2673,16 +2675,16 @@ private slots:
         settings.raw().setValue(SettingsKeys::SecretsInKeyring,
             QStringList{QStringLiteral("cliproxy-api-key"), QStringLiteral("speech-endpoint-key")});
         settings.edit([&](AppSettings &draft) {
-            draft.refinement.providerId = refiner == QStringLiteral("endpoint-inherited") ? QStringLiteral("endpoint") : refiner;
-            draft.speech.providerId = speechProvider;
+            const QString service = refiner == QStringLiteral("endpoint-inherited") ? QStringLiteral("endpoint") : refiner;
+            draft.refinement.enabled = service != kNoRefinementProvider;
+            draft.refinement.services.order = {service};
+            draft.speech.services.order = {speechProvider};
             draft.accounts.openAiAuthMode = OpenAiAuthMode::Cliproxy;
             draft.accounts.anthropicAuthMode = AnthropicAuthMode::Cliproxy;
-            draft.refinement.cliproxyBaseUrl = remote ? QStringLiteral("http://proxy.example:8317") : QString();
+            draft.accounts.cliproxyBaseUrl = remote ? QStringLiteral("http://proxy.example:8317") : QString();
             return true;
         });
-        settings.raw().setValue(SettingsKeys::RefinementEndpointPreset,
-                                refiner == QStringLiteral("endpoint-inherited") ? QString() : QStringLiteral("cliproxy"));
-        // Inherited: a Custom endpoint without a key of its own, on the proxy's server.
+        // Inherited: a server without a key of its own, on the proxy's server.
         settings.raw().setValue(SettingsKeys::RefinementEndpointBaseUrl, QStringLiteral("http://proxy.example:8317/v1"));
         settings.raw().setValue(SettingsKeys::SpeechEndpointBaseUrl, QStringLiteral("http://speech.example"));
         settings.raw().sync();
@@ -2753,8 +2755,8 @@ private slots:
             SettingsStore saved;
             saved.raw().clear();
             saved.edit([](AppSettings &draft) {
-                draft.speech.providerId = QStringLiteral("endpoint");
-                draft.refinement.providerId = QStringLiteral("none");
+                draft.speech.services.order = {QStringLiteral("endpoint")};
+                draft.refinement.enabled = false;
                 return true;
             });
             saved.raw().setValue(SettingsKeys::SpeechEndpointBaseUrl, server.origin());
@@ -2805,18 +2807,18 @@ private slots:
         const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT"); });
 
         SettingsStore settings;
-        QVERIFY(settings.dictationSnapshot().speech.providerId != QStringLiteral("endpoint"));
+        QVERIFY(settings.dictationSnapshot().speech.services.main() != QStringLiteral("endpoint"));
         settings.dictationSnapshot();
         QVERIFY2(settings.secrets()->lastError().isEmpty(), qPrintable(settings.secrets()->lastError()));
 
         AppSettings draft = settings.snapshot();
         QTRY_VERIFY(settings.secrets()->lastError().contains(QStringLiteral("timed out")));
-        QCOMPARE(draft.speech.endpoint.apiKey, QString());
+        QCOMPARE(draft.speech.server.apiKey, QString());
 
-        draft.speech.providerId = QStringLiteral("endpoint");
-        draft.speech.endpoint.baseUrl = QStringLiteral("http://whisper.local:8080");
+        draft.speech.services.order = {QStringLiteral("endpoint")};
+        draft.speech.server.baseUrl = QStringLiteral("http://whisper.local:8080");
         settings.applySnapshot(draft);
-        QCOMPARE(settings.dictationSnapshot().speech.providerId, QStringLiteral("endpoint"));
+        QCOMPARE(settings.dictationSnapshot().speech.services.main(), QStringLiteral("endpoint"));
         QCOMPARE(settings.raw().value(SettingsKeys::SecretsInKeyring).toStringList(),
                  QStringList{QStringLiteral("speech-endpoint-key")});
         QVERIFY(!settings.raw().contains(SettingsKeys::SpeechEndpointApiKey));
@@ -2858,7 +2860,7 @@ private slots:
         ApplicationController controller(true);
         SettingsStore &settings = *controller.settings();
         QCOMPARE(settings.secrets()->secret(SecretStore::Secret::CliproxyApiKey), QStringLiteral("legacy-proxy-key"));
-        QCOMPARE(settings.snapshot().refinement.cliproxyApiKey, QStringLiteral("legacy-proxy-key"));
+        QCOMPARE(settings.snapshot().accounts.cliproxyApiKey, QStringLiteral("legacy-proxy-key"));
         const auto inKeyring = [&settings] {
             return settings.raw().value(SettingsKeys::SecretsInKeyring).toStringList()
                 .contains(QStringLiteral("cliproxy-api-key"));

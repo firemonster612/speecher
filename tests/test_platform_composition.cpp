@@ -717,19 +717,19 @@ private slots:
         SettingsStore *settings = controller.settings();
         const bool setupCompleted = settings->dictationSnapshot().setupCompleted;
         const ShortcutActivationMode mode = settings->dictationSnapshot().shortcutActivationMode;
-        const QString refinementProvider = settings->dictationSnapshot().refinement.providerId;
+        const QString refinementProvider = settings->dictationSnapshot().refinement.services.main();
         const auto restore = qScopeGuard([&] {
             settings->edit([&](AppSettings &draft) {
                 draft.setupCompleted = setupCompleted;
                 draft.shortcutActivationMode = mode;
-                draft.refinement.providerId = refinementProvider;
+                draft.refinement.services.order = {refinementProvider};
                 return true;
             });
         });
         settings->edit([](AppSettings &draft) {
             draft.setupCompleted = true;
             draft.shortcutActivationMode = ShortcutActivationMode::PushToTalk;
-            draft.refinement.providerId = QStringLiteral("openai");
+            draft.refinement.services.order = {QStringLiteral("openai")};
             return true;
         });
         FakeSpeechTranscriber *speech = nullptr;
@@ -878,7 +878,7 @@ private slots:
         });
         controller.settings()->edit([](AppSettings &draft) {
             draft.setupCompleted = true;
-            draft.speech.providerId = QStringLiteral("codex");
+            draft.speech.services.order = {QStringLiteral("codex")};
             return true;
         });
         // A speech provider that prepares, so the session asks the
@@ -3407,11 +3407,9 @@ private slots:
         ApplicationController controller(true, platform);
         FakeAppFrontEnd frontEnd;
         controller.setFrontEnd(&frontEnd);
-        LocalSpeechSettings local = controller.settings()->dictationSnapshot().speech.local;
-        local.modelId = QStringLiteral("moonshine-small");
         controller.settings()->edit([&](AppSettings &draft) {
-            draft.speech.local = local;
-            draft.speech.providerId = QStringLiteral("local");
+            localModelId(draft.speech) = QStringLiteral("moonshine-small");
+            draft.speech.services.order = {QStringLiteral("local")};
             return true;
         });
 
@@ -3563,7 +3561,7 @@ private slots:
         watcher.write(QByteArrayLiteral("{\"command\":\"status\"}\n"));
         // An unknown speech provider fails the session as it starts.
         controller.settings()->edit([](AppSettings &draft) {
-            draft.speech.providerId = QStringLiteral("missing");
+            draft.speech.services.order = {QStringLiteral("missing")};
             return true;
         });
         controller.session()->startListening();
@@ -3591,7 +3589,7 @@ private slots:
         ApplicationController controller(true, platform);
         controller.settings()->edit([](AppSettings &draft) {
             draft.setupCompleted = true;
-            draft.speech.providerId = QStringLiteral("codex");
+            draft.speech.services.order = {QStringLiteral("codex")};
             return true;
         });
         QPointer<test::FakeSpeechTranscriber> codex;
@@ -3654,7 +3652,7 @@ private slots:
         ApplicationController controller(true, platform);
         controller.settings()->edit([](AppSettings &draft) {
             draft.setupCompleted = true;
-            draft.speech.providerId = QStringLiteral("codex");
+            draft.speech.services.order = {QStringLiteral("codex")};
             return true;
         });
         bool connected = false;
@@ -3702,7 +3700,7 @@ private slots:
         }
         controller.settings()->edit([](AppSettings &draft) {
             draft.setupCompleted = true;
-            draft.speech.providerId = QStringLiteral("codex");
+            draft.speech.services.order = {QStringLiteral("codex")};
             return true;
         });
         controller.providerRegistry()->registerSpeechProvider(
@@ -3761,7 +3759,7 @@ private slots:
         }
         controller.settings()->edit([](AppSettings &draft) {
             draft.setupCompleted = true;
-            draft.speech.providerId = QStringLiteral("codex");
+            draft.speech.services.order = {QStringLiteral("codex")};
             return true;
         });
         // A speech provider that prepares, so the session asks the

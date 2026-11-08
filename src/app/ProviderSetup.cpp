@@ -59,9 +59,9 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
         {providerKey(ProviderId::Anthropic), QStringLiteral("Claude"), true},
         [](QObject *parent) { return new AnthropicTranscriptRefiner(parent); });
     registry.registerSpeechProvider(
-        {providerKey(ProviderId::Endpoint), QStringLiteral("Custom Endpoint")},
+        {providerKey(ProviderId::Endpoint), QStringLiteral("Your server")},
         [](QObject *parent) { return new EndpointSpeechTranscriber(parent); });
-    const ProviderDescriptor endpointRefiner{providerKey(ProviderId::Endpoint), QStringLiteral("Custom Endpoint")};
+    const ProviderDescriptor endpointRefiner{providerKey(ProviderId::Endpoint), QStringLiteral("Your server")};
     registry.registerRefinementProvider(endpointRefiner, [label = endpointRefiner.label](QObject *parent) {
         return new EndpointTranscriptRefiner(label, parent);
     });

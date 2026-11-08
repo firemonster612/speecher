@@ -1,3 +1,4 @@
+#include "common/service_order_rows.h"
 #include "common/test_doubles.h"
 #include "common/test_http.h"
 #include "common/test_local_setup.h"
@@ -176,7 +177,7 @@ private slots:
         // What the Speech page's fallback pickers show: whether a service
         // offers Automatic, and the language it listens for in the chain.
         AppSettings draft = controller.settings()->dictationSnapshot();
-        draft.speech.fallbackLanguages = {{QStringLiteral("codex"), QStringLiteral("cy")}};
+        draft.speech.services.choice(QStringLiteral("codex")).language = QStringLiteral("cy");
         controller.settings()->applySnapshot(draft);
         const QVariantMap codex = entry(models.speechServices(), QStringLiteral("codex"));
         QVERIFY(codex.value(QStringLiteral("detects")).toBool());
@@ -243,8 +244,8 @@ private slots:
         models.use(QStringLiteral("whisper-turbo"));
         QCOMPARE(saved.count(), 1);
         const AppSettings stored = SettingsStore().dictationSnapshot();
-        QCOMPARE(stored.speech.providerId, QStringLiteral("local"));
-        QCOMPARE(stored.speech.local.modelId, QStringLiteral("whisper-turbo"));
+        QCOMPARE(stored.speech.services.main(), QStringLiteral("local"));
+        QCOMPARE(localModelId(stored.speech), QStringLiteral("whisper-turbo"));
         QVERIFY(stored.speech.local.modelChosen);
         QCOMPARE(settings.values().value(QStringLiteral("speechLocalModel")).toString(), QStringLiteral("whisper-turbo"));
         QCOMPARE(models.localModelChoice(), QStringLiteral("whisper-turbo"));
@@ -253,7 +254,7 @@ private slots:
 
         QTest::ignoreMessage(QtWarningMsg, "Models.use: made-up is not a Local Model");
         models.use(QStringLiteral("made-up"));
-        QCOMPARE(SettingsStore().dictationSnapshot().speech.local.modelId, QStringLiteral("whisper-turbo"));
+        QCOMPARE(localModelId(SettingsStore().dictationSnapshot().speech), QStringLiteral("whisper-turbo"));
     }
 
     // A role setup doesn't offer a fallback for changes nothing.
@@ -294,7 +295,7 @@ private slots:
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
         AppSettings draft = controller.settings()->dictationSnapshot();
-        draft.speech.endpoint.baseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+        draft.speech.server.baseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
         controller.settings()->applySnapshot(draft);
         QVERIFY(!models.speechEndpoint().value(QStringLiteral("checked")).toBool());
 
@@ -310,7 +311,7 @@ private slots:
 
         // Port 1, where nothing listens: a port let go could be taken by a
         // server in another test process.
-        draft.speech.endpoint.baseUrl = QStringLiteral("http://127.0.0.1:1");
+        draft.speech.server.baseUrl = QStringLiteral("http://127.0.0.1:1");
         controller.settings()->applySnapshot(draft);
         models.testSpeechEndpoint();
         QTRY_VERIFY(!models.speechEndpoint().value(QStringLiteral("checking")).toBool());
@@ -429,9 +430,9 @@ private slots:
         QVERIFY(!codex().value(QStringLiteral("signInChecking")).toBool());
     }
 
-    // Setup's Refinement step offers the runner as a fallback only behind a
-    // choice whose chain would take it: not behind a full one, judged against
-    // the step's choice rather than the saved primary.
+    // Setup's Refinement step offers the runner only behind a choice whose
+    // order would take it: not behind a full one, judged against the step's
+    // choice rather than the saved first service.
     void setupOffersAFallbackOnlyWhereTheChainTakesIt()
     {
         ApplicationController controller(true);
@@ -452,7 +453,7 @@ private slots:
         LocalSetupTestAccess::setRunners(*controller.localSetup(),
                                          {{QStringLiteral("ollama"), QStringLiteral("Ollama"), QStringLiteral("0.34.4"),
                                            QStringLiteral("http://127.0.0.1:11434/v1"), {QStringLiteral("gemma4:e4b")}}});
-        settings.set(QStringLiteral("refinementProvider"), QStringLiteral("anthropic"));
+        settings.set(QStringLiteral("refinementServices"), test::serviceOrder({QStringLiteral("anthropic")}));
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         QQmlComponent choicesComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
@@ -467,9 +468,11 @@ private slots:
         QVERIFY(offer);
 
         QVERIFY(offer->property("open").toBool());
-        settings.set(QStringLiteral("refinementFallbacks"), QStringList{QStringLiteral("openai"), QStringLiteral("endpoint")});
+        settings.set(QStringLiteral("refinementServices"),
+                     test::serviceOrder({QStringLiteral("anthropic"), QStringLiteral("openai"), QStringLiteral("endpoint")}));
         QVERIFY(!offer->property("open").toBool());
-        // Behind OpenAI the chain keeps only the endpoint, so it has room.
+        // OpenAI in Anthropic's place keeps only the endpoint behind it, so
+        // the order has room.
         QQmlProperty::write(choices.get(), QStringLiteral("cleanup"), QStringLiteral("openai"));
         QVERIFY(offer->property("open").toBool());
         QQmlProperty::write(choices.get(), QStringLiteral("cleanup"), QStringLiteral("local"));
@@ -609,13 +612,15 @@ private slots:
     void thePagesLoadOverIt_data()
     {
         QTest::addColumn<QString>("page");
-        QTest::addColumn<QString>("fallback");
-        QTest::addColumn<QString>("fallbacksRow");
-        QTest::newRow("pages/SpeechPage") << QStringLiteral("pages/SpeechPage") << QStringLiteral("endpoint")
-                                          << QStringLiteral("speechFallbackList");
-        QTest::newRow("pages/RefinementPage") << QStringLiteral("pages/RefinementPage") << QStringLiteral("local")
-                                              << QStringLiteral("refinementFallbacks");
-        for (const char *page : {"pages/ModelsPage", "setup/TranscriptionStep", "setup/RefinementStep"}) {
+        QTest::addColumn<QString>("order");
+        QTest::addColumn<QString>("orderRow");
+        QTest::newRow("pages/SpeechPage") << QStringLiteral("pages/SpeechPage") << QStringLiteral("speechServiceOrder")
+                                          << QStringLiteral("speechServices");
+        QTest::newRow("pages/RefinementPage") << QStringLiteral("pages/RefinementPage")
+                                              << QStringLiteral("refinementServiceOrder")
+                                              << QStringLiteral("refinementServices");
+        for (const char *page : {"pages/ServicesPage", "pages/ModelsPage", "setup/TranscriptionStep",
+                                 "setup/RefinementStep"}) {
             QTest::newRow(page) << QString::fromLatin1(page) << QString() << QString();
         }
     }
@@ -623,8 +628,8 @@ private slots:
     void thePagesLoadOverIt()
     {
         QFETCH(QString, page);
-        QFETCH(QString, fallback);
-        QFETCH(QString, fallbacksRow);
+        QFETCH(QString, order);
+        QFETCH(QString, orderRow);
         ApplicationController controller(true);
         // The pages read Library, which works through this controller.
         const QuickLibrary::ControllerScope library(&controller);
@@ -640,9 +645,11 @@ private slots:
         qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
         const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT"); });
         QuickAccounts accounts(&controller);
-        // Every section the page has, open.
-        settings.set(QStringLiteral("speechFallbackList"), QStringList{QStringLiteral("endpoint")});
-        settings.set(QStringLiteral("refinementFallbacks"), QStringList{QStringLiteral("local")});
+        // Every service a row shows its own choices for.
+        settings.set(QStringLiteral("speechServices"),
+                     test::serviceOrder({QStringLiteral("claude"), QStringLiteral("endpoint"), QStringLiteral("codex")}));
+        settings.set(QStringLiteral("refinementServices"),
+                     test::serviceOrder({QStringLiteral("openai"), QStringLiteral("local"), QStringLiteral("anthropic")}));
         LocalSetupTestAccess::setHardware(*controller.localSetup(), laptop());
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
@@ -657,14 +664,20 @@ private slots:
             loaded->setProperty("choices", QVariant::fromValue(choices.get()));
         }
         component.completeCreate();
-        if (fallback.isEmpty()) {
+        if (order.isEmpty()) {
             return;
         }
 
+        // Moving the last service first saves the whole order once, each
+        // service keeping its choice.
+        QObject *list = loaded->findChild<QObject *>(order);
+        QVERIFY(list);
+        const QStringList before = test::servicesOf(settings.values().value(orderRow));
+        const QStringList moved = QStringList{before.last()} + before.mid(0, before.size() - 1);
         QSignalSpy saved(controller.settings(), &SettingsStore::snapshotApplied);
-        QVERIFY(QMetaObject::invokeMethod(loaded.get(), "choose", Q_ARG(QVariant, fallback)));
+        QVERIFY(QMetaObject::invokeMethod(list, "edited", Q_ARG(QVariant, QVariant(moved))));
         QCOMPARE(saved.count(), 1);
-        QCOMPARE(settings.values().value(fallbacksRow).toStringList(), QStringList());
+        QCOMPARE(test::servicesOf(settings.values().value(orderRow)), moved);
     }
 
 private:

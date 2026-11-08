@@ -8,7 +8,7 @@
 namespace speecher {
 
 // The longest a recording's stop waits for the speech provider to finish
-// the utterances left, three minutes: a few at the Custom Endpoint's
+// the utterances left, three minutes: a few at the speech server's
 // slowest.
 constexpr int kLongestRecordingStopMs = 180000;
 

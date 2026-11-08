@@ -359,7 +359,7 @@ public:
         currentAttemptId = attemptId;
         lastVocabulary = settings.vocabulary;
         lastLanguage = settings.language;
-        lastLocalModel = settings.local.modelId;
+        lastLocalModel = localModelId(settings);
         if (onStartAttempt) {
             onStartAttempt();
         }
@@ -546,7 +546,7 @@ public:
         lastBindingVocabulary = context.bindingVocabulary;
         lastStyle = settings.style;
         lastTone = context.tone;
-        lastAnthropicModel = settings.anthropicModel;
+        lastAnthropicModel = settings.services.choice(QStringLiteral("anthropic")).model;
         if (autoComplete) {
             emit completed(autoCompleteText);
         }

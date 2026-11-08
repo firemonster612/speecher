@@ -303,7 +303,7 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     m_heardSpeech = false;
     m_target = {};
     // The chains wait for the target, whose Writing Profile may lead them.
-    m_refinementChain->begin(kNoRefinementProvider, {});
+    m_refinementChain->begin({});
     m_usedRawTranscript = false;
     m_providerHistory = {};
     m_listeningMs = 0;
@@ -410,7 +410,7 @@ void DictationSession::continueStartupWithTarget(quint64 generation, const Targe
 
     // Walks the speech chain on from the provider it is on, never back: the
     // first provider that prepares takes the next attempt.
-    const bool refines = settings.refinement.providerId != kNoRefinementProvider;
+    const bool refines = !serviceChain(settings.refinement).isEmpty();
     m_speech->start(*m_sessionSettings, refines ? m_refiner.data() : nullptr);
 }
 
@@ -422,23 +422,23 @@ bool DictationSession::selectProviders()
     m_sessionSettings = m_providers->withProfileProviders(
         *m_sessionSettings, TranscriptPipeline::writingProfile(*m_sessionSettings, m_runChoices, m_target));
     const AppSettings &settings = *m_sessionSettings;
-    qInfo().noquote() << "startListening speechProvider=" + settings.speech.providerId
-                      << "refinementProvider=" + settings.refinement.providerId;
+    const QString speech = settings.speech.services.main();
+    const QStringList refiners = serviceChain(settings.refinement);
+    qInfo().noquote() << "startListening speechProvider=" + speech
+                      << "refinementProvider=" + (refiners.isEmpty() ? kNoRefinementProvider : refiners.first());
     if (!m_speech->selectProviders(settings.speech)) {
-        failStartup(QStringLiteral("Unknown speech provider: %1").arg(settings.speech.providerId),
-                    speechSetupAction(settings.speech.providerId));
+        failStartup(QStringLiteral("Unknown speech provider: %1").arg(speech), speechSetupAction(speech));
         return false;
     }
-    if (const QString problem =
-            spokenLanguageProblem(settings.speech, m_providers->speechProviderLabel(settings.speech.providerId));
+    if (const QString problem = spokenLanguageProblem(settings.speech, m_providers->speechProviderLabel(speech));
         !problem.isEmpty()) {
         failStartup(problem, {ErrorFix::SettingsPage, QStringLiteral("speech")});
         return false;
     }
-    if (settings.refinement.providerId != kNoRefinementProvider) {
-        selectTranscriptRefiner(settings.refinement.providerId);
+    if (!refiners.isEmpty()) {
+        selectTranscriptRefiner(refiners.first());
     }
-    m_refinementChain->begin(settings.refinement.providerId, settings.refinement.fallbackProviderIds);
+    m_refinementChain->begin(refiners);
     return true;
 }
 
@@ -923,8 +923,7 @@ void DictationSession::beginRefinement(quint64 generation)
                                                         m_transcript->heardLanguage());
     TranscriptPipelineResult &pipeline = m_transcriptPipeline;
     const RefinementSettings &refinement = pipeline.refinementSettings;
-    if (settings.refinement.providerId == kNoRefinementProvider
-        || refinement.style == QStringLiteral("none")) {
+    if (serviceChain(settings.refinement).isEmpty() || refinement.style == QStringLiteral("none")) {
         if (pipeline.editsSelection) {
             failSelectionEdit(QStringLiteral("Selection editing requires refinement to be enabled"));
             return;
@@ -950,7 +949,7 @@ void DictationSession::startRefiner()
     // A handler of the sign-in or of Refining may have stopped or cancelled
     // the session, and with it dropped the settings the refiner runs with.
     const quint64 step = m_step;
-    noteSignIn(refinement.providerId, true);
+    noteSignIn(refinement.services.main(), true);
     if (step != m_step || !enterRefining()) {
         return;
     }
@@ -958,10 +957,10 @@ void DictationSession::startRefiner()
     m_previewReplacements = BindingProcessor::replacementsByPlaceholder(m_transcriptPipeline.bindingResult.placeholders);
     TranscriptPipelineResult &pipeline = m_transcriptPipeline;
     TranscriptPipeline::includeScreenshotContext(pipeline,
-                                                 m_providers->refinementProviderReadsScreenshots(refinement.providerId),
+                                                 m_providers->refinementProviderReadsScreenshots(refinement.services.main()),
                                                  m_screenshotData,
                                                  m_screenshotMediaType);
-    qInfo() << "refinement started provider=" << refinement.providerId
+    qInfo() << "refinement started provider=" << refinement.services.main()
             << "rawLength=" << m_transcript->text().size()
             << "placeholderLength=" << pipeline.refinementInput.size()
             << "selectionEdit=" << pipeline.editsSelection
@@ -971,7 +970,7 @@ void DictationSession::startRefiner()
             << "bindingCount=" << pipeline.bindingResult.placeholders.size()
             << "noBindCount=" << pipeline.noBindPhrases.size()
             << "vocabularyCount=" << pipeline.refinementVocabulary.size();
-    noteRan(ProviderRole::Refinement, refinement.providerId);
+    noteRan(ProviderRole::Refinement, refinement.services.main());
     m_refiner->refine(pipeline.refinementInput,
                       pipeline.refinementVocabulary,
                       pipeline.refinementContext,

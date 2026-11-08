@@ -93,7 +93,7 @@ AppSettings ProviderRegistry::withProfileProviders(const AppSettings &settings,
                                                   const WritingProfileSettings &profile) const
 {
     AppSettings resolved = withWritingProfileProviders(settings, profile);
-    if (!m_speech.contains(resolved.speech.providerId)) {
+    if (!m_speech.contains(resolved.speech.services.main())) {
         resolved.speech = settings.speech;
     }
     return resolved;

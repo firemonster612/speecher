@@ -73,8 +73,8 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   as data: speech services and refinement providers with a `state` and
   core's `problem` sentence, their ratings as `{ measure, value }` bars, the
   Local Model catalog with fits, speeds, downloads and Speed Tests, the
-  hardware, the Local Runners and the Ollama pull, both Custom Endpoints'
-  checks and setup's fallback offers. Each speech service and Local Model
+  hardware, the Local Runners and the Ollama pull, both servers' checks
+  and setup's fallback offers. Each speech service and Local Model
   carries the language codes it listens for, from core's lists
   (`SpokenLanguages`, the catalog). `QuickModels.h` documents each field.
   `ModelText` (in Speecher.App) words all of it and looks entries up by id,
@@ -99,6 +99,14 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   Switch to it, which captures the app in front as dictation does. Icons
   come from the host's `image://appicon` provider. `schema/apps.js` words
   all of it and holds the App Types' list.
+- `Settings.values.speechServices` and `refinementServices` are the two
+  Service Orders, `[{ service, model, language, effort, speed }]` first
+  to last, and `refinementEnabled` is Clean up my words; saving an order
+  with an entry that leaves a field out keeps that field's saved value.
+  `ModelText` (`entries`, `order`, `entry`, `mainSpeech`, `mainRefiner`,
+  `refiners`, `withFirst`) is how pages read them; nothing else names a
+  first service. `Settings.act("useCliproxyServer")` points the refinement
+  server at the CLI Proxy API server a sign-in names.
 - `Accounts` shows the daemon's `Accounts` (`app/Accounts`), which runs
   each service's sign-in check on a worker and queues secret writes; a
   secret row is write-only: `Accounts.saveSecret` and `clearSecret` go
@@ -107,7 +115,7 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   `signInInUse`, says whether the settings sign in through it. The speech
   providers' sign-ins (ChatGPT, Claude) have one owner, core's
   `ProviderAvailability`:
-  `Models` shows them, setup checks them, and renewing a sign-in on Accounts
+  `Models` shows them, setup checks them, and renewing a sign-in on Services
   checks them again.
 - `Settings.values[id]` and `Settings.set(id, value)` are the settings store,
   keyed by the schema's row ids. One table in `QuickSettings.cpp` maps each id
@@ -143,7 +151,7 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   `Settings.completeSetup()` records that the setup assistant finished.
 - `Navigation` is which page Main shows (`current`) and the row a page
   lands on (`pendingRow`); `go(pageId)` and `goToRow(pageId, rowId)` ask for
-  them. A link from one page to another (Open Accounts, Change in Apps, a fix)
+  them. A link from one page to another (Open Services, Change in Apps, a fix)
   calls `follow(pageId, rowId)` instead, which remembers where it came from
   in `returnTo` until the person goes anywhere else, so the page it opens
   offers the way back (`goBack()`). A link in the setup assistant follows
@@ -327,15 +335,22 @@ shared control or Theme, not in a page.
 
 Choosing:
 
-- A provider or service is chosen with `ServiceCards`, in settings, setup
-  and Transcribe alike: a grid of cards, each with its icon, name, a line of
-  help, its status and its ratings, so they compare before choosing, and a
-  check on the chosen one. A narrow place gets fewer, smaller columns, not
-  another layout. A profile's own override stays a `Select` with an explicit
-  Default option.
+- Speech to text and Refinement put their services in order with
+  `ServiceOrderList`: each service first to last with its status, its own
+  choices under it (`ServiceChoiceRow`) and a Fix while it can't run. One
+  service, for one batch or a setup step, is chosen with `ServiceCards`
+  (setup and Transcribe): a grid of cards, each with its icon, name, a line
+  of help, its status and its ratings, and a check on the chosen one. A
+  narrow place gets fewer, smaller columns, not another layout. A profile's
+  own first service stays a `Select` whose first option is "Same as
+  <page> (<service>)".
+- A service is signed in to or set up once, on Services. Elsewhere a
+  service that can't run shows its status and a Fix (`ServiceStatus`, or a
+  row's Fix in the order), which opens that service's Services card in a
+  `FixSheet` over the page; nothing else copies a sign-in control.
 - A provider company has one name everywhere, "ChatGPT" or "Claude", with
   its mark (`Icon { name: "openai" }`, `"claude"`); how it signs in is help
-  or Accounts' business, never part of the name.
+  or Services' business, never part of the name.
 - A check means a committed choice. The editor that is open (a profile in
   the list) is a selected `ListRow`, with no check.
 - Two to four short options are segments; more, or a list that grows, is a
@@ -379,7 +394,7 @@ Press, hover, selection:
   focus halo while it is being edited. A custom control that acts has Tab,
   Return and Space, and the right `Accessible.role`.
 - Exceptions, named by role: a slider's handle grows while held, a dragged
-  fallback row lifts to 1.02, a switch's knob stretches toward where it is
+  order row lifts to 1.02, a switch's knob stretches toward where it is
   going while held and on a flip, and can be dragged, the popup's round
   buttons never take focus. Do not copy them elsewhere.
 
@@ -414,7 +429,7 @@ Layout:
   List controls never draw their own.
 - Deleting something a person made either asks first with `InlineConfirm`
   (a question, what it costs, Cancel and the action) or happens at once
-  with an Undo in its toast. Removing one of a few chosen fallbacks is
+  with an Undo in its toast. Removing a service from an order is
   immediate.
 - The title strip is `Theme.titleBarHeight` 52. `Brand` puts the mark 12 in
   from the window's top and left and the window buttons sit 12 in from the
@@ -426,10 +441,10 @@ Layout:
   maximized and is not padding.
 - The sidebar is one list with no headings: nine top-level pages (Home,
   Transcribe files, Dictation, Speech to text, Refinement, Apps, Pasting,
-  Accounts, General), in the order a dictation goes, and their subpages. A
+  Services, General), in the order a dictation goes, and their subpages. A
   page sits under another (`parent` in `schema/pages.js`) when it is a part
   of that page a person looks for on its own: Microphone and Popup & sounds
-  under Dictation, Local models under Speech to text, Writing profiles and
+  under Dictation, Local models under Services, Writing profiles and
   Vocabulary under Refinement, and Appearance and Updates under General. Every page has settings of its own; none only lists its
   subpages.
   Top-level entries have icons; subpages have none, set in past a guide
@@ -566,13 +581,13 @@ Choosing:
 - `Switch`, `CheckBox`, `Slider { format }`.
 - `SegmentedControl { options; currentId; activated(id) }`: two to four short choices in a row.
 - `Select { options; currentId; placeholder; chosen(id) }`: a dropdown.
-- `LanguageSelect { options; currentId; shownId; placeholder; searchText; clearText; emptyText; chosen(id) }`: the current language's flag and name, opening a `LanguagePopover` to choose from. `shownId` is what the button shows when the checked option stands for another language, as a fallback's "Same as main language" does.
+- `LanguageSelect { options; currentId; shownId; placeholder; searchText; clearText; emptyText; chosen(id) }`: the current language's flag and name, opening a `LanguagePopover` to choose from. `shownId` is what the button shows when the checked option stands for another language, as a later speech service's "Same as Spoken language" does.
 - `LanguagePopover { languages; currentId; choosing; searchText; clearText; emptyText; align; openFrom(item); chosen(id) }`: languages with their flags under a search field that filters by English name, own name or code; arrows, Return and Escape. `choosing` checks `currentId` and picks; without it the list only shows. It grows from what opened it, as menus do. An option's `icon` stands in for the flag (Automatic).
 - `CompactChoice { options; currentId; stretch; chosen(id) }`: segments for up to four options, a Select for more.
 - `OptionCards { options; currentId; activated(id) }`: a few choices as cards with help.
 - `ServiceCards { options; currentId; unratedText; helpLinkActivated(id, at) }`: a provider or service as a grid of cards inside a Section's card, each with its icon, help, status, ratings and a note on them, and a check when chosen; an option's `helpLink` makes that part of its help a link. `ChoiceCard` is the card both it and OptionCards use.
 - `Chip { text; iconName; checkable }`: small choices or snippet buttons in a Flow.
-- `FallbackList { ids; options; statusOf; rowControl; addLabel; emptyText }`: an ordered list to drag, reorder, add to and remove from; `rowControl` puts a control on each row, such as a speech fallback's Spoken language.
+- `OrderedList { ids; options; statusOf; rowControl; rowDetail; minCount; maxCount; addLabel; emptyText }`: an ordered list to drag, reorder, add to and remove from; `rowControl` puts a control at each row's end, such as a Fix, and `rowDetail` a line of choices under its name; `minCount` rows always stay.
 - `EditableList { items; emptyTitle; emptyText; formOpen }`: things a person made, with edit and delete.
 
 Input:
@@ -614,13 +629,13 @@ Helpers:
 In Speecher.App, besides SchemaRow:
 
 - `SubpageRows { pageId; lines }`: a card of rows leading to a page's subpages, with their titles and subtitles, or a line of `lines` by subpage id, such as how it is set now, in place of the subtitle.
-- `SearchLanding { rowIds; target; landed() }`: where a search for schema rows lands when no SchemaRow stands for them (a custom row, a Disclosure, a card or a section). It scrolls to target and emits landed so the target can flash or open. It opens nothing that hides target: a section folded away until a choice makes it apply opens for a search only where its page says so, as Speech to text's Local Model and Custom Endpoint sections do through the page's `searched`.
+- `SearchLanding { rowIds; target; landed() }`: where a search for schema rows lands when no SchemaRow stands for them (a custom row, a Disclosure, a card or a section). It scrolls to target and emits landed so the target can flash or open. It opens nothing that hides target: a section folded away until a choice makes it apply opens for a search only where its page says so, as Refinement's Advanced group does when a search lands in it.
 - `AccessibilityNotice { text }`: the note at the top of a card whose rows need desktop accessibility.
 - `HealthRow { rowId; checkId }`: a schema row showing one of `System.checks` with its fix; items inside follow the fix button. `AccessibilityMenu` is the desktopAccessibility row's menu that stops keeping it on. `StateText { stateId }` words a sign-in or check state, and `States` (states.js) maps states to tones: a state to sign in to, turn on or set up is `warning`, one that failed or can't be used `negative`.
-- `SignInRow { serviceId }`: under the cards that choose a speech service, its sign-in: where it comes from, and while it isn't ready how to sign in (also while the first check runs) or why the last check couldn't reach it; the card keeps the status.
-- `RefinerSignInRow { providerId }`: the same under the cards that choose a refinement provider, once Accounts has answered, saying so where Accounts couldn't read the keychain.
-- `SignInSourceRow`: both rows' body: the sign-in source as the select Accounts has, Check again while it isn't ready, Open Accounts in every state, and a failure as one plain sentence with its own words behind `ErrorDetails { text }`, a Details link.
-- `AccountsLink { rowId }`: Open Accounts, landing on rowId, followed from the page or the setup assistant it sits in.
+- `ServiceOrderList { role }`: a job's Service Order, speech or refinement, on an `OrderedList`: each service with its status and a Fix while it can't run, its `ServiceChoiceRow` under it, saving as it changes. `ServiceChoiceRow` is one entry's choices: its model (picked where the service lets you, else named), a later speech service's Spoken language with "Same as Spoken language" first, and ChatGPT's and Claude's thinking and speed.
+- `ServiceStatus { role; serviceId }`: under the cards that choose one service (setup, Transcribe), what it still needs and how to sign in, with Check again and Fix; folded away while it is ready and before the first check answers.
+- `FixSheet { openFor(role, serviceId) }`: the Services card that fixes one service (ChatGPT's or Claude's sign-in, This computer's part for the job, or the job's server) in a modal sheet over the page, with Open Services, which leads back to setup when opened from there.
+- `ErrorDetails { text }`: a failure's own words behind a Details link, under its plain sentence.
 - `ShortcutRecorder { rowId }`: a shortcut setting's ShortcutField wired to Settings, for the shortcut rows and Dictation's hero, which is where the dictation shortcut is set.
 - `Usable.usable(spec)`: whether a row can be used now, by its schema `usableWhen` (blur, accessibility, automaticDownloads, screenshotReader). SchemaRow and search both read it; a page doesn't disable a row by its own logic.
 - `CommandChip { command }`: a command in code type with a copy button.

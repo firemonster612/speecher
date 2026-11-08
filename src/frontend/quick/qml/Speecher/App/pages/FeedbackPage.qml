@@ -14,9 +14,8 @@ Page {
 
     // The speech service and refinement provider in use, whose text the
     // live rows show; each row says when its service sends none.
-    readonly property string speech: Settings.values.speechProvider || ""
-    readonly property bool refines: (Settings.values.refinementProvider || "none") !== "none"
-                                    || Library.profiles.some(p => !!p.refinement)
+    readonly property string speech: ModelText.mainSpeech
+    readonly property bool refines: ModelText.refinersInUse().length > 0
 
     // A small stage with the real popup on it, fed by a demo dictation that
     // loops, so each change below shows up straight away.

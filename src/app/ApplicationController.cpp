@@ -524,7 +524,7 @@ void ApplicationController::notifyModelReady(const QString &modelId)
         return;
     }
     const SpeechSettings speech = m_settings->dictationSnapshot().speech;
-    const bool inUse = parseProviderId(speech.providerId) == ProviderId::Local && speech.local.modelId == modelId;
+    const bool inUse = parseProviderId(speech.services.main()) == ProviderId::Local && localModelId(speech) == modelId;
     m_frontEnd->notifyIfNoWindowShown(
         QStringLiteral("%1 is ready").arg(model->name),
         inUse ? QStringLiteral("You can start dictating. Speech stays on this computer.")

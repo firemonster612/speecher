@@ -52,7 +52,7 @@ struct TranscribeOptions {
     std::optional<QString> spokenLanguage;
     // Replace the models the settings or the profile give the chosen
     // services, for this batch; empty keeps them. They apply to the services
-    // that have a model to choose: a Local Model's id or a Custom Endpoint's
+    // that have a model to choose: a Local Model's id or a server's
     // model for speech, and see setRefinementModel for refinement.
     QString speechModel;
     QString refinementModel;

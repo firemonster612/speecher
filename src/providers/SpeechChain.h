@@ -45,9 +45,9 @@ public:
 
     SpeechChain(ProviderRegistry *providers, Acquire acquire, QObject *parent = nullptr);
 
-    // Starts over at primary, with fallbacks after it, and forgets the
+    // Starts over at the first of chain (serviceChain), and forgets the
     // refiner's renewal. Cancels a preparation still running.
-    void begin(const QString &primary, const QStringList &fallbacks);
+    void begin(const QStringList &chain);
     const QStringList &providerIds() const;
     // The provider the session is on.
     QString currentId() const;

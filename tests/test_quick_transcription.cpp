@@ -105,7 +105,7 @@ private slots:
         transcription.setOption(QStringLiteral("refiner"), QStringLiteral("endpoint"));
         QCOMPARE(transcription.refinerModel(), QStringLiteral("qwen3:8b"));
         transcription.setOption(QStringLiteral("refiner"), QStringLiteral("anthropic"));
-        QCOMPARE(transcription.refinerModel(), saved.refinement.anthropicModel);
+        QCOMPARE(transcription.refinerModel(), saved.refinement.services.choice(QStringLiteral("anthropic")).model);
 
         transcription.setOption(QStringLiteral("service"), QStringLiteral("endpoint"));
         transcription.setOption(QStringLiteral("speechModel"), QStringLiteral("whisper-large-v3"));
@@ -114,8 +114,8 @@ private slots:
         transcription.setOption(QStringLiteral("service"), QStringLiteral("claude"));
         QVERIFY(transcription.speechModel().isEmpty());
 
-        QCOMPARE(controller.settings()->snapshot().refinement.endpoint.model, saved.refinement.endpoint.model);
-        QCOMPARE(controller.settings()->snapshot().speech.endpoint.model, saved.speech.endpoint.model);
+        QCOMPARE(controller.settings()->snapshot().refinement.services.choice(QStringLiteral("endpoint")).model, saved.refinement.services.choice(QStringLiteral("endpoint")).model);
+        QCOMPARE(controller.settings()->snapshot().speech.services.choice(QStringLiteral("endpoint")).model, saved.speech.services.choice(QStringLiteral("endpoint")).model);
     }
 
     // A picked suggestion fills the model field as typing would, so the field

@@ -134,12 +134,12 @@ private slots:
     void refinementServicesRateTheChosenModel()
     {
         AppSettings chosen;
-        chosen.refinement.anthropicModel = QStringLiteral("claude-haiku-5-5");
-        chosen.refinement.openAiModel = QStringLiteral("gpt-6.1-sol");
+        chosen.refinement.services.choice(QStringLiteral("anthropic")).model = QStringLiteral("claude-haiku-5-5");
+        chosen.refinement.services.choice(QStringLiteral("openai")).model = QStringLiteral("gpt-6.1-sol");
         QCOMPARE(ratingValues(ProviderRole::Refinement, QStringLiteral("anthropic"), {}, chosen), QList<double>({9, 8}));
         QCOMPARE(ratingValues(ProviderRole::Refinement, QStringLiteral("openai"), {}, chosen), QList<double>({9.5, 7}));
         // The GPT-5.4 models need an API key, which the benchmark had none of.
-        chosen.refinement.openAiModel = QStringLiteral("gpt-5.4");
+        chosen.refinement.services.choice(QStringLiteral("openai")).model = QStringLiteral("gpt-5.4");
         QVERIFY(!providerRating(ProviderRole::Refinement, QStringLiteral("openai"), {}, chosen));
     }
 
@@ -168,7 +168,7 @@ private slots:
         local.speedTestSeconds.insert(localSpeedTestKey(QStringLiteral("parakeet"), local.runsOn), 2.0);
         QCOMPARE(ratingValues(ProviderRole::Speech, QStringLiteral("local"), referencePc(), settings), QList<double>({8.5, 6}));
 
-        local.modelId = QStringLiteral("whisper-turbo");
+        localModelId(settings.speech) = QStringLiteral("whisper-turbo");
         local.modelChosen = true;
         QCOMPARE(ratedModel(ProviderRole::Speech, QStringLiteral("local"), referencePc(), settings),
                  QStringLiteral("Whisper Large v3 Turbo"));
@@ -220,8 +220,10 @@ private slots:
     void refinementServicesSuggestTheirDefaultFirst()
     {
         const RefinementSettings defaults;
-        QCOMPARE(refinementServiceModels(QStringLiteral("openai")).first().id, defaults.openAiModel);
-        QCOMPARE(refinementServiceModels(QStringLiteral("anthropic")).first().id, defaults.anthropicModel);
+        QCOMPARE(refinementServiceModels(QStringLiteral("openai")).first().id,
+                 defaults.services.choice(QStringLiteral("openai")).model);
+        QCOMPARE(refinementServiceModels(QStringLiteral("anthropic")).first().id,
+                 defaults.services.choice(QStringLiteral("anthropic")).model);
         QCOMPARE(refinementServiceModels(QStringLiteral("anthropic")).first().name, QStringLiteral("Claude Opus 5.5"));
         QVERIFY(refinementServiceModels(QStringLiteral("local")).isEmpty());
     }

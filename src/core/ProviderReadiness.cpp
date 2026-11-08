@@ -43,11 +43,10 @@ bool isLocalNetworkServer(const QString &url)
 
 QString serverUrl(ProviderRole role, const AppSettings &settings)
 {
-    return role == ProviderRole::Speech ? settings.speech.endpoint.baseUrl
-                                        : resolvedRefinementEndpoint(settings.refinement).apiBase;
+    return role == ProviderRole::Speech ? settings.speech.server.baseUrl : settings.refinement.server.baseUrl;
 }
 
-// A role's Custom Endpoint connection check, as LiveFacts holds it.
+// A role's server connection check, as LiveFacts holds it.
 struct EndpointCheckFacts {
     QString status;
     bool checking = false;
@@ -151,7 +150,7 @@ FallbackProblem fallbackProblem(ProviderRole role, const QString &providerId, co
 {
     const std::optional<ProviderId> provider = parseProviderId(providerId);
     if (provider == ProviderId::Local && role == ProviderRole::Speech) {
-        if (!facts.downloadedModels.contains(settings.speech.local.modelId)) {
+        if (!facts.downloadedModels.contains(localModelId(settings.speech))) {
             return FallbackProblem::NoModel;
         }
         return fallbackSkipsSpokenLanguage(settings.speech, providerId) ? FallbackProblem::SpokenLanguage
@@ -160,7 +159,8 @@ FallbackProblem fallbackProblem(ProviderRole role, const QString &providerId, co
     if (provider == ProviderId::Local) {
         const QString runner = settings.refinement.localRunner.runner;
         // The Local Runner refuses to clean up without a model.
-        if (!runner.isEmpty() && settings.refinement.localRunner.lacksModel()) {
+        if (!runner.isEmpty()
+            && settings.refinement.localRunner.lacksModel(settings.refinement.services.choice(providerId).model)) {
             return FallbackProblem::NoModel;
         }
         const bool running = std::any_of(facts.runners.cbegin(), facts.runners.cend(),

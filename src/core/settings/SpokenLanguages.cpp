@@ -21,7 +21,7 @@ const QStringList codexLanguages = languageCodes(
     "af am ar az be bg bn bs ca cs cy da de el en es et fa fi fr gl gu he hi hr hu hy id is it ja ka kk kn "
     "ko lt lv mi mk ml mn mr ms my ne nl no pl pt ro ru sk sl so sr sv sw ta te th tl tr uk ur vi yue zh");
 
-// A Custom Endpoint's server is unknown; most speak Whisper's languages.
+// Your speech server's languages are unknown; most speak Whisper's.
 QStringList endpointLanguages()
 {
     return findLocalModel(QStringLiteral("whisper-turbo"))->languages;
@@ -49,7 +49,7 @@ QString englishName(const QString &language)
 
 QStringList spokenLanguages(const SpeechSettings &speech)
 {
-    const std::optional<ProviderId> provider = parseProviderId(speech.providerId);
+    const std::optional<ProviderId> provider = parseProviderId(speech.services.main());
     if (provider == ProviderId::Claude) {
         return withAutomatic(claudeVoiceLanguages);
     }
@@ -60,7 +60,7 @@ QStringList spokenLanguages(const SpeechSettings &speech)
         return withAutomatic(endpointLanguages());
     }
     if (provider == ProviderId::Local) {
-        const LocalModel *model = findLocalModel(speech.local.modelId);
+        const LocalModel *model = findLocalModel(localModelId(speech));
         if (!model) {
             return {};
         }
@@ -78,7 +78,7 @@ QString requestedSpokenLanguage(const QString &language)
 bool listensForSpokenLanguage(const SpeechSettings &speech)
 {
     const LocalModel *model =
-        parseProviderId(speech.providerId) == ProviderId::Local ? findLocalModel(speech.local.modelId) : nullptr;
+        parseProviderId(speech.services.main()) == ProviderId::Local ? findLocalModel(localModelId(speech)) : nullptr;
     if (model) {
         return localModelListensFor(*model, speech.language);
     }
@@ -92,7 +92,7 @@ QString spokenLanguageProblem(const SpeechSettings &speech, const QString &servi
         return {};
     }
     const LocalModel *model =
-        parseProviderId(speech.providerId) == ProviderId::Local ? findLocalModel(speech.local.modelId) : nullptr;
+        parseProviderId(speech.services.main()) == ProviderId::Local ? findLocalModel(localModelId(speech)) : nullptr;
     const QString service = model ? model->name : serviceLabel;
     if (speech.language == QLatin1String(kAutomaticSpokenLanguage)) {
         return QStringLiteral("%1 can't detect the language. Choose the language you speak.").arg(service);
@@ -104,12 +104,12 @@ QString spokenLanguageProblem(const SpeechSettings &speech, const QString &servi
 SpeechSettings chainSpeechSettings(const SpeechSettings &speech, const QString &providerId)
 {
     SpeechSettings candidate = speech;
-    candidate.providerId = providerId;
-    if (providerId == speech.providerId) {
+    candidate.services = speech.services.withMain(providerId);
+    if (providerId == speech.services.main()) {
         return candidate;
     }
-    if (const auto chosen = speech.fallbackLanguages.constFind(providerId); chosen != speech.fallbackLanguages.cend()) {
-        candidate.language = *chosen;
+    if (const QString chosen = speech.services.choice(providerId).language; !chosen.isEmpty()) {
+        candidate.language = chosen;
         return candidate;
     }
     // Only Automatic falls back to English: a language the person named

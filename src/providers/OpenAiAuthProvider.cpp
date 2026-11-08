@@ -48,9 +48,7 @@ OpenAiAuthProvider OpenAiAuthProvider::forSpeech(const AccountSettings &accounts
                               accounts.cliproxyOauthDir);
 }
 
-OpenAiAuthProvider OpenAiAuthProvider::forRefinement(SecretStore *secretStore,
-                                                     const AccountSettings &accounts,
-                                                     const RefinementSettings &refinement)
+OpenAiAuthProvider OpenAiAuthProvider::forRefinement(SecretStore *secretStore, const AccountSettings &accounts)
 {
     return OpenAiAuthProvider(secretStore,
                               accounts.openAiAuthMode,
@@ -58,8 +56,8 @@ OpenAiAuthProvider OpenAiAuthProvider::forRefinement(SecretStore *secretStore,
                               accounts.cliproxyOauthDir,
                               {},
                               {},
-                              refinement.cliproxyBaseUrl,
-                              refinement.cliproxyApiKey);
+                              accounts.cliproxyBaseUrl,
+                              accounts.cliproxyApiKey);
 }
 
 struct ApiKeyCandidate {

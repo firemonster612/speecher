@@ -31,15 +31,13 @@ public:
     bool boringMode() const; void setBoringMode(bool value);
     bool pauseMediaDuringTranscription() const; void setPauseMediaDuringTranscription(bool value);
     bool soundsEnabled() const; void setSoundsEnabled(bool value);
-    QString speechProvider() const; void setSpeechProvider(const QString &value);
-    QStringList speechFallbackProviders() const; void setSpeechFallbackProviders(const QStringList &value);
-    QHash<QString, QString> speechFallbackLanguages() const; void setSpeechFallbackLanguages(const QHash<QString, QString> &value);
+    ServiceOrder speechServices() const; void setSpeechServices(const ServiceOrder &value);
     bool codexFinalRetranscribe() const; void setCodexFinalRetranscribe(bool value);
     QString spokenLanguage() const; void setSpokenLanguage(const QString &value);
     LocalSpeechSettings localSpeechSettings() const; void setLocalSpeechSettings(const LocalSpeechSettings &value);
     // Without apiKey: SettingsStore keeps the key in the keyring.
-    SpeechEndpointSettings speechEndpointSettings() const; void setSpeechEndpointSettings(const SpeechEndpointSettings &value);
-    RefinementEndpointSettings refinementEndpointSettings() const; void setRefinementEndpointSettings(const RefinementEndpointSettings &value);
+    ServerSettings speechServer() const; void setSpeechServer(const ServerSettings &value);
+    ServerSettings refinementServer() const; void setRefinementServer(const ServerSettings &value);
     LocalRunnerSettings localRunnerSettings() const; void setLocalRunnerSettings(const LocalRunnerSettings &value);
     QList<VocabularyEntry> vocabularyEntries() const; void setVocabularyEntries(const QList<VocabularyEntry> &entries);
     bool recordVocabularyUsage(const QString &text);
@@ -54,8 +52,10 @@ public:
     bool correctionLearningEnabled() const; void setCorrectionLearningEnabled(bool value);
     bool insightsEnabled() const; void setInsightsEnabled(bool value);
     QList<LearnedCorrection> learnedCorrections() const; void setLearnedCorrections(const QList<LearnedCorrection> &corrections);
-    QString refinementProvider() const; void setRefinementProvider(const QString &value);
-    QStringList refinementFallbackProviders() const; void setRefinementFallbackProviders(const QStringList &value);
+    bool refinementEnabled() const; void setRefinementEnabled(bool value);
+    // Until one is saved, the order starts with ChatGPT where the Codex app
+    // is installed, else Claude where Claude Code is, else ChatGPT.
+    ServiceOrder refinementServices() const; void setRefinementServices(const ServiceOrder &value);
     // The cleanup level an older release saved, which seeds the Writing
     // Profiles until they are saved. Nothing writes it now.
     QString refinementStyle() const;
@@ -67,15 +67,9 @@ public:
     QString customSystemPrompt() const; void setCustomSystemPrompt(const QString &value);
     QList<CustomTone> customTones() const; void setCustomTones(const QList<CustomTone> &value);
     QList<CustomCleanupLevel> customCleanupLevels() const; void setCustomCleanupLevels(const QList<CustomCleanupLevel> &value);
-    QString openAiModel() const; void setOpenAiModel(const QString &value);
     OpenAiAuthMode openAiAuthMode() const; void setOpenAiAuthMode(OpenAiAuthMode value);
-    QString openAiEffort() const; void setOpenAiEffort(const QString &value);
-    QString openAiSpeed() const; void setOpenAiSpeed(const QString &value);
     QString openAiCliproxyAccount() const; void setOpenAiCliproxyAccount(const QString &value);
-    QString anthropicModel() const; void setAnthropicModel(const QString &value);
     AnthropicAuthMode anthropicAuthMode() const; void setAnthropicAuthMode(AnthropicAuthMode value);
-    QString anthropicEffort() const; void setAnthropicEffort(const QString &value);
-    bool anthropicFastMode() const; void setAnthropicFastMode(bool value);
     QString anthropicCliproxyAccount() const; void setAnthropicCliproxyAccount(const QString &value);
     QString cliproxyOauthDir() const;
     QString configuredCliproxyOauthDir() const; void setCliproxyOauthDir(const QString &value);
@@ -118,6 +112,10 @@ public:
     QString updatesPendingWhatsNewVersion() const; void setUpdatesPendingWhatsNewVersion(const QString &value);
     bool recordingConsentNoticeShown() const; void setRecordingConsentNoticeShown(bool value);
     QString claudeCredentialsPath() const; QString claudeEndpointBase() const; QString claudeVoicePath() const;
+    // Writes the speech and refinement Service Orders, Clean up my words and
+    // the refinement server from the keys an older release saved them in,
+    // once. The older keys stay for a release, so a downgrade reads them.
+    void migrateServiceOrder();
     // Every field fields() reads, from the file. The keyring keys stay empty.
     AppSettings snapshot() const;
     // Saves every stored field of draft, and nothing else.
@@ -132,6 +130,16 @@ private:
     static const std::vector<Field> &fields();
 
     QVariant value(const QString &key, const QVariant &fallback) const;
+
+    // What an older release saved, for migrateServiceOrder.
+    QString legacySpeechProvider() const;
+    ServiceOrder legacySpeechServices() const;
+    ServiceOrder legacyRefinementServices(bool *enabled) const;
+    QString legacyOpenAiModel() const;
+    QString legacyOpenAiEffort() const;
+    QString legacyOpenAiSpeed() const;
+    QString legacyAnthropicModel() const;
+    QString legacyAnthropicEffort() const;
 
 protected:
     SettingsFile m_settings;

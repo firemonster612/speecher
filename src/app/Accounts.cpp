@@ -1,7 +1,6 @@
 #include "app/Accounts.h"
 
 #include "app/ProviderAvailability.h"
-#include "core/EndpointSettings.h"
 #include "core/ProviderTable.h"
 #include "core/SettingsStore.h"
 #include "providers/ProviderProbe.h"
@@ -86,7 +85,7 @@ QStringList signInSettings(const AppSettings &settings)
     const AccountSettings &accounts = settings.accounts;
     return {openAiAuthModeName(accounts.openAiAuthMode), accounts.openAiCliproxyAccount,
             anthropicAuthModeName(accounts.anthropicAuthMode),
-            accounts.anthropicCliproxyAccount, accounts.cliproxyOauthDir, settings.refinement.cliproxyBaseUrl,
+            accounts.anthropicCliproxyAccount, accounts.cliproxyOauthDir, accounts.cliproxyBaseUrl,
             accounts.claudeCredentialsPath};
 }
 
@@ -237,18 +236,6 @@ void Accounts::clearSecret(SecretStore::Secret secret)
 
 void Accounts::write(SecretStore::Secret secret, const QString &value)
 {
-    // A key entered while the CLI Proxy preset shows belongs to the proxy's
-    // server, not the Custom server saved behind it. Deleted settings take
-    // no edit; storeSecret refuses with why.
-    if (secret == SecretStore::Secret::RefinementEndpointKey && !m_settings.raw().closed()) {
-        m_settings.edit([](AppSettings &draft) {
-            if (draft.refinement.endpoint.preset != QStringLiteral("cliproxy")) {
-                return false;
-            }
-            detachRefinementEndpoint(draft);
-            return true;
-        });
-    }
     m_saving.insert(secret, storeSecret(m_settings.secrets(), secret, value));
 }
 

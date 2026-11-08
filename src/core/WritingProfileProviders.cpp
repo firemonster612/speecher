@@ -1,48 +1,39 @@
 #include "core/WritingProfileProviders.h"
 
 #include "core/ProviderChain.h"
-#include "core/ProviderTable.h"
 #include "core/settings/SpokenLanguages.h"
 
 namespace speecher {
 
 namespace {
 
-// The page's whole chain follows a profile's service, the page's primary
-// first, without the profile's service a second time.
-QStringList pageChainAfter(const QString &profileProvider, QStringList pageChain)
+// The order with first's service leading it, running first's choice over
+// the order's own entry for that service, and the order's services after it.
+// Nullopt for a choice that names no service of the role.
+std::optional<ServiceOrder> ledBy(ProviderRole role, const ServiceOrder &services,
+                                  const std::optional<ServiceChoice> &first)
 {
-    pageChain.removeAll(profileProvider);
-    return pageChain;
+    if (!first || !isChainProviderId(role, first->service)) {
+        return std::nullopt;
+    }
+    ServiceOrder led = services;
+    led.order = serviceChain(role, services.order);
+    led = led.withMain(first->service);
+    led.choice(first->service) = mergedServiceChoice(services.choice(first->service), *first);
+    return led;
 }
 
 } // namespace
 
-bool profilePicksSpeechModel(const QString &providerId)
-{
-    return parseProviderId(providerId) == ProviderId::Local;
-}
-
-void setRefinementModel(RefinementSettings &refinement, const QString &model)
-{
-    if (QString *setting = refinementModelSetting(refinement, refinement.providerId)) {
-        *setting = model;
-    }
-}
-
 std::optional<SpeechSettings> profileSpeechSettings(const SpeechSettings &speech,
                                                     const WritingProfileSettings &profile)
 {
-    if (!isChainProviderId(ProviderRole::Speech, profile.speechProvider)) {
+    const std::optional<ServiceOrder> services = ledBy(ProviderRole::Speech, speech.services, profile.speechFirst);
+    if (!services) {
         return std::nullopt;
     }
     SpeechSettings chosen = speech;
-    chosen.providerId = profile.speechProvider;
-    if (profilePicksSpeechModel(chosen.providerId) && !profile.speechModel.isEmpty()) {
-        chosen.local.modelId = profile.speechModel;
-    }
-    chosen.fallbackProviderIds = pageChainAfter(
-        chosen.providerId, providerChain(ProviderRole::Speech, speech.providerId, speech.fallbackProviderIds));
+    chosen.services = *services;
     return chosen;
 }
 
@@ -53,14 +44,9 @@ AppSettings withWritingProfileProviders(AppSettings settings, const WritingProfi
         settings.speech = *speech;
     }
     RefinementSettings &refinement = settings.refinement;
-    if (isChainProviderId(ProviderRole::Refinement, profile.refinementProvider)) {
-        const QStringList pageChain =
-            providerChain(ProviderRole::Refinement, refinement.providerId, refinement.fallbackProviderIds);
-        refinement.providerId = profile.refinementProvider;
-        refinement.fallbackProviderIds = pageChainAfter(refinement.providerId, pageChain);
-        if (!profile.refinementModel.isEmpty()) {
-            setRefinementModel(refinement, profile.refinementModel);
-        }
+    if (const std::optional<ServiceOrder> services =
+            ledBy(ProviderRole::Refinement, refinement.services, profile.refinementFirst)) {
+        refinement.services = *services;
     }
     return settings;
 }

@@ -98,7 +98,7 @@ bool hardwareKnown(const HardwareProfile &hardware)
 // As LocalSetup::speechModelChoice: the chosen model, else the suggestion.
 const LocalModel &ratedLocalModel(const HardwareProfile &hardware, const SpeechSettings &speech)
 {
-    const LocalModel *chosen = findLocalModel(speech.local.modelId);
+    const LocalModel *chosen = findLocalModel(localModelId(speech));
     return speech.local.modelChosen && chosen ? *chosen : suggestedLocalModel(hardware, speech.language);
 }
 
@@ -124,13 +124,10 @@ std::optional<ProviderRating> speechRating(const QString &providerId, const Hard
 std::optional<QString> refinementServiceModel(const QString &providerId, const RefinementSettings &refinement)
 {
     const std::optional<ProviderId> provider = parseProviderId(providerId);
-    if (provider == ProviderId::OpenAi) {
-        return refinement.openAiModel;
+    if (provider != ProviderId::OpenAi && provider != ProviderId::Anthropic) {
+        return std::nullopt;
     }
-    if (provider == ProviderId::Anthropic) {
-        return refinement.anthropicModel;
-    }
-    return std::nullopt;
+    return refinement.services.choice(providerId).model;
 }
 
 std::optional<ProviderRating> refinementRating(const QString &providerId, const HardwareProfile &hardware,

@@ -211,7 +211,7 @@ private slots:
                                           << "Copied" << "Your selection changed" << "copied";
         QTest::newRow("fallback, with its fix")
             << "Used raw transcript • Sent to the app • Your Claude sign-in has expired." << int(PopupOutcome::Fallback)
-            << "accounts" << "Used raw transcript" << "Sent to the app • Your Claude sign-in has expired." << "fallback";
+            << "services" << "Used raw transcript" << "Sent to the app • Your Claude sign-in has expired." << "fallback";
     }
 
     void receiptsSayWhatHappened()
@@ -333,7 +333,7 @@ private slots:
         QuickDictation::setErrorDismissMs(50);
         // Not built in here, so the dictation cannot start.
         SettingsStore().edit([](AppSettings &draft) {
-            draft.speech.providerId = QStringLiteral("local");
+            draft.speech.services.order = {QStringLiteral("local")};
             return true;
         });
         ApplicationController controller(true);
@@ -365,7 +365,7 @@ private slots:
         ApplicationController controller(true);
         QuickDictation dictation(&controller);
         DictationSession *session = controller.session();
-        dictation.showError(QStringLiteral("Your Claude sign-in has expired."), {ErrorFix::SettingsPage, QStringLiteral("accounts")});
+        dictation.showError(QStringLiteral("Your Claude sign-in has expired."), {ErrorFix::SettingsPage, QStringLiteral("services")});
         emit dictation.cancelRequested();
 
         emit session->stateChanged(DictationState::Starting);

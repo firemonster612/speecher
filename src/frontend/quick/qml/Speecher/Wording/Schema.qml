@@ -10,7 +10,7 @@ import "schema/profiles.js" as Profiles
 import "schema/vocabulary.js" as Vocabulary
 import "schema/apps.js" as Apps
 import "schema/pasting.js" as Pasting
-import "schema/accounts.js" as Accounts
+import "schema/services.js" as Services
 import "schema/models.js" as Models
 import "schema/general.js" as General
 import "schema/updates.js" as Updates
@@ -45,7 +45,7 @@ QtObject {
     readonly property var suggestions: ["globalShortcut", "shortcutBehavior", "showLiveText", "pauseMedia"]
     readonly property var rows: [].concat(Shortcuts.rows, Microphone.rows, Speech.rows, Feedback.rows,
                                           Refinement.rows, Profiles.rows, Vocabulary.rows, Apps.rows, Pasting.rows,
-                                          Accounts.rows, Models.rows, General.rows, Updates.rows)
+                                          Services.rows, Models.rows, General.rows, Updates.rows)
     // The Apps page's wording beyond its rows: the App Types, the Pasting
     // choices and the editor's and picker's words (schema/apps.js).
     readonly property var apps: Apps

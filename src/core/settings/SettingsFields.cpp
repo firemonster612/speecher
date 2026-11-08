@@ -65,7 +65,7 @@ std::function<bool(const AppSettings &, const AppSettings &)> sameValue(Member m
 
 } // namespace
 
-// In the order the setters need: a provider before its fallbacks, custom
+// In the order the setters need: custom
 // tones and levels before the profiles that fall back from a deleted one,
 // and the profiles before the apps and terms that name them.
 // SettingsStore keeps the keyring keys and unreadSecretKeys itself.
@@ -108,36 +108,24 @@ const std::vector<SettingsCodecs::Field> &SettingsCodecs::fields()
                &C::selectionEditReviewEnabled, &C::setSelectionEditReviewEnabled),
         stored("ui.previewWords", member(&A::ui, &UiSettings::previewWords), &C::previewWords, &C::setPreviewWords),
 
-        stored("speech.providerId", member(&A::speech, &SpeechSettings::providerId), &C::speechProvider,
-               &C::setSpeechProvider),
-        stored("speech.fallbackProviderIds", member(&A::speech, &SpeechSettings::fallbackProviderIds),
-               &C::speechFallbackProviders, &C::setSpeechFallbackProviders),
-        stored("speech.fallbackLanguages", member(&A::speech, &SpeechSettings::fallbackLanguages),
-               &C::speechFallbackLanguages, &C::setSpeechFallbackLanguages),
+        stored("speech.services", member(&A::speech, &SpeechSettings::services), &C::speechServices,
+               &C::setSpeechServices),
         stored("speech.codexFinalRetranscribe", member(&A::speech, &SpeechSettings::codexFinalRetranscribe),
                &C::codexFinalRetranscribe, &C::setCodexFinalRetranscribe),
         stored("speech.language", member(&A::speech, &SpeechSettings::language), &C::spokenLanguage,
                &C::setSpokenLanguage),
         stored("speech.local", member(&A::speech, &SpeechSettings::local), &C::localSpeechSettings,
                &C::setLocalSpeechSettings),
-        stored("speech.endpoint", member(&A::speech, &SpeechSettings::endpoint), &C::speechEndpointSettings,
-               &C::setSpeechEndpointSettings),
+        stored("speech.server", member(&A::speech, &SpeechSettings::server), &C::speechServer, &C::setSpeechServer),
         readOnly("speech.claudeEndpointBase", member(&A::speech, &SpeechSettings::claudeEndpointBase),
                  &C::claudeEndpointBase),
         readOnly("speech.claudeVoicePath", member(&A::speech, &SpeechSettings::claudeVoicePath), &C::claudeVoicePath),
         stored("audio", member(&A::audio), &C::audioCaptureSettings, &C::setAudioCaptureSettings),
 
-        stored("refinement.providerId", member(&A::refinement, &RefinementSettings::providerId),
-               &C::refinementProvider, &C::setRefinementProvider),
-        // Against the provider just read, which refinementFallbackProviders()
-        // would look up again, finding installed CLIs when none was chosen.
-        stored("refinement.fallbackProviderIds", member(&A::refinement, &RefinementSettings::fallbackProviderIds),
-               [](const C &codecs, const A &settings) {
-                   return normalizedFallbackProviders(
-                       ProviderRole::Refinement, settings.refinement.providerId,
-                       codecs.value(SettingsKeys::RefinementFallbackProviders, QStringList()).toStringList());
-               },
-               &C::setRefinementFallbackProviders),
+        stored("refinement.enabled", member(&A::refinement, &RefinementSettings::enabled), &C::refinementEnabled,
+               &C::setRefinementEnabled),
+        stored("refinement.services", member(&A::refinement, &RefinementSettings::services),
+               &C::refinementServices, &C::setRefinementServices),
         stored("refinement.customTones", member(&A::refinement, &RefinementSettings::customTones), &C::customTones,
                &C::setCustomTones),
         stored("refinement.customCleanupLevels", member(&A::refinement, &RefinementSettings::customCleanupLevels),
@@ -158,18 +146,6 @@ const std::vector<SettingsCodecs::Field> &SettingsCodecs::fields()
                &C::setCustomSystemPromptEnabled),
         stored("refinement.customSystemPrompt", member(&A::refinement, &RefinementSettings::customSystemPrompt),
                &C::customSystemPrompt, &C::setCustomSystemPrompt),
-        stored("refinement.openAiModel", member(&A::refinement, &RefinementSettings::openAiModel), &C::openAiModel,
-               &C::setOpenAiModel),
-        stored("refinement.openAiEffort", member(&A::refinement, &RefinementSettings::openAiEffort), &C::openAiEffort,
-               &C::setOpenAiEffort),
-        stored("refinement.openAiSpeed", member(&A::refinement, &RefinementSettings::openAiSpeed), &C::openAiSpeed,
-               &C::setOpenAiSpeed),
-        stored("refinement.anthropicModel", member(&A::refinement, &RefinementSettings::anthropicModel),
-               &C::anthropicModel, &C::setAnthropicModel),
-        stored("refinement.anthropicEffort", member(&A::refinement, &RefinementSettings::anthropicEffort),
-               &C::anthropicEffort, &C::setAnthropicEffort),
-        stored("refinement.anthropicFastMode", member(&A::refinement, &RefinementSettings::anthropicFastMode),
-               &C::anthropicFastMode, &C::setAnthropicFastMode),
         // The cleanup level saved before Writing Profiles, which seeds them
         // until they are saved. Each run takes its own from its profile.
         readOnly("refinement.style", member(&A::refinement, &RefinementSettings::style), &C::refinementStyle),
@@ -191,10 +167,10 @@ const std::vector<SettingsCodecs::Field> &SettingsCodecs::fields()
                  &C::cliproxyOauthDir),
         readOnly("accounts.claudeCredentialsPath", member(&A::accounts, &AccountSettings::claudeCredentialsPath),
                  &C::claudeCredentialsPath),
-        stored("refinement.cliproxyBaseUrl", member(&A::refinement, &RefinementSettings::cliproxyBaseUrl),
+        stored("accounts.cliproxyBaseUrl", member(&A::accounts, &AccountSettings::cliproxyBaseUrl),
                &C::cliproxyBaseUrl, &C::setCliproxyBaseUrl),
-        stored("refinement.endpoint", member(&A::refinement, &RefinementSettings::endpoint),
-               &C::refinementEndpointSettings, &C::setRefinementEndpointSettings),
+        stored("refinement.server", member(&A::refinement, &RefinementSettings::server), &C::refinementServer,
+               &C::setRefinementServer),
         stored("refinement.localRunner", member(&A::refinement, &RefinementSettings::localRunner),
                &C::localRunnerSettings, &C::setLocalRunnerSettings),
 

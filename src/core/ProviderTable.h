@@ -11,17 +11,14 @@
 
 namespace speecher {
 
-struct RefinementSettings;
-struct SpeechSettings;
-
 enum class ProviderRole {
     Speech,
     Refinement,
 };
 
-// Local and Endpoint each serve both roles: in speech they are the Local
-// Model and the speech Custom Endpoint, in refinement the Local Runner and the
-// refinement Custom Endpoint.
+// Local and Endpoint each serve both roles: Local is This computer (the
+// Local Model in speech, the Local Runner in refinement), Endpoint the job's
+// server among Your servers.
 enum class ProviderId {
     Claude,
     Codex,
@@ -31,7 +28,8 @@ enum class ProviderId {
     Endpoint,
 };
 
-// The refinement provider key that settings hold while nothing refines.
+// The refinement provider a run names to refine nothing (`--refine none`).
+// Settings say it with RefinementSettings::enabled.
 inline const QString kNoRefinementProvider = QStringLiteral("none");
 
 // The provider a key names. Nothing for kNoRefinementProvider, the E2E stub or
@@ -45,11 +43,9 @@ bool providerServes(ProviderId id, ProviderRole role);
 // OpenAI providers). Empty for one that needs no sign-in.
 QString providerAccountName(ProviderId id);
 
-// The setting holding the model a provider runs. Null for a key outside the
-// role and for Claude and ChatGPT dictation, whose model is not a setting.
-QString *speechModelSetting(SpeechSettings &speech, const QString &providerKey);
-const QString *speechModelSetting(const SpeechSettings &speech, const QString &providerKey);
-QString *refinementModelSetting(RefinementSettings &refinement, const QString &providerKey);
-const QString *refinementModelSetting(const RefinementSettings &refinement, const QString &providerKey);
+// Whether a person names the model this service runs in this role: every
+// refinement service, and the Local Model and a server for speech. Claude
+// Voice and ChatGPT dictation have no model to choose.
+bool servicePicksModel(ProviderRole role, const QString &providerKey);
 
 } // namespace speecher

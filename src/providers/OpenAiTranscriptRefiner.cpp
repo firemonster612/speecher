@@ -27,7 +27,7 @@ std::optional<PreparationJob> OpenAiTranscriptRefiner::createRefreshJob(const Re
     // A sign-in an earlier job handed over belongs to the preparation it was
     // made for, which may never have come: settings can have changed since.
     m_authResolvedByJob = false;
-    const OpenAiAuthProvider signIn = OpenAiAuthProvider::forRefinement(m_secretStore, accounts, settings);
+    const OpenAiAuthProvider signIn = OpenAiAuthProvider::forRefinement(m_secretStore, accounts);
     // This thread's store only starts a keyring read, so a settings API key
     // it hasn't read is read on the worker too; that read keeps the key in
     // memory for the dictations after.
@@ -51,7 +51,7 @@ std::optional<PreparationJob> OpenAiTranscriptRefiner::createRefreshJob(const Re
     // keyring through a SecretStore of its own, never the GUI thread's.
     job.run = [settings, accounts, resolved]() -> std::optional<ProviderFailure> {
         SettingsStore source;
-        *resolved = OpenAiAuthProvider::forRefinement(source.secrets(), accounts, settings).resolve();
+        *resolved = OpenAiAuthProvider::forRefinement(source.secrets(), accounts).resolve();
         return resolved->failure();
     };
     job.apply = [this, resolved](const std::optional<ProviderFailure> &failure) {
@@ -72,7 +72,7 @@ std::optional<ProviderFailure> OpenAiTranscriptRefiner::prepare(const Refinement
     // Renewing an expired sign-in is the refresh job's, on the worker: a
     // renewal here would block this thread on the network and the credential
     // lock. Without a job's answer, prepare() reads the sign-in as it stands.
-    m_auth = OpenAiAuthProvider::forRefinement(m_secretStore, accounts, settings).resolve(false);
+    m_auth = OpenAiAuthProvider::forRefinement(m_secretStore, accounts).resolve(false);
     return m_auth.failure();
 }
 
@@ -91,6 +91,7 @@ void OpenAiTranscriptRefiner::refine(const QString &rawTranscript,
         }
     }
 
+    const ServiceChoice choice = settings.services.choice(providerKey(ProviderId::OpenAi));
     m_refiner->refine(rawTranscript,
                       vocabulary,
                       m_auth.bearerToken,
@@ -98,9 +99,9 @@ void OpenAiTranscriptRefiner::refine(const QString &rawTranscript,
                       m_auth.project,
                       m_auth.endpointBase,
                       m_auth.accountId,
-                      settings.openAiModel,
-                      settings.openAiEffort,
-                      settings.openAiSpeed,
+                      choice.model,
+                      choice.effort,
+                      choice.speed,
                       settings.style,
                       context);
 }

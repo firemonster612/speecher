@@ -55,10 +55,11 @@ struct ChainRig {
         }
         settings.edit([&](AppSettings &draft) {
             draft.speech.language = QStringLiteral("en");
-            draft.speech.providerId = speechChain.first();
-            draft.speech.fallbackProviderIds = speechChain.mid(1);
-            draft.refinement.providerId = refinementChain.first();
-            draft.refinement.fallbackProviderIds = refinementChain.mid(1);
+            draft.speech.services.order = speechChain;
+            draft.refinement.enabled = refinementChain.value(0) != kNoRefinementProvider;
+            if (draft.refinement.enabled) {
+                draft.refinement.services.order = refinementChain;
+            }
             return true;
         });
         for (const QString &id : speechChain) {
@@ -151,7 +152,7 @@ private slots:
                                {speechIssue(QStringLiteral("codex"), Stage::Prepare,
                                             ProviderFailureKind::Authentication)}}
             << false << QString() << QStringLiteral("Pasted • Used Local Model. Your ChatGPT sign-in has expired.")
-            << fallback << QStringLiteral("accounts");
+            << fallback << QStringLiteral("services");
         QTest::newRow("refinement fallback")
             << ProviderHistory{{QStringLiteral("codex")}, {QStringLiteral("openai"), QStringLiteral("local")},
                                {refinementIssue(QStringLiteral("openai"), ProviderFailureKind::Network)}}
@@ -183,11 +184,11 @@ private slots:
     }
 
     // The target's Writing Profile picks its own services: they start ahead
-    // of the pages' choice, with the models it picked, while a dictation
-    // into any other app keeps the pages' choice.
+    // of the pages' orders, with the models it picked, while a dictation
+    // into any other app keeps the pages' orders.
     void aWritingProfilesOwnServicesLeadTheChains()
     {
-        ChainRig rig({QStringLiteral("claude")}, {QStringLiteral("none")});
+        ChainRig rig({QStringLiteral("claude")}, {QStringLiteral("openai")});
         registerFakeSpeechProvider(rig.registry, &rig.speech[QStringLiteral("local")], QStringLiteral("local"),
                                    QStringLiteral("Local Model"));
         rig.registry.speechProvider(QStringLiteral("local"));
@@ -197,10 +198,8 @@ private slots:
         AppSettings draft = rig.settings.snapshot();
         draft.apps.apps = {textApp(QStringLiteral("kate"), std::nullopt, WritingProfile::Email)};
         WritingProfileSettings &email = draft.refinement.writingProfiles[1];
-        email.speechProvider = QStringLiteral("local");
-        email.speechModel = QStringLiteral("moonshine-small");
-        email.refinementProvider = QStringLiteral("anthropic");
-        email.refinementModel = QStringLiteral("claude-sonnet-5-5");
+        email.speechFirst = ServiceChoice{QStringLiteral("local"), QStringLiteral("moonshine-small")};
+        email.refinementFirst = ServiceChoice{QStringLiteral("anthropic"), QStringLiteral("claude-sonnet-5-5")};
         rig.settings.applySnapshot(draft);
 
         rig.target.target.applicationId = QStringLiteral("org.kde.kate");
@@ -233,8 +232,7 @@ private slots:
         rig.settings.edit([](AppSettings &draft) { draft.speech.language = QStringLiteral("ja"); return true; });
         AppSettings draft = rig.settings.snapshot();
         setOtherAppsProfile(draft.apps, WritingProfile::Personal);
-        draft.refinement.writingProfiles[2].speechProvider = QStringLiteral("local");
-        draft.refinement.writingProfiles[2].speechModel = QStringLiteral("parakeet");
+        draft.refinement.writingProfiles[2].speechFirst = ServiceChoice{QStringLiteral("local"), QStringLiteral("parakeet")};
         rig.settings.applySnapshot(draft);
 
         rig.listen();
@@ -251,7 +249,7 @@ private slots:
         ChainRig rig({QStringLiteral("claude")});
         AppSettings draft = rig.settings.snapshot();
         setOtherAppsProfile(draft.apps, WritingProfile::Personal);
-        draft.refinement.writingProfiles[2].speechProvider = QStringLiteral("codex");
+        draft.refinement.writingProfiles[2].speechFirst = ServiceChoice{QStringLiteral("codex")};
         rig.settings.applySnapshot(draft);
 
         rig.listen();
@@ -370,9 +368,7 @@ private slots:
         QFETCH(int, localPrepares);
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("local"), QStringLiteral("endpoint")});
         rig.settings.edit([](AppSettings &draft) { draft.speech.language = QStringLiteral("de"); return true; });
-        LocalSpeechSettings local = rig.settings.dictationSnapshot().speech.local;
-        local.modelId = modelId;
-        rig.settings.edit([&](AppSettings &draft) { draft.speech.local = local; return true; });
+        rig.settings.edit([&](AppSettings &draft) { localModelId(draft.speech) = modelId; return true; });
         rig.speech[QStringLiteral("codex")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
         rig.speech[QStringLiteral("local")]->prepareFailure =
             ProviderFailure{ProviderFailureKind::Unavailable, QStringLiteral("no model")};
@@ -388,9 +384,7 @@ private slots:
     {
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
         rig.settings.edit([](AppSettings &draft) { draft.speech.language = QStringLiteral("auto"); return true; });
-        LocalSpeechSettings local = rig.settings.dictationSnapshot().speech.local;
-        local.modelId = QStringLiteral("parakeet");
-        rig.settings.edit([&](AppSettings &draft) { draft.speech.local = local; return true; });
+        rig.settings.edit([](AppSettings &draft) { localModelId(draft.speech) = QStringLiteral("parakeet"); return true; });
         LiveFacts facts;
         facts.downloadedModels = {QStringLiteral("parakeet")};
         QCOMPARE(fallbackProblem(ProviderRole::Speech, QStringLiteral("local"), rig.settings.dictationSnapshot(), facts),
@@ -409,7 +403,7 @@ private slots:
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("claude")}, {QStringLiteral("openai")});
         rig.settings.edit([](AppSettings &draft) {
             draft.speech.language = QStringLiteral("de");
-            draft.speech.fallbackLanguages = {{QStringLiteral("claude"), QStringLiteral("fr")}};
+            draft.speech.services.choice(QStringLiteral("claude")).language = QStringLiteral("fr");
             return true;
         });
         rig.speech[QStringLiteral("codex")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
@@ -429,7 +423,7 @@ private slots:
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("claude")}, {QStringLiteral("openai")});
         rig.settings.edit([](AppSettings &draft) {
             draft.speech.language = QStringLiteral("de");
-            draft.speech.fallbackLanguages = {{QStringLiteral("claude"), QStringLiteral("fr")}};
+            draft.speech.services.choice(QStringLiteral("claude")).language = QStringLiteral("fr");
             return true;
         });
         FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
@@ -452,7 +446,7 @@ private slots:
                      {QStringLiteral("openai")});
         rig.settings.edit([](AppSettings &draft) {
             draft.speech.language = QStringLiteral("de");
-            draft.speech.fallbackLanguages = {{QStringLiteral("claude"), QStringLiteral("fr")}};
+            draft.speech.services.choice(QStringLiteral("claude")).language = QStringLiteral("fr");
             return true;
         });
         rig.speech[QStringLiteral("codex")]->prepareFailure = ProviderFailure{Network, QStringLiteral("refused")};
@@ -479,7 +473,7 @@ private slots:
         QCOMPARE(rig.speech[QStringLiteral("endpoint")]->startCalls, 1);
 
         AppSettings settings = rig.settings.dictationSnapshot();
-        settings.speech.endpoint.baseUrl = QStringLiteral("https://speech.example.com");
+        settings.speech.server.baseUrl = QStringLiteral("https://speech.example.com");
         const LiveFacts facts;
         QCOMPARE(fallbackProblem(ProviderRole::Speech, QStringLiteral("claude"), settings, facts),
                  FallbackProblem::SpokenLanguage);
@@ -496,9 +490,9 @@ private slots:
         QVERIFY(needsInternet(ProviderRole::Refinement, QStringLiteral("openai"), settings));
         QVERIFY(!needsInternet(ProviderRole::Speech, QStringLiteral("local"), settings));
         QVERIFY(!needsInternet(ProviderRole::Refinement, QStringLiteral("local"), settings));
-        settings.speech.endpoint.baseUrl = QStringLiteral("http://192.168.1.20:8000");
+        settings.speech.server.baseUrl = QStringLiteral("http://192.168.1.20:8000");
         QVERIFY(!needsInternet(ProviderRole::Speech, QStringLiteral("endpoint"), settings));
-        settings.speech.endpoint.baseUrl = QStringLiteral("https://speech.example.com");
+        settings.speech.server.baseUrl = QStringLiteral("https://speech.example.com");
         QVERIFY(needsInternet(ProviderRole::Speech, QStringLiteral("endpoint"), settings));
     }
 
@@ -1490,7 +1484,7 @@ private slots:
                  QStringLiteral("Sent to the app • Used Local Model. Your ChatGPT sign-in has expired."));
         const PopupErrorAction fix = outcome.first().at(2).value<PopupErrorAction>();
         QCOMPARE(fix.fix, ErrorFix::SettingsPage);
-        QCOMPARE(fix.pageId, QStringLiteral("accounts"));
+        QCOMPARE(fix.pageId, QStringLiteral("services"));
         QTest::qWait(400);
         QCOMPARE(rig.session->state(), DictationState::Delivering);
     }
@@ -1517,7 +1511,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         FakeAudioInput audio;
         FakeMediaController media;
         FakeDelivery delivery;
@@ -1556,8 +1550,7 @@ private slots:
                 [&](const SpeechFailure &failure) { switchFailures << failure; });
         AppSettings settings;
         settings.speech.language = QStringLiteral("en");
-        settings.speech.providerId = QStringLiteral("claude");
-        settings.speech.fallbackProviderIds = {QStringLiteral("codex")};
+        settings.speech.services.order = {QStringLiteral("claude"), QStringLiteral("codex")};
 
         dictation.begin();
         QVERIFY(dictation.selectProviders(settings.speech));
@@ -1568,8 +1561,7 @@ private slots:
 
         speech[QStringLiteral("codex")]->prepareFailure =
             ProviderFailure{ProviderFailureKind::Unavailable, QStringLiteral("codex is down")};
-        settings.speech.providerId = QStringLiteral("codex");
-        settings.speech.fallbackProviderIds = {};
+        settings.speech.services.order = {QStringLiteral("codex")};
         dictation.begin();
         QVERIFY(dictation.selectProviders(settings.speech));
         dictation.start(settings, nullptr);

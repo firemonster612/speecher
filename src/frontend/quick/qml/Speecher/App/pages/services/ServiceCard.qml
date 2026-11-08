@@ -5,7 +5,7 @@ import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
 
-// One service on Accounts as a card: its name and sign-in state at the top,
+// One service on Services as a card: its name and sign-in state at the top,
 // what Speecher found and what the service is used for, then the service's
 // settings rows. An expired sign-in offers to renew it; any state can be
 // checked again. Rows declared inside follow the head and rule themselves off
