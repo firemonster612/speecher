@@ -6,6 +6,8 @@
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickApps.h"
 #include "frontend/quick/host/QuickAppearance.h"
+#include "frontend/quick/host/QuickLibrary.h"
+#include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickSettings.h"
 
 #include <QAccessible>
@@ -906,8 +908,11 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickAppearance appearance(&controller);
-        // Search lists the Apps saved.
+        // Search lists the Apps saved and the Vocabulary's entries.
         QuickApps apps(&controller);
+        const QuickLibrary::ControllerScope library(&controller);
+        // Library words its key terms by Models' speech service.
+        QuickModels models(&controller);
         // Search asks System what the computer has, as the host always can.
         test::SystemSingletons system(&controller);
         // On Linux no test runs under a compositor that blurs; macOS, and

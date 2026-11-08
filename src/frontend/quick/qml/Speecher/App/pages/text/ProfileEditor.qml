@@ -6,7 +6,8 @@ import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
 
-// One Writing Profile's settings: where it's used, its cleanup level with a
+// One Writing Profile's settings: where it's used and the vocabulary limited
+// to it, its cleanup level with a
 // preview of what that level does, its tone, output language, instructions,
 // and the services it may pick for itself. Edits go out through edited();
 // the page writes them.
@@ -120,6 +121,19 @@ Column {
                             onActivated: Navigation.follow("apps", modelData.id)
                         }
                     }
+                }
+                // The vocabulary limited to it, shown on Vocabulary.
+                LinkedText {
+                    id: vocabularyLink
+                    objectName: "profileVocabulary"
+                    readonly property string limit: "profile/" + (editor.profile.id || "")
+                    width: parent.width
+                    plainText: Schema.vocabulary.limitedHere(Library.limitedCount(limit), "profile") + " " + Schema.vocabulary.showThem
+                    link: Schema.vocabulary.showThem
+                    variant: "small"
+                    tone: "secondary"
+                    wrapMode: Text.WordWrap
+                    onActivated: Navigation.follow("vocabulary", "vocabularyFor:" + limit)
                 }
             }
             Button {

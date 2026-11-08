@@ -139,14 +139,19 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   that gives a shortcut row its own help sets `note`, not `help`.
 - `Library` is `Library.qml` over `LibraryLists` (`host/QuickLibrary`): the
   Writing Profiles, custom tones
-  and cleanup levels, vocabulary terms, Learned Corrections and
-  replacements, read from and saved through the daemon's `SettingsStore`.
-  `add(list, item)` and `update(list, key, patch)` (a key is the entry's id,
-  term, phrase or app) return why core refused the entry (`blank`, `taken`,
+  and cleanup levels, and the Vocabulary (`vocabulary`: spellings,
+  replacements and Learned Corrections as one list, each with the profiles
+  and apps it is limited to), read from and saved through the daemon's
+  `SettingsStore`.
+  `add(list, item)` and `update(list, key, patch)` (a key is the entry's id)
+  return why core refused the entry (`blank`, `taken`,
   `incomplete`, `missing`, `builtIn`), empty when saved, and
   `Library.refusalText(list, reason)` words it for the form. `remove(list,
-  key)` returns a token for `undo(token)`, or -1 when nothing went. Imports
-  take the file the page's FileDialog chose. Library.qml words the lists.
+  key)` returns a token for `undo(token)`, or -1 when nothing went.
+  `importVocabulary` takes the file the page's FileDialog chose, CSV
+  spellings or JSON snippets. Library.qml words the lists, and says what an
+  entry is limited to (`limitText`, `limitedTo`, `appName`), so Vocabulary,
+  Writing profiles and Apps count and filter them alike.
 - `Settings.act(id)` runs an action row (`runSetup`), and
   `Settings.completeSetup()` records that the setup assistant finished.
 - `Navigation` is which page Main shows (`current`) and the row a page
@@ -365,6 +370,14 @@ Choosing:
 - Languages are named once, in the `spokenLanguage` row's options (English,
   then the language's own name), which cover every code core knows; lists
   of codes take those names (`ModelText.languageOptions`).
+- An app is chosen from the Apps picker (`AppPicker`: installed apps, apps
+  dictated into, Switch to it, or a name or window title), never by typing
+  its id; Apps adds an App for it. A Vocabulary Entry limited to apps names
+  those Apps.
+- A link to what is limited to a profile or an App (the Vocabulary entries)
+  lands on that page filtered to it (`vocabularyFor:profile/<id>`,
+  `vocabularyFor:app/<id>`), and a search for one entry opens it
+  (`vocab:<id>`).
 - `SettingRow` for settings, `ListRow` for data. Rows start their content
   `Theme.rowInset` in from the card and end it the same distance from the
   right.
@@ -439,13 +452,15 @@ Layout:
   starts under the strip; split, the page's surface reaches the top and the
   strip lies over it; the 14 px shadow room around a framed window goes when it is
   maximized and is not padding.
-- The sidebar is one list with no headings: nine top-level pages (Home,
-  Transcribe files, Dictation, Speech to text, Refinement, Apps, Pasting,
-  Services, General), in the order a dictation goes, and their subpages. A
+- The sidebar is one list with no headings: ten top-level pages (Home,
+  Transcribe files, Dictation, Speech to text, Refinement, Vocabulary, Apps,
+  Pasting, Services, General), in the order a dictation goes, and their
+  subpages. Vocabulary stands alone because speech, refinement and the
+  replacements all read it. A
   page sits under another (`parent` in `schema/pages.js`) when it is a part
   of that page a person looks for on its own: Microphone and Popup & sounds
-  under Dictation, Local models under Services, Writing profiles and
-  Vocabulary under Refinement, and Appearance and Updates under General. Every page has settings of its own; none only lists its
+  under Dictation, Local models under Services, Writing profiles under
+  Refinement, and Appearance and Updates under General. Every page has settings of its own; none only lists its
   subpages.
   Top-level entries have icons; subpages have none, set in past a guide
   line from their parent's icon, with their wash and the pill on them
