@@ -34,7 +34,7 @@ Page {
         // some may.
         AccessibilityNotice {
             text: System.identifiesAppsWithoutAccessibility ? Schema.row("writingProfileBehavior").limited
-                : Schema.row("writingProfileBehavior").undetected.arg(Library.profileName(Settings.values.defaultWritingProfile || ""))
+                : Schema.row("writingProfileBehavior").undetected.arg(Library.profileName((Apps.types.find(o => o.id === "general") || { profile: "" }).profile))
         }
         Item {
             width: parent.width
@@ -92,8 +92,7 @@ Page {
                 y: Theme.space5
                 width: parent.width - x - Theme.space6
                 profile: page.selected
-                isFallback: page.selected.id === Settings.values.defaultWritingProfile
-                apps: Library.profileApps(page.selected.id)
+                apps: Library.profileUsers(page.selected.id)
                 onEdited: patch => refusal = Library.refusalText("profiles", Library.update("profiles", page.selected.id, patch))
                 onDeleteRequested: {
                     Library.removeProfile(page.selected.id)
@@ -105,22 +104,7 @@ Page {
     }
 
     Section {
-        title: Schema.row("defaultWritingProfile").section
-        SchemaRow {
-            rowId: "defaultWritingProfile"
-            Select {
-                options: page.profiles.map(p => ({ id: p.id, label: p.name, icon: Library.profileIcon(p.id) }))
-                currentId: Settings.values.defaultWritingProfile || ""
-                onChosen: id => Settings.set("defaultWritingProfile", id)
-            }
-        }
-        SettingRow {
-            title: Library.profilesText.appMatches
-            help: Library.profilesText.appMatchesHelp
-            clickable: true
-            trailingText: Library.recognitionRulesText
-            onClicked: Navigation.follow(Schema.row("appRecognitionRules").page, "appRecognitionRules")
-        }
+        title: Schema.row("additionalInstructions").section
         SchemaRow {
             rowId: "additionalInstructions"
             stacked: true

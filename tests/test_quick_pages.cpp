@@ -11,11 +11,13 @@
 #include "app/TrayIcon.h"
 #include "core/PasteMethod.h"
 #include "core/SettingsStore.h"
+#include "core/SeenApps.h"
 #include "core/Target.h"
 #include "core/settings/SpokenLanguages.h"
 #include "dictation/DictationSession.h"
 #include "dictation/PopupPresentation.h"
 #include "dictation/SelectionEditPresentation.h"
+#include "frontend/quick/host/QuickApps.h"
 #include "frontend/quick/host/QuickFrontEnd.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/ScatterRibbon.h"
@@ -238,6 +240,21 @@ private slots:
         QFETCH(QString, theme);
         ApplicationController controller(true);
         QuickSettings(&controller).set(QStringLiteral("themeControl"), theme);
+        // Apps, Pasting and Writing profiles show what an App and an App
+        // Type set, and Add app the apps dictated into.
+        controller.settings()->edit([](AppSettings &draft) {
+            AppEntry gmail = test::textApp(QStringLiteral("Gmail"), std::nullopt, WritingProfile::Email);
+            gmail.matches = {{AppMatchKind::WindowTitle, QStringLiteral("Gmail")}};
+            gmail.pasting = PasteMethod::ClipboardOnly;
+            draft.apps.apps = {test::idApp(QStringLiteral("org.kde.kate"), WritingProfile::Personal, PasteMethod::DirectInsert),
+                               gmail};
+            draft.apps.apps.first().name = QStringLiteral("Kate");
+            draft.apps.types[1].writingProfile = WritingProfile::Work;
+            return true;
+        });
+        DictationRecord seen{QDateTime::currentDateTime(), 1000, 3, QStringLiteral("Slack")};
+        seen.applicationId = QStringLiteral("slack");
+        controller.seenApps()->record(seen);
         TrayIcon tray(&controller);
         QuickFrontEnd ui(&controller, &tray);
         ui.showMainWindow();
@@ -264,7 +281,8 @@ private slots:
         // Rows moved to a subpage land there.
         for (const auto &[row, page] : {std::pair{QStringLiteral("themeControl"), QStringLiteral("appearance")},
                                         std::pair{QStringLiteral("microphoneAccess"), QStringLiteral("microphone")},
-                                        std::pair{QStringLiteral("appRecognitionRules"), QStringLiteral("appRecognition")},
+                                        std::pair{QStringLiteral("otherAppsProfile"), QStringLiteral("apps")},
+                                        std::pair{QStringLiteral("appsPasteDifferently"), QStringLiteral("pasting")},
                                         std::pair{QStringLiteral("pressPasteKeys"), QStringLiteral("pasting")}}) {
             steps.append({QStringLiteral("row ") + row, [navigation, row, page] {
                               navigation->goToRow(page, row);
@@ -272,7 +290,7 @@ private slots:
                           }});
         }
         for (const QString query : {QStringLiteral("shortcut"), QStringLiteral("api key"), QStringLiteral("paste"), QStringLiteral("refinement"),
-                                    QStringLiteral("zzz no match")}) {
+                                    QStringLiteral("app type"), QStringLiteral("zzz no match")}) {
             steps.append({QStringLiteral("search ") + query, [search, query] {
                               QMetaObject::invokeMethod(search, "open");
                               search->setProperty("query", query);
@@ -296,13 +314,15 @@ private slots:
                                       .contains(std::pair{QStringLiteral("accounts"), QString()}));
                       }});
         steps.append({QStringLiteral("close search"), [search] { QMetaObject::invokeMethod(search, "close"); }});
-        // For review, App recognition with what folds away open.
+        // For review, Apps with an app's editor open, then with Add app's
+        // picker open.
         if (!captureDir().isEmpty()) {
-            steps.append({QStringLiteral("app recognition with built-in matches open"), [navigation, main] {
-                              navigation->go(QStringLiteral("appRecognition"));
-                              QQuickItem *builtIns = nullptr;
-                              QTRY_VERIFY((builtIns = findItem(main->contentItem(), QStringLiteral("builtInMatches"))));
-                              builtIns->setProperty("open", true);
+            steps.append({QStringLiteral("apps with an editor open"), [navigation, main] {
+                              navigation->goToRow(QStringLiteral("apps"), QStringLiteral("appentry:app:org.kde.kate"));
+                              QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("appentry:app:org.kde.kate")));
+                          }});
+            steps.append({QStringLiteral("apps with the picker open"), [navigation] {
+                              navigation->goToRow(QStringLiteral("apps"), QStringLiteral("addApp"));
                           }});
         }
         runSteps(steps, main);
@@ -569,7 +589,7 @@ private slots:
         QVERIFY(refinement->property("open").toBool());
 
         QMetaObject::invokeMethod(refinement, "openRequested", Q_ARG(bool, false));
-        navigation->goToRow(QStringLiteral("profiles"), QStringLiteral("defaultWritingProfile"));
+        navigation->goToRow(QStringLiteral("profiles"), QStringLiteral("additionalInstructions"));
         QVERIFY(refinement->property("open").toBool());
         QCOMPARE(navigation->current(), QStringLiteral("profiles"));
 
@@ -1146,43 +1166,16 @@ private slots:
         QCOMPARE(instructionsOf(QStringLiteral("work")), QStringLiteral("Keep it short."));
     }
 
-    // At the window's narrowest, an app match's Writing Profile choice ends
-    // before its Edit and Delete buttons, so a click on it can't delete the
-    // match.
-    // Writing profiles and App recognition count app matches in the same
-    // words: how many, and how many of them are yours.
-    void appMatchCountsReadAlike()
-    {
-        ApplicationController controller(true);
-        TrayIcon tray(&controller);
-        QuickFrontEnd ui(&controller, &tray);
-        ui.showMainWindow();
-        QQuickWindow *main = openWindow("Main");
-        QVERIFY(main);
-        QObject *library = qmlEngine(main)->singletonInstance<QObject *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Library"));
-        QVERIFY(library);
-        const auto count = [library](int total, int own) {
-            QVariant text;
-            QMetaObject::invokeMethod(library, "matchCount", Q_RETURN_ARG(QVariant, text), Q_ARG(QVariant, total), Q_ARG(QVariant, own));
-            return text.toString();
-        };
-        QCOMPARE(count(22, 0), QStringLiteral("22 app matches, all built in"));
-        QCOMPARE(count(3, 1), QStringLiteral("3 app matches, 1 of yours"));
-        QCOMPARE(count(1, 1), QStringLiteral("1 app match, all yours"));
-        // With none of your own, every count says so.
-        QVERIFY(library->property("recognitionRulesText").toString().endsWith(QLatin1String(" app matches, all built in")));
-        QVariant work;
-        QMetaObject::invokeMethod(library, "profileApps", Q_RETURN_ARG(QVariant, work), Q_ARG(QVariant, QStringLiteral("work")));
-        QVariant workCount;
-        QMetaObject::invokeMethod(library, "profileMatches", Q_RETURN_ARG(QVariant, workCount), Q_ARG(QVariant, work));
-        QVERIFY(workCount.toString().endsWith(QLatin1String(" app matches, all built in")));
-    }
-
-    void appMatchChoicesClearTheirButtons()
+    // Pasting lists the App Types and Apps whose Pasting choice narrows the
+    // steps, each with what it does here, and opens one in Apps with its
+    // editor open.
+    void pastingListsTheAppsThatPasteDifferently()
     {
         ApplicationController controller(true);
         controller.settings()->edit([](AppSettings &draft) {
-            draft.apps.apps = {test::textApp(QStringLiteral("org.kde.konsole"), AppCategory::Terminal)};
+            draft.apps.apps = {test::idApp(QStringLiteral("org.example.FooEditor"), std::nullopt, PasteMethod::ClipboardOnly),
+                               test::idApp(QStringLiteral("org.example.Steps"), std::nullopt, PasteMethod::StandardPaste)};
+            draft.apps.types[5].pasting = PasteMethod::DirectInsert;
             return true;
         });
         TrayIcon tray(&controller);
@@ -1191,114 +1184,38 @@ private slots:
         QQuickWindow *main = openWindow("Main");
         QVERIFY(main);
         QVERIFY(QTest::qWaitForWindowExposed(main));
-        main->resize(main->minimumWidth(), main->height());
-        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
-        QVERIFY(navigation);
-        navigation->go(QStringLiteral("appRecognition"));
-
-        QQuickItem *profile = nullptr;
-        QTRY_VERIFY((profile = findItem(main->contentItem(), QStringLiteral("matchProfile"))));
-        QQuickItem *row = profile;
-        while (row && !row->property("actions").isValid()) {
-            row = row->parentItem();
-        }
-        QVERIFY(row);
-        QQuickItem *edit = nullptr;
-        QList<QQuickItem *> items{row};
-        while (!items.isEmpty() && !edit) {
-            QQuickItem *item = items.takeLast();
-            items += item->childItems();
-            if (item->property("iconName").toString() == QLatin1String("pencil")) {
-                edit = item;
-            }
-        }
-        QVERIFY(edit);
-        QTest::qWait(kSettleMs);
-        const qreal profileEnd = profile->mapToScene(QPointF(profile->width(), 0)).x();
-        const qreal buttonsStart = edit->mapToScene(QPointF(0, 0)).x();
-        QVERIFY2(profileEnd <= buttonsStart, qPrintable(QStringLiteral("%1 > %2").arg(profileEnd).arg(buttonsStart)));
-    }
-
-    // At the window's narrowest, each exception's name and result end
-    // before its choice instead of running under it.
-    void exceptionsKeepTheirWordsClearOfTheirChoices()
-    {
-        ApplicationController controller(true);
-        QuickSettings(&controller)
-            .set(QStringLiteral("applicationPasteRules"),
-                 QVariantList{QVariantMap{{QStringLiteral("app"), QStringLiteral("org.example.AnApplicationWithAVeryLongDesktopId")},
-                                          {QStringLiteral("method"), QStringLiteral("direct_insert")},
-                                          {QStringLiteral("enabled"), true}}});
-        QuickSettings(&controller).set(QStringLiteral("categoryPasteRule_ai_coding"), QStringLiteral("clipboard_only"));
-        TrayIcon tray(&controller);
-        QuickFrontEnd ui(&controller, &tray);
-        ui.showMainWindow();
-        QQuickWindow *main = openWindow("Main");
-        QVERIFY(main);
-        QVERIFY(QTest::qWaitForWindowExposed(main));
-        main->resize(main->minimumWidth(), main->height());
         auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         QVERIFY(navigation);
         navigation->go(QStringLiteral("pasting"));
-        QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("exception_type:ai_coding")));
-        QTest::qWait(kSettleMs);
-
-        int checked = 0;
-        QList<QQuickItem *> items{main->contentItem()};
-        while (!items.isEmpty()) {
-            QQuickItem *row = items.takeLast();
-            items += row->childItems();
-            if (!row->objectName().startsWith(QLatin1String("exception_"))) {
-                continue;
-            }
-            // The row's words, and the left end of its choice, a Select. The
-            // switch and the delete button come after it.
-            QList<QQuickItem *> words;
-            qreal choiceStart = -1;
-            QList<QQuickItem *> parts{row};
-            while (!parts.isEmpty()) {
-                QQuickItem *part = parts.takeLast();
-                if (QByteArray(part->metaObject()->className()).startsWith("Select_")) {
-                    choiceStart = part->mapToScene(QPointF(0, 0)).x();
-                    continue;
-                }
-                parts += part->childItems();
-                if (part->isVisible() && part->property("contentWidth").isValid() && !part->property("text").toString().isEmpty()) {
-                    words.append(part);
-                }
-            }
-            QVERIFY2(choiceStart >= 0 && !words.isEmpty(), qPrintable(row->objectName()));
-            words.removeIf([choiceStart](QQuickItem *text) { return text->mapToScene(QPointF(0, 0)).x() >= choiceStart; });
-            QVERIFY2(!words.isEmpty(), qPrintable(row->objectName()));
-            for (QQuickItem *text : words) {
-                const qreal end = text->mapToScene(QPointF(std::min(text->property("contentWidth").toReal(), text->width()), 0)).x();
-                QVERIFY2(end <= choiceStart, qPrintable(QStringLiteral("%1: \"%2\" ends at %3, its choice starts at %4")
-                                                            .arg(row->objectName(), text->property("text").toString())
-                                                            .arg(end)
-                                                            .arg(choiceStart)));
-            }
-            ++checked;
-        }
-        QCOMPARE(checked, terminalKeysDiffer ? 3 : 2);
-        // What the long ID's exception does has a line of its own, whole.
-        QQuickItem *app = findItem(main->contentItem(), QStringLiteral("exception_app:org.example.AnApplicationWithAVeryLongDesktopId"));
-        QVERIFY(app);
-        QQuickItem *result = findItem(app, QStringLiteral("exceptionResult"));
+        QQuickItem *app = nullptr;
+        QTRY_VERIFY((app = findItem(main->contentItem(), QStringLiteral("differently_appentry:app:org.example.FooEditor"))));
+        QVERIFY(findItem(main->contentItem(), QStringLiteral("differently_apptype:ai_coding")));
+        QVERIFY(findItem(main->contentItem(), QStringLiteral("differently_apptype:terminal")) == nullptr || terminalKeysDiffer);
+        // Using the steps is no different from them.
+        QVERIFY(!findItem(main->contentItem(), QStringLiteral("differently_appentry:app:org.example.Steps")));
+        QQuickItem *result = findItem(app, QStringLiteral("differentlyResult"));
         QVERIFY(result);
-        QVERIFY(!result->property("text").toString().isEmpty());
-        QVERIFY(!result->property("truncated").toBool());
+        QVERIFY(result->property("text").toString().startsWith(QLatin1String("Clipboard only")));
+        QVERIFY(!result->property("text").toString().startsWith(QLatin1String("Clipboard only: Clipboard only")));
+
+        QMetaObject::invokeMethod(app, "clicked");
+        QTRY_COMPARE(navigation->current(), QStringLiteral("apps"));
+        QQuickItem *row = nullptr;
+        QTRY_VERIFY((row = findItem(main->contentItem(), QStringLiteral("appentry:app:org.example.FooEditor"))));
+        QTRY_COMPARE(navigation->pendingRow(), QString());
+        QTRY_VERIFY(row->parentItem()->property("open").toBool());
+        QCOMPARE(navigation->returnTo(), QStringLiteral("pasting"));
     }
 
-    // A saved exception for one app is found by its ID or its rule, and the
-    // result lands on its row.
-    void searchFindsASavedExceptionAndLandsOnIt()
+    // A saved App is found by its name or what it is recognized by, and the
+    // result opens it on Apps.
+    void searchFindsASavedAppAndOpensIt()
     {
         ApplicationController controller(true);
-        QuickSettings(&controller)
-            .set(QStringLiteral("applicationPasteRules"),
-                 QVariantList{QVariantMap{{QStringLiteral("app"), QStringLiteral("org.example.FooEditor")},
-                                          {QStringLiteral("method"), QStringLiteral("clipboard_only")},
-                                          {QStringLiteral("enabled"), true}}});
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.apps.apps = {test::idApp(QStringLiteral("org.example.FooEditor"), std::nullopt, PasteMethod::ClipboardOnly)};
+            return true;
+        });
         TrayIcon tray(&controller);
         QuickFrontEnd ui(&controller, &tray);
         ui.showMainWindow();
@@ -1308,46 +1225,31 @@ private slots:
         auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         auto *search = main->findChild<QObject *>(QStringLiteral("searchPalette"));
         QVERIFY(navigation && search);
-        const QString rowId = QStringLiteral("exception_app:org.example.FooEditor");
-        const auto finds = [&search, &rowId](const QString &query) {
-            const auto results = searchResults(search, query);
-            return std::any_of(results.cbegin(), results.cend(), [&rowId](const auto &result) { return result.first == rowId; });
-        };
+        const QString rowId = QStringLiteral("appentry:app:org.example.FooEditor");
         QMetaObject::invokeMethod(search, "open");
-        QVERIFY(finds(QStringLiteral("fooeditor")));
-        QVERIFY(finds(QStringLiteral("clipboard only exception")));
-        QVERIFY(!finds(QStringLiteral("terminal keys")));
-
-        const auto results = searchResults(search, QStringLiteral("org.example.fooeditor"));
-        QCOMPARE(results.first(), std::make_pair(rowId, QStringLiteral("Pasting, Exceptions")));
+        const auto results = searchResults(search, QStringLiteral("fooeditor"));
+        QVERIFY(!results.isEmpty());
+        QCOMPARE(results.first(), std::make_pair(rowId, QStringLiteral("Apps, Your apps")));
+        // The old words still find where the settings went.
+        const auto defaults = searchResults(search, QStringLiteral("unrecognized"));
+        QVERIFY(std::any_of(defaults.cbegin(), defaults.cend(),
+                            [](const auto &result) { return result.first == QLatin1String("otherAppsProfile"); }));
+        QCOMPARE(searchResults(search, QStringLiteral("fooeditor")).first().first, rowId);
         QTest::keyClick(main, Qt::Key_Return);
-        QTRY_COMPARE(navigation->current(), QStringLiteral("pasting"));
+        QTRY_COMPARE(navigation->current(), QStringLiteral("apps"));
         QQuickItem *row = nullptr;
         QTRY_VERIFY((row = findItem(main->contentItem(), rowId)));
         QTRY_COMPARE(navigation->pendingRow(), QString());
-        QVERIFY(row->property("selected").toBool());
+        QTRY_VERIFY(row->parentItem()->property("open").toBool());
         QTRY_VERIFY(row->mapToScene(QPointF(0, 0)).y() >= 0 && row->mapToScene(QPointF(0, row->height())).y() <= main->height());
     }
 
-    // Undo after deleting an app's paste rule puts it back, even once the
-    // page it was deleted on is gone.
-    void pasteRuleUndoOutlivesItsPage()
+    // Matching by window title adds an App and opens its editor, which says
+    // what it is recognized by and leaves out the type; removing it offers
+    // an undo that works once the page is gone.
+    void anAppAddedByTitleOpensAndRemovesWithUndo()
     {
         ApplicationController controller(true);
-        QuickSettings(&controller)
-            .set(QStringLiteral("applicationPasteRules"),
-                 QVariantList{QVariantMap{{QStringLiteral("app"), QStringLiteral("org.kde.konsole")},
-                                          {QStringLiteral("method"), QStringLiteral("standard_paste")},
-                                          {QStringLiteral("enabled"), true}}});
-        const auto appRules = [&controller] {
-            QStringList apps;
-            for (const AppEntry &app : controller.settings()->snapshot().apps.apps) {
-                if (app.pasting) {
-                    apps.append(app.matches.first().value);
-                }
-            }
-            return apps;
-        };
         TrayIcon tray(&controller);
         QuickFrontEnd ui(&controller, &tray);
         ui.showMainWindow();
@@ -1356,22 +1258,40 @@ private slots:
         QVERIFY(QTest::qWaitForWindowExposed(main));
         QQmlEngine *engine = qmlEngine(main);
         auto *navigation = engine->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        auto *apps = engine->singletonInstance<QuickApps *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Apps"));
         auto *toaster = engine->singletonInstance<QObject *>(QStringLiteral("Speecher.Controls"), QStringLiteral("Toaster"));
-        QVERIFY(navigation && toaster);
+        QVERIFY(navigation && apps && toaster);
+        navigation->go(QStringLiteral("apps"));
+
+        const QVariantMap added = apps->add({{QStringLiteral("name"), QStringLiteral("Gmail")},
+                                             {QStringLiteral("matches"), QVariantList{QVariantMap{
+                                                  {QStringLiteral("kind"), QStringLiteral("title")},
+                                                  {QStringLiteral("value"), QStringLiteral("Gmail")}}}}});
+        const QString id = added.value(QStringLiteral("id")).toString();
+        QVERIFY2(!id.isEmpty(), qPrintable(added.value(QStringLiteral("refusal")).toString()));
+        QCOMPARE(apps->add({{QStringLiteral("name"), QStringLiteral("gmail")},
+                            {QStringLiteral("matches"), QVariantList{QVariantMap{{QStringLiteral("kind"), QStringLiteral("title")},
+                                                                                 {QStringLiteral("value"), QStringLiteral("GMAIL")}}}}})
+                     .value(QStringLiteral("refusal")),
+                 QVariant(QStringLiteral("taken")));
+        navigation->goToRow(QStringLiteral("apps"), QStringLiteral("appentry:") + id);
+        QQuickItem *row = nullptr;
+        QTRY_VERIFY((row = findItem(main->contentItem(), QStringLiteral("appentry:") + id)));
+        QTRY_VERIFY(row->parentItem()->property("open").toBool());
+        QQuickItem *pasting = findItem(row->parentItem(), QStringLiteral("appPasting"));
+        QVERIFY(pasting);
+        QMetaObject::invokeMethod(pasting, "chosen", Q_ARG(QString, QStringLiteral("clipboard_only")));
+        QCOMPARE(controller.settings()->snapshot().apps.apps.first().pasting, PasteMethod::ClipboardOnly);
+        QCOMPARE(apps->update(id, {{QStringLiteral("type"), QStringLiteral("email")}}), QString());
+
         QSignalSpy posted(toaster, SIGNAL(posted(QVariant)));
-        navigation->go(QStringLiteral("pasting"));
-        QPointer<QQuickItem> section;
-        QTRY_VERIFY((section = findItem(main->contentItem(), QStringLiteral("appPasteRules"))));
-
-        QMetaObject::invokeMethod(section, "remove", Q_ARG(QVariant, 0));
-        QCOMPARE(posted.count(), 1);
-        QVERIFY(appRules().isEmpty());
+        const int undo = apps->remove(id);
+        QVERIFY(undo >= 0);
+        QVERIFY(controller.settings()->snapshot().apps.apps.isEmpty());
         navigation->go(QStringLiteral("home"));
-        QTRY_VERIFY(!section);
-
-        const QJSValue undone = posted.first().first().value<QJSValue>().property(QStringLiteral("action")).call();
-        QVERIFY2(!undone.isError(), qPrintable(undone.toString()));
-        QCOMPARE(appRules(), QStringList{QStringLiteral("org.kde.konsole")});
+        apps->undo(undo);
+        QCOMPARE(controller.settings()->snapshot().apps.apps.size(), 1);
+        QCOMPARE(controller.settings()->snapshot().apps.apps.first().type, AppCategory::Email);
     }
 
     void everySetupStepLoads_data() { themes(); }

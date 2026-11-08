@@ -1,13 +1,13 @@
 #include "frontend/quick/host/QuickLibrary.h"
 
 #include "app/ApplicationController.h"
-#include "core/AppEdits.h"
 #include "core/BindingProcessor.h"
 #include "core/SettingsStore.h"
 #include "core/Vocabulary.h"
 #include "core/VocabularyEdits.h"
 #include "core/VocabularyLimit.h"
 #include "core/WritingProfileEdits.h"
+#include "frontend/quick/host/QmlValues.h"
 
 #include <QDebug>
 #include <QFile>
@@ -21,28 +21,6 @@ namespace speecher {
 namespace {
 
 ApplicationController *g_controller = nullptr;
-
-// What add and update return for a record they can't convert.
-const QString invalidRecord = QStringLiteral("invalid");
-
-QString refusalName(EditRefusal refusal)
-{
-    switch (refusal) {
-    case EditRefusal::None:
-        return {};
-    case EditRefusal::Blank:
-        return QStringLiteral("blank");
-    case EditRefusal::Taken:
-        return QStringLiteral("taken");
-    case EditRefusal::Incomplete:
-        return QStringLiteral("incomplete");
-    case EditRefusal::Missing:
-        return QStringLiteral("missing");
-    case EditRefusal::BuiltIn:
-        return QStringLiteral("builtIn");
-    }
-    return invalidRecord;
-}
 
 // Each setter below copies the record fields `fields` names onto an entry;
 // the list's EditedList names the fields it takes.
@@ -135,57 +113,6 @@ void setReplacementFields(BindingRule &rule, const QVariantMap &fields)
     }
 }
 
-// The text an App matched by name goes by, or empty for one matched by id.
-QString nameMatch(const AppEntry &app)
-{
-    for (const AppMatch &match : app.matches) {
-        if (match.kind == AppMatchKind::Id) {
-            return {};
-        }
-    }
-    for (const AppMatch &match : app.matches) {
-        if (match.kind == AppMatchKind::Name) {
-            return match.value;
-        }
-    }
-    return {};
-}
-
-// An App matched by name, as App recognition edits it: {match, category,
-// profile}, where an empty category or profile sets none, and one with a
-// profile also matches window titles. A match neither sets is refused.
-EditRefusal setRuleFields(AppEntry &app, const QVariantMap &fields)
-{
-    QString match = nameMatch(app);
-    if (fields.contains(QStringLiteral("match"))) {
-        match = fields.value(QStringLiteral("match")).toString().trimmed();
-        app.name = match;
-    }
-    if (fields.contains(QStringLiteral("category"))) {
-        const QString category = fields.value(QStringLiteral("category")).toString();
-        app.type = category.isEmpty() ? std::nullopt : std::optional(appCategoryFromName(category));
-    }
-    if (fields.contains(QStringLiteral("profile"))) {
-        const QString profile = fields.value(QStringLiteral("profile")).toString();
-        app.writingProfile = profile.isEmpty() ? std::nullopt : std::optional(profile);
-    }
-    app.matches = {{AppMatchKind::Name, match}};
-    if (app.writingProfile) {
-        app.matches.append({AppMatchKind::WindowTitle, match});
-    }
-    return match.isEmpty() || app.type || app.writingProfile ? EditRefusal::None : EditRefusal::Incomplete;
-}
-
-QString appByNameMatch(const AppSettings &s, const QString &match)
-{
-    for (const AppEntry &app : s.apps.apps) {
-        if (!nameMatch(app).isEmpty() && nameMatch(app).compare(match.trimmed(), Qt::CaseInsensitive) == 0) {
-            return app.id;
-        }
-    }
-    return {};
-}
-
 // One list the UI edits: the fields its records take, adding to it, changing
 // the entry a key names, and removing that entry. Adding and changing take
 // the built-in names the page shows, which only tones and levels use. A list
@@ -268,19 +195,6 @@ const EditedList editedLists[] = {
          return editBindingRule(s, phrase, [&patch](BindingRule &rule) { setReplacementFields(rule, patch); });
      },
      removeBindingRule},
-    {"recognitionRules",
-     {QStringLiteral("match"), QStringLiteral("category"), QStringLiteral("profile")},
-     [](AppSettings &s, const QVariantMap &item, const QStringList &) {
-         AppEntry app;
-         const EditRefusal refusal = setRuleFields(app, item);
-         return refusal == EditRefusal::None ? addApp(s, app) : refusal;
-     },
-     [](AppSettings &s, const QString &match, const QVariantMap &patch, const QStringList &) {
-         EditRefusal refusal = EditRefusal::None;
-         const EditRefusal edit = editApp(s, appByNameMatch(s, match), [&](AppEntry &app) { refusal = setRuleFields(app, patch); });
-         return refusal == EditRefusal::None ? edit : refusal;
-     },
-     [](AppSettings &s, const QString &match) { return removeApp(s, appByNameMatch(s, match)); }},
 };
 
 const EditedList *findList(const QString &name)
@@ -298,19 +212,10 @@ const EditedList *findList(const QString &name)
 bool convertible(const EditedList &list, QVariantMap record)
 {
     record.remove(QStringLiteral("id"));
-    const QString category = record.value(QStringLiteral("category")).toString();
-    const bool knownCategory = category.isEmpty() || appCategoryFromName(category) != AppCategory::Unknown;
     const QStringList keys = record.keys();
-    return knownCategory && std::all_of(keys.cbegin(), keys.cend(), [&list](const QString &key) {
+    return std::all_of(keys.cbegin(), keys.cend(), [&list](const QString &key) {
         return list.fields.contains(key);
     });
-}
-
-QVariantMap ruleRecord(const QString &match, const std::optional<AppCategory> &type, const QString &profile)
-{
-    return {{QStringLiteral("match"), match},
-            {QStringLiteral("category"), type ? appCategoryName(*type) : QString()},
-            {QStringLiteral("profile"), profile}};
 }
 
 // The file chosen for an import, read whole, or nothing with why.
@@ -357,17 +262,6 @@ QuickLibrary::ControllerScope::ControllerScope(ApplicationController *controller
 QuickLibrary::ControllerScope::~ControllerScope()
 {
     g_controller = nullptr;
-}
-
-QVariantList QuickLibrary::builtInRecognitionRules() const
-{
-    QVariantList rules;
-    for (const BuiltInApp &app : builtInApps()) {
-        const QString profile = app.type ? appTypeSettings({}, *app.type).writingProfile.value_or(QString())
-                                         : app.writingProfile;
-        rules.append(ruleRecord(app.word, app.type, profile));
-    }
-    return rules;
 }
 
 int QuickLibrary::keyTermLimit() const
@@ -431,7 +325,7 @@ int QuickLibrary::remove(const QString &list, const QString &key)
 
 void QuickLibrary::removeProfile(const QString &id)
 {
-    // Saving drops what named it: app matches, term limits, the fallback.
+    // Saving drops what named it: Apps' and App Types' profile, term limits.
     if (!save([&id](AppSettings &s) { return removeWritingProfile(s, id); })) {
         qWarning().noquote() << "Library.removeProfile:" << id << "is not one of the user's profiles";
     }
@@ -592,18 +486,12 @@ void QuickLibrary::refresh()
         replacements.append(QVariantMap{{QStringLiteral("phrase"), rule.phrase},
                                         {QStringLiteral("replacement"), rule.replacement}});
     }
-    QVariantList rules;
-    for (const AppEntry &app : settings.apps.apps) {
-        if (!nameMatch(app).isEmpty()) {
-            rules.append(ruleRecord(nameMatch(app), app.type, app.writingProfile.value_or(QString())));
-        }
-    }
     const QString &speech = settings.speech.providerId;
     const bool takesKeyTerms = VocabularyLimit::takesKeyterms(speech);
     const int keyTermsSent = int(VocabularyLimit::speechKeyterms(keyTerms, speech).size());
 
     if (profiles == m_profiles && tones == m_customTones && levels == m_customCleanupLevels && terms == m_terms
-        && corrections == m_corrections && replacements == m_replacements && rules == m_recognitionRules
+        && corrections == m_corrections && replacements == m_replacements
         && takesKeyTerms == m_speechTakesKeyTerms && keyTermsSent == m_keyTermsSent) {
         return;
     }
@@ -613,7 +501,6 @@ void QuickLibrary::refresh()
     m_terms = terms;
     m_corrections = corrections;
     m_replacements = replacements;
-    m_recognitionRules = rules;
     m_speechTakesKeyTerms = takesKeyTerms;
     m_keyTermsSent = keyTermsSent;
     emit listsChanged();

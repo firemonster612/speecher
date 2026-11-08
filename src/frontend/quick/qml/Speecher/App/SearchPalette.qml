@@ -21,12 +21,12 @@ FocusScope {
     property real cornerRadius
     property bool shown: false
     property alias query: input.text
-    readonly property var results: query.trim().length ? Schema.search(query, 40, need => System[need], _exceptions) : _suggestions
-    // The saved exceptions for single apps, found by app ID and rule and
-    // landing on their row on Pasting (AppPasteRules' exception_app:<id>).
-    readonly property var _exceptions: (Settings.values.applicationPasteRules || []).map(r => ({
-        type: "exception", id: "exception_app:" + r.app, page: "pasting", section: Schema.row("pasteExceptions").section,
-        label: r.app, keywords: Schema.pasting.exceptionKeywords(r.method)
+    readonly property var results: query.trim().length ? Schema.search(query, 40, need => System[need], _apps) : _suggestions
+    // The person's Apps, found by name or what they are recognized by, and
+    // landing on their row on Apps (AppRow's appentry:<id>).
+    readonly property var _apps: Apps.entries.map(e => ({
+        type: "app", id: "appentry:" + e.id, page: "apps", section: Schema.apps.t.yourApps,
+        label: e.name, keywords: e.ids.join(" ") + " app"
     }))
     // The suggested rows this computer has, as search offers only those.
     readonly property var _suggestions: Schema.suggestions

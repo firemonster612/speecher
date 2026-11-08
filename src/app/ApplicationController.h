@@ -38,6 +38,7 @@ class ProviderRegistry;
 class RecordingSession;
 class SecretStore;
 class SettingsStore;
+class TargetProvider;
 class UpdateController;
 class WhatsNewTracker;
 
@@ -124,6 +125,9 @@ public:
     // window first asks.
     Accounts *accounts() const;
     const PlatformComposition *platform() const;
+    // What tells which app is in front, as dictation captures it; the Apps
+    // page's Switch to it captures through it too.
+    TargetProvider *targetProvider() const;
     // The Dictation Session's state.
     DictationState dictationState() const;
     // What a status line says about dictation now (dictationStatusLabel);
@@ -248,6 +252,7 @@ private:
     ProviderAvailability *m_availability = nullptr;
     Accounts *m_accounts = nullptr;
     AudioInput *m_audio = nullptr;
+    TargetProvider *m_targetProvider = nullptr;
     DictationSession *m_session = nullptr;
     FileTranscriptionSession *m_fileTranscription = nullptr;
     TranscribeQueue *m_transcribeQueue = nullptr;

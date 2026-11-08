@@ -8,6 +8,7 @@ import "schema/feedback.js" as Feedback
 import "schema/refinement.js" as Refinement
 import "schema/profiles.js" as Profiles
 import "schema/vocabulary.js" as Vocabulary
+import "schema/apps.js" as Apps
 import "schema/pasting.js" as Pasting
 import "schema/accounts.js" as Accounts
 import "schema/models.js" as Models
@@ -43,12 +44,13 @@ QtObject {
     // Rows the search palette offers before anything is typed.
     readonly property var suggestions: ["globalShortcut", "shortcutBehavior", "showLiveText", "pauseMedia"]
     readonly property var rows: [].concat(Shortcuts.rows, Microphone.rows, Speech.rows, Feedback.rows,
-                                          Refinement.rows, Profiles.rows, Vocabulary.rows, Pasting.rows,
+                                          Refinement.rows, Profiles.rows, Vocabulary.rows, Apps.rows, Pasting.rows,
                                           Accounts.rows, Models.rows, General.rows, Updates.rows)
-    // The app types Speecher sorts apps into, for paste rules and recognition.
-    readonly property var appCategories: Pasting.categories
-    // Delivery's wording beyond its rows: the paste keys, rule options,
-    // how an app is named, and a rule's missing step (schema/pasting.js).
+    // The Apps page's wording beyond its rows: the App Types, the Pasting
+    // choices and the editor's and picker's words (schema/apps.js).
+    readonly property var apps: Apps
+    // Delivery's wording beyond its rows: the paste keys, what a Pasting
+    // choice leaves of the steps, and a step's needs (schema/pasting.js).
     readonly property var pasting: Pasting
     // Each row's Since Version, by row id: { rowId: "0.2.1" }.
     readonly property var since: Updates.since

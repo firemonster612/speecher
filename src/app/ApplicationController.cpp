@@ -168,7 +168,7 @@ ApplicationController::ApplicationController(bool popupOnly,
     m_accounts = new Accounts(*m_settings, *m_availability, *m_providers, this);
     connect(m_localModels, &LocalModelStore::downloadFinished,
             this, &ApplicationController::notifyModelReady);
-    TargetProvider *targetProvider = m_platform->createTargetProvider(this);
+    TargetProvider *targetProvider = m_targetProvider = m_platform->createTargetProvider(this);
     targetProvider->setCorrectionObservationEnabled(m_settings->dictationSnapshot().correctionLearningEnabled);
     connect(m_settings,
             &SettingsStore::correctionLearningEnabledChanged,
@@ -400,6 +400,11 @@ InsightsLog *ApplicationController::insightsLog() const
 SeenApps *ApplicationController::seenApps() const
 {
     return m_seenApps;
+}
+
+TargetProvider *ApplicationController::targetProvider() const
+{
+    return m_targetProvider;
 }
 
 QDate ApplicationController::insightsToday() const

@@ -7,6 +7,7 @@
 #include "app/UpdateController.h"
 #include "dictation/DictationSession.h"
 #include "frontend/quick/host/QuickPopupWindow.h"
+#include "platform/InstalledApps.h"
 
 #include <QApplication>
 #include <QDebug>
@@ -94,6 +95,32 @@ public:
     }
 };
 
+// image://appicon/<key>: an installed app's icon by the key InstalledApps
+// gave it, for AppIcon.qml. Where there is none it answers a 1×1 transparent
+// image, since a null one makes QML warn, and AppIcon draws the app's
+// initial for that. Loaded on the GUI thread: theme icons load nowhere else.
+class AppIconProvider final : public QQuickImageProvider {
+public:
+    AppIconProvider()
+        : QQuickImageProvider(QQuickImageProvider::Image)
+    {
+    }
+
+    QImage requestImage(const QString &id, QSize *size, const QSize &requestedSize) override
+    {
+        constexpr int defaultSide = 64;
+        QImage image = installedAppIcon(id, requestedSize.width() > 0 ? requestedSize.width() : defaultSide);
+        if (image.isNull()) {
+            image = QImage(1, 1, QImage::Format_ARGB32);
+            image.fill(Qt::transparent);
+        }
+        if (size) {
+            *size = image.size();
+        }
+        return image;
+    }
+};
+
 // Lets go of the microphone test for the pages in the window, which has
 // hidden or closed; a hidden window keeps its pages, so they can't.
 void releaseTestIn(QuickAudio &audio, const QQuickWindow *window)
@@ -138,10 +165,12 @@ QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, TrayIcon *tray, 
     , m_insights(controller)
     , m_accounts(controller)
     , m_library(controller)
+    , m_apps(controller)
     , m_navigation(nullptr)
 {
     registerFonts();
     m_engine.addImageProvider(QStringLiteral("qr"), new QrCodeImageProvider);
+    m_engine.addImageProvider(QStringLiteral("appicon"), new AppIconProvider);
     // Into the log with the rest, marked so a load's warnings are easy to find.
     m_engine.setOutputWarningsToStandardError(false);
     connect(&m_engine, &QQmlEngine::warnings, this, [](const QList<QQmlError> &warnings) {

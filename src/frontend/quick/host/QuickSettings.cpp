@@ -4,16 +4,13 @@
 #include "app/LocalSetup.h"
 #include "core/EndpointSettings.h"
 #include "core/EndpointUrl.h"
-#include "core/AppEdits.h"
 #include "core/ProviderChain.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QmlValues.h"
 
 #include <QCoreApplication>
 #include <QDebug>
-#include <QHash>
 #include <QKeyEvent>
-#include <QSet>
 
 #include <algorithm>
 #include <type_traits>
@@ -58,89 +55,10 @@ QString checkIntervalUnit(const UpdateSettings &updates)
     return QStringLiteral("minutes");
 }
 
-// What a paste rule row holds where the App Type sets no Pasting choice,
-// so the steps decide.
-const QString inheritPasteRule = QStringLiteral("inherit");
-
-// The App Type's Pasting choice, as the schema's option id.
-QVariant categoryPasteRuleValue(const AppSettings &s, const QString &category)
-{
-    const std::optional<PasteMethod> pasting = appTypeSettings(s.apps, appCategoryFromName(category)).pasting;
-    return pasting ? pasteMethodName(*pasting) : inheritPasteRule;
-}
-
-void setCategoryPasteRuleValue(AppSettings &s, const QString &category, const QVariant &v)
-{
-    const QString method = v.toString();
-    editAppType(s, appCategoryFromName(category), [&method](AppTypeSettings &type) {
-        type.pasting = method == inheritPasteRule ? std::nullopt : std::optional(pasteMethodFromName(method));
-    });
-}
-
 // A delivery step's row: its switch, which can't turn off the last step on.
 #define DELIVERY_STEP_ROW(rowId, step)                                                       \
     {rowId, [](const AppSettings &s) { return QVariant(s.output.steps.has(step)); },        \
      [](AppSettings &s, const QVariant &v) { s.output.steps = s.output.steps.withStep(step, v.toBool()); }}
-
-// The Apps matched by id that set a Pasting choice, as the Exceptions list
-// shows them: {app, method, enabled}.
-QVariantList applicationPasteRules(const AppSettings &s)
-{
-    QVariantList rules;
-    for (const AppEntry &app : s.apps.apps) {
-        const auto id = std::find_if(app.matches.cbegin(), app.matches.cend(),
-                                     [](const AppMatch &match) { return match.kind == AppMatchKind::Id; });
-        if (app.pasting && id != app.matches.cend()) {
-            rules.append(QVariantMap{{QStringLiteral("app"), id->value},
-                                     {QStringLiteral("method"), pasteMethodName(*app.pasting)},
-                                     {QStringLiteral("enabled"), true}});
-        }
-    }
-    return rules;
-}
-
-// Saves the Exceptions list: each app it names, turned on, gets its Pasting
-// choice, on the App matched by that id or a new one; every other App
-// matched by id loses its own.
-void setApplicationPasteRules(AppSettings &s, const QVariant &v)
-{
-    QHash<QString, PasteMethod> wanted;
-    for (const QVariant &entry : v.toList()) {
-        const QVariantMap rule = entry.toMap();
-        const QString app = rule.value(QStringLiteral("app")).toString().trimmed();
-        if (!app.isEmpty() && rule.value(QStringLiteral("enabled"), true).toBool()) {
-            wanted.insert(app, pasteMethodFromName(rule.value(QStringLiteral("method")).toString()));
-        }
-    }
-    for (AppEntry &app : s.apps.apps) {
-        for (const AppMatch &match : app.matches) {
-            if (match.kind == AppMatchKind::Id) {
-                const auto found = std::find_if(wanted.keyBegin(), wanted.keyEnd(), [&match](const QString &id) {
-                    return comparableAppId(id) == comparableAppId(match.value);
-                });
-                app.pasting = found == wanted.keyEnd() ? std::nullopt : std::optional(wanted.take(*found));
-                break;
-            }
-        }
-    }
-    for (auto rule = wanted.cbegin(); rule != wanted.cend(); ++rule) {
-        addApp(s, {{}, rule.key(), {}, {{AppMatchKind::Id, rule.key()}}, {}, {}, rule.value()});
-    }
-}
-
-// Why the Exceptions list can't be saved: one app named twice.
-QString applicationPasteRulesRefusal(const QVariant &v)
-{
-    QSet<QString> ids;
-    for (const QVariant &entry : v.toList()) {
-        const QString id = comparableAppId(entry.toMap().value(QStringLiteral("app")).toString());
-        if (ids.contains(id)) {
-            return QStringLiteral("Each application ID can have only one paste rule.");
-        }
-        ids.insert(id);
-    }
-    return {};
-}
 
 // One schema row the UI saves, as reads and writes of the settings. Values
 // are what QML holds: strings, numbers, booleans, lists and plain objects,
@@ -160,12 +78,6 @@ struct SettingRow {
 #define FIELD_ROW(rowId, field)                                                     \
     {rowId, [](const AppSettings &s) { return QVariant::fromValue(s.field); },      \
      [](AppSettings &s, const QVariant &v) { s.field = v.value<std::remove_cvref_t<decltype(s.field)>>(); }}
-
-// The paste rule for one app type, by its stored category name.
-#define CATEGORY_PASTE_ROW(category)                                                                              \
-    {"categoryPasteRule_" category,                                                                               \
-     [](const AppSettings &s) { return categoryPasteRuleValue(s, QStringLiteral(category)); },                    \
-     [](AppSettings &s, const QVariant &v) { setCategoryPasteRuleValue(s, QStringLiteral(category), v); }}
 
 // Every row the UI saves, by the schema's row id. Secrets are Accounts' to
 // save.
@@ -279,10 +191,6 @@ const SettingRow settingRows[] = {
     FIELD_ROW("includeScreenshotContext", refinement.includeScreenshotContext),
     FIELD_ROW("customSystemPromptEnabled", refinement.customSystemPromptEnabled),
     FIELD_ROW("customSystemPrompt", refinement.customSystemPrompt),
-    {"defaultWritingProfile", [](const AppSettings &s) { return QVariant(fallbackWritingProfile(s.apps)); },
-     [](AppSettings &s, const QVariant &v) {
-         editAppType(s, AppCategory::General, [&v](AppTypeSettings &type) { type.writingProfile = v.toString(); });
-     }},
     FIELD_ROW("additionalInstructions", refinement.additionalInstructions),
 
     FIELD_ROW("correctionLearningControl", correctionLearningEnabled),
@@ -294,16 +202,6 @@ const SettingRow settingRows[] = {
      [](AppSettings &s, const QVariant &v) {
          s.output.format = outputFormatFromString(v.toString()).value_or(OutputFormat::PlainText);
      }},
-    CATEGORY_PASTE_ROW("terminal"),
-    CATEGORY_PASTE_ROW("browser"),
-    CATEGORY_PASTE_ROW("email"),
-    CATEGORY_PASTE_ROW("office"),
-    CATEGORY_PASTE_ROW("code_editor"),
-    CATEGORY_PASTE_ROW("ai_coding"),
-    CATEGORY_PASTE_ROW("general"),
-    // Saving the list replaces the rules for single apps and keeps the rest.
-    {"applicationPasteRules", [](const AppSettings &s) { return QVariant(applicationPasteRules(s)); },
-     setApplicationPasteRules, applicationPasteRulesRefusal},
 
     {"openAiAuthMode", [](const AppSettings &s) { return QVariant(openAiAuthModeName(s.accounts.openAiAuthMode)); },
      [](AppSettings &s, const QVariant &v) { s.accounts.openAiAuthMode = openAiAuthModeFromName(v.toString()); }},
@@ -390,7 +288,6 @@ const SettingRow settingRows[] = {
      }},
 };
 
-#undef CATEGORY_PASTE_ROW
 #undef FIELD_ROW
 
 // The Global Shortcuts, which the controller binds and keeps.

@@ -317,40 +317,9 @@ private slots:
 
         QVERIFY(schemaRow(engine, "pauseMedia")->property("enabled").toBool());
         // A custom row with a value is a setting; one without draws the page's own content.
-        QVERIFY(schemaRow(engine, "defaultWritingProfile")->property("enabled").toBool());
+        QVERIFY(schemaRow(engine, "additionalInstructions")->property("enabled").toBool());
         QVERIFY(schemaRow(engine, "themeControl")->property("enabled").toBool());
         QVERIFY(schemaRow(engine, "speechModels")->property("enabled").toBool());
-    }
-
-    // The Exceptions rows edit the App Types' Pasting choices and the Apps
-    // matched by id; a row with no choice of its own inherits.
-    void pasteExceptionsSaveToApps()
-    {
-        ApplicationController controller(true);
-        const QuickLibrary::ControllerScope library(&controller);
-        QuickSettings settings(&controller);
-        const auto apps = [] { return SettingsStore().dictationSnapshot().apps; };
-        const auto value = [&settings](const char *id) { return settings.values().value(QLatin1String(id)); };
-
-        QCOMPARE(value("categoryPasteRule_terminal").toString(),
-                 terminalKeysDiffer ? QStringLiteral("terminal_paste") : QStringLiteral("inherit"));
-        settings.set(QStringLiteral("categoryPasteRule_browser"), QStringLiteral("direct_insert"));
-        settings.set(QStringLiteral("categoryPasteRule_terminal"), QStringLiteral("inherit"));
-        QCOMPARE(appTypeSettings(apps(), AppCategory::Browser).pasting, PasteMethod::DirectInsert);
-        QCOMPARE(appTypeSettings(apps(), AppCategory::Terminal).pasting, std::nullopt);
-
-        const QVariantList rules{QVariantMap{{QStringLiteral("app"), QStringLiteral("org.kde.konsole")},
-                                             {QStringLiteral("method"), QStringLiteral("standard_paste")},
-                                             {QStringLiteral("enabled"), true}}};
-        settings.set(QStringLiteral("applicationPasteRules"), rules);
-        QCOMPARE(apps().apps.size(), 1);
-        QCOMPARE(apps().apps.first().pasting, PasteMethod::StandardPaste);
-        QCOMPARE(value("applicationPasteRules").toList(), rules);
-
-        settings.set(QStringLiteral("applicationPasteRules"), rules + rules);
-        QVERIFY(!settings.errors().value(QStringLiteral("applicationPasteRules")).toString().isEmpty());
-        settings.set(QStringLiteral("applicationPasteRules"), QVariantList{});
-        QCOMPARE(apps().apps.first().pasting, std::nullopt);
     }
 
     // Each save is a whole snapshot through the store, so a drag saves once,

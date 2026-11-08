@@ -8,8 +8,9 @@ import Speecher.App
 import "text"
 
 // How words get into apps: the delivery steps in the order core tries
-// them, each with what it relies on here; then the options, and the
-// exceptions that narrow the steps for an app type or a single app.
+// them, each with what it relies on here; then the options, and a read-only
+// list of the Apps and App Types whose Pasting choice narrows the steps,
+// each opening in Apps.
 Page {
     id: page
     title: Schema.page("pasting").title
@@ -124,7 +125,82 @@ Page {
         }
     }
 
-    AppPasteRules {}
+    Section {
+        id: differently
+        objectName: "appsPasteDifferently"
+        // What each narrows the steps to here, App Types first.
+        readonly property var entries: Apps.types.filter(o => o.pasting).map(o => ({
+            id: "apptype:" + o.id, name: Schema.apps.type(o.id).label, typeIcon: Schema.apps.type(o.id).icon, icon: "",
+            method: o.pasting, terminalWins: o.id === "ai_coding" && Apps.types.some(o => o.id === "terminal" && o.pasting)
+        })).concat(Apps.entries.filter(e => e.pasting && e.pasting !== "standard_paste").map(e => ({
+            id: "appentry:" + e.id, name: e.name, typeIcon: "", icon: e.icon, method: e.pasting, terminalWins: false
+        })))
+        readonly property var _check: Health.find(System.checks, "desktopAccessibility")
+        title: Schema.row("appsPasteDifferently").label
+        caption: Schema.row("appsPasteDifferently").help
+        actions: [ Button { text: "Change in Apps"; size: "small"; onClicked: Navigation.follow("apps", "appTypes") } ]
+        SearchLanding { rowIds: ["appsPasteDifferently"]; target: differently }
+
+        // Insert's row above turns accessibility on, so this only says why.
+        AccessibilityNotice {
+            open: differently.entries.length > 0 && (differently._check.reason === "off" || differently._check.reason === "unsupported")
+            offersFix: false
+            text: Schema.pasting.appsNotice(System.identifiesAppsWithoutAccessibility)
+        }
+        RowList {
+            id: differentList
+            values: differently.entries
+            delegate: ListRow {
+                id: differentRow
+                required property string key
+                required property int index
+                readonly property var entry: differentList.entry(key)
+                objectName: "differently_" + key
+                width: ListView.view.width
+                first: index === 0 && differentList.first
+                implicitHeight: Math.max(Theme.rowHeight, words.implicitHeight + 22)
+                clickable: true
+                Accessible.name: entry.name
+                onClicked: Navigation.follow("apps", key)
+                AppIcon {
+                    id: icon
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: differentRow.entry.typeIcon ? "" : differentRow.entry.name
+                    iconName: differentRow.entry.typeIcon
+                    source: differentRow.entry.icon ? "image://appicon/" + encodeURIComponent(differentRow.entry.icon) : ""
+                    size: 28
+                }
+                Column {
+                    id: words
+                    x: icon.width + Theme.space3
+                    width: parent.width - x
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 3
+                    Txt { width: parent.width; text: differentRow.entry.name; variant: "label"; elide: Text.ElideRight }
+                    Txt {
+                        objectName: "differentlyResult"
+                        width: parent.width
+                        // The choice, then what it does here, unless that
+                        // already says it ("Clipboard only").
+                        text: {
+                            const method = differentRow.entry.method
+                            const label = Schema.apps.pastingLabel(method)
+                            const result = Schema.pasting.ruleResult(System.rulePlan(method), method, differentRow.entry.terminalWins)
+                            return result.startsWith(label) ? result : label + ": " + result
+                        }
+                        variant: "small"
+                        tone: "secondary"
+                        wrapMode: Text.WordWrap
+                    }
+                }
+                trailing: [ Icon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-right"; size: 16 } ]
+            }
+        }
+        Reveal {
+            open: differently.entries.length === 0
+            EmptyState { compact: true; title: "Every app follows the steps above"; text: "Give an app or app type its own way of pasting in Apps." }
+        }
+    }
 
     SubpageRows { pageId: "pasting" }
 }

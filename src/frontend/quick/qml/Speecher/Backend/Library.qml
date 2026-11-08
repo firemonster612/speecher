@@ -3,12 +3,10 @@ import QtQuick
 import Speecher.Wording
 
 // What the Text pages show. Writing Profiles with their tones and cleanup
-// levels, the three word lists and the app matches are LibraryLists
-// (host/QuickLibrary); this words them and derives what the pages show from
-// them. Each list has one owner: speech services, refinement
-// providers and runners are Models', paste rules are Settings rows, the
-// fallback profile is the defaultWritingProfile setting, and app types are
-// the pasting schema's.
+// levels and the three word lists are LibraryLists (host/QuickLibrary);
+// this words them and derives what the pages show from them. Each list has
+// one owner: speech services, refinement providers and runners are Models',
+// and the Apps and App Types that pick a profile are Apps'.
 LibraryLists {
     id: library
 
@@ -88,38 +86,21 @@ LibraryLists {
         if (p.cleanup === "none" && !p.language) return "No cleanup"
         return [levelLabel(p.cleanup) + " cleanup", p.tone === "none" ? "" : toneLabel(p.tone), p.language].filter(s => s).join(", ")
     }
-    // The apps matched to a profile: your matches, then the built-in ones
-    // yours don't override.
-    function profileApps(id) {
-        const own = recognitionRules
-        const builtIn = builtInRecognitionRules.filter(b => !own.some(r => r.match === b.match))
-        return own.concat(builtIn).filter(r => r.profile === id).map(r => r.match)
-    }
-    // Where a profile is used, given its app matches and whether it is the
-    // one for apps no match names: "22 app matches, all built in." Matches
-    // are patterns such as desktop IDs, not installed apps, so the line
-    // counts them as matches; profileMatches(apps) is the part of it that
-    // links to them.
-    function profileUse(apps, isFallback) {
-        const used = apps.length === 0 ? "" : profileMatches(apps) + "."
-        if (isFallback) return used.length ? used + " Also used for apps Speecher doesn't recognize." : "Used for every app Speecher doesn't recognize."
-        return used.length ? used : "No app matches use it yet."
-    }
-    function profileMatches(apps) {
-        return apps.length ? matchCount(apps.length, apps.filter(m => recognitionRules.some(r => r.match === m)).length) : ""
-    }
-    // A count of app matches, worded alike on Writing profiles and App
-    // recognition, with how many of them are yours: "22 app matches, all
-    // built in", "3 app matches, 1 of yours".
-    function matchCount(total, own) {
-        const split = own === 0 ? "all built in" : own === total ? "all yours" : own + " of yours"
-        return Words.count(total, "app match", "app matches") + ", " + split
+    // The Apps and App Types that write with a profile, for its "Used in":
+    // App Types whose own profile it is (Other apps' always counts), then
+    // Apps that write with it now. Each lands on its row in Apps.
+    function profileUsers(id) {
+        const types = Apps.types.filter(o => o.profile === id).map(o => ({
+            id: "apptype:" + o.id, name: Schema.apps.type(o.id).label, icon: "", typeIcon: Schema.apps.type(o.id).icon }))
+        const apps = Apps.entries.filter(e => e.effective.profile === id).map(e => ({
+            id: "appentry:" + e.id, name: e.name, icon: e.icon, typeIcon: "" }))
+        return types.concat(apps)
     }
     // The question before deleting a profile, and what deleting it changes.
     function profileDeleteQuestion(name) { return "Delete " + name + "?" }
-    function profileDeleteDetail(apps, isFallback) {
-        return (apps.length ? Words.count(apps.length, "app match uses", "app matches use") + " it and will lose it."
-                            : "No app matches use it.") + (isFallback ? " Unrecognized apps will use Other." : "")
+    function profileDeleteDetail(users) {
+        return users.length ? users.map(u => u.name).join(", ") + " will follow their type, or use Other."
+                            : "No app or app type uses it."
     }
 
     // The Writing Profiles page's fixed wording, its forms' and the profile
@@ -127,8 +108,7 @@ LibraryLists {
     readonly property var profilesText: ({
         addProfile: "Add profile",
         newProfile: "New profile",
-        appMatches: "App matches",
-        appMatchesHelp: "Which apps use which profile. Your own matches come first.",
+        unused: "No app or app type uses it yet.",
         name: "Name",
         newTone: "New tone",
         editTone: "Edit tone",
@@ -266,42 +246,6 @@ LibraryLists {
         return "Learned in " + (c.app || "several apps") + ", " + Math.round(c.confidence * 100) + "% sure"
     }
 
-    // Pasting ------------------------------------------------------------
-
-    readonly property var appCategories: Schema.appCategories
-    function categoryLabel(id) { const c = appCategories.find(o => o.id === id); return c ? c.label : pastingText.automatic }
-
-    // Application recognition's wording, on the App recognition page.
-    readonly property var pastingText: ({
-        automatic: "Automatic",
-        addMatch: "Add match",
-        newMatch: "New app match",
-        editMatch: "Edit app match",
-        matchApp: "App name or ID",
-        matchAppHelp: "Matches the application ID, application name, process name or accessible role.",
-        app: "App",
-        appType: "App type",
-        appTypeHelp: "Picks the paste rule.",
-        profile: "Writing profile",
-        profileHelp: "Picks how the text is cleaned up.",
-        deleteMatch: "Delete match",
-        noMatches: "No matches of your own",
-        noMatchesHelp: "The built-in matches below cover common apps. Add one for an app they miss.",
-        builtInMatches: "Built-in matches",
-        builtInMatchesHelp: "Names and IDs Speecher matches apps by, not a list of installed apps. Yours above win when both match.",
-        searchBuiltIn: "Search built-in matches",
-        builtInMatchTip: "Click to add your own match for it."
-    })
-
-    // Every app match, yours and built in: "16 app matches, 2 of yours".
-    readonly property string recognitionRulesText: matchCount(recognitionRules.length + builtInRecognitionRules.length, recognitionRules.length)
-    readonly property string builtInMatchesCount: Words.count(builtInRecognitionRules.length, "app match", "app matches")
-    // What a built-in match sets: "Chat, Work profile".
-    function builtInMatchSummary(rule) {
-        return [rule.category ? categoryLabel(rule.category) : "",
-                rule.profile ? profileName(rule.profile) + " profile" : ""].filter(s => s).join(", ")
-    }
-
     // Refused edits ---------------------------------------------------------
 
     // Why LibraryLists refused a form's save, for the list it edits: the
@@ -317,8 +261,6 @@ LibraryLists {
                        incomplete: "Type what it's corrected to." },
         replacements: { blank: "The phrase needs a letter or a number.", taken: "Another replacement has that phrase.",
                         incomplete: "Type what Speecher writes." },
-        recognitionRules: { blank: "Type the app's name or ID.", taken: "You have a match for that app already.",
-                            incomplete: "Choose an app type, a profile or both." },
         any: { missing: "It, or something it uses, was deleted meanwhile.", builtIn: "Built-in profiles keep their names.",
                invalid: "Speecher couldn't save this." }
     })

@@ -140,11 +140,6 @@ private slots:
                                             {QStringLiteral("replacement"), QString()}}),
                  QStringLiteral("incomplete"));
 
-        const QString rules = QStringLiteral("recognitionRules");
-        QCOMPARE(library.add(rules, {{QStringLiteral("match"), QStringLiteral("obsidian")}}), QStringLiteral("incomplete"));
-        QCOMPARE(library.add(rules, {{QStringLiteral("match"), QStringLiteral("obsidian")},
-                                     {QStringLiteral("profile"), QStringLiteral("custom_profile_gone")}}),
-                 QStringLiteral("missing"));
         QCOMPARE(library.add(QStringLiteral("terms"), {{QStringLiteral("term"), QStringLiteral(" ")}}), QStringLiteral("blank"));
 
         // A field no record has is the page's mistake, not the person's.
@@ -155,7 +150,6 @@ private slots:
         QCOMPARE(library.remove(QStringLiteral("profiles"), QStringLiteral("work")), -1);
         QCOMPARE(SettingsStore().dictationSnapshot().refinement.writingProfiles.size(), 6);
         QCOMPARE(SettingsStore().dictationSnapshot().bindings.size(), 1);
-        QVERIFY(SettingsStore().dictationSnapshot().apps.apps.isEmpty());
     }
 
     void removingAToneMovesItsProfilesUntilUndone()
@@ -240,23 +234,23 @@ private slots:
         QCOMPARE(toneOf(WritingProfile::Work), QStringLiteral("none"));
     }
 
-    void removingAProfileResetsTheFallbackSetting()
+    // Removing a profile leaves the Apps and Other apps that picked it
+    // following their wider place.
+    void removingAProfileResetsTheAppsThatPickedIt()
     {
         ApplicationController controller(true);
         QuickLibrary library(&controller);
-        QuickSettings settings(&controller);
         const QString id = library.newId(QStringLiteral("custom_profile"));
         QCOMPARE(library.add(QStringLiteral("profiles"), profileItem(id, QStringLiteral("Notes"))), saved);
-        settings.set(QStringLiteral("defaultWritingProfile"), id);
         controller.settings()->edit([&id](AppSettings &draft) {
             draft.apps.apps = {test::textApp(QStringLiteral("obsidian"), std::nullopt, id)};
+            test::setOtherAppsProfile(draft.apps, id);
             return true;
         });
         QCOMPARE(fallbackWritingProfile(SettingsStore().dictationSnapshot().apps), id);
 
         library.removeProfile(id);
         QCOMPARE(fallbackWritingProfile(SettingsStore().dictationSnapshot().apps), WritingProfile::Other);
-        QCOMPARE(settings.values().value(QStringLiteral("defaultWritingProfile")).toString(), WritingProfile::Other);
         QCOMPARE(SettingsStore().dictationSnapshot().apps.apps.first().writingProfile, std::nullopt);
         QCOMPARE(library.profiles().size(), 5);
     }
@@ -510,49 +504,6 @@ private slots:
         QCOMPARE(SettingsStore().dictationSnapshot().learnedCorrections.first().id, QStringLiteral("c2"));
         library.undo(undo);
         QCOMPARE(SettingsStore().dictationSnapshot().learnedCorrections.last(), edited);
-    }
-
-    // A choice in a match's row that core refuses, such as clearing the
-    // only thing a match sets, is said in a toast and saves nothing.
-    void anAppMatchRowSaysWhyAChoiceWasRefused()
-    {
-        SettingsStore().edit([](AppSettings &draft) {
-            draft.apps.apps = {test::textApp(QStringLiteral("obsidian"), AppCategory::Office)};
-            return true;
-        });
-        ApplicationController controller(true);
-        const QuickLibrary::ControllerScope scope(&controller);
-        QuickSettings settings(&controller);
-        // Library's key-term line names Models' speech service, and the host
-        // always has Models.
-        QuickModels models(&controller);
-        QuickNavigation navigation(nullptr);
-        // Its accessibility notice reads System.
-        const test::SystemSingletons system(&controller);
-        QQmlEngine engine;
-        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/text/AppRecognitionRules.qml")));
-        const std::unique_ptr<QObject> section(component.create());
-        QVERIFY2(section, qPrintable(component.errorString()));
-        // A row is a ListView delegate: an item child, not a QObject one.
-        QObject *typeSelect = nullptr;
-        QList<QQuickItem *> items{qobject_cast<QQuickItem *>(section.get())};
-        while (!items.isEmpty()) {
-            QQuickItem *item = items.takeLast();
-            items += item->childItems();
-            if (QByteArray(item->metaObject()->className()).startsWith("Select_")
-                && item->property("currentId").toString() == QLatin1String("office")) {
-                typeSelect = item;
-            }
-        }
-        QVERIFY(typeSelect);
-        QObject *toaster = engine.singletonInstance<QObject *>("Speecher.Controls", "Toaster");
-        QSignalSpy posted(toaster, SIGNAL(posted(QVariant)));
-
-        QMetaObject::invokeMethod(typeSelect, "chosen", Q_ARG(QString, QString()));
-        QCOMPARE(posted.count(), 1);
-        QCOMPARE(posted.first().first().toMap().value(QStringLiteral("text")).toString(),
-                 QStringLiteral("Choose an app type, a profile or both."));
-        QCOMPARE(SettingsStore().dictationSnapshot().apps.apps.first().type, std::optional(AppCategory::Office));
     }
 
     // The app's Library is Library.qml over this type: its wording reads the
