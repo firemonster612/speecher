@@ -118,7 +118,6 @@ class QuickModels final : public QObject, public HostSingleton<QuickModels> {
     // The rules refinement follows unless a custom prompt replaces them.
     Q_PROPERTY(QString builtInSystemPrompt READ builtInSystemPrompt CONSTANT)
 
-
 public:
     // Reads the settings as settings shows them (QuickSettings::shown), so
     // setup's draft shows in the services' states, as in System's, and

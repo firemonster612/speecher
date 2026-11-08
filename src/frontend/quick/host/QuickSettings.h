@@ -36,7 +36,7 @@ public:
 
     QVariantMap values() const;
     // The settings values shows: the saved ones with the draft's edits
-    // applied, so System's outcomes agree with the rows.
+    // applied, so System's and Models' outcomes agree with the rows.
     AppSettings shown() const;
     // Why a row's last save was refused, by row id, such as a shortcut another
     // app owns; a row with nothing refused is absent.
@@ -56,7 +56,7 @@ public:
     // and closes it.
     Q_INVOKABLE void saveDraft();
     // Closes the draft without saving it.
-    Q_INVOKABLE void dropDraft();
+    void dropDraft();
     // Runs an action row, such as runSetup. On a shortcut row whose keys the
     // desktop picks (desktopPicksKeys), it opens the desktop's chooser.
     Q_INVOKABLE void act(const QString &id);

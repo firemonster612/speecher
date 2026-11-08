@@ -253,6 +253,7 @@ private slots:
         QCOMPARE(levels.at(last - 1).toInt(), 4);
     }
 
+    // History's clear, which Home's numbers follow.
     void clearDeletesTheHistoryOrSaysItCouldNot()
     {
         ApplicationController controller(true);
@@ -263,6 +264,10 @@ private slots:
         emit controller.session()->dictationFinished(finished(seen), false);
         QCOMPARE(controller.seenApps()->apps().size(), 1);
         QuickInsights insights(&controller);
+        QuickHistory history(&controller);
+        const auto clearAll = [&history] {
+            return history.clear(QStringLiteral("all"), true).value(QStringLiteral("succeeded")).toBool();
+        };
         QCOMPARE(insights.kept(), 1);
 
         // A non-empty directory where the apps' file was: it cannot be
@@ -270,12 +275,12 @@ private slots:
         QVERIFY(QFile::remove(dataPath(QStringLiteral("seen-apps.json"))));
         QVERIFY(QDir().mkpath(dataPath(QStringLiteral("seen-apps.json/keep"))));
         QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("could not be deleted")));
-        QVERIFY(!insights.clear());
+        QVERIFY(!clearAll());
         QCOMPARE(insights.kept(), 1);
         QCOMPARE(insights.state(), QStringLiteral("ready"));
 
         QVERIFY(QDir(dataPath(QStringLiteral("seen-apps.json"))).removeRecursively());
-        QVERIFY(insights.clear());
+        QVERIFY(clearAll());
         QCOMPARE(insights.kept(), 0);
         QVERIFY(controller.seenApps()->apps().isEmpty());
         QCOMPARE(insights.state(), QStringLiteral("empty"));

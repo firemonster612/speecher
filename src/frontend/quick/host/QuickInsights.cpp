@@ -348,11 +348,6 @@ QVariant QuickInsights::newestInHistory() const
                        {QStringLiteral("date"), jsDate(entry.stats.finishedAt.date())}};
 }
 
-bool QuickInsights::clear()
-{
-    return m_controller->clearHistory({}, {}, true);
-}
-
 void QuickInsights::copyText(const QString &text)
 {
     QGuiApplication::clipboard()->setText(text);

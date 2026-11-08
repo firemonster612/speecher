@@ -72,9 +72,6 @@ QVariant serviceOrderValue(const ServiceOrder &services)
     return entries;
 }
 
-// The order QML hands back. A field an entry leaves out keeps the stored
-// choice's, and a service left out of the order keeps its choice for when
-// it comes back.
 // An order as v sets it, each entry keeping only the fields that differ from
 // the same service's in shown: an order hands back every field as it was
 // read, and replaying those would undo a model saved since by other means.
@@ -98,6 +95,9 @@ QVariant changedFields(const QVariant &shown, const QVariant &v)
     return entries;
 }
 
+// The order QML hands back. A field an entry leaves out keeps the stored
+// choice's, and a service left out of the order keeps its choice for when
+// it comes back.
 void setServiceOrder(ServiceOrder &services, const QVariant &v)
 {
     services.order.clear();
@@ -124,13 +124,11 @@ void setServiceOrder(ServiceOrder &services, const QVariant &v)
 
 // One schema row the UI saves, as reads and writes of the settings. Values
 // are what QML holds: strings, numbers, booleans, lists and plain objects,
-// with choice values being the option ids the schema lists. refuse, where a
-// row has one, says why a value can't be saved (core's words), or nothing.
+// with choice values being the option ids the schema lists.
 struct SettingRow {
     const char *id;
     QVariant (*read)(const AppSettings &);
     void (*write)(AppSettings &, const QVariant &);
-    QString (*refuse)(const QVariant &) = nullptr;
     // In place of write, for a row whose saved value depends on this
     // computer, such as which graphics cards it has.
     void (*writeHere)(AppSettings &, const QVariant &, const LiveFacts &) = nullptr;
@@ -333,6 +331,7 @@ const SettingRow settingRows[] = {
 };
 
 #undef FIELD_ROW
+#undef DELIVERY_STEP_ROW
 
 // The Global Shortcuts, which the controller binds and keeps.
 const struct ShortcutRow {
@@ -420,13 +419,6 @@ void QuickSettings::set(const QString &id, const QVariant &value)
     if (!row) {
         qWarning().noquote() << "Settings.set:" << id << "is not saved from the UI yet";
         return;
-    }
-    if (row->refuse) {
-        const QString refusal = row->refuse(value);
-        setError(id, refusal);
-        if (!refusal.isEmpty()) {
-            return;
-        }
     }
     const SettingsEdit write = [this, row, value](AppSettings &settings) {
         if (row->writeHere) {

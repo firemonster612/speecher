@@ -79,9 +79,6 @@ public:
     QVariantMap corrections() const;
     QVariant latest() const;
 
-    // Deletes everything History kept, stats and all. False, with it kept,
-    // when the file refused.
-    Q_INVOKABLE bool clear();
     // Puts Home's share text, which the page words, on the clipboard.
     Q_INVOKABLE void copyText(const QString &text);
     // Puts Home's share picture, which the page draws, on the clipboard.

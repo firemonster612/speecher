@@ -66,6 +66,16 @@ void QuickNavigation::follow(const QString &pageId, const QString &rowId, const 
     }
 }
 
+void QuickNavigation::openInMain(const QString &pageId, const QString &rowId)
+{
+    if (rowId.isEmpty()) {
+        go(pageId);
+    } else {
+        goToRow(pageId, rowId);
+    }
+    emit mainRequested();
+}
+
 void QuickNavigation::goBack()
 {
     const QString origin = m_returnTo;

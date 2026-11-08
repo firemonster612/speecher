@@ -77,16 +77,17 @@ function stepsText(steps) {
     return stepIds.filter(id => steps && steps[id]).map(id => stepShort[id]).join(", ");
 }
 
-// What delivering with some steps does here, from System.stepsPlan(steps),
-// as Apps' editor and Pasting's list say it: the steps that can run on this
+// What delivering with some steps does here, from System.stepsPlan(steps)
+// (each step {id, on, ready}, in the order delivery tries them), as Apps'
+// editor and Pasting's list say it: the steps that can run on this
 // computer, in order ("Insert, else press Ctrl+V, keep a copy"), then those
 // that can't yet; "No delivery here yet" where none can. keys is the paste
 // keys' id, named on a Press that can't run when they're a terminal's.
 // terminalWins marks an App Type whose apps in a terminal take Terminals'
 // Pasting instead.
-function pastingResult(plan, keys, terminalWins) {
-    const route = plan.route || [];
-    const usable = plan.usable || [];
+function pastingResult(steps, keys, terminalWins) {
+    const route = steps.filter(s => s.on).map(s => s.id);
+    const usable = steps.filter(s => s.on && s.ready).map(s => s.id);
     const parts = [];
     if (usable.includes("insert")) parts.push("Insert");
     if (usable.includes("press")) parts.push((parts.length ? "else press " : "Press ") + keysLabel(keys));

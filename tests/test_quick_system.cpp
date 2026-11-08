@@ -338,7 +338,6 @@ private slots:
             controller.settings()->edit([steps](AppSettings &draft) { draft.output.steps = steps; return true; });
         };
         QCOMPARE(readySteps(without.system), QStringLiteral("keep"));
-        QCOMPARE(without.system.pasteRoute(), (QStringList{"insert", "press", "keep"}));
         QCOMPARE(without.system.pastingOutcome(), QStringLiteral("clipboard"));
         // Insertion waits for accessibility, by name.
         const QVariantMap insert = without.system.deliverySteps().first().toMap();
@@ -358,24 +357,33 @@ private slots:
         QCOMPARE(with.system.pastingOutcome(), QStringLiteral("delivers"));
     }
 
-    // What some steps do here: their route, and those of them this
-    // computer can run now.
+    // What some steps do here: which are on, in order, and which of those
+    // this computer can run now.
     void stepsPlanSaysWhatCanRun()
     {
         ApplicationController controller(true);
         FakeKeyboard keyboard;
         StandInSystem standIn(&controller, keyboard);
-        const auto plan = [&standIn](bool insert, bool press, bool keep) {
-            return standIn.system.stepsPlan({{QStringLiteral("insert"), insert}, {QStringLiteral("press"), press},
-                                             {QStringLiteral("keep"), keep}});
+        const auto ids = [&standIn](bool insert, bool press, bool keep, bool readyOnly) {
+            QStringList ids;
+            for (const QVariant &entry : standIn.system.stepsPlan({{QStringLiteral("insert"), insert},
+                                                                   {QStringLiteral("press"), press},
+                                                                   {QStringLiteral("keep"), keep}})) {
+                const QVariantMap step = entry.toMap();
+                if (step.value(QStringLiteral("on")).toBool()
+                    && (!readyOnly || step.value(QStringLiteral("ready")).toBool())) {
+                    ids << step.value(QStringLiteral("id")).toString();
+                }
+            }
+            return ids;
         };
-        QCOMPARE(plan(true, true, true).value(QStringLiteral("route")).toStringList(), (QStringList{"insert", "press", "keep"}));
-        QCOMPARE(plan(true, false, true).value(QStringLiteral("route")).toStringList(), (QStringList{"insert", "keep"}));
-        QCOMPARE(plan(false, false, true).value(QStringLiteral("route")).toStringList(), QStringList{"keep"});
+        QCOMPARE(ids(true, true, true, false), (QStringList{"insert", "press", "keep"}));
+        QCOMPARE(ids(true, false, true, false), (QStringList{"insert", "keep"}));
+        QCOMPARE(ids(false, false, true, false), QStringList{"keep"});
 #ifdef Q_OS_LINUX
         // Without accessibility or a virtual keyboard, only Keep can run.
-        QCOMPARE(plan(true, true, true).value(QStringLiteral("usable")).toStringList(), QStringList{"keep"});
-        QVERIFY(plan(false, true, false).value(QStringLiteral("usable")).toStringList().isEmpty());
+        QCOMPARE(ids(true, true, true, true), QStringList{"keep"});
+        QVERIFY(ids(false, true, false, true).isEmpty());
 #endif
     }
 
@@ -528,7 +536,7 @@ private slots:
         started = &system;
         const QString file = controller.settings()->raw().fileName();
 
-        system.fixFromSetup(QStringLiteral("virtualKeyboardHealth"));
+        system.fix(QStringLiteral("virtualKeyboardHealth"));
         standIn.removal.start(false);
         QVERIFY(standIn.removal.running());
         QTRY_VERIFY(!standIn.removal.running());
@@ -686,13 +694,13 @@ private slots:
         QQmlEngine engine;
         const std::unique_ptr<QObject> row = createQml(engine, R"(
             import Speecher.App
-            HealthRow { rowId: "virtualKeyboardHealth"; fromSetup: true }
+            HealthRow { rowId: "virtualKeyboardHealth" }
         )");
         QVERIFY(row);
         const auto reason = [&row] { return row->property("check").toMap().value(QStringLiteral("reason")).toString(); };
         QCOMPARE(reason(), QStringLiteral("notInstalled"));
 
-        system.fixFromSetup(QStringLiteral("virtualKeyboardHealth"));
+        system.fix(QStringLiteral("virtualKeyboardHealth"));
         QCOMPARE(reason(), QStringLiteral("settingUp"));
         QTRY_COMPARE(row->property("help").toString(),
                      QStringLiteral("Setup failed: Authorization was declined."));
@@ -700,7 +708,7 @@ private slots:
 
         // Trying again clears it.
         keyboard.helperSucceeds = true;
-        system.fixFromSetup(QStringLiteral("virtualKeyboardHealth"));
+        system.fix(QStringLiteral("virtualKeyboardHealth"));
         QVERIFY(!row->property("help").toString().startsWith(QLatin1String("Setup failed")));
         QTRY_COMPARE(reason(), QStringLiteral("testing"));
     }
@@ -1007,9 +1015,6 @@ private slots:
         QCOMPARE(stepIds, (QStringList{"welcome", "transcription", "microphone", "delivery", "refinement", "shortcut", "ready"}));
     }
 
-    // Pasting lists only the Apps and App Types with steps or keys of their
-    // own: on a fresh install the terminals' keys, where they differ, then
-    // what Apps sets, each with what it does here.
     // A type the person sets on an App migrated from a category-only rule
     // takes that type's profile, as for any App, rather than the catalog's.
     void choosingATypeEndsTheCatalogsProfile()
@@ -1030,6 +1035,9 @@ private slots:
         QTRY_VERIFY(!controller.settings()->snapshot().apps.apps.value(0).catalogPicksProfile);
     }
 
+    // Pasting lists only the Apps and App Types with steps or keys of their
+    // own: on a fresh install the terminals' keys, where they differ, then
+    // what Apps sets, each with what it does here.
     void pastingListsOnlyTheChoicesThatDiffer()
     {
         ApplicationController controller(true);

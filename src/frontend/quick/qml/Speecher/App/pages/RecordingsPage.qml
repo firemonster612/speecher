@@ -23,12 +23,13 @@ Page {
     readonly property bool running: Recording.state !== "off"
     // The newest recordings, read again as History changes.
     readonly property var recent: { void History.kept; return History.recent("recording", 5) }
-    // The speech services that can record, the first of the Service Order's
-    // of them, which the speech service row's "Same as" names, and those
-    // that can't.
+    // The speech services that can record, and those that can't.
     readonly property var canRecord: Models.speechServices.filter(s => s.id !== "local" && ModelText.streams(s.id))
     readonly property var cannotRecord: Models.speechServices.filter(s => !canRecord.some(c => c.id === s.id))
-    readonly property string pageService: ModelText.order("speech").find(id => id !== "local" && ModelText.streams(id)) || ""
+    // The speech service row's "Same as", naming the service a recording
+    // takes unless one is chosen.
+    readonly property string inheritedServiceText: Words.sameAs(t.sameAsSpeech, Recording.plan.inheritedService
+                                                       ? Models.service(Recording.plan.inheritedService).label : t.noneCanRecord)
     readonly property var chosenService: Settings.values.recordingService || {}
     readonly property string nextRecording: running ? T.text.nextRecording : ""
     // Call audio is recorded only where both sources are chosen and this
@@ -81,7 +82,7 @@ Page {
         changes: page.chosenService.service ? 1 : 0
         // The fold holds only the speech service, which follows Speech to
         // text, not the profile.
-        sameText: Words.sameAs(page.t.sameAsSpeech, page.pageService ? Models.service(page.pageService).label : page.t.noneCanRecord)
+        sameText: page.inheritedServiceText
         speechService: Recording.plan.service || ""
         onProfileChosen: id => Settings.set("recordingProfile", id)
 
@@ -95,8 +96,7 @@ Page {
                 onLanded: { runWith.openChanges(); serviceRow.highlight() }
             }
             InheritSelect {
-                inheritedText: Words.sameAs(page.t.sameAsSpeech,
-                                            page.pageService ? Models.service(page.pageService).label : page.t.noneCanRecord)
+                inheritedText: page.inheritedServiceText
                 choices: page.canRecord.map(s => ({ id: s.id, label: s.label }))
                 currentId: page.chosenService.service || ""
                 onChosen: id => Settings.set("recordingService", id ? { service: id, model: "" } : {})

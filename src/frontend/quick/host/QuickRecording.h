@@ -46,14 +46,14 @@ class QuickRecording final : public QObject, public HostSingleton<QuickRecording
     // Why the last start failed, in core's words, until the next start. A
     // start cancelled while it connected leaves none.
     Q_PROPERTY(QString problem READ problem NOTIFY problemChanged)
-    // Why Record can't start now, in core's words (setup, no service that
-    // can record), or empty.
+    // Why Record can't start now, in core's words (no service that can
+    // record), or empty.
     Q_PROPERTY(QString refusal READ refusal NOTIFY planChanged)
-    // Setup hasn't finished, which Record waits for whatever else is ready.
-    // What Record would run with: { service, model, sources (both, mic),
-    // profile (the Writing Profile whose vocabulary it takes),
-    // inheritedProfile (Other apps', which it takes unless one is chosen), folder,
-    // folderUrl, format (md, txt), autoStopMinutes }.
+    // What Record would run with: { service, inheritedService (the one it
+    // takes unless one is chosen: the speech Service Order's first that can
+    // record, or empty), sources (both, mic), inheritedProfile (Other apps',
+    // which it takes unless one is chosen), folder, folderUrl, format (md,
+    // txt), autoStopMinutes }.
     Q_PROPERTY(QVariantMap plan READ plan NOTIFY planChanged)
     // The plan the recording running started with, which later changes
     // leave alone; empty while none runs.
@@ -106,9 +106,6 @@ signals:
     void consentNeededChanged();
     // { atMs, speaker, text }: a line the file just took.
     void lineAdded(const QVariantMap &line);
-    // Main on pageId, landing on rowId when it names one; the popup's pill
-    // asks for it, as it has no window of its own to open pages in.
-    void pageRequested(const QString &pageId, const QString &rowId);
 
 private:
     // Each stream's lostAudioMs and unwrittenLines, which the clock watches.

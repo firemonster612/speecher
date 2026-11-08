@@ -190,21 +190,46 @@ QString failureName(Failure failure)
     return QStringLiteral("filesLeft");
 }
 
+} // namespace
+
+// A delivery step as it stands here, before deliverySteps shapes it for QML.
+struct DeliveryStepState {
+    DeliveryStep step;
+    bool on = false;
+    bool ready = false;
+    QStringList needs;
+    QStringList waiting;
+};
+
+namespace {
+
 // Where words end up from these steps, as pastingOutcome words it.
-QString outcomeOf(const QVariantList &steps)
+QString outcomeOf(const QList<DeliveryStepState> &states)
 {
     bool keeps = false;
-    for (const QVariant &entry : steps) {
-        const QVariantMap step = entry.toMap();
-        if (!step.value(QStringLiteral("on")).toBool() || !step.value(QStringLiteral("ready")).toBool()) {
+    for (const DeliveryStepState &state : states) {
+        if (!state.on || !state.ready) {
             continue;
         }
-        if (step.value(QStringLiteral("id")) != QLatin1String("keep")) {
+        if (state.step != DeliveryStep::Keep) {
             return QStringLiteral("delivers");
         }
         keeps = true;
     }
     return keeps ? QStringLiteral("clipboard") : QStringLiteral("nothing");
+}
+
+QVariantList stepEntries(const QList<DeliveryStepState> &states)
+{
+    QVariantList entries;
+    for (const DeliveryStepState &state : states) {
+        entries.append(QVariantMap{{QStringLiteral("id"), deliveryStepName(state.step)},
+                                   {QStringLiteral("on"), state.on},
+                                   {QStringLiteral("ready"), state.ready},
+                                   {QStringLiteral("needs"), state.needs},
+                                   {QStringLiteral("waiting"), state.waiting}});
+    }
+    return entries;
 }
 
 } // namespace
@@ -284,17 +309,12 @@ QString QuickSystem::virtualKeyboardTest() const
     return testName(m_virtualKeyboard->test());
 }
 
-QStringList QuickSystem::pasteRoute() const
-{
-    return DeliveryPlan{m_settings->shown().output.steps}.route();
-}
-
 QVariantList QuickSystem::deliverySteps() const
 {
-    return stepEntries(m_settings->shown().output.steps);
+    return stepEntries(stepStates(m_settings->shown().output.steps));
 }
 
-QVariantList QuickSystem::stepEntries(const DeliverySteps &steps) const
+QList<DeliveryStepState> QuickSystem::stepStates(const DeliverySteps &steps) const
 {
     const auto there = [this](const QString &need) {
         if (need == DeliveryNeed::Accessibility) {
@@ -308,45 +328,30 @@ QVariantList QuickSystem::stepEntries(const DeliverySteps &steps) const
         }
         return clipboardHelperReady(need);
     };
-    const auto entry = [&steps, &there](DeliveryStep step) {
-        const QStringList needs = deliveryNeeds(step, steps);
-        QStringList waiting;
-        for (const QString &need : needs) {
+    const auto state = [&steps, &there](DeliveryStep step) {
+        DeliveryStepState state{.step = step, .on = steps.has(step), .needs = deliveryNeeds(step, steps)};
+        for (const QString &need : std::as_const(state.needs)) {
             if (!there(need)) {
-                waiting << need;
+                state.waiting << need;
             }
         }
         // Keep off runs nothing to wait for; what it needs then is Press's.
-        const bool ready = waiting.isEmpty() || (step == DeliveryStep::Keep && !steps.keep);
-        return QVariantMap{{QStringLiteral("id"), deliveryStepName(step)},
-                           {QStringLiteral("on"), steps.has(step)},
-                           {QStringLiteral("ready"), ready},
-                           {QStringLiteral("needs"), needs},
-                           {QStringLiteral("waiting"), waiting}};
+        state.ready = state.waiting.isEmpty() || (step == DeliveryStep::Keep && !steps.keep);
+        return state;
     };
-    return {entry(DeliveryStep::Insert), entry(DeliveryStep::Press), entry(DeliveryStep::Keep)};
+    return {state(DeliveryStep::Insert), state(DeliveryStep::Press), state(DeliveryStep::Keep)};
 }
 
 QString QuickSystem::pastingOutcome() const
 {
-    return outcomeOf(deliverySteps());
+    return outcomeOf(stepStates(m_settings->shown().output.steps));
 }
 
-QVariantMap QuickSystem::stepsPlan(const QVariantMap &steps) const
+QVariantList QuickSystem::stepsPlan(const QVariantMap &steps) const
 {
-    const DeliverySteps plan{steps.value(QStringLiteral("insert")).toBool(), steps.value(QStringLiteral("press")).toBool(),
-                             steps.value(QStringLiteral("keep")).toBool()};
-    const QStringList route = DeliveryPlan{plan}.route();
-    QStringList usable;
-    const QVariantList entries = stepEntries(plan);
-    for (const QVariant &entry : entries) {
-        const QVariantMap step = entry.toMap();
-        const QString id = step.value(QStringLiteral("id")).toString();
-        if (route.contains(id) && step.value(QStringLiteral("ready")).toBool()) {
-            usable << id;
-        }
-    }
-    return {{QStringLiteral("route"), route}, {QStringLiteral("usable"), usable}, {QStringLiteral("steps"), entries}};
+    return stepEntries(stepStates({steps.value(QStringLiteral("insert")).toBool(),
+                                   steps.value(QStringLiteral("press")).toBool(),
+                                   steps.value(QStringLiteral("keep")).toBool()}));
 }
 
 bool QuickSystem::copiesFormatted() const
@@ -422,11 +427,6 @@ QVariantMap QuickSystem::check(const QString &id) const
     }
     qWarning().noquote() << "System: no check" << id;
     return {};
-}
-
-void QuickSystem::fixFromSetup(const QString &id)
-{
-    fix(id);
 }
 
 void QuickSystem::fix(const QString &id)

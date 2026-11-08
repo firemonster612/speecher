@@ -113,7 +113,7 @@ Item {
                 variant: "label"
                 strong: true
                 anchors.verticalCenter: parent.verticalCenter
-                TapHandler { onTapped: Recording.pageRequested("recordings", "") }
+                TapHandler { onTapped: Navigation.openInMain("recordings") }
             }
             CircleButton {
                 visible: !pill.saved
@@ -129,7 +129,7 @@ Item {
                 text: pill.t.open
                 size: "small"
                 anchors.verticalCenter: parent.verticalCenter
-                onClicked: Recording.pageRequested("history", "recording:" + Recording.lastEntry)
+                onClicked: Navigation.openInMain("history", "recording:" + Recording.lastEntry)
             }
         }
     }

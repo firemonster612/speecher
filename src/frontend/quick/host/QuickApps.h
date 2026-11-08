@@ -88,9 +88,10 @@ public:
     // Returns { id, refusal }: the new App's id, or why core refused it.
     Q_INVOKABLE QVariantMap add(const QVariantMap &app);
     // Changes an App's type, profile, steps, keys, history, name or
-    // matches (as add takes them, ids included); an empty value unsets it. Returns why core refused it, empty when saved, or
-    // "invalid" for a history other than "stats" or "nothing", which could
-    // only raise What Speecher Keeps.
+    // matches (as add takes them, ids included); an empty value unsets it.
+    // Returns why core refused it, empty when saved, or "invalid" for a
+    // history other than "stats" or "nothing", which could only raise What
+    // Speecher Keeps.
     Q_INVOKABLE QString update(const QString &id, const QVariantMap &patch);
     // Removes an App. Returns the token undo takes, or -1 when none went.
     Q_INVOKABLE int remove(const QString &id);

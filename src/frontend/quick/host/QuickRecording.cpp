@@ -151,16 +151,16 @@ QString QuickRecording::refusal() const
 QVariantMap QuickRecording::plan() const
 {
     const AppSettings settings = m_controller->settings()->dictationSnapshot();
-    const ServiceOrder services =
-        planRecording(settings, {}, streamsFinalText(*m_controller->providerRegistry())).speech.services;
+    const StreamsFinalText streams = streamsFinalText(*m_controller->providerRegistry());
+    AppSettings inherited = settings;
+    inherited.recording.first.reset();
     const RecordingSettings &recording = settings.recording;
     const QString folder = recordingFolder(recording);
     return {
-        {QStringLiteral("service"), services.main()},
-        {QStringLiteral("model"), services.choice(services.main()).model},
+        {QStringLiteral("service"), planRecording(settings, {}, streams).speech.services.main()},
+        {QStringLiteral("inheritedService"), planRecording(inherited, {}, streams).speech.services.main()},
         {QStringLiteral("sources"),
          recording.systemAudio && canRecordCallAudio() ? QStringLiteral("both") : QStringLiteral("mic")},
-        {QStringLiteral("profile"), recordingWritingProfile(settings)},
         {QStringLiteral("inheritedProfile"), fallbackWritingProfile(settings.apps)},
         {QStringLiteral("folder"), folder},
         {QStringLiteral("folderUrl"), QUrl::fromLocalFile(folder)},

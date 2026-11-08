@@ -53,16 +53,17 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   (health.js) words each by id and reason, and a failed fix by its steps.
   Each check has a schema row of the same id, which places it and names it.
   Bindings look a check up with `Health.find(System.checks, id)`, so they
-  follow the checks. `System.fix(id)` runs the fix (`fixFromSetup` in the
-  setup assistant). The virtual keyboard turns on only after its typing test
+  follow the checks. `System.fix(id)` runs the fix, in the setup assistant
+  as anywhere. The virtual keyboard turns on only after its typing test
   (`VirtualKeyboardTest`) puts core's test text in the field.
-  `System.pasteRoute` is the delivery steps that are on, in the order core
-  tries them (insert, press, keep), `deliverySteps` each step with whether
-  it is on, what it relies on here by need id (`output/DeliveryNeeds`,
-  which says it per OS) and which of those are missing
-  (`Schema.pasting.needs` words them, as "<need>: <state>"),
-  `stepsPlan(steps)` which of some steps (an App's own, say) can run here,
-  and `pastingOutcome` where the words end up: `delivers`,
+  `System.deliverySteps` is each step, in the order core tries them
+  (insert, press, keep), with whether it is on, whether it can run here,
+  what it relies on here by need id (`output/DeliveryNeeds`, which says it
+  per OS) and which of those are missing (`Schema.pasting.needs` words
+  them, as "<need>: <state>"); `stepsPlan(steps)` is the same list for
+  some other steps (an App's own, say), from which
+  `Schema.pasting.pastingResult` says what they do here;
+  and `pastingOutcome` is where the words end up: `delivers`,
   `clipboard` or `nothing`. All of them read the settings as `Settings`
   shows them (`QuickSettings::shown`), so setup's draft shows in them as
   in the rows. `Phone`'s code lives from `Phone.start()` to `Phone.stop()`,
@@ -75,7 +76,7 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   three switches, and its own paste keys; Pasting lists those that do,
   read-only, by what their steps do here, each opening in Apps, whose
   editor shows its own steps as the same `DeliveryStepRow`s (`ownSteps`,
-  read through `stepsPlan(steps).steps`) with the keys on Press paste keys.
+  read through `stepsPlan(steps)`) with the keys on Press paste keys.
   Every step row shows each need it has here, one status line apiece, and
   every other page that needs accessibility says what of it needs it in
   one line linking to Home's row (`AccessibilityNotice`).
@@ -317,7 +318,7 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   dictation is up: Connecting…, the time with Stop, a stream that needs
   attention, Finishing…, then Saved with Open for the result's time.
   During a dictation `OfferChips` carries a chip with the time and Stop
-  instead. The pill opens Main through `Recording.pageRequested`.
+  instead. The pill opens Main through `Navigation.openInMain`.
 - The popup window is larger than the capsule, so only the capsule (and the
   offers over it while they show) may take the pointer: the host sets the window's input region to
   `PopupWindow.inputRegion` (`QWindow::setMask`, which is the surface's

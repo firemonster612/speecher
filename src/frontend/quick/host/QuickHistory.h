@@ -41,10 +41,8 @@ class QuickHistory final : public QObject, public HostSingleton<QuickHistory> {
     // lines (a Recording's lines that match the search, at most three: {
     // atMs, speaker, text }) }].
     Q_PROPERTY(QVariantList results READ results NOTIFY resultsChanged)
-    // How many the query finds on every page, and whether there are more to
-    // fetch.
+    // How many the query finds on every page.
     Q_PROPERTY(int matches READ matches NOTIFY resultsChanged)
-    Q_PROPERTY(bool hasMore READ hasMore NOTIFY resultsChanged)
     // A changed query waits to be searched.
     Q_PROPERTY(bool searching READ searching NOTIFY searchingChanged)
     // How many entries hold text at all, whatever the query, and how many of
@@ -71,6 +69,7 @@ public:
     void setQuery(const QVariantMap &query);
     QVariantList results() const { return m_results; }
     int matches() const { return m_matches; }
+    // Whether the query finds more than results holds yet.
     bool hasMore() const { return m_results.size() < m_matches; }
     bool searching() const { return m_searchDelay.isActive(); }
     int kept() const;

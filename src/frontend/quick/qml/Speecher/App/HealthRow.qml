@@ -9,11 +9,10 @@ import Speecher.App
 // away while the state turns to a spinner, so only one thing says it is
 // working; a fix that fails says why in place of the help. A page whose own
 // row shows a check names it with checkId; items declared inside follow the
-// fix button. In the setup assistant, fromSetup runs the fix as setup does.
+// fix button.
 SchemaRow {
     id: row
     property string checkId: rowId
-    property bool fromSetup: false
     default property alias extra: controls.data
     readonly property var check: Health.find(System.checks, checkId)
     readonly property string _fix: Health.fix(check)
@@ -49,7 +48,7 @@ SchemaRow {
                 opacity: row._canFix ? 1 : 0
                 visible: opacity > 0
                 Behavior on opacity { Ease { duration: row._canFix ? Theme.base : Theme.fast } }
-                onClicked: row.fromSetup ? System.fixFromSetup(row.checkId) : System.fix(row.checkId)
+                onClicked: System.fix(row.checkId)
             }
         }
     }

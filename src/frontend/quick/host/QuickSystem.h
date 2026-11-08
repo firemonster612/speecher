@@ -15,6 +15,7 @@ class ApplicationController;
 class QuickRemoval;
 class QuickSettings;
 struct DeliverySteps;
+struct DeliveryStepState;
 
 // The UI's System singleton: what Speecher knows and does about the computer
 // it runs on. The permission and health checks with their fixes, the virtual
@@ -34,7 +35,6 @@ class QuickSystem final : public QObject, public HostSingleton<QuickSystem> {
     Q_PROPERTY(bool canDisablePermanentAccessibility READ canDisablePermanentAccessibility NOTIFY changed)
     Q_PROPERTY(QStringList virtualKeyboardActions READ virtualKeyboardActions NOTIFY changed)
     Q_PROPERTY(QString virtualKeyboardTest READ virtualKeyboardTest NOTIFY changed)
-    Q_PROPERTY(QStringList pasteRoute READ pasteRoute NOTIFY changed)
     Q_PROPERTY(QVariantList deliverySteps READ deliverySteps NOTIFY changed)
     Q_PROPERTY(QString pastingOutcome READ pastingOutcome NOTIFY changed)
     Q_PROPERTY(bool copiesFormatted READ copiesFormatted CONSTANT)
@@ -80,10 +80,8 @@ public:
     // The typing test that turns the keyboard on: off, ready (waiting for its
     // field), typing, or missed (the text never arrived).
     QString virtualKeyboardTest() const;
-    // The delivery steps that are on, in the order delivery tries them:
-    // insert, press, keep (DeliveryPlan::route).
-    QStringList pasteRoute() const;
-    // Every delivery step in that order, {id, on, ready, needs, waiting}:
+    // Every delivery step in the order delivery tries them (insert, press,
+    // keep), {id, on, ready, needs, waiting}:
     // needs are what the step relies on here, by need id, and waiting those
     // of them this computer lacks now, so ready is waiting being empty.
     // The need ids: accessibility (Insert, and Press on macOS; Windows needs
@@ -96,12 +94,9 @@ public:
     // that is on gets them into the app), clipboard (none can, and Keep
     // leaves them there) or nothing.
     QString pastingOutcome() const;
-    // What delivering with these steps ({ insert, press, keep }, an App's
-    // own or the Pasting page's) does here: {route, usable, steps}, route the
-    // steps that are on in order (DeliveryPlan::route), usable those of them
-    // this computer can run now, and steps each step as deliverySteps has
-    // it, for these switches.
-    Q_INVOKABLE QVariantMap stepsPlan(const QVariantMap &steps) const;
+    // deliverySteps for these switches ({ insert, press, keep }, an App's
+    // own or the Pasting page's) rather than the settings'.
+    Q_INVOKABLE QVariantList stepsPlan(const QVariantMap &steps) const;
     // Whether a paste can carry formatted text here: not in a Wayland
     // session without Speecher's clipboard helper, where wl-copy copies
     // plain text only.
@@ -133,9 +128,6 @@ public:
     // Runs the fix the check offers. A fix that fails says why in the
     // check's failures.
     Q_INVOKABLE void fix(const QString &id);
-    // fix, for the setup assistant. The same as fix since setup chooses the
-    // delivery steps itself.
-    Q_INVOKABLE void fixFromSetup(const QString &id);
     // Stops keeping accessibility on past sign-out, and Chromium and Electron
     // apps building their accessibility tree; it stays on for this session.
     Q_INVOKABLE void disablePermanentAccessibility();
@@ -160,8 +152,8 @@ signals:
 private:
     // The check with this id, as in checks, or an empty map.
     QVariantMap check(const QString &id) const;
-    // deliverySteps for these switches.
-    QVariantList stepEntries(const DeliverySteps &steps) const;
+    // Each delivery step, as deliverySteps has it, for these switches.
+    QList<DeliveryStepState> stepStates(const DeliverySteps &steps) const;
     // Forgets the check's failures as something new is tried on it.
     void clearFailures(const QString &id);
 

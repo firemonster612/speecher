@@ -26,7 +26,7 @@ SchemaRow {
     property string keys: "standard"
     signal stepToggled(bool on)
 
-    readonly property var steps: ownSteps ? System.stepsPlan(ownSteps).steps : System.deliverySteps
+    readonly property var steps: ownSteps ? System.stepsPlan(ownSteps) : System.deliverySteps
     readonly property var step: steps.find(s => s.id === spec.step) || {}
     readonly property bool on: !!step.on
     readonly property bool _last: on && steps.filter(s => s.on).length === 1

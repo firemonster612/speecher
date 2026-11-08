@@ -48,6 +48,9 @@ public:
     // returnTo, so the page it opens offers the way back. A link from
     // setupOrigin also asks for Main, which may not be open.
     Q_INVOKABLE void follow(const QString &pageId, const QString &rowId = {}, const QString &from = {});
+    // go, or goToRow with a row, then asks for Main, which may not be open:
+    // for windows with no pages of their own, such as the popup's pill.
+    Q_INVOKABLE void openInMain(const QString &pageId, const QString &rowId = {});
     // Goes back where returnTo says: that page, or the setup assistant
     // (setupRequested), leaving Main on the page it shows.
     Q_INVOKABLE void goBack();
@@ -61,7 +64,7 @@ signals:
     void returnToChanged();
     // A page was asked for, the one already showing included.
     void requested(const QString &pageId);
-    // A link from the setup assistant needs Main on screen.
+    // A link from the setup assistant or openInMain needs Main on screen.
     void mainRequested();
     // The way back leads to the setup assistant.
     void setupRequested();

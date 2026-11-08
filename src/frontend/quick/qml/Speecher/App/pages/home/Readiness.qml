@@ -139,7 +139,6 @@ Column {
             required property int index
             first: checkRow.index === 0
             rowId: checkRow.key
-            fromSetup: root.inSetup
             clickable: true
             // Off, accessibility says everything it turns on, as the line
             // other pages show links here.
@@ -173,7 +172,6 @@ Column {
                     size: "small"
                     anchors.verticalCenter: parent.verticalCenter
                     onClicked: itemRow.item.fixService ? sheet.openFor("speech", itemRow.item.fixService)
-                                                       : root.inSetup ? System.fixFromSetup(itemRow.item.fixCheck)
                                                        : System.fix(itemRow.item.fixCheck)
                 }
             }
