@@ -6,6 +6,7 @@
 #include "common/vocabulary_entries.h"
 #include "core/settings/AppsMigration.h"
 #include "core/settings/AppsSettingsCodec.h"
+#include "output/DeliveryNeeds.h"
 #include "output/HelperPath.h"
 #ifdef SPEECHER_WITH_WAYLAND
 #include "output/WaylandClipboardOwner.h"
@@ -2006,6 +2007,45 @@ fi
         QCOMPARE(inserted.receipt, DeliveryReceipt::AcceptedByTarget);
         QCOMPARE(targetProvider.insertCalls, 1);
         QVERIFY(attempts.isEmpty());
+    }
+
+    // What each step needs on this OS, and where the clipboard needs
+    // helpers, what it needs of them: Keep off borrows the clipboard, so
+    // Press saves it and Keep has only the saved one to put back.
+    void eachStepNeedsWhatThisComputerDeliversWith()
+    {
+        using namespace speecher::DeliveryNeed;
+        const DeliverySteps all;
+        const DeliverySteps keepOff{.insert = true, .press = true, .keep = false};
+        for (const bool wayland : {false, true}) {
+            QStringList clipboardPress;
+            QStringList clipboardPressKeepOff;
+            if (wayland) {
+                clipboardPress = {Clipboard};
+                clipboardPressKeepOff = {Clipboard, ClipboardSave};
+            }
+#if defined(Q_OS_MACOS)
+            const QStringList insert{Accessibility};
+            const QStringList press{Accessibility};
+#elif defined(Q_OS_WIN)
+            const QStringList insert;
+            const QStringList press;
+#else
+            const QStringList insert{Accessibility};
+            const QStringList press{VirtualKeyboard};
+#endif
+            QCOMPARE(deliveryNeeds(DeliveryStep::Insert, all, wayland), insert);
+            QCOMPARE(deliveryNeeds(DeliveryStep::Press, all, wayland), press + clipboardPress);
+            QCOMPARE(deliveryNeeds(DeliveryStep::Press, keepOff, wayland), press + clipboardPressKeepOff);
+            QCOMPARE(deliveryNeeds(DeliveryStep::Keep, all, wayland), wayland ? QStringList{Clipboard} : QStringList());
+            QCOMPARE(deliveryNeeds(DeliveryStep::Keep, keepOff, wayland),
+                     wayland ? QStringList{ClipboardSave} : QStringList());
+        }
+        // Outside a Wayland session Qt's clipboard does it all.
+        if (!clipboardNeedsHelpers()) {
+            QCOMPARE(deliveryNeeds(DeliveryStep::Keep, all), QStringList());
+            QVERIFY(clipboardCopiesFormatted());
+        }
     }
 
     // Each stored delivery choice turns off the steps it never used.

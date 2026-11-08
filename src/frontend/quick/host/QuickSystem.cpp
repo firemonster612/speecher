@@ -8,10 +8,7 @@
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickRemoval.h"
 #include "frontend/quick/host/QuickSettings.h"
-#ifdef SPEECHER_WITH_WAYLAND
-#include "output/WaylandClipboardProcess.h"
-#include "output/WlClipboardDelivery.h"
-#endif
+#include "output/DeliveryNeeds.h"
 
 #include <QClipboard>
 #include <QDebug>
@@ -193,18 +190,6 @@ QString failureName(Failure failure)
     return QStringLiteral("filesLeft");
 }
 
-// Whether the clipboard takes helpers: in a Wayland session, copying needs
-// Speecher's clipboard helper or wl-copy, and saving it wl-paste. Elsewhere
-// Qt's clipboard does both.
-bool waylandClipboard()
-{
-#ifdef SPEECHER_WITH_WAYLAND
-    return WlClipboardDelivery::isWaylandSession();
-#else
-    return false;
-#endif
-}
-
 // Where words end up from these steps, as pastingOutcome words it.
 QString outcomeOf(const QVariantList &steps)
 {
@@ -220,16 +205,6 @@ QString outcomeOf(const QVariantList &steps)
         keeps = true;
     }
     return keeps ? QStringLiteral("clipboard") : QStringLiteral("nothing");
-}
-
-bool clipboardHelperThere(const QString &need)
-{
-#ifdef SPEECHER_WITH_WAYLAND
-    return need == u"clipboardSave" ? WlClipboardDelivery::canSnapshot() : WlClipboardDelivery::isAvailable();
-#else
-    Q_UNUSED(need)
-    return true;
-#endif
 }
 
 } // namespace
@@ -321,40 +296,20 @@ QVariantList QuickSystem::deliverySteps() const
 
 QVariantList QuickSystem::stepEntries(const DeliverySteps &steps) const
 {
-    const QString accessibility = QStringLiteral("accessibility");
-    const QString clipboard = QStringLiteral("clipboard");
-    const QString clipboardSave = QStringLiteral("clipboardSave");
-    QStringList insertNeeds{accessibility};
-    QStringList pressNeeds;
-    QStringList keepNeeds;
-#if defined(Q_OS_MACOS)
-    // ⌘V reaches another app only through the Accessibility grant.
-    pressNeeds << accessibility;
-#elif defined(Q_OS_WIN)
-    insertNeeds.clear();
-#else
-    pressNeeds << QStringLiteral("virtualKeyboard");
-#endif
-    if (waylandClipboard()) {
-        pressNeeds << clipboard;
-        if (!steps.keep) {
-            pressNeeds << clipboardSave;
-        }
-        keepNeeds << (steps.keep ? clipboard : clipboardSave);
-    }
     const auto there = [this](const QString &need) {
-        if (need == u"accessibility") {
+        if (need == DeliveryNeed::Accessibility) {
             // On only for the session counts.
             return this->accessibility();
         }
-        if (need == u"virtualKeyboard") {
+        if (need == DeliveryNeed::VirtualKeyboard) {
             // Ready as its health row says: set up, with no setup or typing
             // test under way.
             return virtualKeyboardCheck(*m_virtualKeyboard).value(QStringLiteral("state")) == QLatin1String("ok");
         }
-        return clipboardHelperThere(need);
+        return clipboardHelperReady(need);
     };
-    const auto entry = [&steps, &there](DeliveryStep step, const QStringList &needs) {
+    const auto entry = [&steps, &there](DeliveryStep step) {
+        const QStringList needs = deliveryNeeds(step, steps);
         QStringList waiting;
         for (const QString &need : needs) {
             if (!there(need)) {
@@ -369,8 +324,7 @@ QVariantList QuickSystem::stepEntries(const DeliverySteps &steps) const
                            {QStringLiteral("needs"), needs},
                            {QStringLiteral("waiting"), waiting}};
     };
-    return {entry(DeliveryStep::Insert, insertNeeds), entry(DeliveryStep::Press, pressNeeds),
-            entry(DeliveryStep::Keep, keepNeeds)};
+    return {entry(DeliveryStep::Insert), entry(DeliveryStep::Press), entry(DeliveryStep::Keep)};
 }
 
 QString QuickSystem::pastingOutcome() const
@@ -397,16 +351,12 @@ QVariantMap QuickSystem::stepsPlan(const QVariantMap &steps) const
 
 bool QuickSystem::copiesFormatted() const
 {
-#ifdef SPEECHER_WITH_WAYLAND
-    return !waylandClipboard() || !WaylandClipboardProcess::helperExecutable().isEmpty();
-#else
-    return true;
-#endif
+    return clipboardCopiesFormatted();
 }
 
 bool QuickSystem::waylandSession() const
 {
-    return waylandClipboard();
+    return clipboardNeedsHelpers();
 }
 
 bool QuickSystem::identifiesAppsWithoutAccessibility() const

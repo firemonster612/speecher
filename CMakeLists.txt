@@ -456,6 +456,7 @@ set(SPEECHER_PROVIDER_HEADERS
 
 set(SPEECHER_PLATFORM_SOURCES
   src/output/ClipboardDelivery.cpp
+  src/output/DeliveryNeeds.cpp
   src/output/QtClipboardDelivery.cpp
   src/output/TextDelivery.cpp
   src/platform/CorrectionDiff.cpp
@@ -477,6 +478,7 @@ set(SPEECHER_PLATFORM_SOURCES
 
 set(SPEECHER_PLATFORM_HEADERS
   src/output/ClipboardDelivery.h
+  src/output/DeliveryNeeds.h
   src/output/ClipboardSnapshot.h
   src/output/QtClipboardDelivery.h
   src/output/TextDelivery.h

@@ -58,8 +58,9 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   (`VirtualKeyboardTest`) puts core's test text in the field.
   `System.pasteRoute` is the delivery steps that are on, in the order core
   tries them (insert, press, keep), `deliverySteps` each step with whether
-  it is on, what it relies on here by need id and which of those are
-  missing (`Schema.pasting.needs` words them, as "<need>: <state>"),
+  it is on, what it relies on here by need id (`output/DeliveryNeeds`,
+  which says it per OS) and which of those are missing
+  (`Schema.pasting.needs` words them, as "<need>: <state>"),
   `stepsPlan(steps)` which of some steps (an App's own, say) can run here,
   and `pastingOutcome` where the words end up: `delivers`,
   `clipboard` or `nothing`. All of them read the settings as `Settings`
