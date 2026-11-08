@@ -158,8 +158,6 @@ QString recordingWritingProfile(const AppSettings &settings)
                                                        : settings.recording.writingProfile;
 }
 
-// Local Models finalize runs of words rather than utterances, and their tail
-// only in a whole-attempt transcript, so a recording never asks them.
 AppSettings planRecording(const AppSettings &saved, const QStringList &addedVocabulary,
                           const StreamsFinalText &streamsFinalText)
 {
@@ -178,8 +176,7 @@ AppSettings planRecording(const AppSettings &saved, const QStringList &addedVoca
     settings.speech.services = services;
     services.order.clear();
     for (const QString &service : std::as_const(candidates)) {
-        if (service != providerKey(ProviderId::Local)
-            && streamsFinalText(service, chainSpeechSettings(settings.speech, service))) {
+        if (streamsFinalText(service, chainSpeechSettings(settings.speech, service))) {
             services.order.append(service);
         }
     }

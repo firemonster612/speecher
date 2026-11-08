@@ -1714,35 +1714,35 @@ private slots:
         QCOMPARE(settings.dictationSnapshot().vocabulary, saved);
     }
 
-    // A recording passes over a Local Model, even one the Other profile
-    // puts first, for the next service in the order that streams.
-    void aRecordingPassesOverALocalModel()
+    // A Local Model records as any service does that sends each utterance's
+    // text as it ends.
+    void aRecordingTakesALocalModel()
     {
+        int localStarts = 0;
         QPointer<FakeSpeechTranscriber> local;
         m_registry->registerSpeechProvider({QStringLiteral("local"), QStringLiteral("Local Model")},
-                                           [&local](QObject *parent) {
+                                           [&local, &localStarts](QObject *parent) {
                                                local = new FakeSpeechTranscriber(parent);
                                                local->streamsFinals = true;
-                                               local->onStartAttempt = [&local] { local->emitConnected(); };
+                                               local->onStartAttempt = [&local, &localStarts] {
+                                                   ++localStarts;
+                                                   local->emitConnected();
+                                               };
                                                return local.data();
                                            });
         registerStreamingCodex();
         SettingsStore settings;
-        AppSettings draft = settings.snapshot();
-        draft.speech.services.order = {QStringLiteral("local"), QStringLiteral("codex")};
-        for (WritingProfileSettings &profile : draft.refinement.writingProfiles) {
-            if (profile.profile == WritingProfile::Other) {
-                profile.speechFirst = ServiceChoice{QStringLiteral("local"), QStringLiteral("moonshine-small")};
-            }
-        }
-        settings.applySnapshot(draft);
+        settings.edit([](AppSettings &draft) {
+            draft.speech.services.order = {QStringLiteral("local"), QStringLiteral("codex")};
+            return true;
+        });
         RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
             return new FakeAudioInput(parent);
         });
         QString error;
         QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
-        QCOMPARE(m_codex->startCalls, 1);
-        QVERIFY(!local || local->startCalls == 0);
+        QCOMPARE(localStarts, 1);
+        QCOMPARE(m_codex->startCalls, 0);
     }
 
     // A provider that finalizes only when asked, as Codex does, still writes

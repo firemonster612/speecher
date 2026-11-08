@@ -4,6 +4,7 @@
 #include "app/PlatformComposition.h"
 #include "core/Apps.h"
 #include "core/SettingsStore.h"
+#include "core/settings/SpokenLanguages.h"
 #include "dictation/DictationPlan.h"
 #include "frontend/quick/host/QmlValues.h"
 #include "providers/ProviderRegistry.h"
@@ -155,7 +156,14 @@ QVariantMap QuickRecording::plan() const
     inherited.recording.first.reset();
     const RecordingSettings &recording = settings.recording;
     const QString folder = recordingFolder(recording);
+    QStringList canRecord;
+    for (const QString &service : providerIds(m_controller->providerRegistry()->speechProviders())) {
+        if (streams(service, chainSpeechSettings(settings.speech, service))) {
+            canRecord << service;
+        }
+    }
     return {
+        {QStringLiteral("canRecord"), canRecord},
         {QStringLiteral("service"), planRecording(settings, {}, streams).speech.services.main()},
         {QStringLiteral("inheritedService"), planRecording(inherited, {}, streams).speech.services.main()},
         {QStringLiteral("sources"),

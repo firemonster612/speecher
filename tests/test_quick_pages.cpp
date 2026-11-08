@@ -1972,9 +1972,7 @@ private slots:
             ->go(QStringLiteral("recordings"));
         QString help;
         QTRY_VERIFY(!(help = rowHelp(main->contentItem(), QStringLiteral(" can record calls."))).isEmpty());
-        const QString cannot = help.section(QStringLiteral(" can record calls. "), 1);
-        QVERIFY2(!cannot.isEmpty(), qPrintable(help));
-        QVERIFY2(!cannot.contains(QLatin1String("ChatGPT")), qPrintable(help));
+        QVERIFY2(help.count(QLatin1String("ChatGPT")) == 1, qPrintable(help));
     }
 
     // Ctrl+F has one owner: it goes to History's search, or its reader's

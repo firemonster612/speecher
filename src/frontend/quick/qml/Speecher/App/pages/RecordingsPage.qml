@@ -24,7 +24,7 @@ Page {
     // The newest recordings, read again as History changes.
     readonly property var recent: { void History.kept; return History.recent("recording", 5) }
     // The speech services that can record, and those that can't.
-    readonly property var canRecord: Models.speechServices.filter(s => s.id !== "local" && ModelText.streams(s.id))
+    readonly property var canRecord: Models.speechServices.filter(s => Recording.plan.canRecord.includes(s.id))
     readonly property var cannotRecord: Models.speechServices.filter(s => !canRecord.some(c => c.id === s.id))
     // The speech service row's "Same as", naming the service a recording
     // takes unless one is chosen.

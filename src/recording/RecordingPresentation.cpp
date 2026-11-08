@@ -149,8 +149,8 @@ QString alreadyRecordingText(const QString &path)
 
 QString recordingNoServiceText()
 {
-    return QStringLiteral("None of your speech services can record a call, and This computer can't yet. Add "
-                          "ChatGPT, Claude or Your server to Speech to text.");
+    return QStringLiteral("None of your speech services can record a call. Add ChatGPT, Claude, This computer "
+                          "or Your server to Speech to text.");
 }
 
 QString recordingCancelledText()

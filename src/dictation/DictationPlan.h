@@ -69,9 +69,9 @@ QString recordingWritingProfile(const AppSettings &settings);
 // applies to its Writing Profile (recordingWritingProfile) and no app, led by
 // addedVocabulary, and as the speech Service Order the services it can use,
 // first to last: its own first service (RecordingSettings::first) where that
-// streams final text, then the speech Service Order's that do, Local Models
-// passed over, each with its own model and Spoken Language. An empty order is
-// a recording nothing can run.
+// streams final text, then the speech Service Order's that do, each with its
+// own model and Spoken Language. An empty order is a recording nothing can
+// run.
 AppSettings planRecording(const AppSettings &settings, const QStringList &addedVocabulary,
                           const StreamsFinalText &streamsFinalText);
 

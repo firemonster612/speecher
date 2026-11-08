@@ -402,13 +402,15 @@ private slots:
         const QString codex = QStringLiteral("codex");
         const QString local = QStringLiteral("local");
         const QString endpoint = QStringLiteral("endpoint");
-        QTest::newRow("main streams") << QStringList{claude, local, codex} << QString() << QStringList{claude, codex};
-        QTest::newRow("main is local") << QStringList{local, codex} << QString() << QStringList{codex};
-        QTest::newRow("none can") << QStringList{local, endpoint} << QString() << QStringList{};
+        QTest::newRow("main streams") << QStringList{claude, local, codex} << QString()
+                                      << QStringList{claude, local, codex};
+        QTest::newRow("main is local") << QStringList{local, codex} << QString() << QStringList{local, codex};
+        QTest::newRow("none can") << QStringList{endpoint} << QString() << QStringList{};
+        QTest::newRow("passes over what can't") << QStringList{endpoint, local} << QString() << QStringList{local};
         QTest::newRow("own first") << QStringList{claude, codex} << codex << QStringList{codex, claude};
         QTest::newRow("own first outside the order") << QStringList{claude} << codex << QStringList{codex, claude};
         QTest::newRow("own first can't stream") << QStringList{claude, codex} << endpoint << QStringList{claude, codex};
-        QTest::newRow("own first is local") << QStringList{local, claude} << local << QStringList{claude};
+        QTest::newRow("own first is local") << QStringList{claude, local} << local << QStringList{local, claude};
     }
 
     void planRecordingWalksWhatStreams()

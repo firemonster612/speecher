@@ -68,7 +68,7 @@ function summary(plan, serviceLabel, home) {
 }
 
 // Which services can record calls and which can't, from their labels:
-// "ChatGPT and Claude can record calls. This computer can't yet."
+// "ChatGPT, Claude and This computer can record calls."
 function serviceHelp(can, cannot) {
     const list = names => names.length > 1 ? names.slice(0, -1).join(", ") + " and " + names[names.length - 1] : names[0]
     const yes = can.length ? list(can) + " can record calls." : "No speech service you use can record calls."

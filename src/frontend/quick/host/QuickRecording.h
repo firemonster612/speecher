@@ -53,7 +53,8 @@ class QuickRecording final : public QObject, public HostSingleton<QuickRecording
     // takes unless one is chosen: the speech Service Order's first that can
     // record, or empty), sources (both, mic), inheritedProfile (Other apps',
     // which it takes unless one is chosen), folder, folderUrl, format (md,
-    // txt), autoStopMinutes }.
+    // txt), autoStopMinutes, canRecord (the speech services that can record,
+    // each with what its entry asks) }.
     Q_PROPERTY(QVariantMap plan READ plan NOTIFY planChanged)
     // The plan the recording running started with, which later changes
     // leave alone; empty while none runs.
