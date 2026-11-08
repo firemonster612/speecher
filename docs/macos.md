@@ -306,6 +306,8 @@ user-consented APIs for all of it:
 4. **Direct insertion with verification.** Setting `AXSelectedText` on the
    focused element inserts at the caret and the result can be read back —
    the receipt honesty AT-SPI only delivers on cooperative toolkits.
+   Chromium and Electron apps accept the write and show nothing, so they
+   get Cmd+V.
 5. **A dictation popup that never steals focus, on every desktop.** A
    non-activating NSPanel at status-window level joins all Spaces; on Linux
    this needed the Wayland-only layer-shell protocol.
