@@ -56,16 +56,6 @@ Item {
         const inherited = entry.inherited || {}
         return Words.sameAs(placeOf(inherited.stepsFrom), Schema.pasting.stepsText(inherited.steps || pageSteps))
     }
-    // The paste keys' choice, on Press's step row or in a row of its own.
-    // owner is the editor, whose ids an inline component can't see.
-    component KeysSelect: InheritSelect {
-        required property var owner
-        inheritedText: owner.inheritedKeys()
-        choices: Schema.pasting.keyChoices
-        currentId: owner.entry.keys || ""
-        onChosen: id => owner.save({ keys: id })
-    }
-
     function inheritedKeys() {
         if (isType) return Words.sameAs(t.pastingPage, Schema.pasting.keysLabel("standard"))
         const inherited = entry.inherited || {}
@@ -266,13 +256,16 @@ Item {
                         ownSteps: editor.entry.steps || {}
                         keys: editor.effective.keys
                         onStepToggled: on => editor.setStep(modelData, on)
-                        KeysSelect {
-                            owner: editor
+                        InheritSelect {
                             visible: stepRow.modelData === "press" && Schema.pasting.keyChoices.length > 0
                             // Narrower than a settings row's, beside the
                             // step's needs and switch.
                             width: 170
+                            inheritedText: editor.inheritedKeys()
+                            choices: Schema.pasting.keyChoices
+                            currentId: editor.entry.keys || ""
                             anchors.verticalCenter: parent.verticalCenter
+                            onChosen: id => editor.save({ keys: id })
                         }
                     }
                 }
@@ -283,9 +276,12 @@ Item {
             shown: Schema.pasting.keyChoices.length > 0 && !editor.entry.steps && !!editor.effective.steps.press
             title: editor.t.pasteKeys
             help: editor.t.pasteKeysHelp
-            KeysSelect {
+            InheritSelect {
                 objectName: "appPasteKeys"
-                owner: editor
+                inheritedText: editor.inheritedKeys()
+                choices: Schema.pasting.keyChoices
+                currentId: editor.entry.keys || ""
+                onChosen: id => editor.save({ keys: id })
             }
         }
         SettingRow {
