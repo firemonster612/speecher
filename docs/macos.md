@@ -179,7 +179,7 @@ allows them. It saves a dummy OpenAI key in the old app's Accounts pane, waits
 for the old app's own update check and presses Install and restart through
 System Events. After the relaunch it checks that `speecher.log` reads
 `trusted=1` for the candidate's cdhash, that the TCC records still allow it,
-that the settings carried over, that the new app's Accounts page shows the key
+that the settings carried over, that the new app's Services page shows the key
 as saved with no Keychain prompt and that Speecher has one login item. The job
 summary marks each check PASS or FAIL, and the `release-gate-evidence`
 artifact keeps what step 8 asks for. 0.2.0 crashed on the runner now and then
@@ -243,7 +243,7 @@ hand.
    - A dictation with screenshot context on refines with no Screen & System
      Audio Recording prompt, and System Settings still lists Speecher there,
      on.
-   - Accounts shows the OpenAI key as saved, and Claude and ChatGPT as signed
+   - Services shows the OpenAI key as saved, and Claude and ChatGPT as signed
      in, with no request to sign in again. A self-signed build asks once for
      your Mac password to read the OpenAI key (see CLI login Keychain
      prompts); any other Keychain prompt is a failure.

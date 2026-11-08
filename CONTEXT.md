@@ -13,7 +13,7 @@ A call recorded into a transcript file, started and stopped with `speecher recor
 _Avoid_: Call session, meeting mode
 
 **Spoken Language**:
-The language the speech service listens for, the main one for every Dictation Session, or Automatic where the service detects it. Each speech fallback has its own; one the user hasn't set takes the main Spoken Language where it listens for it, otherwise English while the main one is Automatic and it takes English, otherwise it is skipped. Distinct from a Writing Profile's output language, which refinement translates into.
+The language the first speech service in the Service Order listens for, for every Dictation Session, or Automatic where the service detects it. Each later entry of the speech Service Order may have its own; one the user hasn't set takes the main Spoken Language where it listens for it, otherwise English while the main one is Automatic and it takes English, otherwise it is skipped. Distinct from a Writing Profile's output language, which refinement translates into.
 _Avoid_: Dictation language, input language, locale
 
 **Raw Transcript**:
@@ -29,7 +29,7 @@ The desktop application and editable control selected when a Dictation Session s
 _Avoid_: Destination, focused app
 
 **Writing Profile**:
-How refinement treats a Target, inferred from it, with a user-selected fallback and optional override. A profile is built-in (Work, Email, Personal, AI coding, Other) or user-defined, and sets a Cleanup Level, a Tone, Additional Instructions and an optional output language that refinement translates into. AI coding wins over a terminal's own identity when a coding agent is detected inside it.
+How refinement treats a Target, inferred from it, with a user-selected fallback and optional override. A profile is built-in (Work, Email, Personal, AI coding, Other) or user-defined, and sets a Cleanup Level, a Tone, Additional Instructions and an optional output language that refinement translates into. It may also name a speech and a refinement Service, with a model, that it tries first, ahead of the page's Service Order; unset, it is the same as the page's. AI coding wins over a terminal's own identity when a coding agent is detected inside it.
 _Avoid_: Style preset, persona
 
 **Cleanup Level**:
@@ -101,20 +101,32 @@ The first Stable Release in which a setting appears, used to include that settin
 _Avoid_: Added version, introduced version
 
 **CLI Proxy API Account**:
-One OAuth login (claude or codex) stored as a JSON file in CLI Proxy API's auth directory, selectable as a credential source per provider family (Accounts page): the Anthropic auth mode covers Claude Voice dictation and Anthropic refinement, the OpenAI auth mode covers Codex dictation and OpenAI refinement. CLI Proxy API owns and refreshes these files; Speecher may also refresh an expired account and writes rotated tokens back while holding the account's adjacent lock file. The directory is auto-detected (`~/.cli-proxy-api`, then `~/.local/share/cliproxy-api/oauth`; override with `cliproxy/oauthDir`). On machines that don't host CLI Proxy API, set the server URL and API key on the Accounts page instead: refinement then goes through the proxy's own `/v1/messages` and `/v1/responses` endpoints and the server routes accounts itself (speech still needs the local files, since its websockets connect to the vendors directly).
+One OAuth login (claude or codex) stored as a JSON file in CLI Proxy API's auth directory: CLI Proxy API is one way to sign in to ChatGPT or to Claude (Sign in with, on the Services page). Claude's sign-in covers Claude Voice dictation and Claude refinement, ChatGPT's covers Codex dictation and ChatGPT refinement. CLI Proxy API owns and refreshes these files; Speecher may also refresh an expired account and writes rotated tokens back while holding the account's adjacent lock file. The directory is auto-detected (`~/.cli-proxy-api`, then `~/.local/share/cliproxy-api/oauth`; override with `cliproxy/oauthDir`). On machines that don't host CLI Proxy API, set its server URL and API key in that service's card on Services instead: refinement then goes through the proxy's own `/v1/messages` and `/v1/responses` endpoints and the server routes accounts itself (speech still needs the local files, since its websockets connect to the vendors directly).
 _Avoid_: Proxy token, cliproxy key
 
+**Service**:
+Something that turns speech into text or cleans text up: ChatGPT, Claude, This computer (a Local Model for speech, a Local Runner for refinement), or one of Your servers. Each is signed in to or connected once, on the Services page.
+_Avoid_: Provider (in the UI), backend, engine
+
+**Service Order**:
+The services Speecher tries for one job, speech or refinement, first to last. The first is the main service; the others stand in when it is unavailable. Each entry carries its own model, ChatGPT's and Claude's refinement entries their thinking and speed, and a later speech entry its own Spoken Language. An entry keeps its choices while it is out of the order. Refinement's order runs only while Clean up my words is on.
+_Avoid_: Fallback chain, primary and fallbacks, fallbacks
+
+**Clean up my words**:
+The switch that turns refinement on or off for every dictation. Off, no refinement service runs, a Writing Profile's own included, and the words are pasted as spoken; the Service Order waits for it to come back on. Distinct from a Writing Profile's Cleanup Level None, which skips cleanup for that profile but still translates into its output language.
+_Avoid_: None (as a refinement service)
+
 **Local Model**:
-A speech-to-text model file Speecher downloads and runs on the user's own machine through transcribe.cpp, managed on the Local models page.
+A speech-to-text model file Speecher downloads and runs on the user's own machine through transcribe.cpp, managed on the Local models page under Services.
 _Avoid_: Offline model, on-device model, embedded model
 
 **Local Runner**:
 A separately installed program that serves cleanup models over HTTP on the user's machine: Ollama, LM Studio or llama-server. Speecher detects it and uses it for refinement but does not run the model itself.
 _Avoid_: Local LLM, inference server, backend
 
-**Custom Endpoint**:
-A user-supplied server URL for one role, speech or refinement. The speech endpoint speaks OpenAI's audio transcriptions API; the refinement endpoint speaks OpenAI Chat Completions or Anthropic Messages. The CLI Proxy API server is a preset of the refinement endpoint.
-_Avoid_: BYO endpoint, self-hosted provider, custom provider
+**Server**:
+One of Your servers: a user-supplied URL that serves one job, one for speech (OpenAI's audio transcriptions API) and one for refinement (OpenAI Chat Completions or Anthropic Messages). Its model is its entry's in that job's Service Order. The refinement server can be pointed at the CLI Proxy API server, and then sends that server's key.
+_Avoid_: Custom Endpoint (retired), BYO endpoint, self-hosted provider
 
 **Hardware Tier**:
 The class Speecher assigns a machine from its detected GPU memory, RAM and CPU, used to label each Local Model fits, tight or too large and to pick a suggestion.
