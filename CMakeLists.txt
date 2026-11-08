@@ -250,6 +250,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/ProviderReadiness.cpp
   src/core/ProviderRatings.cpp
   src/core/ReleaseNotes.cpp
+  src/core/SeenApps.cpp
   src/core/SettingsStore.cpp
   src/core/ShortcutBinding.cpp
   src/core/settings/CorrectionSettingsCodec.cpp
@@ -301,6 +302,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/ProviderReadiness.h
   src/core/ProviderRatings.h
   src/core/ReleaseNotes.h
+  src/core/SeenApps.h
   src/core/SettingsStore.h
   src/core/ShortcutBinding.h
   src/core/settings/CorrectionSettingsCodec.h
