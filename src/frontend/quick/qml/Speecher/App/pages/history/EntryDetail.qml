@@ -1,0 +1,45 @@
+import QtQuick
+import Speecher.Theme
+import Speecher.Controls
+import Speecher.Backend
+import "HistoryWords.js" as T
+
+// An opened History entry's actions, under its row: Refined or Spoken where
+// they differ, then Copy, Paste again, Play with where it is, and Delete.
+Item {
+    id: root
+    required property var entry
+    property bool spoken: false
+    property bool playing: false
+    signal spokenPicked(bool spoken)
+    signal copyRequested()
+    signal pasteRequested()
+    signal playRequested()
+    signal deleteRequested()
+
+    width: parent ? parent.width : implicitWidth
+    implicitHeight: actions.implicitHeight + Theme.space3
+
+    Flow {
+        id: actions
+        x: Theme.rowInset
+        width: parent.width - 2 * Theme.rowInset
+        spacing: Theme.space2
+        SegmentedControl {
+            visible: root.entry.hasRaw
+            options: [{ id: "refined", label: T.text.refined }, { id: "spoken", label: T.text.spoken }]
+            currentId: root.spoken ? "spoken" : "refined"
+            onActivated: id => root.spokenPicked(id === "spoken")
+        }
+        Button { text: T.text.copy; iconName: "copy"; size: "small"; onClicked: root.copyRequested() }
+        Button { text: T.text.pasteAgain; iconName: "clipboard-paste"; size: "small"; onClicked: root.pasteRequested() }
+        Button {
+            visible: root.entry.hasAudio
+            iconName: root.playing ? "square" : "play"
+            text: root.playing ? T.clock(History.playing.positionMs || 0) : T.clock(root.entry.durationMs)
+            size: "small"
+            onClicked: root.playRequested()
+        }
+        Button { text: T.text.delete_; iconName: "trash-2"; size: "small"; variant: "danger"; onClicked: root.deleteRequested() }
+    }
+}

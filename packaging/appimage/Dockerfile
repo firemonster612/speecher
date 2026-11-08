@@ -40,6 +40,7 @@ RUN apt-get update \
         plasma-integration \
         pulseaudio \
         python3 \
+        libqt6sql6-sqlite \
         qt6-base-dev \
         qt6-base-private-dev \
         qt6-declarative-dev \

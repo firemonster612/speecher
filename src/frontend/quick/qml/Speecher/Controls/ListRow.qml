@@ -40,8 +40,19 @@ Item {
     Accessible.name: title
     Accessible.description: detail
     Accessible.onPressAction: if (clickable) { row.forceActiveFocus(); clicked() }
-    Keys.onReturnPressed: { focusVisible.keyed(); if (clickable) clicked() }
-    Keys.onSpacePressed: { focusVisible.keyed(); if (clickable) clicked() }
+    // With Ctrl, Alt or Meta held, Return and Space are left to the row's
+    // user, such as History's Paste again.
+    readonly property int _commandKeys: Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier
+    Keys.onReturnPressed: event => {
+        if (event.modifiers & _commandKeys) { event.accepted = false; return }
+        focusVisible.keyed()
+        if (clickable) clicked()
+    }
+    Keys.onSpacePressed: event => {
+        if (event.modifiers & _commandKeys) { event.accepted = false; return }
+        focusVisible.keyed()
+        if (clickable) clicked()
+    }
     FocusVisible { id: focusVisible }
 
     Rectangle {

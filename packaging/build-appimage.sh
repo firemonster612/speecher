@@ -266,6 +266,15 @@ if [[ ! -f "$APPDIR_PATH/usr/plugins/imageformats/libqsvg.so" ]]; then
   exit 1
 fi
 copy_plugin_dir xcbglintegrations
+# History's database driver, alone: the other drivers load client libraries
+# Speecher doesn't ship.
+QT_SQL_DRIVER="$("$QMAKE" -query QT_INSTALL_PLUGINS)/sqldrivers/libqsqlite.so"
+if [[ ! -f "$QT_SQL_DRIVER" ]]; then
+  echo "Missing Qt's SQLite driver, which History needs (libqt6sql6-sqlite)" >&2
+  exit 1
+fi
+mkdir -p "$APPDIR_PATH/usr/plugins/sqldrivers"
+cp -aL "$QT_SQL_DRIVER" "$APPDIR_PATH/usr/plugins/sqldrivers/"
 copy_plugin_dir wayland-decoration-client
 copy_plugin_dir wayland-graphics-integration-client
 copy_plugin_dir wayland-shell-integration

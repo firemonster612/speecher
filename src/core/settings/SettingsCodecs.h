@@ -49,7 +49,7 @@ public:
     // An app or type naming a deleted profile reads and saves without it.
     AppsSettings apps() const; void setApps(const AppsSettings &value);
     bool correctionLearningEnabled() const; void setCorrectionLearningEnabled(bool value);
-    bool insightsEnabled() const; void setInsightsEnabled(bool value);
+    HistorySettings historySettings() const; void setHistorySettings(const HistorySettings &value);
     bool refinementEnabled() const; void setRefinementEnabled(bool value);
     // Until one is saved, the order starts with ChatGPT where the Codex app
     // is installed, else Claude where Claude Code is, else ChatGPT.

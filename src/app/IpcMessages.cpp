@@ -28,6 +28,7 @@ constexpr std::pair<IpcCommand, const char *> kCommandNames[] = {
     {IpcCommand::Status, "status"},
     {IpcCommand::WatchStatus, "watchStatus"},
     {IpcCommand::Last, "last"},
+    {IpcCommand::History, "history"},
     {IpcCommand::Providers, "providers"},
     {IpcCommand::AddVocabulary, "addVocabulary"},
     {IpcCommand::Quit, "quit"},
@@ -125,6 +126,13 @@ QByteArray ipcRequestFrame(const IpcRequest &request)
     if (request.microphoneOnly) {
         object.insert(QStringLiteral("microphoneOnly"), true);
     }
+    if (request.command == IpcCommand::History) {
+        const HistorySearch &search = request.history;
+        object.insert(QStringLiteral("historyText"), search.text);
+        object.insert(QStringLiteral("historyKind"), search.kind);
+        object.insert(QStringLiteral("historySince"), search.since.toString(Qt::ISODate));
+        object.insert(QStringLiteral("historyLimit"), search.limit);
+    }
     return frame(object);
 }
 
@@ -174,6 +182,10 @@ std::optional<IpcRequest> ipcRequestFromFrame(const QByteArray &frame, IpcRespon
     request.files = *files;
     request.terms = *terms;
     request.microphoneOnly = object->value(QStringLiteral("microphoneOnly")).toBool();
+    request.history = {object->value(QStringLiteral("historyText")).toString(),
+                       object->value(QStringLiteral("historyKind")).toString(),
+                       QDate::fromString(object->value(QStringLiteral("historySince")).toString(), Qt::ISODate),
+                       object->value(QStringLiteral("historyLimit")).toInt(HistorySearch().limit)};
     return request;
 }
 
@@ -200,6 +212,9 @@ QByteArray ipcResponseFrame(const IpcResponse &response)
     if (response.recording) {
         object.insert(QStringLiteral("recording"), recordingStatusJson(*response.recording));
     }
+    if (!response.history.isEmpty()) {
+        object.insert(QStringLiteral("history"), response.history);
+    }
     return frame(object);
 }
 
@@ -218,6 +233,7 @@ std::optional<IpcResponse> ipcResponseFromFrame(const QByteArray &frame)
     response.spokenLanguage = object->value(QStringLiteral("spokenLanguage")).toString();
     response.text = object->value(QStringLiteral("text")).toString();
     response.skippedTerms = stringList(object->value(QStringLiteral("skippedTerms"))).value_or(QStringList());
+    response.history = object->value(QStringLiteral("history")).toArray();
     if (object->contains(QStringLiteral("recording"))) {
         response.recording = recordingStatusFromJson(object->value(QStringLiteral("recording")).toObject());
     }

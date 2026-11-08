@@ -4,6 +4,8 @@
 #include "core/SettingsStore.h"
 #include "core/TranscriptState.h"
 #include "core/WordPreview.h"
+#include "core/history/HistoryAudioWriter.h"
+#include "core/history/HistoryPolicy.h"
 #include "core/ProviderReadiness.h"
 #include "core/settings/SpokenLanguages.h"
 #include "providers/ProviderRegistry.h"
@@ -12,6 +14,7 @@
 #include <QDebug>
 #include <QTimer>
 
+#include <algorithm>
 #include <utility>
 
 namespace speecher {
@@ -138,6 +141,15 @@ DictationSession::DictationSession(SettingsStore *settings,
             return;
         }
         m_speech->hear(pcm);
+        if (m_historyAudio) {
+            m_historyAudio->write(pcm);
+        }
+    });
+    // Audio no delivery took goes: a cancel, a failure, an empty result.
+    connect(this, &DictationSession::stateChanged, this, [this](DictationState state) {
+        if (state == DictationState::Idle || state == DictationState::Error) {
+            discardHistoryAudio();
+        }
     });
     connect(m_audio, &AudioInput::started, this, &DictationSession::microphoneStarted);
     connect(m_audio, &AudioInput::stopped, this, &DictationSession::microphoneStopped);
@@ -371,6 +383,7 @@ void DictationSession::continueStartupWithTarget(quint64 generation, const Targe
         m_sessionSettings = m_plan.settings;
     }
     m_target.category = m_plan.app.type;
+    openHistoryAudio();
     // Lengths only: the text itself stays out of the log.
     qInfo().noquote() << (m_review.followingUp() ? "target kept for follow-up app=" : "target captured app=")
                              + m_target.applicationId
@@ -1225,21 +1238,17 @@ void DictationSession::finishDelivery(const DeliveryResult &result)
         qInfo() << "delivery result ignored after the session moved on";
         return;
     }
+    const HistoryKeep keep = historyKeepNow();
+    const bool intoPasswordField = m_target.secure;
+    const auto record = [&](HistoryOutcome outcome) {
+        recordHistory(delivery, keep, outcome, m_transcript->text(), intoPasswordField);
+    };
     clearScreenshotContext();
     m_sessionSettings.reset();
     m_target = {};
     if (result.ok) {
         emit transcriptDelivered(delivery.text);
-        // The live setting, not the session snapshot: turning insights off
-        // mid-session must stop this one being recorded.
-        if (m_settings->dictationSnapshot().insightsEnabled) {
-            DictationRecord record{QDateTime::currentDateTime(), m_listeningMs, delivery.words, delivery.appName,
-                                   delivery.profile, delivery.profileName};
-            record.speechProviders = m_providerHistory.speechRan;
-            record.refinementProviders = m_providerHistory.refinementRan;
-            record.applicationId = delivery.applicationId;
-            emit dictationRecorded(record);
-        }
+        record(result.receipt == DeliveryReceipt::Copied ? HistoryOutcome::Copied : HistoryOutcome::Delivered);
         // A role without fallbacks ends as it always has, its failures unnamed.
         ProviderHistory history = m_providerHistory;
         history.issues.removeIf([this](const ProviderAttemptIssue &issue) {
@@ -1266,9 +1275,73 @@ void DictationSession::finishDelivery(const DeliveryResult &result)
         m_completionTimer->start(durationMs);
     } else {
         qWarning().noquote() << "text delivery failed message=" + result.message;
+        // Words that never arrived are what a person most wants to find again.
+        record(HistoryOutcome::Undelivered);
         setState(DictationState::Error,
                  m_speechWarning.isEmpty() ? result.message : result.message + popupMessageSeparator() + m_speechWarning);
     }
+}
+
+HistoryKeep DictationSession::historyKeepNow() const
+{
+    if (!m_sessionSettings) {
+        return HistoryKeep::Nothing;
+    }
+    // The live setting too: lowering it mid-session applies to this one.
+    return std::min(historyKeep(m_sessionSettings->history, m_plan.app, m_target),
+                    m_settings->dictationSnapshot().history.keeps);
+}
+
+void DictationSession::setHistoryAudioFolder(const QString &folder)
+{
+    m_historyAudioFolder = folder;
+}
+
+void DictationSession::openHistoryAudio()
+{
+    discardHistoryAudio();
+    if (!m_historyAudioFolder.isEmpty() && historyKeepNow() == HistoryKeep::Audio) {
+        m_historyAudio = new HistoryAudioWriter(m_historyAudioFolder, this);
+    }
+}
+
+void DictationSession::discardHistoryAudio()
+{
+    if (m_historyAudio) {
+        std::exchange(m_historyAudio, nullptr)->discard();
+    }
+}
+
+void DictationSession::recordHistory(const AwaitedDelivery &delivery, HistoryKeep keep, HistoryOutcome outcome,
+                                     const QString &raw, bool intoPasswordField)
+{
+    HistoryEntry entry;
+    if (keep == HistoryKeep::Audio && m_historyAudio) {
+        entry.audioPath = std::exchange(m_historyAudio, nullptr)->finish();
+    }
+    discardHistoryAudio();
+    entry.outcome = outcome;
+    entry.kept = keep;
+    if (keep == HistoryKeep::Nothing) {
+        emit dictationFinished(entry, intoPasswordField);
+        return;
+    }
+    entry.kind = m_transcriptPipeline.editsSelection ? HistoryKind::Edit : HistoryKind::Dictation;
+    entry.stats = {QDateTime::currentDateTime(), m_listeningMs, delivery.words, delivery.appName,
+                   delivery.profile, delivery.profileName};
+    entry.stats.speechProviders = m_providerHistory.speechRan;
+    entry.stats.refinementProviders = m_providerHistory.refinementRan;
+    entry.stats.applicationId = delivery.applicationId;
+    if (keep >= HistoryKeep::Text) {
+        // A selection edit's raw text is the instruction spoken.
+        entry.text = delivery.text;
+        entry.rawText = raw;
+    }
+    // Text and audio, but the encoder wrote nothing: the entry keeps text.
+    if (keep == HistoryKeep::Audio && entry.audioPath.isEmpty()) {
+        entry.kept = HistoryKeep::Text;
+    }
+    emit dictationFinished(entry, intoPasswordField);
 }
 
 void DictationSession::resumePausedMedia()

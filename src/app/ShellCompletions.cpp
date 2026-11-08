@@ -80,6 +80,8 @@ QList<CompletedCommand> documentedCommands()
         {QStringLiteral("cancel")},
         {QStringLiteral("status"), {QStringLiteral("--json"), QStringLiteral("--watch")}},
         {QStringLiteral("last")},
+        {QStringLiteral("history"),
+         {QStringLiteral("--kind"), QStringLiteral("--since"), QStringLiteral("--limit"), QStringLiteral("--json")}},
         {QStringLiteral("vocabulary add")},
         {QStringLiteral("settings")},
         {QStringLiteral("setup")},

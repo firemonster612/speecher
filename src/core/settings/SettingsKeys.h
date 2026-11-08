@@ -82,6 +82,7 @@ inline const QString GlobalShortcut = QStringLiteral("shortcuts/toggleDictation"
 // The optional Global Shortcuts that cancel and pause dictation, kept the same way.
 inline const QString CancelShortcut = QStringLiteral("shortcuts/cancelDictation");
 inline const QString PauseShortcut = QStringLiteral("shortcuts/pauseDictation");
+inline const QString PasteAgainShortcut = QStringLiteral("shortcuts/pasteAgain");
 inline const QString ShortcutActivationMode = QStringLiteral("shortcuts/activationMode");
 inline const QString CorrectionLearningEnabled = QStringLiteral("vocabulary/correctionLearningEnabled");
 // Retired, as VocabularyEntries.
@@ -89,7 +90,13 @@ inline const QString LearnedCorrections = QStringLiteral("vocabulary/learnedCorr
 // Every Vocabulary Entry, as JSON.
 inline const QString Vocabulary = QStringLiteral("vocabulary/entries");
 inline const QString CorrectionEvidence = QStringLiteral("vocabulary/correctionEvidence");
+// Retired: migrateHistory turned it into HistoryKeeps, and leaves it for a
+// release so a downgrade still reads it.
 inline const QString InsightsEnabled = QStringLiteral("insights/enabled");
+// What Speecher Keeps (historyKeepName), and how many days text and audio stay.
+inline const QString HistoryKeeps = QStringLiteral("history/keeps");
+inline const QString HistoryTextDays = QStringLiteral("history/textDays");
+inline const QString HistoryAudioDays = QStringLiteral("history/audioDays");
 // The refinement Service Order, as JSON, and Clean up my words.
 inline const QString RefinementServices = QStringLiteral("refinement/services");
 inline const QString RefinementEnabled = QStringLiteral("refinement/enabled");
@@ -176,6 +183,7 @@ inline const QString DeliveryStepsMigrationVersion = QStringLiteral("migration/d
 inline const QString AppsMigrationVersion = QStringLiteral("migration/appsVersion");
 inline const QString ServiceOrderMigrationVersion = QStringLiteral("migration/serviceOrderVersion");
 inline const QString VocabularyMigrationVersion = QStringLiteral("migration/vocabularyVersion");
+inline const QString HistoryMigrationVersion = QStringLiteral("migration/historyVersion");
 inline const QString ClaudeCredentialsPath = QStringLiteral("claude/credentialsPath");
 inline const QString ClaudeEndpointBase = QStringLiteral("claude/endpointBase");
 inline const QString ClaudeVoicePath = QStringLiteral("claude/voicePath");

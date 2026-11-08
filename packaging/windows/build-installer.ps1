@@ -100,6 +100,12 @@ foreach ($Module in Get-Content (Join-Path $RootDir "packaging\qt-qml-modules.tx
 if (-not (Test-Path (Join-Path $AppDir "networkinformation\qnetworklistmanager.dll"))) {
     throw "windeployqt did not deploy Qt's network reachability plugin"
 }
+# History's database driver stays; the other Qt SQL drivers windeployqt
+# brings load client libraries Speecher doesn't ship.
+if (-not (Test-Path (Join-Path $AppDir "sqldrivers\qsqlite.dll"))) {
+    throw "windeployqt did not deploy Qt's SQLite driver, which History needs"
+}
+Get-ChildItem (Join-Path $AppDir "sqldrivers") -Filter *.dll | Where-Object { $_.Name -ne "qsqlite.dll" } | Remove-Item
 if (-not (Test-Path (Join-Path $AppDir "imageformats\qsvg.dll"))) {
     throw "windeployqt did not deploy Qt's SVG image plugin, which draws the language flags"
 }

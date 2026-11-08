@@ -18,7 +18,7 @@
 
 #include "app/ApplicationController.h"
 #include "core/ProviderChain.h"
-#include "core/InsightsLog.h"
+#include "core/history/HistoryStore.h"
 #include "core/LocalModelCatalog.h"
 #include "core/PasteMethod.h"
 #include "core/SecretStore.h"
@@ -193,7 +193,9 @@ private slots:
         removedSecrets(store.secrets());
         store.raw().clear();
         // Only what these tests wrote: other test processes share the folder.
-        for (const QString &file : {QStringLiteral("insights.jsonl"), QStringLiteral("sentinel.txt")}) {
+        for (const QString &file :
+             {QStringLiteral("insights.jsonl"), QStringLiteral("insights.jsonl.imported"), QStringLiteral("sentinel.txt"),
+              QStringLiteral("history.sqlite3"), QStringLiteral("history.sqlite3-wal"), QStringLiteral("history.sqlite3-shm")}) {
             QFile::remove(dataFolder() + QLatin1Char('/') + file);
         }
         for (const QString &id : {QStringLiteral("moonshine-small"), QStringLiteral("moonshine-medium")}) {
@@ -332,6 +334,37 @@ private slots:
         checkFields(*controller, expected);
     }
 
+    void whatSpeecherKeepsFollowsKeepInsights_data()
+    {
+        QTest::addColumn<QVariant>("insights");
+        QTest::addColumn<bool>("setupCompleted");
+        QTest::addColumn<HistoryKeep>("keeps");
+        QTest::newRow("insights on") << QVariant(true) << true << HistoryKeep::Stats;
+        QTest::newRow("insights off") << QVariant(false) << true << HistoryKeep::Nothing;
+        QTest::newRow("never set, after setup") << QVariant() << true << HistoryKeep::Stats;
+        QTest::newRow("new install") << QVariant() << false << HistorySettings().keeps;
+    }
+
+    // An upgrade never starts keeping text behind Keep insights' promise of
+    // "never text or audio"; a new install keeps the default.
+    void whatSpeecherKeepsFollowsKeepInsights()
+    {
+        QFETCH(QVariant, insights);
+        QFETCH(bool, setupCompleted);
+        QFETCH(HistoryKeep, keeps);
+        {
+            SettingsStore store;
+            store.raw().clear();
+            if (insights.isValid()) {
+                store.raw().setValue(QStringLiteral("insights/enabled"), insights);
+            }
+            store.raw().setValue(QStringLiteral("app/setupCompleted"), setupCompleted);
+            store.raw().sync();
+        }
+        migrateSavedSettings();
+        QCOMPARE(SettingsStore().snapshot().history.keeps, keeps);
+    }
+
     void nativeSettingsHistoryAndModelsSurviveTheUpdate()
     {
         loadSettingsFile(QStringLiteral("native.conf"));
@@ -348,7 +381,7 @@ private slots:
         QVERIFY(writeFile(dataFolder() + QStringLiteral("/sentinel.txt"), "kept"));
 
         const auto checkFiles = [&](ApplicationController &controller) {
-            const QList<DictationRecord> &records = controller.insightsLog()->records();
+            const QList<DictationRecord> &records = controller.history()->records();
             QCOMPARE(records.size(), 3);
             QCOMPARE(records[0].appName, QStringLiteral("Kate"));
             QCOMPARE(records[0].profile, QStringLiteral("work"));
@@ -358,7 +391,9 @@ private slots:
             QCOMPARE(records[1].speechProviders, QStringList{QStringLiteral("local")});
             QCOMPARE(records[1].refinementProviders, QStringList{QStringLiteral("anthropic")});
             QCOMPARE(records[2].audioMs, 2100);
-            QCOMPARE(readAll(dataFolder() + QStringLiteral("/insights.jsonl")), history);
+            // Imported once into History, and kept under another name.
+            QVERIFY(!QFile::exists(dataFolder() + QStringLiteral("/insights.jsonl")));
+            QCOMPARE(readAll(dataFolder() + QStringLiteral("/insights.jsonl.imported")), history);
             QVERIFY(controller.localModelStore()->isDownloaded(*small));
             QCOMPARE(readAll(models + medium->fileName + QStringLiteral(".part")), partial);
             QCOMPARE(readAll(dataFolder() + QStringLiteral("/sentinel.txt")), QByteArray("kept"));
@@ -552,7 +587,8 @@ private:
         QCOMPARE(settings.vocabulary[0].profiles, QStringList{customProfile});
         QVERIFY(!settings.vocabulary[1].keyTerm);
 
-        QVERIFY(settings.insightsEnabled);
+        // Insights were on, and the upgrade keeps their promise: stats only.
+        QCOMPARE(settings.history.keeps, HistoryKeep::Stats);
         // A Direct insertion default turns Press off, and restoring the
         // clipboard turns Keep off.
         QCOMPARE(settings.output.steps, (DeliverySteps{.insert = true, .press = false, .keep = false}));

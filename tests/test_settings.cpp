@@ -1601,7 +1601,7 @@ private slots:
                             replacement,
                             learned};
             s.correctionLearningEnabled = false;
-            s.insightsEnabled = false;
+            s.history = {HistoryKeep::Audio, 30, -1};
             edited = s;
             return true;
         }));
@@ -1623,7 +1623,7 @@ private slots:
         QCOMPARE(saved.shortcutActivationMode, edited.shortcutActivationMode);
         QCOMPARE(saved.vocabulary, edited.vocabulary);
         QCOMPARE(saved.correctionLearningEnabled, edited.correctionLearningEnabled);
-        QCOMPARE(saved.insightsEnabled, edited.insightsEnabled);
+        QCOMPARE(saved.history, edited.history);
         settings.raw().clear();
     }
 

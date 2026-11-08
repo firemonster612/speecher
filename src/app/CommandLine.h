@@ -61,6 +61,8 @@ struct CommandLineDecision {
     // default file, and --mic-only.
     QString recordPath;
     bool recordMicrophoneOnly = false;
+    // RunCli's history: what to search for.
+    HistorySearch historySearch;
 };
 
 // Decides what the process is for, before any GUI type is constructed, so that

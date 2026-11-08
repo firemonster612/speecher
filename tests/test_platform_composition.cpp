@@ -9,6 +9,7 @@
 #include "app/LinuxComposition.h"
 #endif
 #include "app/ApplicationController.h"
+#include "core/history/HistoryStore.h"
 #include "app/CommandLine.h"
 #include "app/CompositionSockets.h"
 #include "app/IpcCommandHandler.h"
@@ -365,9 +366,10 @@ public:
                                                      QObject *parent) const override
     {
         auto *created = new FakeGlobalShortcutBinder(parent);
-        (role == GlobalShortcutRole::Cancel ? cancelBinder
-         : role == GlobalShortcutRole::Pause ? pauseBinder
-                                              : binder) = created;
+        (role == GlobalShortcutRole::Cancel       ? cancelBinder
+         : role == GlobalShortcutRole::Pause      ? pauseBinder
+         : role == GlobalShortcutRole::PasteAgain ? pasteAgainBinder
+                                                  : binder) = created;
         return created;
     }
 
@@ -426,6 +428,7 @@ public:
     mutable FakeGlobalShortcutBinder *binder = nullptr;
     mutable FakeGlobalShortcutBinder *cancelBinder = nullptr;
     mutable FakeGlobalShortcutBinder *pauseBinder = nullptr;
+    mutable FakeGlobalShortcutBinder *pasteAgainBinder = nullptr;
     mutable AccessibilityState accessibility{true, true, false};
     mutable std::function<void()> accessibilityRefresh;
 
@@ -2106,6 +2109,8 @@ private slots:
             {QStringLiteral("cancel"), {}},
             {QStringLiteral("status"), {QStringLiteral("--json"), QStringLiteral("--watch")}},
             {QStringLiteral("last"), {}},
+            {QStringLiteral("history"),
+             {QStringLiteral("--kind"), QStringLiteral("--since"), QStringLiteral("--limit"), QStringLiteral("--json")}},
             {QStringLiteral("vocabulary add"), {}},
             {QStringLiteral("settings"), {}},
             {QStringLiteral("setup"), {}},
@@ -3447,6 +3452,72 @@ private slots:
             {IpcCommand::Transcribe, {}, {QStringLiteral("/a.wav"), QStringLiteral("/b.mp3")}}, nullptr);
 
         QCOMPARE(frontEnd.calls, QStringList({QStringLiteral("showTranscribeFiles /a.wav /b.mp3")}));
+    }
+
+    // speecher history reads its words and options; a wrong one is a usage
+    // mistake.
+    void historyReadsItsSearch()
+    {
+        const auto parse = [](const QStringList &arguments) {
+            return parseCommandLine(QStringList{QStringLiteral("speecher"), QStringLiteral("history")} + arguments, {});
+        };
+        const CommandLineDecision search = parse({QStringLiteral("retry"), QStringLiteral("--kind"),
+                                                  QStringLiteral("file"), QStringLiteral("loop"),
+                                                  QStringLiteral("--since"), QStringLiteral("2026-11-01"),
+                                                  QStringLiteral("--limit"), QStringLiteral("5"),
+                                                  QStringLiteral("--json"), QStringLiteral("--"),
+                                                  QStringLiteral("--literal")});
+        QCOMPARE(search.mode, LaunchMode::RunCli);
+        QCOMPARE(search.ipcCommand, IpcCommand::History);
+        QVERIFY(search.json);
+        QCOMPARE(search.historySearch, (HistorySearch{QStringLiteral("retry loop --literal"), QStringLiteral("file"),
+                                                      QDate(2026, 11, 1), 5}));
+        QCOMPARE(parse({}).historySearch, HistorySearch{});
+        for (const QStringList &wrong : {QStringList{QStringLiteral("--kind"), QStringLiteral("call")},
+                                         QStringList{QStringLiteral("--since"), QStringLiteral("yesterday")},
+                                         QStringList{QStringLiteral("--limit"), QStringLiteral("0")},
+                                         QStringList{QStringLiteral("--delete")}}) {
+            QCOMPARE(parse(wrong).exitCode, 2);
+        }
+    }
+
+    // The running app answers history from History: what holds every word,
+    // newest first, of the kind asked.
+    void historyCommandSearchesHistory()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        controller.history()->clear({}, {}, true);
+        const auto add = [&controller](HistoryKind kind, const QString &text, int minutesAgo) {
+            HistoryEntry entry;
+            entry.kind = kind;
+            entry.stats.finishedAt = QDateTime::currentDateTime().addSecs(-60 * minutesAgo);
+            entry.stats.appName = QStringLiteral("Slack");
+            entry.kept = HistoryKeep::Text;
+            entry.text = text;
+            controller.history()->add(entry);
+        };
+        add(HistoryKind::Dictation, QStringLiteral("the retry loop again"), 3);
+        add(HistoryKind::File, QStringLiteral("a retry in the interview"), 2);
+        add(HistoryKind::Dictation, QStringLiteral("lunch at noon"), 1);
+
+        QLocalServer server;
+        QVERIFY(server.listen(QStringLiteral("spchr-h-%1").arg(QUuid::createUuid().toString(QUuid::Id128).left(12))));
+        QLocalSocket client;
+        client.connectToServer(server.fullServerName());
+        QVERIFY(server.waitForNewConnection(2000));
+        IpcRequest request{IpcCommand::History};
+        request.history.text = QStringLiteral("retry");
+        request.history.kind = QStringLiteral("dictation");
+        controller.ipcCommands()->handle(request, server.nextPendingConnection());
+        QVERIFY(client.waitForReadyRead(2000));
+
+        const QJsonArray found = QJsonDocument::fromJson(client.readLine()).object()[u"history"].toArray();
+        QCOMPARE(found.size(), 1);
+        QCOMPARE(found.first()[u"text"].toString(), QStringLiteral("the retry loop again"));
+        QCOMPARE(found.first()[u"app"].toString(), QStringLiteral("Slack"));
+        QCOMPARE(found.first()[u"kind"].toString(), QStringLiteral("dictation"));
+        controller.history()->clear({}, {}, true);
     }
 
     // The running app answers providers with the sign-ins it has seen.

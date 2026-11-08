@@ -13,6 +13,7 @@ import "schema/pasting.js" as Pasting
 import "schema/services.js" as Services
 import "schema/models.js" as Models
 import "schema/general.js" as General
+import "schema/history.js" as History
 import "schema/updates.js" as Updates
 
 // The settings layout and its wording, which belong to the UI: pages, and
@@ -26,7 +27,8 @@ import "schema/updates.js" as Updates
 // language for the Spoken language's LanguageSelect) for choices, min/max/step/unit for sliders, placeholder for text, actionLabel
 // and actionIcon for actions, keywords for search, and enabledWhen
 // { id, equals } to grey a row out until another row has a value, and
-// hiddenWhen { id, equals } to fold it away while another row has a value.
+// hiddenWhen { id, equals } to fold it away while another row has a value
+// (equals is one value, or a list of them).
 // usableWhen names the condition a row needs to be used now (blur,
 // accessibility, automaticDownloads, screenshotReader; Usable in
 // Speecher.App holds them): without it the row is off and greyed on its page
@@ -45,7 +47,7 @@ QtObject {
     readonly property var suggestions: ["globalShortcut", "shortcutBehavior", "showLiveText", "pauseMedia"]
     readonly property var rows: [].concat(Shortcuts.rows, Microphone.rows, Speech.rows, Feedback.rows,
                                           Refinement.rows, Profiles.rows, Vocabulary.rows, Apps.rows, Pasting.rows,
-                                          Services.rows, Models.rows, General.rows, Updates.rows)
+                                          Services.rows, Models.rows, General.rows, History.rows, Updates.rows)
     // The Apps page's wording beyond its rows: the App Types, the Pasting
     // choices and the editor's and picker's words (schema/apps.js).
     readonly property var apps: Apps
@@ -95,6 +97,12 @@ QtObject {
     // values Settings holds.
     function rowEnabled(spec, values) {
         return !spec.enabledWhen || values[spec.enabledWhen.id] === spec.enabledWhen.equals
+    }
+    // Whether hiddenWhen folds the row away now.
+    function rowHidden(spec, values) {
+        const when = spec.hiddenWhen
+        if (!when) return false
+        return Array.isArray(when.equals) ? when.equals.indexOf(values[when.id]) >= 0 : values[when.id] === when.equals
     }
     // The row's options this computer has.
     function options(spec, has) {

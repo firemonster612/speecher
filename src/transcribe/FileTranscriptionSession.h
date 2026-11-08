@@ -111,6 +111,8 @@ public:
     // provider that fails before any reached it hands all of it to the next.
     // False when a batch is already running.
     bool startListening(AudioInput *input, const RunOverrides &overrides);
+    // What the running or last batch runs with.
+    const DictationPlan &plan() const;
     // Stops the microphone; what it heard is still transcribed and refined.
     void finishListening();
     // Stops the current file, skips the rest and still emits batchFinished.

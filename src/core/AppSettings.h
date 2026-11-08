@@ -3,6 +3,7 @@
 #include "core/DeliverySteps.h"
 #include "core/OutputFormat.h"
 #include "core/Apps.h"
+#include "core/history/HistoryPolicy.h"
 #include "core/ProviderTable.h"
 #include "core/ServiceOrder.h"
 #include "core/Target.h"
@@ -480,7 +481,7 @@ struct AppSettings {
     ShortcutActivationMode shortcutActivationMode = ShortcutActivationMode::Hybrid;
     QList<VocabularyEntry> vocabulary;
     bool correctionLearningEnabled = true;
-    bool insightsEnabled = true;
+    HistorySettings history;
 };
 
 } // namespace speecher

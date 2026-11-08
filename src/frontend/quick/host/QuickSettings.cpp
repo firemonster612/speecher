@@ -231,7 +231,15 @@ const SettingRow settingRows[] = {
     // General shows it only where Speecher can start at login
     // (System.canLaunchAtLogin).
     FIELD_ROW("launchAtLogin", launchAtLogin),
-    FIELD_ROW("insightsEnabled", insightsEnabled),
+    // What Speecher Keeps, by historyKeepName; the days as option ids.
+    {"historyKeeps", [](const AppSettings &s) { return QVariant(historyKeepName(s.history.keeps)); },
+     [](AppSettings &s, const QVariant &v) {
+         s.history.keeps = historyKeepFromName(v.toString()).value_or(s.history.keeps);
+     }},
+    {"historyTextDays", [](const AppSettings &s) { return QVariant(QString::number(s.history.textDays)); },
+     [](AppSettings &s, const QVariant &v) { s.history.textDays = qMax(0, v.toInt()); }},
+    {"historyAudioDays", [](const AppSettings &s) { return QVariant(QString::number(s.history.audioDays)); },
+     [](AppSettings &s, const QVariant &v) { s.history.audioDays = qMax(-1, v.toInt()); }},
 
     {"updateChannel", [](const AppSettings &s) { return QVariant(updateChannelName(s.updates.channel)); },
      [](AppSettings &s, const QVariant &v) { s.updates.channel = updateChannelFromName(v.toString()); }},
@@ -294,6 +302,7 @@ const struct ShortcutRow {
     {"globalShortcut", GlobalShortcutRole::Dictation},
     {"cancelShortcut", GlobalShortcutRole::Cancel},
     {"pauseShortcut", GlobalShortcutRole::Pause},
+    {"pasteAgainShortcut", GlobalShortcutRole::PasteAgain},
 };
 
 const QString runSetupAction = QStringLiteral("runSetup");

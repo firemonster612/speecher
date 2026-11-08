@@ -10,7 +10,10 @@
 
 var pages = [
     { id: "home", title: "Home", icon: "house", file: "HomePage.qml",
-      keywords: "insights stats streak words history recent" },
+      keywords: "insights stats streak words recent" },
+    { id: "history", parent: "home", title: "History", icon: "history", file: "HistoryPage.qml",
+      subtitle: "Everything you dictated or transcribed on this computer, newest first.",
+      keywords: "past dictations transcripts search find copy paste again replay audio log" },
     { id: "transcribe", title: "Transcribe files", icon: "file-audio", file: "TranscribePage.qml",
       subtitle: "Turn meetings, interviews and voice memos into text, cleaned up the way your dictation is.",
       keywords: "audio file recording meeting podcast export" },
@@ -58,7 +61,7 @@ var pages = [
 
     { id: "general", title: "General", icon: "settings-2", file: "GeneralPage.qml",
       subtitle: "How Speecher starts, what it keeps, moving it to your phone or off this computer, and the setup assistant.",
-      keywords: "login startup phone insights history setup assistant uninstall remove" },
+      keywords: "login startup phone insights history privacy setup assistant uninstall remove" },
     { id: "appearance", parent: "general", title: "Appearance", icon: "palette", file: "AppearancePage.qml",
       subtitle: "How Speecher's windows look.",
       keywords: "theme dark light colors color scheme layout split framed translucent blur" },

@@ -2,6 +2,7 @@
 
 #include "core/PasteMethod.h"
 #include "core/Target.h"
+#include "core/history/HistoryEntry.h"
 
 #include <QList>
 #include <QString>
@@ -55,6 +56,9 @@ struct AppEntry {
     // StandardPaste is an explicit "use the steps", which wins over the App
     // Type's choice; unset follows it.
     std::optional<PasteMethod> pasting;
+    // What History keeps of its dictations: Stats or Nothing, which can only
+    // lower What Speecher Keeps. Unset follows its App Type.
+    std::optional<HistoryKeep> history;
 
     bool operator==(const AppEntry &other) const = default;
 };
@@ -67,6 +71,9 @@ struct AppTypeSettings {
     std::optional<QString> writingProfile;
     // Unset: the steps as they are. Never StandardPaste.
     std::optional<PasteMethod> pasting;
+    // As AppEntry::history. Unset: Other apps' (for Other apps itself, What
+    // Speecher Keeps).
+    std::optional<HistoryKeep> history;
 
     bool operator==(const AppTypeSettings &other) const = default;
 };
@@ -112,6 +119,9 @@ struct AppResolution {
     // Unset: the steps as they are, which nothing narrowed.
     std::optional<PasteMethod> pasting;
     AppLayer pastingFrom = AppLayer::Fallback;
+    // Unset: nothing lowers What Speecher Keeps for this app.
+    std::optional<HistoryKeep> history;
+    AppLayer historyFrom = AppLayer::Fallback;
 
     bool operator==(const AppResolution &other) const = default;
 };
@@ -127,6 +137,7 @@ struct AppResolution {
 //   apps'.
 //   Pasting: an entry's, then Terminals' for anything running in a terminal,
 //   then the type's.
+//   History: an entry's, then the type's, then Other apps'.
 // The Target's own category is ignored; this decides it.
 AppResolution resolveApp(const Target &target, const AppsSettings &apps);
 bool appMatches(const AppMatch &match, const Target &target);

@@ -163,6 +163,7 @@ QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, TrayIcon *tray, 
     , m_phone(controller)
     , m_models(controller)
     , m_insights(controller)
+    , m_history(controller)
     , m_accounts(controller)
     , m_library(controller)
     , m_apps(controller)

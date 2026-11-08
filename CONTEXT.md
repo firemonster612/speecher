@@ -25,7 +25,7 @@ The final text after optional language-model cleanup.
 _Avoid_: AI transcript, formatted transcript
 
 **Target**:
-The desktop application and editable control selected when a Dictation Session starts.
+The desktop application and editable control selected when a Dictation Session starts. A Target that is a password field keeps its text out of History and Paste Again.
 _Avoid_: Destination, focused app
 
 **Writing Profile**:
@@ -67,6 +67,26 @@ _Avoid_: Word, dictionary word, term (for the entry), binding, snippet (as a kin
 **Learned Correction**:
 A replacement Speecher added to the Vocabulary itself, after the person fixed the same words the same way shortly after pasting. It is limited to the app it was learned in until the same fix is seen in another, keeps how many edits showed it and how sure Speecher is, and can be turned off, edited or widened like any other entry.
 _Avoid_: Training sample, correction history
+
+**Insights**:
+Home's summary of History's delivered dictations: counts, streaks, apps and profiles. Kept while What Speecher Keeps is Stats or above.
+_Avoid_: Insights history, insights log
+
+**History**:
+Everything Speecher kept on this computer of your Dictation Sessions and file transcriptions, newest first and searchable, on the History page under Home and through `speecher history`. Each History Entry keeps what What Speecher Keeps allowed when it was made, and Home's stats are a summary of it.
+_Avoid_: Log, archive, transcript list, insights log
+
+**History Entry**:
+One dictation, selection edit or transcribed file in History: its time, length, words, app and profile, and, when kept, its Refined and Raw Transcripts and its audio. A delete waits a moment for Undo, then is gone for good.
+_Avoid_: Record, item, transcript (alone)
+
+**What Speecher Keeps**:
+How much of each dictation History holds: Nothing, Stats, Text, or Text and audio. A new install keeps Text; an upgrade from Keep insights keeps Stats, or Nothing where insights were off. An App or App Type may lower it, never raise it, and a password field always keeps Stats. Text and audio are deleted after their days (90 and 7 by default), and the stats stay; a cancelled dictation keeps nothing.
+_Avoid_: History mode, logging level, privacy level, Keep insights
+
+**Paste Again**:
+Delivering the last dictation's text once more into the app in front, through the Delivery Steps and that app's Pasting choice, from History, the tray or its optional Global Shortcut. It takes History's newest dictation while History keeps text, else the last one this run, and never one into a password field.
+_Avoid_: Re-paste, repeat
 
 **Global Shortcut**:
 The system-wide key combination that toggles a Dictation Session from anywhere on the desktop. While a selection edit waits for review, it dictates a follow-up instruction that changes the edit instead.

@@ -6,6 +6,7 @@
 
 #include <QSemaphore>
 #include <QElapsedTimer>
+#include <QTemporaryDir>
 #include <QTimer>
 
 #include <utility>
@@ -861,24 +862,39 @@ private slots:
         QCOMPARE(delivery.lastTarget.applicationId, QStringLiteral("org.kde.konsole"));
     }
 
-    void deliveredDictationIsRecordedOnlyWhenInsightsAreOn_data()
+    void aFinishedDictationKeepsWhatHistoryAllows_data()
     {
-        QTest::addColumn<bool>("enabled");
+        QTest::addColumn<HistoryKeep>("keeps");
         QTest::addColumn<bool>("delivered");
-        QTest::newRow("on") << true << true;
-        QTest::newRow("off") << false << true;
-        QTest::newRow("delivery failed") << true << false;
+        QTest::addColumn<bool>("secure");
+        QTest::addColumn<bool>("entered");
+        QTest::addColumn<HistoryOutcome>("outcome");
+        QTest::addColumn<HistoryKeep>("kept");
+        QTest::newRow("text") << HistoryKeep::Text << true << false << true << HistoryOutcome::Delivered << HistoryKeep::Text;
+        QTest::newRow("stats") << HistoryKeep::Stats << true << false << true << HistoryOutcome::Delivered << HistoryKeep::Stats;
+        QTest::newRow("nothing") << HistoryKeep::Nothing << true << false << true << HistoryOutcome::Delivered
+                                 << HistoryKeep::Nothing;
+        QTest::newRow("delivery failed") << HistoryKeep::Text << false << false << true << HistoryOutcome::Undelivered
+                                         << HistoryKeep::Text;
+        QTest::newRow("password field") << HistoryKeep::Audio << true << true << true << HistoryOutcome::Delivered
+                                        << HistoryKeep::Stats;
     }
 
-    void deliveredDictationIsRecordedOnlyWhenInsightsAreOn()
+    // Delivered or not, a dictation becomes a History entry holding what
+    // What Speecher Keeps allows, and a password field's only its stats.
+    void aFinishedDictationKeepsWhatHistoryAllows()
     {
-        QFETCH(bool, enabled);
+        QFETCH(HistoryKeep, keeps);
         QFETCH(bool, delivered);
+        QFETCH(bool, secure);
+        QFETCH(bool, entered);
+        QFETCH(HistoryOutcome, outcome);
+        QFETCH(HistoryKeep, kept);
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([&](AppSettings &draft) {
             draft.refinement.enabled = false;
-            draft.insightsEnabled = enabled;
+            draft.history.keeps = keeps;
             return true;
         });
 
@@ -888,6 +904,7 @@ private slots:
         targetProvider->target.applicationName = QStringLiteral("Kate");
         targetProvider->target.processName = QStringLiteral("kate");
         targetProvider->target.applicationId = QStringLiteral("org.kde.kate");
+        targetProvider->target.secure = secure;
         auto delivery = std::make_unique<FakeDelivery>();
         if (!delivered) {
             delivery->result = {false, DeliveryReceipt::None, false, QStringLiteral("No target")};
@@ -897,7 +914,7 @@ private slots:
         registerFakeSpeechProvider(registry, &speech);
         DictationSession session(
             &settings, audio.get(), media.get(), targetProvider.get(), delivery.get(), &registry);
-        QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
+        QSignalSpy finished(&session, &DictationSession::dictationFinished);
 
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
@@ -907,14 +924,79 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
         QTRY_COMPARE(delivery->answers, 1);
 
-        QCOMPARE(recorded.count(), enabled && delivered ? 1 : 0);
-        if (!recorded.isEmpty()) {
-            const auto record = recorded.first().first().value<DictationRecord>();
-            QCOMPARE(record.words, 3);
-            QCOMPARE(record.appName, QStringLiteral("Kate"));
-            QCOMPARE(record.applicationId, QStringLiteral("org.kde.kate"));
-            QVERIFY(record.audioMs > 0);
+        QCOMPARE(finished.count(), entered ? 1 : 0);
+        if (!entered) {
+            return;
         }
+        const auto entry = finished.first().first().value<HistoryEntry>();
+        QCOMPARE(finished.first().at(1).toBool(), secure);
+        QCOMPARE(entry.outcome, outcome);
+        QCOMPARE(entry.kept, kept);
+        // Nothing: only that it finished, for Paste Again.
+        if (kept == HistoryKeep::Nothing) {
+            QVERIFY(!entry.text);
+            QCOMPARE(entry.stats.words, 0);
+            return;
+        }
+        QCOMPARE(entry.kind, HistoryKind::Dictation);
+        QCOMPARE(entry.stats.words, 3);
+        QCOMPARE(entry.stats.appName, QStringLiteral("Kate"));
+        QCOMPARE(entry.stats.applicationId, QStringLiteral("org.kde.kate"));
+        QVERIFY(entry.stats.audioMs > 0);
+        QCOMPARE(entry.text.has_value(), kept >= HistoryKeep::Text);
+        if (entry.text) {
+            QCOMPARE(*entry.text, QStringLiteral("Hello, dear world."));
+            QCOMPARE(entry.rawText, entry.text);
+        }
+    }
+
+    // With Text and audio, what the microphone heard is kept beside the
+    // entry; a cancelled dictation leaves no audio behind.
+    void audioIsKeptOnlyForADeliveredDictation()
+    {
+        QTemporaryDir folder;
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.edit([](AppSettings &draft) {
+            draft.refinement.enabled = false;
+            draft.history.keeps = HistoryKeep::Audio;
+            return true;
+        });
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        session.setHistoryAudioFolder(folder.path());
+        QSignalSpy finished(&session, &DictationSession::dictationFinished);
+        const auto hear = [&audio] {
+            for (int i = 0; i < 5; ++i) {
+                emit audio->audioChunk(QByteArray(3200, '\0'));
+            }
+        };
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        hear();
+        session.cancel();
+        QTRY_COMPARE(int(session.state()), int(DictationState::Idle));
+        QTRY_VERIFY(QDir(folder.path()).entryList(QDir::Files).isEmpty());
+        QCOMPARE(finished.count(), 0);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        hear();
+        speech->emitFinalText(QStringLiteral("Keep my voice."));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QTRY_COMPARE(finished.count(), 1);
+        const auto entry = finished.first().first().value<HistoryEntry>();
+        QCOMPARE(entry.kept, HistoryKeep::Audio);
+        QVERIFY(!entry.audioPath.isEmpty());
+        QTRY_VERIFY_WITH_TIMEOUT(QFile::exists(QDir(folder.path()).filePath(entry.audioPath)), 10000);
+        settings.raw().clear();
     }
 
     // The saved language is one Claude Voice lacks: once the target settles
@@ -974,7 +1056,7 @@ private slots:
         registerFakeSpeechProvider(registry, &speech);
         DictationSession session(
             &settings, audio.get(), media.get(), targetProvider.get(), delivery.get(), &registry);
-        QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
+        QSignalSpy recorded(&session, &DictationSession::dictationFinished);
 
         session.startListeningWith({.writingProfile = QStringLiteral("custom_stand_up")});
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
@@ -988,7 +1070,7 @@ private slots:
         QTRY_COMPARE(delivery->answers, 1);
 
         QCOMPARE(recorded.count(), 1);
-        const auto record = recorded.first().first().value<DictationRecord>();
+        const auto record = recorded.first().first().value<HistoryEntry>().stats;
         QCOMPARE(record.profile, QStringLiteral("custom_stand_up"));
         QCOMPARE(record.profileName, QStringLiteral("Stand up"));
     }
@@ -1001,7 +1083,7 @@ private slots:
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
             draft.refinement.services.order = {QStringLiteral("openai")};
-            draft.insightsEnabled = true;
+            draft.history.keeps = HistoryKeep::Text;
             return true;
         });
 
@@ -1019,7 +1101,7 @@ private slots:
         registerFakeRefiner(registry, &refiner);
         DictationSession session(
             &settings, audio.get(), media.get(), targetProvider.get(), delivery.get(), &registry);
-        QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
+        QSignalSpy recorded(&session, &DictationSession::dictationFinished);
 
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
@@ -1034,16 +1116,20 @@ private slots:
         QTRY_COMPARE(delivery->answers, 1);
 
         QCOMPARE(recorded.count(), 1);
-        QCOMPARE(recorded.first().first().value<DictationRecord>().words, 3);
+        const auto edit = recorded.first().first().value<HistoryEntry>();
+        QCOMPARE(edit.kind, HistoryKind::Edit);
+        QCOMPARE(edit.stats.words, 3);
+        QCOMPARE(edit.rawText, std::optional<QString>(QStringLiteral("Make it louder")));
+        QCOMPARE(edit.text, std::optional<QString>(QStringLiteral("THE RELEASE IS TOMORROW, EVERYONE, BE READY!")));
     }
 
-    void turningInsightsOffMidSessionRecordsNothing()
+    void turningHistoryOffMidSessionKeepsNothing()
     {
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
             draft.refinement.enabled = false;
-            draft.insightsEnabled = true;
+            draft.history.keeps = HistoryKeep::Text;
             return true;
         });
 
@@ -1054,16 +1140,17 @@ private slots:
         FakeSpeechTranscriber *speech = nullptr;
         registerFakeSpeechProvider(registry, &speech);
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
-        QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
+        QSignalSpy recorded(&session, &DictationSession::dictationFinished);
 
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("Hello"));
-        settings.edit([](AppSettings &draft) { draft.insightsEnabled = false; return true; });
+        settings.edit([](AppSettings &draft) { draft.history.keeps = HistoryKeep::Nothing; return true; });
         session.stopListening();
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
 
-        QCOMPARE(recorded.count(), 0);
+        QTRY_COMPARE(recorded.count(), 1);
+        QCOMPARE(recorded.first().first().value<HistoryEntry>().kept, HistoryKeep::Nothing);
     }
 
     void dictationSessionDefersTargetCaptureUntilPopupCanPaint()
@@ -1361,7 +1448,7 @@ private slots:
             settings.raw().clear();
             settings.edit([](AppSettings &draft) {
                 draft.ui.pauseMediaDuringTranscription = true;
-                draft.insightsEnabled = true;
+                draft.history.keeps = HistoryKeep::Text;
                 draft.refinement.services.order = {QStringLiteral("openai")};
                 draft.output.completionStatusDurationMs = 300;
                 return true;
@@ -1379,7 +1466,7 @@ private slots:
             registry.speechProvider(QStringLiteral("claude"));
             registry.refinementProvider(QStringLiteral("openai"));
             DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
-            QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
+            QSignalSpy recorded(&session, &DictationSession::dictationFinished);
             QSignalSpy message(&session, &DictationSession::popupMessageRequested);
             QSignalSpy hidden(&session, &DictationSession::popupHideRequested);
 
@@ -2211,7 +2298,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.insightsEnabled = true; return true; });
+        settings.edit([](AppSettings &draft) { draft.history.keeps = HistoryKeep::Text; return true; });
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
         auto delivery = std::make_unique<FakeDelivery>();
@@ -2219,7 +2306,7 @@ private slots:
         FakeSpeechTranscriber *speech = nullptr;
         registerFakeSpeechProvider(registry, &speech);
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
-        QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
+        QSignalSpy recorded(&session, &DictationSession::dictationFinished);
 
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
@@ -2237,7 +2324,7 @@ private slots:
         QTRY_COMPARE(delivery->answers, 1);
         QCOMPARE(delivery->lastText, QStringLiteral("before the pause and its tail"));
         QCOMPARE(recorded.count(), 1);
-        QVERIFY(recorded.first().first().value<DictationRecord>().audioMs < 400);
+        QVERIFY(recorded.first().first().value<HistoryEntry>().stats.audioMs < 400);
     }
 
     // The real microphone's stop() spins an event loop for the post-roll. A

@@ -42,7 +42,12 @@ Commands (sent to the running Speecher):
                            has it, or false; --watch prints a line now and on
                            each change until Ctrl-C, and waits for a Speecher
                            to start when none runs
-  last                     print the last transcript
+  last                     print the last transcript, or History's newest
+  history [<words>] [--kind <kind>] [--since <day>] [--limit <n>] [--json]
+                           print what History kept that holds every word,
+                           newest first: 20, or up to 1000 with --limit;
+                           --kind is dictation, file or recording, --since a
+                           yyyy-mm-dd day. Deleting is in the History page
   vocabulary add [--] <terms...>
                            save the terms to the custom vocabulary
   settings | setup         open settings or the setup assistant
@@ -720,6 +725,56 @@ QString parseRecordArguments(const QStringList &arguments, CommandLineDecision *
     return {};
 }
 
+// Reads `speecher history`'s words and options. Returns an error message
+// for a usage mistake.
+QString parseHistoryArguments(const QStringList &arguments, CommandLineDecision *decision)
+{
+    HistorySearch &search = decision->historySearch;
+    QStringList words;
+    bool optionsEnded = false;
+    for (qsizetype index = 0; index < arguments.size(); ++index) {
+        const QString argument = arguments.at(index);
+        if (optionsEnded || !argument.startsWith(QLatin1Char('-'))) {
+            words << argument;
+            continue;
+        }
+        QString error;
+        if (argument == QStringLiteral("--")) {
+            optionsEnded = true;
+        } else if (argument == QStringLiteral("--json")) {
+            decision->json = true;
+        } else if (argument == QStringLiteral("--kind")) {
+            const std::optional<QString> kind = optionValue(arguments, index, &error);
+            if (kind && !QStringList{QStringLiteral("dictation"), QStringLiteral("file"), QStringLiteral("recording")}
+                              .contains(kind->toLower())) {
+                error = QStringLiteral("Unknown --kind value: %1 (expected dictation, file or recording)").arg(*kind);
+            }
+            search.kind = kind.value_or(QString()).toLower();
+        } else if (argument == QStringLiteral("--since")) {
+            const std::optional<QString> since = optionValue(arguments, index, &error);
+            search.since = QDate::fromString(since.value_or(QString()), Qt::ISODate);
+            if (since && !search.since.isValid()) {
+                error = QStringLiteral("--since takes a date as yyyy-mm-dd, not %1").arg(*since);
+            }
+        } else if (argument == QStringLiteral("--limit")) {
+            const std::optional<QString> limit = optionValue(arguments, index, &error);
+            bool ok = false;
+            search.limit = limit.value_or(QString()).toInt(&ok);
+            if (limit && (!ok || search.limit < 1 || search.limit > 1000)) {
+                error = QStringLiteral("--limit takes a number from 1 to 1000, not %1").arg(*limit);
+            }
+        } else {
+            error = QStringLiteral("Unknown history option: %1").arg(argument);
+        }
+        if (!error.isEmpty()) {
+            return error;
+        }
+    }
+    search.text = words.join(QLatin1Char(' '));
+    decision->ipcCommand = IpcCommand::History;
+    return {};
+}
+
 // Reads `speecher status`'s options. Returns an error message for a usage
 // mistake.
 QString parseStatusArguments(const QStringList &arguments, CommandLineDecision *decision)
@@ -770,6 +825,7 @@ QString parseArguments(const QStringList &arguments, CommandLineDecision *decisi
         || verb == QStringLiteral("cancel")
         || verb == QStringLiteral("status")
         || verb == QStringLiteral("last")
+        || verb == QStringLiteral("history")
         || verb == QStringLiteral("settings")
         || verb == QStringLiteral("setup")
         || verb == QStringLiteral("record")
@@ -820,6 +876,9 @@ QString parseArguments(const QStringList &arguments, CommandLineDecision *decisi
         }
         if (verb == QStringLiteral("status")) {
             return parseStatusArguments(arguments.mid(2), decision);
+        }
+        if (verb == QStringLiteral("history")) {
+            return parseHistoryArguments(arguments.mid(2), decision);
         }
         // The other verbs are their commands' names.
         decision->ipcCommand = verb == QStringLiteral("settings") ? IpcCommand::ShowSettings

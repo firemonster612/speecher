@@ -7,9 +7,10 @@
 #include <QString>
 
 // The apps dictated into lately, for the Apps page's "Recently dictated into".
-// It hears the same records the insights log does, so it records only while
-// Insights is on, and Clear insights empties it: app names and ids, never
-// text. Kept as seen-apps.json beside the insights log.
+// It hears the delivered dictations History is given, so it records only
+// while History keeps at least stats, and clearing everything with the stats
+// empties it: app names and ids, never text. Kept as seen-apps.json beside
+// History.
 
 namespace speecher {
 
@@ -31,7 +32,7 @@ public:
     // At most this many, the least recent dropped first.
     static constexpr int capacity = 100;
 
-    // An empty path keeps the apps in memory only, as for an insights seed.
+    // An empty path keeps the apps in memory only, as for a History seed.
     explicit SeenApps(const QString &path, QObject *parent = nullptr);
 
     // Most recent first.

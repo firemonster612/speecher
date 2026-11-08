@@ -230,6 +230,11 @@ bool FileTranscriptionSession::isRunning() const
     return m_running;
 }
 
+const DictationPlan &FileTranscriptionSession::plan() const
+{
+    return m_plan;
+}
+
 bool FileTranscriptionSession::start(const QStringList &paths,
                                      const RunOverrides &overrides,
                                      const TranscribeOptions &options)

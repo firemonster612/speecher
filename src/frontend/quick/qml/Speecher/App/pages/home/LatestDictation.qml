@@ -5,9 +5,9 @@ import Speecher.Backend
 import Speecher.Wording
 import "words.js" as T
 
-// The latest thing said, set large, with where it went and Copy, at the top
-// of Your dictation; nothing before the first, where the section's own
-// empty row says so.
+// The latest thing said, set large, with where it went, History and Copy,
+// at the top of Your dictation; nothing before the first, where the
+// section's own empty row says so.
 Column {
     id: root
     readonly property var latest: Insights.latest
@@ -33,15 +33,26 @@ Column {
             variant: "small"
             tone: "secondary"
         }
-        CopyButton {
+        Row {
             id: copy
             anchors.right: parent.right
             anchors.rightMargin: -Theme.space1
-            text: T.text.copy
-            copiedText: Words.copied
-            size: "small"
-            variant: "ghost"
-            onCopied: Insights.copyLatest()
+            spacing: Theme.space1
+            Button {
+                objectName: "latestHistory"
+                text: T.text.history
+                iconName: "history"
+                size: "small"
+                variant: "ghost"
+                onClicked: Navigation.go("history")
+            }
+            CopyButton {
+                text: T.text.copy
+                copiedText: Words.copied
+                size: "small"
+                variant: "ghost"
+                onCopied: Insights.copyLatest()
+            }
         }
     }
 }

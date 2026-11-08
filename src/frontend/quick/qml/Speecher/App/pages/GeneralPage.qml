@@ -6,6 +6,8 @@ import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
 import "app"
+import "history"
+import "history/HistoryWords.js" as HistoryText
 
 Page {
     id: page
@@ -14,7 +16,9 @@ Page {
     subtitle: Schema.page("general").subtitle
 
     property bool _phoneOpen: false
-    property bool _confirmClear: false
+    // The level What Speecher Keeps is lowered to while it asks about the
+    // text already kept.
+    property string _lowerTo: ""
     property bool _confirmRemove: false
     property bool _removeSettings: false
     readonly property bool _removed: Removal.report.steps !== undefined
@@ -26,8 +30,19 @@ Page {
         confirmRemove: "Remove Speecher",
         removeQuestion: "Remove Speecher from this computer?",
         removeDetail: "Dictation stops working. Any system helper Speecher installed goes too, and each asks for your password. The helpers are shared by every account on this computer. Your settings stay unless you delete them as well.",
-        removeSettings: "Also delete my settings, vocabulary and API keys"
+        removeSettings: "Also delete my settings, vocabulary and API keys",
+        deleteKeptQuestion: "Delete the text you've kept?",
+        deleteKeptDetail: n => Words.count(n, "dictation or file holds", "dictations and files hold") + " text. Keep it and it goes when its days are up.",
+        keepKept: "Keep it"
     })
+    // Keeping less than text asks about the text already kept.
+    function chooseKeeps(id) {
+        const below = id === "nothing" || id === "stats"
+        if (below && History.kept > 0 && (Settings.values.historyKeeps === "text" || Settings.values.historyKeeps === "audio"))
+            _lowerTo = id
+        else
+            Settings.set("historyKeeps", id)
+    }
     // "Brings over 7 vocabulary terms, 4 snippets and 6 Writing Profiles."
     function phoneSummary(bundle) {
         return "Brings over " + Words.list([
@@ -64,108 +79,110 @@ Page {
         SchemaRow { rowId: "launchAtLoginGuide" }
     }
 
-    // Two short groups side by side.
-    Row {
-        id: pair
-        width: parent.width
-        spacing: Theme.space4
-        readonly property real _half: (width - spacing) / 2
-
-        // The pair lines up: the same header and card heights.
-        Section {
-            id: phoneSection
-            width: pair._half
-            minimumHeaderHeight: insightsSection.naturalHeaderHeight
-            minimumCardHeight: insightsSection.naturalCardHeight
-            title: Schema.row("copyToPhone").section
-            SchemaRow {
-                rowId: "copyToPhone"
-                stacked: true
-                Button {
-                    text: page._phoneOpen ? page.t.hideCode : page.t.showCode
-                    iconName: page._phoneOpen ? "chevron-up" : "qr-code"
-                    size: "small"
-                    onClicked: page.showPhoneCode(!page._phoneOpen)
-                }
-            }
-            Reveal {
-                open: page._phoneOpen
-                Item {
-                    width: parent.width
-                    implicitHeight: qr.height + Theme.space4
-                    QrCode {
-                        id: qr
-                        x: Theme.rowInset
-                        width: 148
-                        height: 148
-                        // Empty once sent, as the code works once.
-                        text: Phone.link
-                    }
-                    Column {
-                        anchors.left: qr.right
-                        anchors.leftMargin: Theme.space4
-                        anchors.right: parent.right
-                        anchors.rightMargin: Theme.rowInset
-                        anchors.verticalCenter: qr.verticalCenter
-                        spacing: Theme.space2
-                        // Empty until the first code is shown.
-                        Txt {
-                            width: parent.width
-                            text: Phone.bundle.terms === undefined ? "" : page.phoneSummary(Phone.bundle)
-                            variant: "small"
-                            wrapMode: Text.WordWrap
-                        }
-                        Txt {
-                            width: parent.width
-                            text: page.phoneNote(Phone.state)
-                            variant: "small"
-                            tone: "secondary"
-                            wrapMode: Text.WordWrap
-                        }
-                    }
-                }
+    // What Speecher keeps of each dictation, for how long, and clearing it.
+    Section {
+        id: historySection
+        title: Schema.row("historyKeeps").section
+        SchemaRow {
+            id: keepsRow
+            rowId: "historyKeeps"
+            stacked: true
+            note: (spec.options.find(o => o.id === value) || { help: "" }).help + " " + spec.help
+            SegmentedControl {
+                objectName: "historyKeeps"
+                options: keepsRow.spec.options
+                currentId: keepsRow.value ?? ""
+                onActivated: id => page.chooseKeeps(id)
             }
         }
+        // Keeping less than text: what is kept goes now, or when its days are up.
+        InlineConfirm {
+            open: page._lowerTo !== ""
+            text: page.t.deleteKeptQuestion
+            detail: page.t.deleteKeptDetail(History.kept)
+            confirmText: Words.delete_
+            cancelText: page.t.keepKept
+            onConfirmed: {
+                Settings.set("historyKeeps", page._lowerTo)
+                if (!History.clear("all", false))
+                    Toaster.show(HistoryText.text.clearFailed, { icon: "alert-triangle", tone: "negative" })
+                page._lowerTo = ""
+            }
+            onCancelled: {
+                Settings.set("historyKeeps", page._lowerTo)
+                page._lowerTo = ""
+            }
+        }
+        SchemaRow { rowId: "historyTextDays" }
+        SchemaRow { rowId: "historyAudioDays" }
+        SchemaRow {
+            rowId: "clearHistory"
+            note: Insights.kept > 0
+                  ? Words.count(Insights.kept, "dictation", "dictations") + " counted since " + Qt.formatDate(Insights.firstDictation, "MMMM yyyy") + ", "
+                    + Words.count(History.kept, "with its text", "with their text") + "."
+                  : spec.help
+            MenuButton {
+                objectName: "clearHistory"
+                label: HistoryText.text.clear
+                items: HistoryText.text.clearRanges
+                onPicked: id => { if (!clearConfirm.ask(id)) confirm(HistoryText.text.nothingToClear) }
+            }
+        }
+        ClearConfirm { id: clearConfirm }
+    }
 
-        Section {
-            id: insightsSection
-            width: pair._half
-            minimumHeaderHeight: phoneSection.naturalHeaderHeight
-            minimumCardHeight: phoneSection.naturalCardHeight
-            title: Schema.row("insightsEnabled").section
-            SchemaRow {
-                rowId: "insightsEnabled"
-                help: Settings.values.insightsEnabled ? spec.help : spec.offHelp
+    Section {
+        id: phoneSection
+        title: Schema.row("copyToPhone").section
+        SchemaRow {
+            rowId: "copyToPhone"
+            stacked: true
+            Button {
+                text: page._phoneOpen ? page.t.hideCode : page.t.showCode
+                iconName: page._phoneOpen ? "chevron-up" : "qr-code"
+                size: "small"
+                onClicked: page.showPhoneCode(!page._phoneOpen)
             }
-            SchemaRow {
-                rowId: "clearInsights"
-                help: Insights.kept > 0
-                      ? Words.count(Insights.kept, "dictation", "dictations") + " kept since " + Qt.formatDate(Insights.firstDictation, "MMMM yyyy") + "."
-                      : "No dictation history yet."
-                Button {
-                    text: "Clear history…"
-                    variant: "danger"
-                    size: "small"
-                    enabled: Insights.kept > 0 && !page._confirmClear
-                    onClicked: page._confirmClear = true
+        }
+        Reveal {
+            open: page._phoneOpen
+            Item {
+                width: parent.width
+                implicitHeight: qr.height + Theme.space4
+                QrCode {
+                    id: qr
+                    x: Theme.rowInset
+                    width: 148
+                    height: 148
+                    // Empty once sent, as the code works once.
+                    text: Phone.link
                 }
-            }
-            InlineConfirm {
-                cancelText: Words.cancel
-                open: page._confirmClear
-                text: "Delete " + Words.count(Insights.kept, "dictation", "dictations") + "?"
-                detail: Words.cantUndo
-                confirmText: Words.delete_
-                onCancelled: page._confirmClear = false
-                onConfirmed: {
-                    page._confirmClear = false
-                    if (!Insights.clear())
-                        Toaster.show("Speecher couldn't delete the insights history. Close any app that has the history file open, then try again.",
-                                     { icon: "alert-triangle", tone: "negative" })
+                Column {
+                    anchors.left: qr.right
+                    anchors.leftMargin: Theme.space4
+                    anchors.right: parent.right
+                    anchors.rightMargin: Theme.rowInset
+                    anchors.verticalCenter: qr.verticalCenter
+                    spacing: Theme.space2
+                    // Empty until the first code is shown.
+                    Txt {
+                        width: parent.width
+                        text: Phone.bundle.terms === undefined ? "" : page.phoneSummary(Phone.bundle)
+                        variant: "small"
+                        wrapMode: Text.WordWrap
+                    }
+                    Txt {
+                        width: parent.width
+                        text: page.phoneNote(Phone.state)
+                        variant: "small"
+                        tone: "secondary"
+                        wrapMode: Text.WordWrap
+                    }
                 }
             }
         }
     }
+
 
     // One row, which needs no heading over it.
     Section { SchemaRow { rowId: "runSetup" } }

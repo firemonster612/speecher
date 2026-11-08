@@ -818,6 +818,87 @@ private slots:
         QCOMPARE(QString::fromStdString(err.str()).contains(QStringLiteral("older")), unknownCommand);
     }
 
+    // A history search reaches the instance as asked, and its answer comes
+    // back entry by entry.
+    void historyTravelsBothWays()
+    {
+        IpcRequest request{IpcCommand::History};
+        request.history = {QStringLiteral("retry loop"), QStringLiteral("file"), QDate(2026, 11, 1), 5};
+        IpcResponse refusal;
+        QByteArray frame = ipcRequestFrame(request);
+        frame.chop(1);
+        QCOMPARE(ipcRequestFromFrame(frame, &refusal), std::optional<IpcRequest>(request));
+
+        IpcResponse reply{true, QStringLiteral("idle"), {}};
+        reply.history = {QJsonObject{{QStringLiteral("id"), 7}, {QStringLiteral("text"), QStringLiteral("retry")}}};
+        frame = ipcResponseFrame(reply);
+        frame.chop(1);
+        QCOMPARE(ipcResponseFromFrame(frame)->history, reply.history);
+    }
+
+    void historyPrintsALineAnEntry_data()
+    {
+        QTest::addColumn<bool>("json");
+        QTest::addColumn<QString>("printed");
+        QTest::newRow("lines") << false
+                               << QStringLiteral("2026-11-08 14:02  Slack  Send me the deck, please.\n"
+                                                 "2026-11-07 17:20  interview-03.m4a  We spoke about the budget.\n");
+        QTest::newRow("json") << true
+                              << QStringLiteral(R"([{"app":"Slack","finishedAt":"2026-11-08T14:02:00","kind":"dictation",)"
+                                                R"("text":"Send me the deck,\nplease."},{"finishedAt":"2026-11-07T17:20:00",)"
+                                                R"("kind":"file","text":"We spoke about the budget.","title":"interview-03.m4a"}])"
+                                                "\n");
+    }
+
+    void historyPrintsALineAnEntry()
+    {
+        QFETCH(bool, json);
+        QFETCH(QString, printed);
+        IpcResponse reply{true, QStringLiteral("idle"), {}};
+        reply.history = {
+            QJsonObject{{QStringLiteral("kind"), QStringLiteral("dictation")},
+                        {QStringLiteral("finishedAt"), QStringLiteral("2026-11-08T14:02:00")},
+                        {QStringLiteral("app"), QStringLiteral("Slack")},
+                        {QStringLiteral("text"), QStringLiteral("Send me the deck,\nplease.")}},
+            QJsonObject{{QStringLiteral("kind"), QStringLiteral("file")},
+                        {QStringLiteral("finishedAt"), QStringLiteral("2026-11-07T17:20:00")},
+                        {QStringLiteral("title"), QStringLiteral("interview-03.m4a")},
+                        {QStringLiteral("text"), QStringLiteral("We spoke about the budget.")}},
+        };
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
+        SingleInstanceIpc ipc(platform);
+        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
+        HistorySearch asked;
+        connect(&ipc, &SingleInstanceIpc::requestReceived, &ipc,
+                [reply, &asked](const IpcRequest &request, QLocalSocket *socket) {
+                    asked = request.history;
+                    SingleInstanceIpc::writeResponse(socket, reply);
+                });
+        CommandLineDecision decision;
+        decision.mode = LaunchMode::RunCli;
+        decision.ipcCommand = IpcCommand::History;
+        decision.historySearch.text = QStringLiteral("deck");
+        decision.json = json;
+
+        std::ostringstream out;
+        int exitCode = -1;
+        {
+            std::streambuf *const stdoutBuffer = std::cout.rdbuf(out.rdbuf());
+            const auto restore = qScopeGuard([stdoutBuffer] { std::cout.rdbuf(stdoutBuffer); });
+            QThread *client = QThread::create([&exitCode, &decision, platform] {
+                exitCode = runCliCommand(decision, platform);
+            });
+            client->start();
+            QTRY_VERIFY(client->isFinished());
+            delete client;
+        }
+        QCOMPARE(exitCode, 0);
+        QCOMPARE(asked.text, QStringLiteral("deck"));
+        QCOMPARE(QString::fromStdString(out.str()), printed);
+    }
+
     void providersAsksTheRunningApp_data()
     {
         QTest::addColumn<bool>("answered");
