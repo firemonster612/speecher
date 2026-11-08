@@ -133,6 +133,9 @@ private:
     // True once file is gone, or never was.
     static bool deleteFile(const QString &file);
     void forgetRecords();
+    // Sets a Recording's lines to lines, and its text and word count to
+    // theirs. Inside the caller's transaction; false when a write failed.
+    bool replaceLines(qint64 id, const QList<HistoryLine> &lines);
     // addAll, and with a source importAll's mark.
     bool addAllMarking(const QList<HistoryEntry> &entries, const QString &source);
 

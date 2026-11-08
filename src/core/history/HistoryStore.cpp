@@ -766,21 +766,9 @@ bool HistoryStore::syncRecordingFile(qint64 id)
     if (!read) {
         return false;
     }
-    const auto [said, words] = textOf(*read);
     QSqlDatabase db = QSqlDatabase::database(m_connection);
     db.transaction();
-    QSqlQuery change(db);
-    change.prepare(QStringLiteral("DELETE FROM lines WHERE entry_id = ?"));
-    change.addBindValue(id);
-    bool written = change.exec();
-    for (const HistoryLine &line : *read) {
-        written = written && appendLine(id, line);
-    }
-    change.prepare(QStringLiteral("UPDATE entries SET text = ?, words = ? WHERE id = ?"));
-    for (const QVariant &value : QVariantList{said, words, id}) {
-        change.addBindValue(value);
-    }
-    if (!written || !change.exec() || !keepChangedAt() || !db.commit()) {
+    if (!replaceLines(id, *read) || !keepChangedAt() || !db.commit()) {
         db.rollback();
         return false;
     }
@@ -823,26 +811,17 @@ void HistoryStore::finishUnfinishedRecordings()
         const qint64 audioMs = found->startedAt.isValid() ? found->startedAt.msecsTo(finishedAt) : 0;
         RecordingEnd end;
         end.reason = RecordingEnd::Reason::Interrupted;
-        const auto [said, words] = textOf(recovered);
         QSqlDatabase db = QSqlDatabase::database(m_connection);
         if (!db.transaction()) {
             continue;
         }
-        QSqlQuery removeLines(db);
-        removeLines.prepare(QStringLiteral("DELETE FROM lines WHERE entry_id = ?"));
-        removeLines.addBindValue(id);
-        bool written = removeLines.exec();
-        for (const HistoryLine &line : recovered) {
-            if (written) {
-                written = appendLine(id, line);
-            }
-        }
+        bool written = replaceLines(id, recovered);
         QSqlQuery finish(db);
-        finish.prepare(QStringLiteral("UPDATE entries SET finished_at = ?, audio_ms = ?, words = ?, outcome = ?,"
-                                      " text = ?, audio_path = NULL, kept = 'text', ending = ?, transcript_mtime = ?"
+        finish.prepare(QStringLiteral("UPDATE entries SET finished_at = ?, audio_ms = ?, outcome = ?,"
+                                      " audio_path = NULL, kept = 'text', ending = ?, transcript_mtime = ?"
                                       " WHERE id = ? AND kind = 'recording' AND finished_at IS NULL"));
-        for (const QVariant &value : QVariantList{finishedAt.toMSecsSinceEpoch(), qMax<qint64>(0, audioMs), words,
-                                                   historyOutcomeName(HistoryOutcome::Complete), said,
+        for (const QVariant &value : QVariantList{finishedAt.toMSecsSinceEpoch(), qMax<qint64>(0, audioMs),
+                                                   historyOutcomeName(HistoryOutcome::Complete),
                                                    QString::fromUtf8(QJsonDocument(recordingEndJson(end)).toJson(
                                                        QJsonDocument::Compact)),
                                                    // With no file read, a time no file has, so a
@@ -857,6 +836,27 @@ void HistoryStore::finishUnfinishedRecordings()
         }
         emit changed();
     }
+}
+
+bool HistoryStore::replaceLines(qint64 id, const QList<HistoryLine> &lines)
+{
+    QSqlQuery change(QSqlDatabase::database(m_connection));
+    change.prepare(QStringLiteral("DELETE FROM lines WHERE entry_id = ?"));
+    change.addBindValue(id);
+    if (!change.exec()) {
+        return false;
+    }
+    for (const HistoryLine &line : lines) {
+        if (!appendLine(id, line)) {
+            return false;
+        }
+    }
+    const auto [said, words] = textOf(lines);
+    change.prepare(QStringLiteral("UPDATE entries SET text = ?, words = ? WHERE id = ?"));
+    for (const QVariant &value : QVariantList{said, words, id}) {
+        change.addBindValue(value);
+    }
+    return change.exec();
 }
 
 bool HistoryStore::setText(qint64 id, const QString &text)
