@@ -138,7 +138,7 @@ LibraryLists {
         // it is the same as.
         change: "change",
         changes: "changes",
-        sameAsOrders: "Same as Speech to text and Refinement",
+        sameAsOrders: "Same as every profile",
         sameAs: place => "Same as " + place,
         // A model nobody chose: the one the service picks.
         serviceDefault: "its default",

@@ -323,6 +323,14 @@ private slots:
             // Privacy & data lists an app kept out of History.
             draft.apps.apps.first().history = HistoryKeep::Stats;
             draft.apps.types[1].writingProfile = WritingProfile::Work;
+            // Writing profiles shows Work with services of its own, a
+            // refinement server's model typed.
+            for (WritingProfileSettings &profile : draft.refinement.writingProfiles) {
+                if (profile.profile == WritingProfile::Work) {
+                    profile.speechFirst = ServiceChoice{QStringLiteral("codex")};
+                    profile.refinementFirst = ServiceChoice{QStringLiteral("endpoint"), QStringLiteral("qwen3:8b")};
+                }
+            }
             // Vocabulary shows each kind: a key term with a context, one
             // limited to a profile, a snippet over several lines, one
             // limited to an App, and a Learned Correction with its evidence.
