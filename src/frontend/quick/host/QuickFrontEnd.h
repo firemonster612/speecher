@@ -8,6 +8,7 @@
 #include "frontend/quick/host/QuickAudio.h"
 #include "frontend/quick/host/QuickDictation.h"
 #include "frontend/quick/host/QuickModels.h"
+#include "frontend/quick/host/QuickHistory.h"
 #include "frontend/quick/host/QuickInsights.h"
 #include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickNavigation.h"
@@ -88,6 +89,7 @@ private:
     QuickPhone m_phone;
     QuickModels m_models;
     QuickInsights m_insights;
+    QuickHistory m_history;
     QuickAccounts m_accounts;
     QuickLibrary::ControllerScope m_library;
     QuickApps m_apps;

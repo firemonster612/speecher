@@ -242,7 +242,7 @@ private slots:
             entry.kept = HistoryKeep::Audio;
             entry.audioPath = name;
             QFile file(audio.filePath(name));
-            file.open(QIODevice::WriteOnly);
+            [[maybe_unused]] const bool made = file.open(QIODevice::WriteOnly);
             return entry;
         };
         const int day = 24 * 60;

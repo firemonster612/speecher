@@ -106,6 +106,15 @@ Page {
         }
     }
 
+    // A key for once the words are out, from any app.
+    Reveal {
+        open: !page.noShortcuts
+        Section {
+            title: Schema.row("pasteAgainShortcut").section
+            SchemaRow { rowId: "pasteAgainShortcut" }
+        }
+    }
+
     Reveal { open: !page.noShortcuts; Reach {} }
 
     SubpageRows {

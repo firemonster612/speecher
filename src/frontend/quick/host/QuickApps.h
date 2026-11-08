@@ -39,8 +39,8 @@ class QuickApps final : public QObject, public HostSingleton<QuickApps> {
     // }], type and profile as core resolves them.
     Q_PROPERTY(QVariantList installed READ installed NOTIFY installedChanged)
     Q_PROPERTY(bool scanning READ scanning NOTIFY installedChanged)
-    // The apps dictated into lately, most recent first, while insights keep
-    // them: [{ name, appId, icon, lastSeenMs, dictations, entry, type,
+    // The apps dictated into lately, most recent first, while History keeps
+    // stats: [{ name, appId, icon, lastSeenMs, dictations, entry, type,
     // profile }].
     Q_PROPERTY(QVariantList recent READ recent NOTIFY changed)
     // How many apps the built-in catalog knows.

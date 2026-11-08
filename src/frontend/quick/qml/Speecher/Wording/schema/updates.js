@@ -54,7 +54,6 @@ var since = {
     cancelShortcut: "0.2.1",
     pauseShortcut: "0.2.1",
     updateCheckInterval: "0.2.1",
-    insightsEnabled: "0.2.1",
     reviewSelectionEdits: "0.2.1",
     spokenLanguage: "0.2.1",
     roundedCorners: "0.2.1",

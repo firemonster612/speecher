@@ -12,8 +12,9 @@ import "home/words.js" as T
 
 // Home: the latest dictation and whether Speecher is ready, then the chosen
 // period's figures, the year's activity, and the lists that go with them in
-// pairs across the page. With Insights off or nothing dictated yet, one
-// line says so in their place. The words are home/words.js's.
+// pairs across the page. With History keeping nothing or nothing dictated
+// yet, one line says so in their place. History, its subpage, ends it. The
+// words are home/words.js's.
 Page {
     id: page
     // Whether the speech chain's services are signed in, for whether
@@ -100,7 +101,7 @@ Page {
             SettingRow {
                 title: Insights.state === "off" ? page.t.offTitle : page.t.emptyTitle
                 help: Insights.state === "off" ? page.t.offBody : page.t.emptyBody
-                Button { text: page.t.insightsSettings; size: "small"; onClicked: Navigation.goToRow("general", "insightsEnabled") }
+                Button { text: page.t.insightsSettings; size: "small"; onClicked: Navigation.goToRow("general", "historyKeeps") }
             }
         }
     }
@@ -292,9 +293,14 @@ Page {
                     width: parent.width
                     spacing: Theme.space2
                     Txt { text: page.t.privacyNote; variant: "small"; tone: "tertiary" }
-                    TextLink { text: page.t.insightsSettings; onActivated: Navigation.goToRow("general", "insightsEnabled") }
+                    TextLink { text: page.t.insightsSettings; onActivated: Navigation.goToRow("general", "historyKeeps") }
                 }
             }
         }
+    }
+
+    SubpageRows {
+        pageId: "home"
+        lines: ({ history: History.kept > 0 ? T.historyLine(History.kept) : T.historyKeeps(Settings.values.historyKeeps) })
     }
 }

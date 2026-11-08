@@ -61,14 +61,45 @@ var rows = [
       help: "Scan the code with Speecher for Android. Your phone needs to be on the same network.",
       keywords: "android mobile qr code transfer export vocabulary snippets profiles" },
 
-    { id: "insightsEnabled", page: "general", section: "Insights", kind: "toggle",
-      label: "Keep insights about your dictation",
-      help: "Word counts, times and app names, never text or audio. Stays on this computer.",
-      offHelp: "Nothing new is recorded while this is off. History you already have stays until you clear it.",
-      keywords: "stats statistics history privacy tracking" },
-    { id: "clearInsights", page: "general", section: "Insights", kind: "custom",
-      label: "Insights history", help: "Delete every recorded dictation from this computer.",
-      keywords: "delete clear erase privacy reset stats" },
+    // What Speecher Keeps. Lowering it below Text asks whether to delete the
+    // text already kept (GeneralPage).
+    { id: "historyKeeps", page: "general", section: "Insights", kind: "custom",
+      label: "What Speecher keeps",
+      help: "Stays on this computer. Password fields are never kept.",
+      keywords: "history insights stats statistics privacy tracking text audio record save keep",
+      options: [
+          { id: "nothing", label: "Nothing", help: "Home and History stay empty." },
+          { id: "stats", label: "Stats", help: "Word counts, times and app names for Home, never your words." },
+          { id: "text", label: "Text", help: "Also what you said, so you can find it in History." },
+          { id: "audio", label: "Text and audio", help: "Also the sound of each dictation, to play it back." }
+      ] },
+    { id: "historyTextDays", page: "general", section: "Insights", kind: "choice", control: "select",
+      label: "Keep text for",
+      help: "Older dictations and file transcriptions keep their stats. Their words and audio are deleted.",
+      keywords: "history retention days delete older expire",
+      hiddenWhen: { id: "historyKeeps", equals: ["nothing", "stats"] },
+      options: [
+          { id: "7", label: "7 days" },
+          { id: "30", label: "30 days" },
+          { id: "90", label: "90 days" },
+          { id: "365", label: "A year" },
+          { id: "0", label: "Until I delete it" }
+      ] },
+    { id: "historyAudioDays", page: "general", section: "Insights", kind: "choice", control: "select",
+      label: "Keep audio for",
+      help: "About 0.25 MB a minute. Never longer than text.",
+      keywords: "history retention days audio sound recording delete",
+      hiddenWhen: { id: "historyKeeps", equals: ["nothing", "stats", "text"] },
+      options: [
+          { id: "1", label: "A day" },
+          { id: "7", label: "7 days" },
+          { id: "30", label: "30 days" },
+          { id: "-1", label: "As long as text" }
+      ] },
+    { id: "clearHistory", page: "general", section: "Insights", kind: "custom",
+      label: "Clear history",
+      help: "Deletes text and audio from this computer. Check Also delete their stats to empty Home too.",
+      keywords: "delete clear erase privacy reset stats insights history" },
 
     { id: "removeSpeecher", page: "general", section: "Uninstall", kind: "custom",
       label: "Remove Speecher",

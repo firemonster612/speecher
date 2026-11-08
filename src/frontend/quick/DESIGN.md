@@ -18,7 +18,7 @@ data.
 | `qml/Speecher/Wording/` | The UI's wording: `Schema` (pages and settings rows, from `schema/*.js`) and `Words` (shared words and the shell's) |
 | `qml/Speecher/Demo/` | `DemoVoice`: a made-up voice level for illustrations |
 | `qml/Speecher/Backend/` | `Library.qml`, the one QML type of `Speecher.Backend`, which words the C++ `LibraryLists` |
-| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup in `PopupWindowBase`, and the real `Settings`, `Dictation`, `DictationState`, `Navigation`, `Updates`, `Transcription`, `System`, `Phone`, `Removal`, `Models`, `Insights`, `Accounts`, `Apps`, `Audio`, `Appearance` and `LibraryLists` |
+| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup in `PopupWindowBase`, and the real `Settings`, `Dictation`, `DictationState`, `Navigation`, `Updates`, `Transcription`, `System`, `Phone`, `Removal`, `Models`, `Insights`, `History`, `Accounts`, `Apps`, `Audio`, `Appearance` and `LibraryLists` |
 | `assets/` | Atkinson Hyperlegible Next, the Lucide icon font (company marks are path data in `qml/Speecher/Controls/brands.js`), and the circle-flags language flags `Flag` draws |
 
 `cmake/QuickUi.cmake` builds each directory under `qml/` (the Backend with
@@ -35,7 +35,7 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   (`host/QuickUpdates`), `Transcription` (`host/QuickTranscription`),
   `System` (`host/QuickSystem`), `Phone` (`host/QuickPhone`), `Removal`
   (`host/QuickRemoval`), `Models` (`host/QuickModels`), `Insights`
-  (`host/QuickInsights`), `Accounts` (`host/QuickAccounts`), `Apps`
+  (`host/QuickInsights`), `History` (`host/QuickHistory`), `Accounts` (`host/QuickAccounts`), `Apps`
   (`host/QuickApps`), `Audio`
   (`host/QuickAudio`), `Appearance` (`host/QuickAppearance`) and `Library`
   (`Library.qml` over `host/QuickLibrary`). No placeholders are left.
@@ -85,8 +85,19 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   on its own. The Local Runner rows look for runners when they load, and
   setup's Transcription step asks `Models.checkSignIns()` for the speech
   sign-ins.
-- `Insights` carries core's summary for Home's period and the history
-  General clears; `pages/home/words.js` words it.
+- `Insights` carries core's summary of History for Home's period, and the
+  latest dictation (this run's, else History's newest while it keeps
+  text); `pages/home/words.js` words it.
+- `History` is core's `HistoryStore` as the History page shows it:
+  writing `query` ({ text, kind, app, profile, when }) searches once
+  typing pauses, and `results` come a page at a time (`fetchMore()`),
+  newest first, each match in `<b>` over HTML-escaped text, so dictated
+  markup shows as typed. `entry(id)` reads one whole; `copy`,
+  `pasteAgain`, `play` and `remove`/`undo` act on one; `countIn` and
+  `clear` take a span (hour, today, 7d, all), which History's Clear… and
+  General's Clear history both ask about through `ClearConfirm`. What
+  History keeps is the `historyKeeps` row; `pages/history/HistoryWords.js`
+  words all of it.
 - `Apps` is core's Apps and App Types (`core/Apps`) as the Apps page shows
   them: each App with what it sets, what core makes of it (`effective`) and
   what each value would be without its own (`inherited`, with where from),
@@ -94,7 +105,7 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   Other apps' profile always set; the installed apps the platform's
   `InstalledApps` lists, scanned off the UI thread once a session
   (`refresh()`); and the apps dictated into lately (core's `SeenApps`,
-  kept only while insights are). `add`, `update`, `updateType` and
+  kept only while History keeps stats). `add`, `update`, `updateType` and
   `remove`/`undo` save through core's `AppEdits`; `captureNext(seconds)` is
   Switch to it, which captures the app in front as dictation does. Icons
   come from the host's `image://appicon` provider. `schema/apps.js` words
@@ -443,9 +454,10 @@ Layout:
   Transcribe files, Dictation, Speech to text, Refinement, Apps, Pasting,
   Services, General), in the order a dictation goes, and their subpages. A
   page sits under another (`parent` in `schema/pages.js`) when it is a part
-  of that page a person looks for on its own: Microphone and Popup & sounds
-  under Dictation, Local models under Services, Writing profiles and
-  Vocabulary under Refinement, and Appearance and Updates under General. Every page has settings of its own; none only lists its
+  of that page a person looks for on its own: History under Home,
+  Microphone and Popup & sounds under Dictation, Local models under
+  Services, Writing profiles and Vocabulary under Refinement, and
+  Appearance and Updates under General. Every page has settings of its own; none only lists its
   subpages.
   Top-level entries have icons; subpages have none, set in past a guide
   line from their parent's icon, with their wash and the pill on them
@@ -566,7 +578,7 @@ Layout and rows:
 - `Card`: the raised card on its own. `Surface`: a floating panel (menus, palettes). `Plate`: the recessed panel a page's or setup step's picture sits on.
 - `SettingRow { title; help; helpLink; iconName; stacked; clickable; trailingText; shown; first; highlight() }`: one setting with its control on the right; `helpLink` makes that part of the help a link (`helpLinkActivated(at)`).
 - `SchemaRow { rowId }` (in Speecher.App): a SettingRow built from the schema.
-- `ListRow { title; detail; iconName; titleVariant; titleTone; wrapTitle; detailLines; first; clickable; selected; trailing; actions }`: a data row, not a setting. `trailing` always shows (a value, a status); `actions` are buttons that show on hover or focus. Rows that need more lay out their own content in the default slot.
+- `ListRow { title; detail; iconName; titleVariant; titleTone; wrapTitle; detailLines; first; clickable; selected; trailing; actions }`: a data row, not a setting. `trailing` always shows (a value, a status); `actions` are buttons that show on hover or focus. Rows that need more lay out their own content in the default slot. Return and Space with Ctrl, Alt or Meta held are left to the row's user, as History's rows use Ctrl+Return to paste again.
 - `RowList { values; keyOf; entry(key); first }`: a non-scrolling list of rows that animates adds, removes and moves. Delegates take `required property string key`, read `list.entry(key)` (still there while a row fades out) and set `first: index === 0 && list.first`.
 - `Disclosure { title; help; trailingText; open; highlight() }`: a row that opens to more rows.
 - `Reveal { open; sideways }`: content that opens and closes in place. Rows inside draw their divider unless the Reveal starts its card, so no `first: false` is needed.

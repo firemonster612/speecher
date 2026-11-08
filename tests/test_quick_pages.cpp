@@ -15,6 +15,7 @@
 #include "core/SeenApps.h"
 #include "core/Target.h"
 #include "core/settings/SpokenLanguages.h"
+#include "core/history/HistoryStore.h"
 #include "dictation/DictationSession.h"
 #include "dictation/PopupPresentation.h"
 #include "dictation/SelectionEditPresentation.h"
@@ -1259,6 +1260,97 @@ private slots:
         apps->undo(undo);
         QCOMPARE(controller.settings()->snapshot().apps.apps.size(), 1);
         QCOMPARE(controller.settings()->snapshot().apps.apps.first().type, AppCategory::Email);
+    }
+
+    // History in each of its states: off, keeping stats, nothing kept yet,
+    // then a seed's entries, a search that matches nothing, and an entry
+    // opened in place.
+    void historyStatesLoad_data() { themes(); }
+    void historyStatesLoad()
+    {
+        QFETCH(QString, theme);
+        qputenv("SPEECHER_INSIGHTS_TODAY", "2026-11-08");
+        const auto unpin = qScopeGuard([] {
+            qunsetenv("SPEECHER_INSIGHTS_TODAY");
+            qunsetenv("SPEECHER_HISTORY_SEED");
+        });
+        const auto rows = [](QQuickItem *root) {
+            QList<QQuickItem *> found;
+            QList<QQuickItem *> items{root};
+            while (!items.isEmpty()) {
+                QQuickItem *item = items.takeLast();
+                items += item->childItems();
+                if (item->objectName().startsWith(QLatin1String("historyRow_")) && item->isVisible()) {
+                    found.append(item);
+                }
+            }
+            return found;
+        };
+        {
+            ApplicationController controller(true);
+            controller.history()->clear({}, {}, true);
+            QuickSettings settings(&controller);
+            settings.set(QStringLiteral("themeControl"), theme);
+            TrayIcon tray(&controller);
+            QuickFrontEnd ui(&controller, &tray);
+            ui.showMainWindow();
+            QQuickWindow *main = openWindow("Main");
+            QVERIFY(main && QTest::qWaitForWindowExposed(main));
+            auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"),
+                                                                                    QStringLiteral("Navigation"));
+            QList<std::pair<QString, std::function<void()>>> steps;
+            for (const QString keeps : {QStringLiteral("nothing"), QStringLiteral("stats"), QStringLiteral("text")}) {
+                steps.append({QStringLiteral("history keeps ") + keeps, [&settings, navigation, keeps, main, rows] {
+                                  settings.set(QStringLiteral("historyKeeps"), keeps);
+                                  navigation->go(QStringLiteral("history"));
+                                  QCOMPARE(navigation->current(), QStringLiteral("history"));
+                                  QVERIFY(rows(main->contentItem()).isEmpty());
+                              }});
+            }
+            runSteps(steps, main);
+        }
+        if (QTest::currentTestFailed()) {
+            return;
+        }
+
+        qputenv("SPEECHER_HISTORY_SEED", QFINDTESTDATA("data/history/seed.json").toUtf8());
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("themeControl"), theme);
+        settings.set(QStringLiteral("historyKeeps"), QStringLiteral("text"));
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main && QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"),
+                                                                                QStringLiteral("Navigation"));
+        QQuickItem *search = nullptr;
+        runSteps({
+            {QStringLiteral("history results"), [navigation, main, rows, &search] {
+                 navigation->go(QStringLiteral("history"));
+                 QTRY_COMPARE(rows(main->contentItem()).size(), 7);
+                 QVERIFY((search = findItem(main->contentItem(), QStringLiteral("historySearch"))));
+             }},
+            {QStringLiteral("history search"), [main, rows, &search] {
+                 search->setProperty("text", QStringLiteral("deck"));
+                 QTRY_COMPARE(rows(main->contentItem()).size(), 1);
+             }},
+            {QStringLiteral("history no match"), [main, rows, &search] {
+                 search->setProperty("text", QStringLiteral("zzz no such words"));
+                 QTRY_VERIFY(rows(main->contentItem()).isEmpty());
+             }},
+            {QStringLiteral("history open entry"), [main, rows, &search] {
+                 search->setProperty("text", QString());
+                 QTRY_COMPARE(rows(main->contentItem()).size(), 7);
+                 QQuickItem *newest = findItem(main->contentItem(), QStringLiteral("historyRow_7"));
+                 QVERIFY(newest);
+                 QMetaObject::invokeMethod(newest, "clicked");
+                 QTRY_VERIFY(newest->property("selected").toBool());
+             }},
+            {QStringLiteral("home with history"), [navigation] { navigation->go(QStringLiteral("home")); }},
+        },
+                 main);
     }
 
     void everySetupStepLoads_data() { themes(); }

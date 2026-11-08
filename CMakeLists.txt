@@ -1572,6 +1572,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_quick_system.cpp
     tests/test_quick_models.cpp
     tests/test_quick_insights.cpp
+    tests/test_quick_history.cpp
     tests/test_quick_accounts.cpp
     tests/test_quick_audio.cpp
     tests/test_quick_library.cpp
@@ -1620,6 +1621,7 @@ if(SPEECHER_BUILD_TESTS)
     quick_system
     quick_models
     quick_insights
+    quick_history
     quick_accounts
     quick_audio
     quick_library

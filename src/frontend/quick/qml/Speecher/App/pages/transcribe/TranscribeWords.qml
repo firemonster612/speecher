@@ -6,6 +6,7 @@ import Speecher.Wording
 // files, phases and results.
 QtObject {
     readonly property string audioFiles: "Audio files"
+    readonly property string inHistory: "In History"
     readonly property string transcription: "Transcription"
     readonly property string refinement: "Refinement"
     readonly property string output: "Output"

@@ -8,6 +8,7 @@
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
 #include "frontend/quick/host/QuickAudio.h"
+#include "frontend/quick/host/QuickHistory.h"
 #include "frontend/quick/host/QuickInsights.h"
 #include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickNavigation.h"
@@ -401,6 +402,7 @@ private slots:
         QuickDictation dictation(&controller);
         QuickNavigation navigation(nullptr);
         QuickInsights insights(&controller);
+        QuickHistory history(&controller);
         // Home says what stands in the way of dictating: the shortcut, the
         // microphone, the speech service. Here a microphone is plugged in.
         test::SystemSingletons system(&controller);
@@ -465,6 +467,7 @@ private slots:
         QuickDictation dictation(&controller);
         QuickNavigation navigation(nullptr);
         QuickInsights insights(&controller);
+        QuickHistory history(&controller);
         test::SystemSingletons system(&controller);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         QuickModels models(&controller);
@@ -514,6 +517,7 @@ private slots:
         QuickDictation dictation(&controller);
         QuickNavigation navigation(nullptr);
         QuickInsights insights(&controller);
+        QuickHistory history(&controller);
         test::SystemSingletons system(&controller);
         QuickAudio audio(&controller, nullptr, oneMicrophone);
         QuickModels models(&controller);
@@ -548,6 +552,7 @@ private slots:
         QuickDictation dictation(&controller);
         QuickNavigation navigation(nullptr);
         QuickInsights insights(&controller);
+        QuickHistory history(&controller);
         test::SystemSingletons system(&controller);
         QuickAudio audio(&controller, nullptr, oneMicrophone);
         QuickModels models(&controller);
@@ -580,6 +585,7 @@ private slots:
         QuickDictation dictation(&controller);
         QuickNavigation navigation(nullptr);
         QuickInsights insights(&controller);
+        QuickHistory history(&controller);
         // Home says what stands in the way of dictating: the shortcut, the
         // microphone, the speech service. Here a microphone is plugged in.
         test::SystemSingletons system(&controller);

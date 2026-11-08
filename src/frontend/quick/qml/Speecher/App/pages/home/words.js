@@ -47,9 +47,17 @@ var text = {
     privacyNote: "Insights are stored only on this computer and never sent anywhere.",
     insightsSettings: "Insights settings",
     offTitle: "Insights are off",
-    offBody: "Speecher isn't counting new dictation. History you already have stays on this computer until you clear it in Insights settings.",
+    offBody: "Speecher keeps nothing about new dictation. What it kept stays on this computer until you clear it in Insights settings.",
     emptyTitle: "No dictation yet",
-    emptyBody: "Counts, streaks and your busiest hours appear here after your first dictation."
+    emptyBody: "Counts, streaks and your busiest hours appear here after your first dictation.",
+    history: "History"
+}
+
+// History's line on Home: "1,284 dictations, searchable".
+function historyLine(kept) { return _count(kept, "dictation", "dictations") + ", searchable" }
+// What History keeps while it holds no words to search.
+function historyKeeps(keeps) {
+    return keeps === "nothing" ? "Keeping nothing" : keeps === "stats" ? "Keeping stats only" : "Nothing kept yet"
 }
 
 var periods = [

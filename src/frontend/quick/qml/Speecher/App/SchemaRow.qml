@@ -37,7 +37,7 @@ SettingRow {
     // schema entry says hiddenWhen, folds away rather than greying.
     readonly property var _options: Schema.options(spec, need => System[need])
     shown: Schema.available(spec, need => System[need])
-           && (!spec.hiddenWhen || Settings.values[spec.hiddenWhen.id] !== spec.hiddenWhen.equals)
+           && !Schema.rowHidden(spec, Settings.values)
     stacked: spec.kind === "choice" && spec.control === "cards"
 
     Loader {

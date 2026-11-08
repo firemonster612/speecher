@@ -230,12 +230,15 @@ const SettingRow settingRows[] = {
     // General shows it only where Speecher can start at login
     // (System.canLaunchAtLogin).
     FIELD_ROW("launchAtLogin", launchAtLogin),
-    // Keep insights: whether What Speecher Keeps is at least Stats. Turned on
-    // it keeps stats, and leaves a level above that as it is.
-    {"insightsEnabled", [](const AppSettings &s) { return QVariant(s.history.keeps >= HistoryKeep::Stats); },
+    // What Speecher Keeps, by historyKeepName; the days as option ids.
+    {"historyKeeps", [](const AppSettings &s) { return QVariant(historyKeepName(s.history.keeps)); },
      [](AppSettings &s, const QVariant &v) {
-         s.history.keeps = !v.toBool() ? HistoryKeep::Nothing : std::max(s.history.keeps, HistoryKeep::Stats);
+         s.history.keeps = historyKeepFromName(v.toString()).value_or(s.history.keeps);
      }},
+    {"historyTextDays", [](const AppSettings &s) { return QVariant(QString::number(s.history.textDays)); },
+     [](AppSettings &s, const QVariant &v) { s.history.textDays = qMax(0, v.toInt()); }},
+    {"historyAudioDays", [](const AppSettings &s) { return QVariant(QString::number(s.history.audioDays)); },
+     [](AppSettings &s, const QVariant &v) { s.history.audioDays = qMax(-1, v.toInt()); }},
 
     {"updateChannel", [](const AppSettings &s) { return QVariant(updateChannelName(s.updates.channel)); },
      [](AppSettings &s, const QVariant &v) { s.updates.channel = updateChannelFromName(v.toString()); }},

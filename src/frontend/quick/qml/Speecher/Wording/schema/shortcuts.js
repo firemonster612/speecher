@@ -26,6 +26,9 @@ var rows = [
     { id: "pauseShortcut", page: "dictation", section: "While dictating", kind: "shortcut",
       label: "Pause and resume", help: "Pauses the dictation in progress. Press again to resume.",
       keywords: "hold break", needs: "hasGlobalShortcuts" },
+    { id: "pasteAgainShortcut", page: "dictation", section: "After dictating", kind: "shortcut",
+      label: "Paste again", help: "Pastes your last dictation again into the app you're in.",
+      keywords: "repeat last dictation transcript history paste", needs: "hasGlobalShortcuts" },
     // bindHelp says where a desktop that gives no shortcut binds a command
     // to a key, by System.desktop; other is for a desktop Speecher doesn't know.
     { id: "startCommand", page: "dictation", section: "How shortcuts reach Speecher", kind: "custom",

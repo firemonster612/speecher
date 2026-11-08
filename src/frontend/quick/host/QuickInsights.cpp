@@ -168,6 +168,8 @@ QuickInsights::QuickInsights(ApplicationController *controller, QObject *parent)
 {
     SettingsStore *settings = controller->settings();
     connect(controller->history(), &HistoryStore::changed, this, &QuickInsights::refresh);
+    // After a restart the latest is History's newest.
+    connect(controller->history(), &HistoryStore::changed, this, &QuickInsights::latestChanged);
     // Summarizing every record is too much for every save: only What
     // Speecher Keeps, and the profile names the apps and profiles go by,
     // change what shows. The latest dictation's profile goes by its current
@@ -307,7 +309,7 @@ QVariant QuickInsights::latest() const
 {
     const QString text = m_controller->lastTranscript().trimmed();
     if (text.isEmpty()) {
-        return {};
+        return newestInHistory();
     }
     QVariantMap latest{{QStringLiteral("text"), text},
                        {QStringLiteral("words"), countWords(text)},
@@ -322,6 +324,31 @@ QVariant QuickInsights::latest() const
         latest[QStringLiteral("date")] = jsDate(record->finishedAt.date());
     }
     return latest;
+}
+
+// History's newest dictation that kept its text, as latest has it; null
+// while History keeps no text.
+QVariant QuickInsights::newestInHistory() const
+{
+    const AppSettings settings = m_controller->settings()->dictationSnapshot();
+    if (settings.history.keeps < HistoryKeep::Text) {
+        return {};
+    }
+    HistoryQuery newest;
+    newest.kinds = {HistoryKind::Dictation, HistoryKind::Edit};
+    newest.limit = 1;
+    const QList<HistoryHit> hits = m_controller->history()->search(newest);
+    if (hits.isEmpty()) {
+        return {};
+    }
+    const HistoryEntry &entry = hits.first().entry;
+    const QString text = entry.text.value_or(QString()).trimmed();
+    return QVariantMap{{QStringLiteral("text"), text},
+                       {QStringLiteral("words"), countWords(text)},
+                       {QStringLiteral("app"), entry.stats.appName},
+                       {QStringLiteral("appId"), entry.stats.applicationId},
+                       {QStringLiteral("profile"), dictationProfileName(entry.stats, settings.refinement.writingProfiles)},
+                       {QStringLiteral("date"), jsDate(entry.stats.finishedAt.date())}};
 }
 
 bool QuickInsights::clear()
@@ -358,7 +385,7 @@ bool QuickInsights::saveJson(const QUrl &file)
 
 void QuickInsights::copyLatest()
 {
-    QGuiApplication::clipboard()->setText(m_controller->lastTranscript().trimmed());
+    QGuiApplication::clipboard()->setText(latest().toMap().value(QStringLiteral("text")).toString());
 }
 
 void QuickInsights::refresh()

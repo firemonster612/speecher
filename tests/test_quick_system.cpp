@@ -9,6 +9,7 @@
 #include "frontend/quick/host/QuickAudio.h"
 #include "frontend/quick/host/QuickDictation.h"
 #include "frontend/quick/host/QuickApps.h"
+#include "frontend/quick/host/QuickHistory.h"
 #include "frontend/quick/host/QuickInsights.h"
 #include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickModels.h"
@@ -574,6 +575,7 @@ private slots:
         QuickUpdates updates(&controller, controller.updates());
         QuickModels models(&controller);
         QuickInsights insights(&controller);
+        QuickHistory history(&controller);
         QuickApps apps(&controller);
         // Home reads Audio for its microphone.
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
@@ -642,6 +644,7 @@ private slots:
         QuickPhone &phone = standIn.phone;
         // General clears Insights' history, as the host always has it.
         QuickInsights insights(&controller);
+        QuickHistory history(&controller);
         QuickApps apps(&controller);
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
@@ -811,6 +814,7 @@ private slots:
         StandInSystem standIn(&controller, keyboard);
         QuickDictation dictation(&controller);
         QuickInsights insights(&controller);
+        QuickHistory history(&controller);
         QuickApps apps(&controller);
         QuickModels models(&controller);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
@@ -913,6 +917,7 @@ private slots:
         // the host always has them.
         QuickDictation dictation(&controller);
         QuickInsights insights(&controller);
+        QuickHistory history(&controller);
         QuickApps apps(&controller);
         QuickModels models(&controller);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
@@ -998,6 +1003,7 @@ private slots:
         StandInSystem standIn(&controller, keyboard);
         QuickModels models(&controller);
         QuickInsights insights(&controller);
+        QuickHistory history(&controller);
         QuickApps apps(&controller);
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
@@ -1066,6 +1072,7 @@ private slots:
         StandInSystem standIn(&controller, keyboard);
         QuickModels models(&controller);
         QuickInsights insights(&controller);
+        QuickHistory history(&controller);
         QuickApps apps(&controller);
         QuickNavigation navigation(nullptr);
         settings.set(QStringLiteral("keepOnClipboard"), false);

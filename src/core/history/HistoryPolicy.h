@@ -9,8 +9,8 @@
 namespace speecher {
 
 struct HistorySettings {
-    // Stats until History has a page to show and delete what it keeps.
-    HistoryKeep keeps = HistoryKeep::Stats;
+    // A new install keeps text; migrateHistory keeps an upgrade at Stats.
+    HistoryKeep keeps = HistoryKeep::Text;
     // Days a dictation's or file's text and audio stay; 0: until deleted.
     int textDays = 90;
     // Days its audio stays, never longer than its text; -1: as long as text.

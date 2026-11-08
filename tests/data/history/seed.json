@@ -1,0 +1,18 @@
+[
+  {"finishedAt":"2026-11-02T11:05:00","audioMs":9000,"words":18,"app":"Thunderbird","profile":"email",
+   "text":"Hi Sam, the contract is attached. Let me know if the dates work for you, and we can sign on Monday.",
+   "rawText":"hi sam the contract is attached let me know if the dates work for you and we can sign on monday"},
+  {"kind":"file","finishedAt":"2026-11-06T17:20:00","audioMs":1680000,"words":4102,"profile":"other","title":"interview-03.m4a",
+   "text":"We spoke about the budget for next year, and about hiring two more people for the support team before the spring launch."},
+  {"finishedAt":"2026-11-07T09:12:00","audioMs":5000,"words":9,"app":"Slack","profile":"work","outcome":"copied",
+   "text":"Standup moved to 9:30 tomorrow, same room as last week."},
+  {"finishedAt":"2026-11-07T16:40:00","audioMs":7000,"words":12,"app":"Kate","profile":"personal",
+   "text":"Remember to water the plants and to call the bank about the <b>new</b> card."},
+  {"finishedAt":"2026-11-08T10:01:00","audioMs":3000,"words":7,"app":"Firefox","profile":"other","outcome":"undelivered",
+   "text":"Search for the cheapest flights to Lisbon in March."},
+  {"kind":"edit","finishedAt":"2026-11-08T13:47:00","audioMs":4000,"words":4,"app":"Ghostty","profile":"ai_coding",
+   "text":"git commit -m \"fix the retry loop in the uploader\"","rawText":"make it a commit message"},
+  {"finishedAt":"2026-11-08T14:02:00","audioMs":6000,"words":13,"app":"Slack","profile":"work",
+   "text":"Can you send me the Q3 deck before the call tomorrow? Thanks.",
+   "rawText":"can you send me the q3 deck before the call tomorrow thanks"}
+]
