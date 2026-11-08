@@ -322,8 +322,8 @@ QQuickWindow *QuickFrontEnd::createWindow(const QString &typeName)
         delete object;
         return nullptr;
     }
-    // By its type, so a link inside can tell which window it is in
-    // (AccountsLink).
+    // By its type, so a part inside can tell which window it is in
+    // (FixSheet).
     window->setObjectName(typeName);
     window->installEventFilter(this);
     return window;
