@@ -152,7 +152,8 @@ Backend is the C++ types in `host/` plus `Library.qml`.
 - `Apps` is core's Apps and App Types (`core/Apps`) as the Apps page shows
   them: each App with what it sets (its type, profile, steps, paste keys and
   History choice), what core makes of it (`effective`) and
-  what each value would be without its own (`inherited`, with where from),
+  what each value would be without its own (`inherited`, with where from,
+  from core's `inheritedFor`),
   so the editor's "Same as …" options agree with dictation; the App Types,
   Other apps' profile always set; the installed apps the platform's
   `InstalledApps` lists, scanned off the UI thread once a session

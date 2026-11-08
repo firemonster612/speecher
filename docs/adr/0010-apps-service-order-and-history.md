@@ -34,8 +34,9 @@ App Types (Terminals, Browsers, Email, Office, Code editors, AI coding,
 Other apps) carry the same choices. `resolveApp` is the only matcher: the
 person's entries first (id matches before text matches), then a coding
 agent detected in a terminal, the built-in catalog and the type, and it
-says which layer each value came from, so every "Same as …" names the
-place the run really takes it from. `migrateApps` folds the three old lists
+says which layer, and which App, each value came from, so every "Same as …"
+names the place the run really takes it from. `inheritedFor` resolves an
+App's values with each of its own unset in turn, for those options. `migrateApps` folds the three old lists
 into Apps and keeps each migrated recognition rule's substring matching as
 a "name or window title contains" match, so no migrated rule changes what
 it matches.
