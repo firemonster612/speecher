@@ -20,8 +20,8 @@ StepPage {
     }
     Reveal {
         open: !page.unsupported
+        // Untitled: the step's own title already names the shortcut.
         Section {
-            title: Schema.row("shortcutBehavior").section
             SchemaRow { rowId: "shortcutBehavior" }
         }
     }
