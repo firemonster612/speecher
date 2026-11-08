@@ -10,6 +10,7 @@
 
 #include <QAction>
 #include <QMenu>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QSystemTrayIcon>
 #ifdef Q_OS_WIN
@@ -86,6 +87,11 @@ private slots:
     void recordingItemStartsAndStopsARecording()
     {
         ApplicationController controller(true);
+        // Setup is still to run, so a start ends there, before any
+        // microphone permission.
+        WindowRequests windows;
+        controller.setFrontEnd(&windows);
+        const auto detach = qScopeGuard([&controller] { controller.setFrontEnd(nullptr); });
         TrayIcon tray(&controller);
         QAction *item = tray.findChild<QSystemTrayIcon *>()->contextMenu()->findChild<QAction *>(
             QStringLiteral("trayToggleRecording"));
@@ -97,7 +103,8 @@ private slots:
         QCOMPARE(starts.count(), 0);
         controller.settings()->setRecordingConsentNoticeShown(true);
         item->trigger();
-        QTRY_COMPARE(starts.count(), 1);
+        QCOMPARE(starts.count(), 1);
+        QCOMPARE(starts.first().first().toString(), recordingNeedsSetupText());
         QCOMPARE(consent.count(), 1);
 
         QCOMPARE(trayRecordingActionText(true, 723000), QStringLiteral("Stop recording (12:03)"));
