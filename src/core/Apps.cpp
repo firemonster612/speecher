@@ -321,9 +321,10 @@ AppResolution resolveApp(const Target &target, const AppsSettings &apps)
     }
 
     const auto typeProfile = [&apps](AppCategory type) { return appTypeSettings(apps, type).writingProfile; };
-    const auto setProfile = [&resolution](const QString &profile, AppLayer from) {
+    const auto setProfile = [&resolution](const QString &profile, AppLayer from, const QString &app = {}) {
         resolution.writingProfile = profile;
         resolution.writingProfileFrom = from;
+        resolution.writingProfileApp = app;
     };
     // A coding agent inside a named terminal must not lose to the terminal's
     // catalog entry below, or the AI coding profile never reaches the Target
@@ -351,7 +352,7 @@ AppResolution resolveApp(const Target &target, const AppsSettings &apps)
     };
     std::optional<QString> profile;
     if (const AppEntry *entry = first(&AppEntry::writingProfile)) {
-        setProfile(*entry->writingProfile, AppLayer::App);
+        setProfile(*entry->writingProfile, AppLayer::App, entry->id);
     } else if (resolution.type == AppCategory::AiCoding && (profile = typeProfile(AppCategory::AiCoding))) {
         setProfile(*profile, AppLayer::Type);
     } else if ((profile = builtInProfile())) {
@@ -369,10 +370,11 @@ AppResolution resolveApp(const Target &target, const AppsSettings &apps)
     const bool inTerminal = isTerminalTarget(classified);
     const PastingChoice terminals = appTypeSettings(apps, AppCategory::Terminal).pasting;
     const PastingChoice own = appTypeSettings(apps, resolution.type).pasting;
-    const auto settle = [&](auto part, auto &value, AppLayer &from) {
-        if (const AppEntry *entry = first([part](const AppEntry &app) { return bool(app.pasting.*part); })) {
+    const auto settle = [&](auto part, auto &value, AppLayer &from, QString &app) {
+        if (const AppEntry *entry = first([part](const AppEntry &each) { return bool(each.pasting.*part); })) {
             value = entry->pasting.*part;
             from = AppLayer::App;
+            app = entry->id;
         } else if (inTerminal && terminals.*part) {
             value = terminals.*part;
             from = AppLayer::Terminal;
@@ -381,13 +383,14 @@ AppResolution resolveApp(const Target &target, const AppsSettings &apps)
             from = AppLayer::Type;
         }
     };
-    settle(&PastingChoice::steps, resolution.pasting.steps, resolution.stepsFrom);
-    settle(&PastingChoice::keys, resolution.pasting.keys, resolution.keysFrom);
+    settle(&PastingChoice::steps, resolution.pasting.steps, resolution.stepsFrom, resolution.stepsApp);
+    settle(&PastingChoice::keys, resolution.pasting.keys, resolution.keysFrom, resolution.keysApp);
 
     std::optional<HistoryKeep> history;
     if (const AppEntry *entry = first(&AppEntry::history)) {
         resolution.history = entry->history;
         resolution.historyFrom = AppLayer::App;
+        resolution.historyApp = entry->id;
     } else if ((history = appTypeSettings(apps, resolution.type).history)) {
         resolution.history = history;
         resolution.historyFrom = AppLayer::Type;
@@ -396,6 +399,50 @@ AppResolution resolveApp(const Target &target, const AppsSettings &apps)
         resolution.historyFrom = AppLayer::Fallback;
     }
     return resolution;
+}
+
+Target targetFor(const AppEntry &app)
+{
+    Target target;
+    for (const AppMatch &match : app.matches) {
+        QString &field = match.kind == AppMatchKind::Id     ? target.applicationId
+                       : match.kind == AppMatchKind::Name   ? target.applicationName
+                                                            : target.windowTitle;
+        if (field.isEmpty()) {
+            field = match.value;
+        }
+    }
+    return target;
+}
+
+AppResolution inheritedFor(const AppEntry &app, const AppsSettings &apps)
+{
+    const Target target = targetFor(app);
+    const auto without = [&](auto clear) {
+        AppsSettings changed = apps;
+        for (AppEntry &entry : changed.apps) {
+            if (entry.id == app.id) {
+                clear(entry);
+            }
+        }
+        return resolveApp(target, changed);
+    };
+    AppResolution inherited = without([](AppEntry &entry) { entry.type.reset(); });
+    const AppResolution profile = without([](AppEntry &entry) { entry.writingProfile.reset(); });
+    inherited.writingProfile = profile.writingProfile;
+    inherited.writingProfileFrom = profile.writingProfileFrom;
+    inherited.writingProfileApp = profile.writingProfileApp;
+    const AppResolution pasting = without([](AppEntry &entry) { entry.pasting = {}; });
+    inherited.pasting = pasting.pasting;
+    inherited.stepsFrom = pasting.stepsFrom;
+    inherited.stepsApp = pasting.stepsApp;
+    inherited.keysFrom = pasting.keysFrom;
+    inherited.keysApp = pasting.keysApp;
+    const AppResolution history = without([](AppEntry &entry) { entry.history.reset(); });
+    inherited.history = history.history;
+    inherited.historyFrom = history.historyFrom;
+    inherited.historyApp = history.historyApp;
+    return inherited;
 }
 
 bool isTerminalTarget(const Target &target)

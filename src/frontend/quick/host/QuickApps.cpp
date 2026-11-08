@@ -120,22 +120,6 @@ QString kindName(AppMatchKind kind)
          : kind == AppMatchKind::Name ? QStringLiteral("name") : QStringLiteral("title");
 }
 
-// A Target as the app would report itself, from what its App matches, for
-// showing what core makes of it.
-Target targetFor(const AppEntry &app)
-{
-    Target target;
-    for (const AppMatch &match : app.matches) {
-        QString &field = match.kind == AppMatchKind::Id     ? target.applicationId
-                       : match.kind == AppMatchKind::Name   ? target.applicationName
-                                                            : target.windowTitle;
-        if (field.isEmpty()) {
-            field = match.value;
-        }
-    }
-    return target;
-}
-
 Target targetFor(const InstalledApp &app)
 {
     Target target;
@@ -166,20 +150,7 @@ QVariantMap resolved(const AppResolution &resolution, const DeliverySteps &steps
 // turn, with the Pasting page's steps.
 QVariantMap entryRecord(const AppEntry &app, const AppsSettings &apps, const DeliverySteps &steps)
 {
-    const Target target = targetFor(app);
-    const auto without = [&](auto clear) {
-        AppsSettings changed = apps;
-        for (AppEntry &entry : changed.apps) {
-            if (entry.id == app.id) {
-                clear(entry);
-            }
-        }
-        return resolveApp(target, changed);
-    };
-    const AppResolution type = without([](AppEntry &entry) { entry.type.reset(); });
-    const AppResolution profile = without([](AppEntry &entry) { entry.writingProfile.reset(); });
-    const AppResolution pasting = without([](AppEntry &entry) { entry.pasting = {}; });
-    const AppResolution history = without([](AppEntry &entry) { entry.history.reset(); });
+    const AppResolution inherited = inheritedFor(app, apps);
     QStringList ids;
     QVariantList matches;
     bool byText = true;
@@ -204,17 +175,17 @@ QVariantMap entryRecord(const AppEntry &app, const AppsSettings &apps, const Del
         {QStringLiteral("steps"), ownSteps(app.pasting.steps)},
         {QStringLiteral("keys"), keysName(app.pasting.keys)},
         {QStringLiteral("history"), historyName(app.history)},
-        {QStringLiteral("effective"), resolved(resolveApp(target, apps), steps)},
+        {QStringLiteral("effective"), resolved(resolveApp(targetFor(app), apps), steps)},
         {QStringLiteral("inherited"),
-         QVariantMap{{QStringLiteral("type"), appCategoryName(type.type)},
-                     {QStringLiteral("profile"), profile.writingProfile},
-                     {QStringLiteral("profileFrom"), layerName(profile.writingProfileFrom)},
-                     {QStringLiteral("steps"), ownSteps(pasting.pasting.steps)},
-                     {QStringLiteral("stepsFrom"), layerName(pasting.stepsFrom)},
-                     {QStringLiteral("keys"), keysName(pasting.pasting.keys)},
-                     {QStringLiteral("keysFrom"), layerName(pasting.keysFrom)},
-                     {QStringLiteral("history"), historyName(history.history)},
-                     {QStringLiteral("historyFrom"), layerName(history.historyFrom)}}},
+         QVariantMap{{QStringLiteral("type"), appCategoryName(inherited.type)},
+                     {QStringLiteral("profile"), inherited.writingProfile},
+                     {QStringLiteral("profileFrom"), layerName(inherited.writingProfileFrom)},
+                     {QStringLiteral("steps"), ownSteps(inherited.pasting.steps)},
+                     {QStringLiteral("stepsFrom"), layerName(inherited.stepsFrom)},
+                     {QStringLiteral("keys"), keysName(inherited.pasting.keys)},
+                     {QStringLiteral("keysFrom"), layerName(inherited.keysFrom)},
+                     {QStringLiteral("history"), historyName(inherited.history)},
+                     {QStringLiteral("historyFrom"), layerName(inherited.historyFrom)}}},
     };
 }
 
@@ -249,22 +220,10 @@ std::optional<QList<AppMatch>> matchesFrom(const QVariantList &values)
     return matches;
 }
 
-// Where a resolved value came from, for Test: { layer, app } with the id of
-// the App that set it, the first of matched to set it, where layer is app.
-QVariantMap sourceRecord(AppLayer layer, const QStringList &matched, const AppsSettings &apps,
-                         const std::function<bool(const AppEntry &)> &sets)
+// Where a resolved value came from, for Test: { layer, app }, with the id of
+// the App that set it where layer is app.
+QVariantMap sourceRecord(AppLayer layer, const QString &app)
 {
-    QString app;
-    if (layer == AppLayer::App) {
-        for (const QString &id : matched) {
-            const auto entry = std::find_if(apps.apps.cbegin(), apps.apps.cend(),
-                                            [&id](const AppEntry &each) { return each.id == id; });
-            if (entry != apps.apps.cend() && sets(*entry)) {
-                app = id;
-                break;
-            }
-        }
-    }
     return {{QStringLiteral("layer"), layerName(layer)}, {QStringLiteral("app"), app}};
 }
 
@@ -620,17 +579,16 @@ void QuickApps::showTested(const Target &target)
     const AppsSettings &apps = settings.apps;
     const AppResolution resolution = resolveApp(target, apps);
     const QStringList matched = matchingAppIds(target, apps);
-    const auto source = [&](AppLayer layer, auto sets) { return sourceRecord(layer, matched, apps, sets); };
     QVariantMap tested = resolved(resolution, settings.output.steps);
     tested.insert(QStringLiteral("name"), !target.applicationName.isEmpty() ? target.applicationName : target.applicationId);
     tested.insert(QStringLiteral("appId"), target.applicationId);
     tested.insert(QStringLiteral("windowTitle"), target.windowTitle);
     tested.insert(QStringLiteral("matched"), matched);
     tested.insert(QStringLiteral("from"), QVariantMap{
-        {QStringLiteral("profile"), source(resolution.writingProfileFrom, [](const AppEntry &app) { return bool(app.writingProfile); })},
-        {QStringLiteral("steps"), source(resolution.stepsFrom, [](const AppEntry &app) { return bool(app.pasting.steps); })},
-        {QStringLiteral("keys"), source(resolution.keysFrom, [](const AppEntry &app) { return bool(app.pasting.keys); })},
-        {QStringLiteral("history"), source(resolution.historyFrom, [](const AppEntry &app) { return bool(app.history); })},
+        {QStringLiteral("profile"), sourceRecord(resolution.writingProfileFrom, resolution.writingProfileApp)},
+        {QStringLiteral("steps"), sourceRecord(resolution.stepsFrom, resolution.stepsApp)},
+        {QStringLiteral("keys"), sourceRecord(resolution.keysFrom, resolution.keysApp)},
+        {QStringLiteral("history"), sourceRecord(resolution.historyFrom, resolution.historyApp)},
     });
     m_tested = tested;
     setCapture({});

@@ -115,20 +115,27 @@ enum class AppLayer {
     Fallback,
 };
 
+// Each value's ...From says which layer set it, and where that is an App,
+// ...App the id of the one that did: the first matched entry setting it,
+// which need not be appId. ...App is empty for any other layer.
 struct AppResolution {
     // The first of the person's entries that matched, or empty.
     QString appId;
     AppCategory type = AppCategory::Unknown;
     QString writingProfile = WritingProfile::Other;
     AppLayer writingProfileFrom = AppLayer::Fallback;
+    QString writingProfileApp;
     // Each part unset: nothing set it, so the Pasting page's steps and the
     // usual paste keys hold (deliveryPlan).
     PastingChoice pasting;
     AppLayer stepsFrom = AppLayer::Fallback;
+    QString stepsApp;
     AppLayer keysFrom = AppLayer::Fallback;
+    QString keysApp;
     // Unset: nothing lowers What Speecher Keeps for this app.
     std::optional<HistoryKeep> history;
     AppLayer historyFrom = AppLayer::Fallback;
+    QString historyApp;
 
     bool operator==(const AppResolution &other) const = default;
 };
@@ -147,6 +154,15 @@ struct AppResolution {
 //   History: an entry's, then the type's, then Other apps'.
 // The Target's own category is ignored; this decides it.
 AppResolution resolveApp(const Target &target, const AppsSettings &apps);
+// A Target as the app would report itself, from what its App matches: the
+// first id, name and window title it matches by.
+Target targetFor(const AppEntry &app);
+// What app's own values give way to: each value resolved for app's Target
+// with that one value of app's unset and the others kept, since the type it
+// sets still decides the profile and pasting it would inherit. The type,
+// the profile, the pasting parts and History each come from their own
+// resolution.
+AppResolution inheritedFor(const AppEntry &app, const AppsSettings &apps);
 // The ids of the person's entries the Target matches, in the order
 // resolveApp consults them: those matching by id, then by name or title.
 QStringList matchingAppIds(const Target &target, const AppsSettings &apps);

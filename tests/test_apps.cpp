@@ -270,6 +270,65 @@ private slots:
         QCOMPARE(resolveApp(target("", "", ""), apps).writingProfileFrom, AppLayer::Fallback);
     }
 
+    // Where an App set a value, the resolution names the first matched App
+    // that set it, which needn't be the first that matched.
+    void eachValueSaysWhichAppSetIt()
+    {
+        AppsSettings apps;
+        apps.apps = {idApp(QStringLiteral("org.kde.kate"), std::nullopt,
+                           {DeliverySteps{.insert = true, .press = false, .keep = true}, std::nullopt}),
+                     textApp(QStringLiteral("Kate"), std::nullopt, WritingProfile::Personal)};
+        apps.apps[1].history = HistoryKeep::Stats;
+
+        const AppResolution kate = resolveApp(target("org.kde.kate", "Kate", "kate", "Kate"), apps);
+        QCOMPARE(kate.appId, QStringLiteral("app:org.kde.kate"));
+        QCOMPARE(kate.stepsFrom, AppLayer::App);
+        QCOMPARE(kate.stepsApp, QStringLiteral("app:org.kde.kate"));
+        QCOMPARE(kate.writingProfileFrom, AppLayer::App);
+        QCOMPARE(kate.writingProfileApp, QStringLiteral("app:Kate"));
+        QCOMPARE(kate.historyApp, QStringLiteral("app:Kate"));
+        // Set by no App: no App to name.
+        QCOMPARE(kate.keysFrom, AppLayer::Fallback);
+        QVERIFY(kate.keysApp.isEmpty());
+        QCOMPARE(resolveApp(target("thunderbird", "Thunderbird", "thunderbird"), apps).writingProfileApp, QString());
+    }
+
+    // What an App inherits: each of its values resolved with that value
+    // alone unset, so the type it sets still picks the profile, steps and
+    // History it would follow.
+    void anAppInheritsEachValueWithOnlyThatOneUnset()
+    {
+        AppsSettings apps;
+        for (AppTypeSettings &type : apps.types) {
+            if (type.type == AppCategory::Email) {
+                type.writingProfile = WritingProfile::Work;
+                type.pasting.steps = DeliverySteps{.insert = false, .press = false, .keep = true};
+                type.history = HistoryKeep::Stats;
+            }
+        }
+        AppEntry notes = idApp(QStringLiteral("org.example.notes"), WritingProfile::Personal,
+                               {DeliverySteps{.insert = true, .press = false, .keep = true}, PasteKeyCombo::Terminal});
+        notes.type = AppCategory::Email;
+        notes.history = HistoryKeep::Nothing;
+        apps.apps = {notes};
+
+        const AppResolution inherited = inheritedFor(notes, apps);
+        QCOMPARE(inherited.type, AppCategory::General);
+        QCOMPARE(inherited.writingProfile, WritingProfile::Work);
+        QCOMPARE(inherited.writingProfileFrom, AppLayer::Type);
+        QCOMPARE(inherited.pasting.steps, (DeliverySteps{.insert = false, .press = false, .keep = true}));
+        QCOMPARE(inherited.stepsFrom, AppLayer::Type);
+        QCOMPARE(inherited.pasting.keys, std::nullopt);
+        QCOMPARE(inherited.keysFrom, AppLayer::Fallback);
+        QCOMPARE(inherited.history, HistoryKeep::Stats);
+        QCOMPARE(inherited.historyFrom, AppLayer::Type);
+        QVERIFY(inherited.writingProfileApp.isEmpty() && inherited.stepsApp.isEmpty());
+        // Its own values still win where it is resolved.
+        const AppResolution own = resolveApp(targetFor(notes), apps);
+        QCOMPARE(own.writingProfile, WritingProfile::Personal);
+        QCOMPARE(own.writingProfileApp, notes.id);
+    }
+
     // An id matches the Target's application id or process name exactly,
     // ignoring case and a ".desktop" or ".exe" ending; nothing shorter.
     void idMatchesAreExact()
