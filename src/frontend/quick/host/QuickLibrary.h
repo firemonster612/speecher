@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/SettingsEdit.h"
+#include "frontend/quick/host/QmlValues.h"
 
 #include <QObject>
 #include <QQmlEngine>
@@ -123,15 +123,10 @@ signals:
 private:
     // Saves what edit makes of the current settings, when it returns true.
     bool save(const std::function<bool(AppSettings &)> &edit);
-    // Saves what edit makes when it refuses nothing, and names the refusal.
-    QString saveUnlessRefused(const std::function<EditRefusal(AppSettings &)> &edit);
-    int keepUndo(const SettingsEdit &undo);
     void refresh();
 
     ApplicationController *m_controller;
-    // The newest removal's undo, whose token is m_lastUndo.
-    SettingsEdit m_undo;
-    int m_lastUndo = -1;
+    UndoSlot m_undo;
     QVariantList m_profiles;
     QVariantList m_customTones;
     QVariantList m_customCleanupLevels;

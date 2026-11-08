@@ -227,12 +227,11 @@ QVariantMap sourceRecord(AppLayer layer, const QString &app)
     return {{QStringLiteral("layer"), layerName(layer)}, {QStringLiteral("app"), app}};
 }
 
-// An App edit's field: empty unsets it.
-template <typename T, typename Parse>
-std::optional<T> optionalFrom(const QVariant &value, Parse parse)
+// An edit's text field: empty unsets it.
+std::optional<QString> nonEmpty(const QVariant &value)
 {
     const QString text = value.toString();
-    return text.isEmpty() ? std::nullopt : std::optional<T>(parse(text));
+    return text.isEmpty() ? std::nullopt : std::optional(text);
 }
 
 } // namespace
@@ -386,13 +385,6 @@ void QuickApps::rebuildInstalled()
     }
 }
 
-QString QuickApps::saveUnlessRefused(const std::function<EditRefusal(AppSettings &)> &edit)
-{
-    EditRefusal refusal = EditRefusal::None;
-    m_controller->settings()->edit([&](AppSettings &s) { return (refusal = edit(s)) == EditRefusal::None; });
-    return refusalName(refusal);
-}
-
 QVariantMap QuickApps::add(const QVariantMap &app)
 {
     AppEntry entry;
@@ -406,13 +398,16 @@ QVariantMap QuickApps::add(const QVariantMap &app)
         return {{QStringLiteral("id"), QString()}, {QStringLiteral("refusal"), invalidRecord}};
     }
     entry.matches += *matches;
-    QStringList taken;
-    for (const QVariant &existing : std::as_const(m_entries)) {
-        taken.append(existing.toMap().value(QStringLiteral("id")).toString());
-    }
-    entry.id = newAppId(taken);
-    const QString refusal = saveUnlessRefused([&entry](AppSettings &s) { return addApp(s, entry); });
-    return {{QStringLiteral("id"), refusal.isEmpty() ? entry.id : QString()}, {QStringLiteral("refusal"), refusal}};
+    // addApp gives the App its id.
+    QString id;
+    const QString refusal = saveUnlessRefused(*m_controller->settings(), [&entry, &id](AppSettings &s) {
+        const EditRefusal refusal = addApp(s, entry);
+        if (refusal == EditRefusal::None) {
+            id = s.apps.apps.last().id;
+        }
+        return refusal;
+    });
+    return {{QStringLiteral("id"), id}, {QStringLiteral("refusal"), refusal}};
 }
 
 QString QuickApps::update(const QString &id, const QVariantMap &patch)
@@ -426,26 +421,27 @@ QString QuickApps::update(const QString &id, const QVariantMap &patch)
     if (!matches) {
         return invalidRecord;
     }
-    return saveUnlessRefused([&](AppSettings &s) {
+    return saveUnlessRefused(*m_controller->settings(), [&](AppSettings &s) {
         return editApp(s, id, [&patch, &history, &matches](AppEntry &app) {
             editPasting(app.pasting, patch);
             if (patch.contains(QStringLiteral("matches"))) {
                 app.matches = *matches;
             }
-            for (auto it = patch.cbegin(); it != patch.cend(); ++it) {
-                if (it.key() == u"type") {
-                    app.type = optionalFrom<AppCategory>(it.value(), appCategoryFromName);
-                    // A type the person chose takes that type's profile, as
-                    // for any App; only a migrated rule's type left it to the
-                    // catalog.
-                    app.catalogPicksProfile = false;
-                } else if (it.key() == u"profile") {
-                    app.writingProfile = optionalFrom<QString>(it.value(), [](const QString &v) { return v; });
-                } else if (it.key() == u"history") {
-                    app.history = *history;
-                } else if (it.key() == u"name") {
-                    app.name = it.value().toString();
-                }
+            if (patch.contains(QStringLiteral("type"))) {
+                const std::optional<QString> type = nonEmpty(patch.value(QStringLiteral("type")));
+                app.type = type ? std::optional(appCategoryFromName(*type)) : std::nullopt;
+                // A type the person chose takes that type's profile, as for
+                // any App; only a migrated rule's type left it to the catalog.
+                app.catalogPicksProfile = false;
+            }
+            if (patch.contains(QStringLiteral("profile"))) {
+                app.writingProfile = nonEmpty(patch.value(QStringLiteral("profile")));
+            }
+            if (patch.contains(QStringLiteral("history"))) {
+                app.history = *history;
+            }
+            if (patch.contains(QStringLiteral("name"))) {
+                app.name = patch.value(QStringLiteral("name")).toString();
             }
         });
     });
@@ -455,19 +451,15 @@ int QuickApps::remove(const QString &id)
 {
     SettingsEdit undo;
     m_controller->settings()->edit([&](AppSettings &s) { return bool(undo = removeApp(s, id)); });
-    if (!undo) {
-        return -1;
-    }
-    m_undo = undo;
-    return ++m_lastUndo;
+    return m_undo.keep(undo);
 }
 
 void QuickApps::undo(int token)
 {
-    if (token != m_lastUndo || !m_undo) {
+    const SettingsEdit edit = m_undo.take(token);
+    if (!edit) {
         return;
     }
-    const SettingsEdit edit = std::exchange(m_undo, {});
     m_controller->settings()->edit([&edit](AppSettings &s) {
         edit(s);
         return true;
@@ -481,11 +473,10 @@ QString QuickApps::updateType(const QString &type, const QVariantMap &patch)
         qWarning().noquote() << "Apps.updateType takes no History choice" << patch.value(QStringLiteral("history")).toString();
         return invalidRecord;
     }
-    return saveUnlessRefused([&](AppSettings &s) {
+    return saveUnlessRefused(*m_controller->settings(), [&](AppSettings &s) {
         return editAppType(s, appCategoryFromName(type), [&patch, &history](AppTypeSettings &settings) {
             if (patch.contains(QStringLiteral("profile"))) {
-                settings.writingProfile =
-                    optionalFrom<QString>(patch.value(QStringLiteral("profile")), [](const QString &v) { return v; });
+                settings.writingProfile = nonEmpty(patch.value(QStringLiteral("profile")));
             }
             editPasting(settings.pasting, patch);
             if (patch.contains(QStringLiteral("history"))) {

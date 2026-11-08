@@ -153,6 +153,9 @@ private:
     // Takes each finished Recording's lines from its file again where the
     // file changed, so a search finds the words the file now holds.
     void syncRecordingFiles();
+    // The stored entry, as entry reads it: a Recording's lines first taken
+    // from its file where it changed.
+    std::optional<HistoryEntry> syncedEntry(qint64 id) const;
     // terms: the search's, which pick a Recording's matching lines.
     QVariantMap resultOf(const HistoryHit &hit, const QStringList &terms = {}) const;
 

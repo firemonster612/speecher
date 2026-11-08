@@ -293,7 +293,7 @@ QString QuickLibrary::add(const QString &list, const QVariantMap &item, const QS
         qWarning().noquote() << "Library.add(" + list + ") takes no entry with" << item.keys();
         return invalidRecord;
     }
-    return saveUnlessRefused([&](AppSettings &s) { return edited->add(s, item, builtInNames); });
+    return saveUnlessRefused(*m_controller->settings(), [&](AppSettings &s) { return edited->add(s, item, builtInNames); });
 }
 
 QString QuickLibrary::update(const QString &list, const QString &key, const QVariantMap &patch,
@@ -304,7 +304,7 @@ QString QuickLibrary::update(const QString &list, const QString &key, const QVar
         qWarning().noquote() << "Library.update(" + list + ") takes no fields" << patch.keys();
         return invalidRecord;
     }
-    return saveUnlessRefused([&](AppSettings &s) { return edited->update(s, key, patch, builtInNames); });
+    return saveUnlessRefused(*m_controller->settings(), [&](AppSettings &s) { return edited->update(s, key, patch, builtInNames); });
 }
 
 int QuickLibrary::remove(const QString &list, const QString &key)
@@ -316,7 +316,7 @@ int QuickLibrary::remove(const QString &list, const QString &key)
     }
     SettingsEdit undo;
     save([&](AppSettings &s) { return bool(undo = edited->remove(s, key)); });
-    return keepUndo(undo);
+    return m_undo.keep(undo);
 }
 
 void QuickLibrary::removeProfile(const QString &id)
@@ -331,14 +331,14 @@ int QuickLibrary::removeTone(const QString &id)
 {
     SettingsEdit undo;
     save([&](AppSettings &s) { return bool(undo = removeCustomTone(s, id)); });
-    return keepUndo(undo);
+    return m_undo.keep(undo);
 }
 
 int QuickLibrary::removeLevel(const QString &id)
 {
     SettingsEdit undo;
     save([&](AppSettings &s) { return bool(undo = removeCustomCleanupLevel(s, id)); });
-    return keepUndo(undo);
+    return m_undo.keep(undo);
 }
 
 int QuickLibrary::undoLastCorrection()
@@ -353,15 +353,15 @@ int QuickLibrary::undoLastCorrection()
         }
         return newest && bool(undo = removeVocabularyEntry(s, QString(newest->id)));
     });
-    return keepUndo(undo);
+    return m_undo.keep(undo);
 }
 
 void QuickLibrary::undo(int token)
 {
-    if (token != m_lastUndo || !m_undo) {
+    const SettingsEdit edit = m_undo.take(token);
+    if (!edit) {
         return;
     }
-    const SettingsEdit edit = std::exchange(m_undo, {});
     save([&](AppSettings &s) {
         edit(s);
         return true;
@@ -402,22 +402,6 @@ QVariantMap QuickLibrary::importVocabulary(const QUrl &file)
 bool QuickLibrary::save(const std::function<bool(AppSettings &)> &edit)
 {
     return m_controller->settings()->edit(edit);
-}
-
-QString QuickLibrary::saveUnlessRefused(const std::function<EditRefusal(AppSettings &)> &edit)
-{
-    EditRefusal refusal = EditRefusal::None;
-    save([&](AppSettings &s) { return (refusal = edit(s)) == EditRefusal::None; });
-    return refusalName(refusal);
-}
-
-int QuickLibrary::keepUndo(const SettingsEdit &undo)
-{
-    if (!undo) {
-        return -1;
-    }
-    m_undo = undo;
-    return ++m_lastUndo;
 }
 
 void QuickLibrary::refresh()

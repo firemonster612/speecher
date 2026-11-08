@@ -1,7 +1,7 @@
 #pragma once
 
-#include "core/SettingsEdit.h"
 #include "frontend/quick/host/HostSingleton.h"
+#include "frontend/quick/host/QmlValues.h"
 #include "platform/InstalledApps.h"
 
 #include <QObject>
@@ -123,7 +123,6 @@ private:
     void captureFront();
     void startCapture(int seconds);
     void showTested(const Target &target);
-    QString saveUnlessRefused(const std::function<EditRefusal(AppSettings &)> &edit);
 
     ApplicationController *m_controller;
     QList<InstalledApp> m_installed;
@@ -133,8 +132,7 @@ private:
     QVariantList m_entries;
     QVariantList m_types;
     QVariantList m_recent;
-    SettingsEdit m_undo;
-    int m_lastUndo = -1;
+    UndoSlot m_undo;
     QString m_capture;
     // Whether the capture under way is a Test, which adds nothing.
     bool m_testing = false;

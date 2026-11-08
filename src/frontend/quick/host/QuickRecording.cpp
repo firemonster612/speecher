@@ -5,6 +5,7 @@
 #include "core/Apps.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationPlan.h"
+#include "frontend/quick/host/QmlValues.h"
 #include "providers/ProviderRegistry.h"
 #include "recording/RecordingPresentation.h"
 #include "recording/RecordingSession.h"
@@ -53,9 +54,7 @@ QuickRecording::QuickRecording(ApplicationController *controller, QObject *paren
     connect(recording, &RecordingSession::problemChanged, this, &QuickRecording::problemsChanged);
     connect(recording, &RecordingSession::lineWritten, this,
             [this](qint64 atMs, const QString &speaker, const QString &text) {
-                const QVariantMap line{{QStringLiteral("atMs"), atMs},
-                                       {QStringLiteral("speaker"), speaker},
-                                       {QStringLiteral("text"), text}};
+                const QVariantMap line = lineRecord({atMs, speaker, text});
                 m_lines.append(line);
                 emit lineAdded(line);
             });
