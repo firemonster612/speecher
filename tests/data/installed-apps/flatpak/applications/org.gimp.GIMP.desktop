@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=GNU Image Manipulation Program
+Icon=org.gimp.GIMP
+StartupWMClass=gimp
+Exec=/usr/bin/flatpak run --branch=stable --arch=x86_64 --command=gimp-2.10 --file-forwarding org.gimp.GIMP @@u %U @@

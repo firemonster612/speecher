@@ -14,6 +14,9 @@ struct KWinWindowInfo {
     QString resourceClass;
     QString resourceName;
     QString caption;
+    // The window's desktop file id, such as org.kde.konsole, which is how
+    // installed apps are known; empty where KWin doesn't know it.
+    QString desktopFileName;
     // KWin's own handle for this window (internalId), stable for the window's
     // whole life and unique across windows of the same program. Empty when the
     // compositor does not expose it, which is what the caller falls back from.
@@ -52,6 +55,7 @@ public slots:
                                    const QString &caption,
                                    const QString &processId,
                                    const QString &internalId,
+                                   const QString &desktopFileName,
                                    const QString &probe);
 
 private:

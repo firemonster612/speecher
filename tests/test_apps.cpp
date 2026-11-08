@@ -7,7 +7,10 @@
 #include "core/settings/AppsMigration.h"
 #include "core/settings/AppsSettingsCodec.h"
 #include "core/settings/SettingsKeys.h"
+#include "platform/InstalledApps.h"
 
+#include <QLocale>
+#include <QScopeGuard>
 #include <QSettings>
 #include <QTemporaryDir>
 
@@ -249,7 +252,67 @@ private slots:
         QVERIFY(appMatches(terminal, target("windowsterminal", "", "")));
         QVERIFY(!appMatches({AppMatchKind::Id, QStringLiteral("  ")}, target("", "", "")));
         QCOMPARE(comparableAppId(QStringLiteral(" Org.Mozilla.Firefox.desktop")), QStringLiteral("org.mozilla.firefox"));
+        // macOS reports the bundle id; a Windows store app its AUMID.
+        QVERIFY(appMatches({AppMatchKind::Id, QStringLiteral("com.apple.Terminal")}, target("com.apple.terminal", "", "")));
+        QVERIFY(appMatches({AppMatchKind::Id, QStringLiteral("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App")},
+                           target("microsoft.windowscalculator_8wekyb3d8bbwe!app", "", "")));
     }
+
+#ifdef Q_OS_LINUX
+    // The fixture's .desktop files as a KDE session lists them: an earlier
+    // directory's file hides the same id later, hidden or not; entries that
+    // aren't shown here are left out; each app carries every id a Target may
+    // report, flatpak's and snap's included.
+    void desktopEntriesListTheInstalledApps()
+    {
+        const QString data = QStringLiteral(SPEECHER_SOURCE_DIR "/tests/data/installed-apps/");
+        QStringList dirs;
+        for (const char *dir : {"home", "system", "flatpak", "snap"}) {
+            dirs.append(data + QLatin1String(dir) + QStringLiteral("/applications"));
+        }
+        const QList<InstalledApp> apps = desktopEntryApps(dirs, {QStringLiteral("KDE")});
+        QStringList listed;
+        for (const InstalledApp &app : apps) {
+            listed.append(app.name + QStringLiteral(": ") + app.ids.join(u' '));
+        }
+        QCOMPARE(listed, (QStringList{
+                             QStringLiteral("Dolphin: kde-dolphin dolphin"),
+                             QStringLiteral("Firefox: firefox firefox-bin"),
+                             QStringLiteral("Firefox (Snap): firefox_firefox firefox"),
+                             QStringLiteral("GNU Image Manipulation Program: org.gimp.GIMP gimp gimp-2.10"),
+                             QStringLiteral("My Konsole: org.kde.konsole konsole"),
+                             QStringLiteral("System Settings: kde-only systemsettings"),
+                         }));
+        QCOMPARE(apps.at(1).icon, QStringLiteral("/usr/share/pixmaps/firefox.png"));
+        QCOMPARE(apps.at(4).location, data + QStringLiteral("home/applications/org.kde.konsole.desktop"));
+
+        const QLocale before;
+        QLocale::setDefault(QLocale(QStringLiteral("de_DE")));
+        const auto restore = qScopeGuard([&before] { QLocale::setDefault(before); });
+        const QList<InstalledApp> german = desktopEntryApps(dirs, {QStringLiteral("KDE")});
+        const auto firefox = std::find_if(german.cbegin(), german.cend(), [](const InstalledApp &app) {
+            return app.ids.first() == u"firefox";
+        });
+        QVERIFY(firefox != german.cend());
+        QCOMPARE(firefox->name, QStringLiteral("Firefox-Webbrowser"));
+    }
+
+    // An App made from an installed app matches the Target KWin reports for
+    // it, by its desktop file id or its program.
+    void installedAppIdsMatchWhatTargetsReport()
+    {
+        const QString data = QStringLiteral(SPEECHER_SOURCE_DIR "/tests/data/installed-apps/flatpak/applications");
+        const InstalledApp gimp = desktopEntryApps({data}, {}).first();
+        AppEntry app{QStringLiteral("app:gimp"), gimp.name, gimp.icon, {}, std::nullopt, WritingProfile::Personal, {}};
+        for (const QString &id : gimp.ids) {
+            app.matches.append({AppMatchKind::Id, id});
+        }
+        AppsSettings apps;
+        apps.apps = {app};
+        QCOMPARE(resolveApp(target("org.gimp.GIMP", "gimp", "gimp-2.10"), apps).writingProfile, WritingProfile::Personal);
+        QCOMPARE(resolveApp(target("", "", "gimp-2.10"), apps).writingProfile, WritingProfile::Personal);
+    }
+#endif
 
     // Name and title matches keep the old rules' any-part matching, so a
     // migrated rule matches what it did: "code" in "vscode", and the same

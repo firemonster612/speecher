@@ -468,6 +468,7 @@ set(SPEECHER_PLATFORM_HEADERS
   src/platform/FallbackPopupPositioner.h
   src/platform/GlobalShortcutBinder.h
   src/platform/HotKeyShortcutBinder.h
+  src/platform/InstalledApps.h
   src/platform/PopupInputRegion.h
   src/platform/PopupPositioner.h
   src/platform/WindowBackdrop.h
@@ -496,6 +497,7 @@ set(SPEECHER_PLATFORM_LINUX_SOURCES
   src/platform/AtSpiTargetProvider.cpp
   src/platform/KGlobalAccelShortcutBinder.cpp
   src/platform/KWinActiveWindow.cpp
+  src/platform/LinuxInstalledApps.cpp
   src/platform/LinuxSessionKeyGrab.cpp
   src/platform/KeywatchSetup.cpp
   src/platform/KeywatchShortcutBinder.cpp
@@ -565,6 +567,7 @@ set(SPEECHER_PLATFORM_MAC_SOURCES
   src/platform/mac/MacSingleKeyShortcutBinder.mm
   src/platform/mac/MacSystemAudioInput.mm
   src/platform/mac/MacTargetProvider.mm
+  src/platform/mac/MacInstalledApps.mm
 )
 
 set(SPEECHER_PLATFORM_MAC_HEADERS
@@ -600,6 +603,7 @@ set(SPEECHER_PLATFORM_WIN_SOURCES
   src/platform/win/WinSingleKeyShortcutBinder.cpp
   src/platform/win/WinSystemAudioInput.cpp
   src/platform/win/WinTargetProvider.cpp
+  src/platform/win/WinInstalledApps.cpp
   src/platform/win/WinWindowBackdrop.cpp
 )
 set(SPEECHER_PLATFORM_WIN_HEADERS

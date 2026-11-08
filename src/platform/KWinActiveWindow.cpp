@@ -31,15 +31,16 @@ QString scriptSource(const QString &service, const QString &path, quint64 probe)
 {
     return QStringLiteral(
                "var w = workspace.activeWindow || workspace.activeClient;\n"
-               "var cls = '', name = '', cap = '', pid = '0', id = '';\n"
+               "var cls = '', name = '', cap = '', pid = '0', id = '', desktop = '';\n"
                "if (w) {\n"
                "  cls = w.resourceClass ? '' + w.resourceClass : '';\n"
                "  name = w.resourceName ? '' + w.resourceName : '';\n"
                "  cap = w.caption ? '' + w.caption : '';\n"
                "  pid = w.pid ? '' + w.pid : '0';\n"
                "  id = w.internalId ? '' + w.internalId : '';\n"
+               "  desktop = w.desktopFileName ? '' + w.desktopFileName : '';\n"
                "}\n"
-               "callDBus('%1', '%2', '%3', 'reportWindow', cls, name, cap, pid, id, '%4');\n")
+               "callDBus('%1', '%2', '%3', 'reportWindow', cls, name, cap, pid, id, desktop, '%4');\n")
         .arg(service, path, QString::fromLatin1(kProbeInterface), QString::number(probe));
 }
 
@@ -139,6 +140,7 @@ void KWinActiveWindow::reportWindow(const QString &resourceClass,
                                     const QString &caption,
                                     const QString &processId,
                                     const QString &internalId,
+                                    const QString &desktopFileName,
                                     const QString &probe)
 {
     // A probe that timed out can still report, while the next one waits.
@@ -146,7 +148,7 @@ void KWinActiveWindow::reportWindow(const QString &resourceClass,
         return;
     }
     const KWinWindowInfo window{resourceClass.trimmed(), resourceName.trimmed(), caption.trimmed(),
-                                internalId.trimmed(), processId.toLongLong()};
+                                desktopFileName.trimmed(), internalId.trimmed(), processId.toLongLong()};
     // Never report Speecher's own surface: pasting into ourselves is never the
     // intent, and the popup can momentarily read as active on some setups.
     if (window.resourceClass.isEmpty() || window.processId == QCoreApplication::applicationPid()) {
