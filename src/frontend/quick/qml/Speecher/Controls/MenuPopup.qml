@@ -14,13 +14,19 @@ T.Popup {
     // label whole with its icon (or, with flags, every entry's flag) and
     // check, as MenuItem lays them out, and the scroll bar's gutter: at
     // least atLeast, 280 where an entry has help to wrap, and at most
-    // Theme.menuMaxWidth, past which a label elides.
+    // Theme.menuMaxWidth, past which a label elides. The labels are measured
+    // ahead, and once laid out the entries say how wide they really are
+    // (measure), which a platform's text can make wider.
     function fitWidth(entries, atLeast, flags) {
         const label = entries.reduce((w, e) => Math.max(w, labelFont.advanceWidth(e.label || "") + (e.icon || flags ? 24 : 0)), 0)
-        const item = 10 + Math.ceil(label) + 24 + 10
+        const item = Math.max(10 + Math.ceil(label) + 24 + 10, measured)
         const least = Math.max(atLeast, entries.some(e => e.help) ? 280 : 0)
         return Math.max(least, Math.min(Theme.menuMaxWidth, item + 10 + leftPadding + rightPadding))
     }
+    // The widest entry as laid out; an entry's delegate reports its
+    // implicitWidth here. Reset it when the entries change.
+    property real measured: 0
+    function measure(entryWidth) { if (entryWidth > measured) measured = entryWidth }
     FontMetrics {
         id: labelFont
         font.family: Theme.fontFamily

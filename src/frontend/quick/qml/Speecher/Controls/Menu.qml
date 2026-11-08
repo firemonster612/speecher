@@ -9,6 +9,7 @@ MenuPopup {
     id: menu
 
     property var items: []
+    onItemsChanged: measured = 0
     property string currentId
     property int maxHeight: 340
     signal picked(string id)
@@ -57,6 +58,8 @@ MenuPopup {
             highlighted: ListView.isCurrentItem
             onHoveredChanged: if (hovered) list.currentIndex = index
             onClicked: menu._pick(index)
+            onImplicitWidthChanged: menu.measure(implicitWidth)
+            Component.onCompleted: menu.measure(implicitWidth)
         }
     }
 }

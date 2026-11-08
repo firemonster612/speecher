@@ -35,6 +35,7 @@ T.ComboBox {
         currentIndex = Qt.binding(() => _index)
     }
     onModelChanged: currentIndex = Qt.binding(() => _index)
+    onOptionsChanged: menu.measured = 0
 
     implicitHeight: Math.max(Theme.controlHeight, label.implicitHeight + 12)
     implicitWidth: Theme.selectWidth
@@ -98,6 +99,8 @@ T.ComboBox {
         enabled: modelData.enabled !== false
         current: index === control.currentIndex
         highlighted: control.highlightedIndex === index
+        onImplicitWidthChanged: menu.measure(implicitWidth)
+        Component.onCompleted: menu.measure(implicitWidth)
     }
 
     popup: MenuPopup {

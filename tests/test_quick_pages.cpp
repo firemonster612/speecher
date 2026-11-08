@@ -1614,6 +1614,10 @@ private slots:
                  QVERIFY(popupOf(model)->property("height").toReal() > 40);
              }},
         }, main);
+        // A failed step leaves the rest, and the model picker, unreached.
+        if (QTest::currentTestFailed()) {
+            return;
+        }
         QVERIFY(QMetaObject::invokeMethod(popupOf(model), "close"));
     }
 
