@@ -43,6 +43,10 @@ public:
     qint64 add(const HistoryEntry &entry);
     // Adds every entry or none, as add does each, oldest first.
     bool addAll(const QList<HistoryEntry> &entries);
+    // As addAll, marking in the same transaction that source was imported;
+    // false, adding nothing, once it was (imported).
+    bool importAll(const QString &source, const QList<HistoryEntry> &entries);
+    bool imported(const QString &source) const;
 
     // One page of the entries that still hold text, newest first: in the
     // order they came in, which is the order they finished in. (A page in
@@ -122,14 +126,23 @@ private:
     // Deletes the audio files of the entries condition finds, returning the
     // ids of those whose file wouldn't go.
     QList<qint64> deleteAudioWhere(const QString &condition, const QVariantList &values);
+    // After a permanent delete: takes what was deleted out of the search
+    // index's segments and the write-ahead log, which keep copies of it
+    // until merged and checkpointed.
+    void eraseDeletedText();
     // True once file is gone, or never was.
     static bool deleteFile(const QString &file);
     void forgetRecords();
+    // addAll, and with a source importAll's mark.
+    bool addAllMarking(const QList<HistoryEntry> &entries, const QString &source);
 
     QString m_connection;
     QString m_audioFolder;
     bool m_open = false;
     bool m_trigram = false;
+    // The index removes deleted text from its segments as it goes (FTS5's
+    // secure-delete, SQLite 3.42 and later).
+    bool m_secureIndexDelete = false;
     mutable std::optional<QList<DictationRecord>> m_records;
 };
 

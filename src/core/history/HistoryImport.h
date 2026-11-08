@@ -22,10 +22,11 @@ class HistoryStore;
 // lines are skipped; nullopt when the file can't be read at all.
 std::optional<QList<HistoryEntry>> readInsightsLog(const QString &path);
 
-// Adds an insights log's dictations to store in one go, then renames the file
-// to <path>.imported so it is read once. True with nothing to do when there
-// is no file; false, with the file left for the next start and nothing
-// added, when it couldn't be read or added.
+// Adds an insights log's dictations to store in one go, marked imported in
+// the same transaction, then renames the file to <path>.imported, which a
+// later start tries again where it failed, adding nothing again. True with
+// nothing to do when there is no file; false, with the file left for the
+// next start and nothing added, when it couldn't be read or added.
 bool importInsightsLog(HistoryStore &store, const QString &path);
 
 // One entry of a history seed, with a Recording's lines.

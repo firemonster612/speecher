@@ -178,12 +178,14 @@ private slots:
         const QString deck = QStringLiteral("Can you send me the Q3 deck before the call tomorrow?");
         const QString commit = QStringLiteral("git commit -m \"fix the retry loop in the uploader\"");
         const QString tokyo = QStringLiteral("東京駅に行きます");
+        const QString party = QStringLiteral("party 😀😀 time");
         HistoryEntry file = dictation(QStringLiteral("We spoke about the budget."), QString(), 3);
         file.kind = HistoryKind::File;
         file.title = QStringLiteral("interview-03.m4a");
         store.add(dictation(deck, QStringLiteral("Slack"), 2));
         store.add(dictation(commit, QStringLiteral("Ghostty"), 1));
         store.add(dictation(tokyo, QStringLiteral("Kate"), 0));
+        store.add(dictation(party, QStringLiteral("Signal"), 0));
         store.add(file);
 
         QCOMPARE(textsOf(store.search(searchFor(QStringLiteral("DECK")))), QStringList{deck});
@@ -195,6 +197,8 @@ private slots:
         QCOMPARE(textsOf(store.search(searchFor(QStringLiteral("東京駅")))), QStringList{tokyo});
         // Under three characters the trigrams can't help; it scans.
         QCOMPARE(textsOf(store.search(searchFor(QStringLiteral("q3")))), QStringList{deck});
+        // Two characters, though four UTF-16 units.
+        QCOMPARE(textsOf(store.search(searchFor(QStringLiteral("😀😀")))), QStringList{party});
         QCOMPARE(store.count(searchFor(QStringLiteral("the"))), 3);
         QVERIFY(store.search(searchFor(QStringLiteral("nowhere"))).isEmpty());
 
@@ -355,6 +359,40 @@ private slots:
         QVERIFY(!QFile::exists(call.transcriptPath));
     }
 
+    // Deleted for good, by purge, remove, clear or retention, an entry's words
+    // are nowhere in the database's files: not in the search index's
+    // segments, not in the write-ahead log.
+    void permanentDeletesLeaveNoTextBehind()
+    {
+        const QString path = databasePath(QStringLiteral("erased.sqlite3"));
+        HistoryStore store(path, QString());
+        QVERIFY(store.searchesByTrigram());
+        store.add(dictation(QStringLiteral("keepsake")));
+        const qint64 purged = store.add(dictation(QStringLiteral("zqx")));
+        const qint64 removed = store.add(dictation(QStringLiteral("jvq")));
+        store.add(dictation(QStringLiteral("kxw"), QStringLiteral("Slack"), 3 * 24 * 60));
+        store.add(dictation(QStringLiteral("wqj"), QStringLiteral("Slack"), 40 * 24 * 60));
+
+        QVERIFY(store.markDeleted(purged));
+        store.purgeDeleted();
+        QVERIFY(store.remove(removed));
+        QVERIFY(store.clear(kNow.addDays(-4), kNow.addDays(-2), true));
+        store.prune(kNow, HistorySettings{HistoryKeep::Text, 30, -1});
+
+        QByteArray bytes;
+        for (const QString &file : {path, path + QStringLiteral("-wal")}) {
+            QFile stored(file);
+            if (stored.open(QIODevice::ReadOnly)) {
+                bytes += stored.readAll();
+            }
+        }
+        // What stays is there to find, so the words gone are gone.
+        QVERIFY(bytes.contains("keepsake"));
+        for (const char *word : {"zqx", "jvq", "kxw", "wqj"}) {
+            QVERIFY2(!bytes.contains(word), word);
+        }
+    }
+
     // Clearing deletes the words of a range; with the stats, the entries too.
     void clearingARange()
     {
@@ -475,8 +513,10 @@ private slots:
         QVERIFY(store.entry(id)->text.has_value());
         QCOMPARE(store.countIn({}, {}), 0);
 
+        // The file got a line History didn't before the crash.
         QFile file(m_dir.filePath(QStringLiteral("crashed.md")));
         QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("[00:00:01] me: Hello\n[00:00:05] them: Are you there?\n");
         file.close();
         HistoryEntry crashed = running;
         crashed.startedAt = QDateTime::currentDateTime().addSecs(-60);
@@ -486,7 +526,9 @@ private slots:
         store.finishUnfinishedRecordings();
         const HistoryEntry recovered = *store.entry(crashedId);
         QCOMPARE(recovered.stats.finishedAt, QFileInfo(file).lastModified());
-        QCOMPARE(recovered.text, std::optional(QStringLiteral("Hello")));
+        QCOMPARE(recovered.text, std::optional(QStringLiteral("Hello\nAre you there?")));
+        QCOMPARE(recovered.stats.words, 4);
+        QCOMPARE(store.lines(crashedId).last(), (HistoryLine{5000, QStringLiteral("them"), QStringLiteral("Are you there?")}));
         QCOMPARE(recovered.outcome, HistoryOutcome::Complete);
         QCOMPARE(recovered.end.reason, RecordingEnd::Reason::Interrupted);
 
