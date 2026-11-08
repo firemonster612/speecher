@@ -18,10 +18,10 @@ var words = {
     desktopAccessibility: {
         unsupported: { status: "Not available", detail: "This Speecher build does not include desktop accessibility." },
         notNeeded: { status: "Not needed", detail: "Windows lets Speecher read and write other apps without a permission." },
-        off: { status: "Off", detail: "Speecher can't tell which app you are in, so paste rules and context are limited.", fix: "Turn on" },
-        sessionOnly: { status: "On for now", detail: "It turns off when you sign out, and paste rules and context with it.", fix: "Keep on" },
-        on: { status: "On", detail: "Paste rules, context and learning can see the app you are in." },
-        keptOn: { status: "On", detail: "Paste rules, context and learning can see the app you are in. Restart Chrome, VS Code and other Chromium apps from their launcher so Speecher can read them." }
+        off: { status: "Off", detail: "Speecher can't tell which app you are in, so your Apps' choices and context are limited.", fix: "Turn on" },
+        sessionOnly: { status: "On for now", detail: "It turns off when you sign out, and your Apps' choices and context with it.", fix: "Keep on" },
+        on: { status: "On", detail: "Your Apps' choices, context and learning know which app you are in." },
+        keptOn: { status: "On", detail: "Your Apps' choices, context and learning know which app you are in. Restart Chrome, VS Code and other Chromium apps from their launcher so Speecher can read them." }
     },
     globalShortcuts: {
         checking: { status: "Checking…", detail: "" },
@@ -84,7 +84,9 @@ function fix(check) { return check.fix ? _words(check).fix || "" : ""; }
 function failure(check) {
     return (check.failures || []).map(f => {
         const what = (failures[check.id] || {})[f.step] || "";
-        return f.error ? what + ": " + f.error : what + ".";
+        // A helper's error may come without its full stop.
+        const said = f.error ? what + ": " + f.error.trim() : what;
+        return /[.!?]$/.test(said) ? said : said + ".";
     }).join(" ");
 }
 

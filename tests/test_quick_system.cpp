@@ -677,17 +677,30 @@ private slots:
     }
 
 #ifdef Q_OS_LINUX
+    void aHealthRowFollowsItsCheck_data()
+    {
+        QTest::addColumn<QString>("error");
+        QTest::addColumn<QString>("said");
+        QTest::newRow("a sentence") << QStringLiteral("Authorization was declined.")
+                                    << QStringLiteral("Setup failed: Authorization was declined.");
+        // pkexec's own words come without a full stop.
+        QTest::newRow("words") << QStringLiteral("pkexec is not installed")
+                               << QStringLiteral("Setup failed: pkexec is not installed.");
+    }
+
     // A row follows its check as it changes, and a fix that fails says why
-    // in the row, as the setup assistant's row does.
+    // in the row, as the setup assistant's row does, as a sentence.
     void aHealthRowFollowsItsCheck()
     {
+        QFETCH(QString, error);
+        QFETCH(QString, said);
         ApplicationController controller(true);
         // The pages read Library, which works through this controller.
         const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
         FakeKeyboard keyboard;
         keyboard.helperSucceeds = false;
-        keyboard.helperError = QStringLiteral("Authorization was declined.");
+        keyboard.helperError = error;
         StandInSystem standIn(&controller, keyboard);
         QuickSystem &system = standIn.system;
         QuickNavigation navigation(nullptr);
@@ -702,8 +715,7 @@ private slots:
 
         system.fix(QStringLiteral("virtualKeyboardHealth"));
         QCOMPARE(reason(), QStringLiteral("settingUp"));
-        QTRY_COMPARE(row->property("help").toString(),
-                     QStringLiteral("Setup failed: Authorization was declined."));
+        QTRY_COMPARE(row->property("help").toString(), said);
         QCOMPARE(reason(), QStringLiteral("notInstalled"));
 
         // Trying again clears it.
