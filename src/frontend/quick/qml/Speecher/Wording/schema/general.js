@@ -68,9 +68,9 @@ var rows = [
     // What Speecher Keeps. Lowering it below Text asks whether to delete the
     // text already kept (GeneralPage).
     { id: "historyKeeps", page: "privacy", section: "History", kind: "custom",
-      label: "What Speecher keeps",
+      label: "What Speecher keeps of dictations and files",
       help: "Stays on this computer. Password fields are never kept.",
-      keywords: "history insights stats statistics privacy tracking text audio record save keep",
+      keywords: "history insights stats statistics privacy tracking text audio record save keep what speecher keeps",
       options: [
           { id: "nothing", label: "Nothing", help: "Home counts nothing, and History keeps no dictations or files. Recordings still keep their transcripts." },
           { id: "stats", label: "Stats", help: "Word counts, times and app names for Home, never your words." },
@@ -79,7 +79,7 @@ var rows = [
       ] },
     { id: "historyTextDays", page: "privacy", section: "History", kind: "choice", control: "select",
       label: "Keep text for",
-      help: "Older dictations and file transcriptions keep their stats. Their words and audio are deleted.",
+      help: "After that, History keeps only their stats. Audio files you transcribed and their saved transcripts stay where they are.",
       keywords: "history retention days delete older expire",
       hiddenWhen: { id: "historyKeeps", equals: ["nothing", "stats"] },
       options: [
@@ -100,10 +100,18 @@ var rows = [
           { id: "30", label: "30 days" },
           { id: "-1", label: "As long as text" }
       ] },
+    // Recordings keep theirs whatever historyKeeps says; their audio is
+    // set on Recordings, which this links to.
+    { id: "historyRecordings", page: "privacy", section: "History", kind: "custom",
+      label: "Recordings",
+      help: "Their transcripts stay in History until you delete them, whatever the choice above, and so does their audio when it's kept.",
+      keywords: "recordings calls meetings transcripts audio keep retention delete privacy",
+      until: "Until deleted",
+      withAudio: "Until deleted, with audio" },
     // The Apps and App Types whose History choice keeps less, read-only:
     // each is changed in its editor on Apps.
     { id: "historyExcludedApps", page: "privacy", section: "History", kind: "custom",
-      label: "Apps left out of History",
+      label: "Apps that keep less",
       help: "Apps and app types that keep less than the choice above. Change them in Apps.",
       emptyText: "Every app follows the choice above.",
       keywords: "history exclude excluded private password manager incognito app per-app stats nothing privacy" },

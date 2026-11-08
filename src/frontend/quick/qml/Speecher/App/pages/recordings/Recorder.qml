@@ -9,9 +9,11 @@ import Speecher.App
 import "RecordingWords.js" as T
 
 // The recorder at the top of Recordings. Idle: a name, Record and what it
-// will do, or why it can't with what fixes it: setup, a speech service that
-// can record, the microphone, the service's sign-in. The first recording
-// ever asks the consent question first. Running: the status line with the
+// will do, then each thing in its way with its own fix, whether or not
+// setup has finished: the microphone, a speech service that can record,
+// and setup itself, which Record waits for. The service's sign-in shows
+// under Run with, as on Transcribe files. The first recording ever asks the
+// consent question first. Running: the status line with the
 // time and what it started with, a row per stream with its level and
 // state, the problems core reports, and Cancel while it connects, then
 // Stop, which reads Finishing… while the last lines are written. A start
@@ -24,6 +26,8 @@ Section {
     readonly property string phase: Recording.state
     readonly property bool idle: phase === "off"
     readonly property bool canRecord: Recording.refusal.length === 0
+    // Why Record is off, the most specific reason first.
+    readonly property string blocker: !Recording.plan.service ? Recording.refusal : Recording.setupPending ? t.setupFirst : ""
     // The microphone's access, then whether there is one, as Home says it.
     readonly property var access: Health.find(System.checks, "microphoneAccess")
     readonly property string microphoneProblem: !Health.passes(access) ? Health.status(access)
@@ -78,25 +82,14 @@ Section {
                     text: recorder.t.record
                     variant: "primary"
                     enabled: recorder.canRecord && !recorder.askingConsent
-                    tooltip: Recording.refusal
+                    tooltip: recorder.blocker
                     focus: true
                     trailing: StatusDot { color: Theme.negative; anchors.verticalCenter: parent.verticalCenter }
                     onClicked: recorder.record()
                 }
             }
             Reveal {
-                open: recorder.canRecord && recorder.microphoneProblem.length > 0
-                Notice {
-                    objectName: "recordingMicrophone"
-                    text: recorder.microphoneProblem
-                    inset: Theme.rowInset
-                    actionText: recorder.t.openMicrophone
-                    onAction: Navigation.follow("microphone", Health.passes(recorder.access) ? "audioDevice" : "microphoneAccess")
-                }
-            }
-            ServiceStatus { role: "speech"; serviceId: recorder.canRecord ? Recording.plan.service : "" }
-            Reveal {
-                open: recorder.canRecord
+                open: !!Recording.plan.service
                 Txt {
                     x: Theme.rowInset
                     width: parent.width - Theme.rowInset * 2
@@ -109,13 +102,21 @@ Section {
                 }
             }
             Reveal {
-                open: !recorder.canRecord
+                open: recorder.microphoneProblem.length > 0
+                Notice {
+                    objectName: "recordingMicrophone"
+                    text: recorder.microphoneProblem
+                    inset: Theme.rowInset
+                    actionText: recorder.t.openMicrophone
+                    onAction: Navigation.follow("microphone", Health.passes(recorder.access) ? "audioDevice" : "microphoneAccess")
+                }
+            }
+            Reveal {
+                open: recorder.blocker.length > 0
                 Notice {
                     objectName: "recordingRefusal"
-                    text: Recording.refusal
+                    text: recorder.blocker
                     inset: Theme.rowInset
-                    // Setup comes first; then a Service Order with nothing
-                    // that can record.
                     actionText: Recording.plan.service ? recorder.t.runSetup : recorder.t.openSpeech
                     onAction: Recording.plan.service ? Settings.act("runSetup") : Navigation.follow("speech", "speechServices")
                 }

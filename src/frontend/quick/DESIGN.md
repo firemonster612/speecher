@@ -100,21 +100,28 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   writing `query` ({ text, kind, app, profile, when }) searches once
   typing pauses, and `results` come a page at a time (`fetchMore()`),
   newest first, each match in `<b>` over HTML-escaped text, so dictated
-  markup shows as typed. `entry(id)` reads one whole; `copy`,
-  `pasteAgain`, `play` and `remove`/`undo` act on one; `countIn` and
-  `clear` take a span (hour, today, 7d, all), which History's Clear… and
-  General's Clear history both ask about through `ClearConfirm`. What
+  markup shows as typed; a search first takes each Recording's lines from
+  its file again where that was edited. `entry(id)` reads one whole;
+  `copy`, `pasteAgain`, `play` and `remove`/`undo` act on one; `countIn`
+  and `clear` take a span (hour, today, 7d, all), which History's Clear…
+  and General's Clear history both ask about through `ClearConfirm`, which
+  names the audio files a clear couldn't delete and offers Try again. What
   History keeps is the `historyKeeps` row; `pages/history/HistoryWords.js`
-  words all of it. A Recording is an entry too: its result carries the
-  lines a search matched, `entry(id)` all its lines, and it opens in
-  `RecordingReader` in the list's place (`recording:<id>` lands there),
-  whose `TranscriptReader` (Find, play from a line) Recordings' live view
-  shares, its `ending` worded as what it missed; `exportEntry` writes it
-  as md, txt or JSON and `removeRecording(id, withFiles)` deletes it at
-  once, after its own question, or returns the files that wouldn't go and
-  keeps it. A file's entry offers Open transcript, Show audio file and
-  Transcribe again, and `historyKind:<kind>` lands filtered to a kind. `recent(kind, limit)` is the newest of a kind whatever the
-  query, which Recent recordings lists in History's rows.
+  words all of it. A dictation opens in place (`EntryDetail`); a file or a
+  Recording, both long transcripts, opens in `EntryReader` in the list's
+  place (`recording:<id>` lands there), with one row of actions worded the
+  same for both (Play with Stop and the position, Copy, Open transcript,
+  Show in folder, Delete), a file's paragraphs or a Recording's lines in a
+  `TranscriptReader` (Find, words that can be selected, play from a line),
+  which Recordings' live view shares. A Recording's `ending` is worded as
+  what it missed; `exportEntry` writes it as md, txt or JSON and
+  `removeRecording(id, withFiles)` deletes it at once, after its own
+  question, or returns the files that wouldn't go and keeps it. A file
+  shows its name and where its audio is, adds Transcribe again, or Locate…
+  once its audio has moved, and its Delete goes at once with Undo, leaving
+  its files. `historyKind:<kind>` lands filtered to a kind. `recent(kind,
+  limit)` is the newest of a kind whatever the query, which Recent
+  recordings lists in History's rows.
   `refineAgain(id, profile)` refines an entry's Raw Transcript again, as a
   dictation into no app (core's `planDictation` with an empty Target),
   answering with `refined` or `refineFailed`; `keepRefined` keeps it.
@@ -131,8 +138,11 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   changes leave alone; `stop()` while starting cancels it.
   Transcribe files and Recordings share `pages/transcripts/`: `RunWith`
   (the Writing Profile, "Same as your settings (…)", then what the run
-  changes of it in a fold, then each service's status with its Fix) and
-  `SaveTranscripts` (where, the folder, the file format).
+  changes of it in a fold, saying what its rows follow, then each
+  service's status with its Fix) and `SaveTranscripts` (where, the folder,
+  the file format). Record names each thing in its way with its own fix
+  (the microphone, a speech service that can record, setup), whether or
+  not setup has finished (`setupPending`).
   The first recording ever asks the consent question on Recordings,
   where the tray and the shortcut open it. `pages/recordings/RecordingWords.js`
   words it. The popup's pill and Home's row read it too.
@@ -769,7 +779,7 @@ In Speecher.App, besides SchemaRow:
 - `HealthRow { rowId; checkId }`: a schema row showing one of `System.checks` with its fix; items inside follow the fix button. `AccessibilityMenu` is the desktopAccessibility row's menu that stops keeping it on. `StateText { stateId }` words a sign-in or check state, and `States` (states.js) maps states to tones: a state to sign in to, turn on or set up is `warning`, one that failed or can't be used `negative`.
 - `ServiceOrderList { role }`: a job's Service Order, speech or refinement, on an `OrderedList`: each service with its status and a Fix while it can't run, its `ServiceChoiceRow` under it, saving as it changes. `ServiceChoiceRow` is one entry's choices: its model (picked where the service lets you, else named), a later speech service's Spoken language with "Same as Spoken language" first, and ChatGPT's and Claude's thinking and speed.
 - `ServiceOrderSection { role }`: a ServiceOrderList under the order row's label and help, as Speech to text, Refinement and their setup steps show it.
-- `ServiceStatus { role; serviceId }`: under Transcribe's profile, what a service the batch runs with still needs and how to sign in, with Check again and Fix; folded away while it is ready and before the first check answers.
+- `ServiceStatus { role; serviceId }`: under Run with (Transcribe files and Recordings), what a service the batch runs with still needs and how to sign in, with Check again and Fix; folded away while it is ready and before the first check answers.
 - `FixSheet { openFor(role, serviceId) }`: the Services card that fixes one service (ChatGPT's or Claude's sign-in, This computer's part for the job, or the job's server) in a modal sheet over the page, with Open Services, which leads back to setup when opened from there.
 - `ErrorDetails { text }`: a failure's own words behind a Details link, under its plain sentence.
 - `ShortcutRecorder { rowId }`: a shortcut setting's ShortcutField wired to Settings, for the shortcut rows and Dictation's hero, which is where the dictation shortcut is set.

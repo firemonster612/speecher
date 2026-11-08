@@ -49,6 +49,8 @@ class QuickRecording final : public QObject, public HostSingleton<QuickRecording
     // Why Record can't start now, in core's words (setup, no service that
     // can record), or empty.
     Q_PROPERTY(QString refusal READ refusal NOTIFY planChanged)
+    // Setup hasn't finished, which Record waits for whatever else is ready.
+    Q_PROPERTY(bool setupPending READ setupPending NOTIFY planChanged)
     // What Record would run with: { service, model, sources (both, mic),
     // profile (the Writing Profile whose vocabulary it takes),
     // inheritedProfile (Other apps', which it takes unless one is chosen), folder,
@@ -79,6 +81,7 @@ public:
     QString writeError() const;
     QString problem() const { return m_problem; }
     QString refusal() const;
+    bool setupPending() const;
     QVariantMap plan() const;
     QVariantMap running() const { return m_running; }
     bool canRecordCallAudio() const;

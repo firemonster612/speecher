@@ -27,7 +27,8 @@ class QuickHistory final : public QObject, public HostSingleton<QuickHistory> {
     QML_SINGLETON
     // { text, kind (all, dictation, file, recording), app, profile, when (any, today,
     // yesterday, 7d, 30d, year) }; a part left out is any. Writing it
-    // searches once typing pauses (searchDelayMs).
+    // searches once typing pauses (searchDelayMs), first taking the lines of
+    // each Recording whose file was edited from that file again.
     Q_PROPERTY(QVariantMap query READ query WRITE setQuery NOTIFY queryChanged)
     // The entries found, newest first, a page at a time: [{ id, kind, day
     // ("yyyy-MM-dd", local), startedAt, finishedAt, text, html (the text,
@@ -96,7 +97,8 @@ public:
     // for a reader to find the same.
     Q_INVOKABLE QStringList searchTerms(const QString &text) const;
     // The entry's Refined Transcript, or with raw its Raw Transcript, on the
-    // clipboard, or pasted into the app in front.
+    // clipboard, or pasted into the app in front. A Recording copies its
+    // lines as its plain text export has them.
     Q_INVOKABLE void copy(qint64 id, bool raw);
     Q_INVOKABLE void pasteAgain(qint64 id, bool raw);
     // Hides the entry at once; undo(token) brings it back until undoMs
@@ -111,10 +113,10 @@ public:
     Q_INVOKABLE void play(qint64 id, qint64 atMs = 0);
     Q_INVOKABLE void stopPlaying();
     // A Recording's file, or a file entry's saved transcript, in the
-    // desktop's editor, or its folder; a file entry's audio's folder.
+    // desktop's editor, or its folder; a file entry with no saved
+    // transcript shows its audio's folder.
     Q_INVOKABLE void openFile(qint64 id) const;
     Q_INVOKABLE void showInFolder(qint64 id) const;
-    Q_INVOKABLE void showSource(qint64 id) const;
     // Where Export offers to save a Recording as md, txt or json: beside its
     // transcript, named after it.
     Q_INVOKABLE QUrl exportFile(qint64 id, const QString &format) const;
@@ -129,9 +131,12 @@ public:
     Q_INVOKABLE void refineAgain(qint64 id, const QString &profile);
     Q_INVOKABLE bool keepRefined(qint64 id, const QString &text);
     // hour, today, 7d or all: how many dictations and files finished then,
-    // and deleting their words (and with withStats, the entries).
+    // and deleting their words (and with withStats, the entries). clear
+    // answers { cleared, left, files }: how many that held text were
+    // cleared, how many still hold it, and the audio files that wouldn't go
+    // and kept theirs. left is 0 once it all went.
     Q_INVOKABLE int countIn(const QString &range) const;
-    Q_INVOKABLE bool clear(const QString &range, bool withStats);
+    Q_INVOKABLE QVariantMap clear(const QString &range, bool withStats);
 
 signals:
     void queryChanged();
@@ -145,6 +150,9 @@ signals:
 private:
     HistoryQuery currentQuery() const;
     void search(int limit);
+    // Takes each finished Recording's lines from its file again where the
+    // file changed, so a search finds the words the file now holds.
+    void syncRecordingFiles();
     // terms: the search's, which pick a Recording's matching lines.
     QVariantMap resultOf(const HistoryHit &hit, const QStringList &terms = {}) const;
 

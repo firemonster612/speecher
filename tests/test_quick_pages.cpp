@@ -502,9 +502,14 @@ private slots:
                           navigation->go(QStringLiteral("history"));
                           openRow(newest(HistoryKind::Dictation));
                       }});
+        // A file opens in the reader, as a recording does.
         steps.append({QStringLiteral("history with a file open"), [&openRow, &newest, main] {
-                          openRow(newest(HistoryKind::File));
-                          QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("transcribeAgain")));
+                          const qint64 file = newest(HistoryKind::File);
+                          openRow(file);
+                          QQuickItem *reader = nullptr;
+                          QTRY_VERIFY((reader = findItem(main->contentItem(), QStringLiteral("entryReader"))));
+                          QTRY_COMPARE(reader->property("entryId").toLongLong(), file);
+                          QVERIFY(findItem(reader, QStringLiteral("transcribeAgain")));
                       }});
         steps.append({QStringLiteral("history with a recording open"), [navigation, main, &newest] {
                           navigation->goToRow(QStringLiteral("history"), QStringLiteral("recording:%1").arg(newest(HistoryKind::Recording)));
@@ -1080,8 +1085,12 @@ private slots:
             check(id + QStringLiteral(" page"), row.value(QStringLiteral("page")).toString(), pages);
             check(id + QStringLiteral(" opens"), row.value(QStringLiteral("opens")).toString(), rows);
             for (const char *when : {"hiddenWhen", "enabledWhen"}) {
-                check(id + QLatin1Char(' ') + QLatin1String(when),
-                      row.value(QLatin1String(when)).toMap().value(QStringLiteral("id")).toString(), rows);
+                // One condition, or a list of them.
+                const QVariant conditions = row.value(QLatin1String(when));
+                for (const QVariant &condition : conditions.typeId() == QMetaType::QVariantList ? conditions.toList()
+                                                                                                : QVariantList{conditions}) {
+                    check(id + QLatin1Char(' ') + QLatin1String(when), condition.toMap().value(QStringLiteral("id")).toString(), rows);
+                }
             }
         }
         for (const QString &id : schema->property("suggestions").value<QJSValue>().toVariant().toStringList()) {
@@ -2202,7 +2211,7 @@ private slots:
              }},
             {QStringLiteral("history recording reader"), [navigation, main, pastId] {
                  navigation->goToRow(QStringLiteral("history"), QStringLiteral("recording:") + QString::number(pastId));
-                 QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("deleteRecording")));
+                 QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("deleteEntry")));
              }},
         },
                  main);

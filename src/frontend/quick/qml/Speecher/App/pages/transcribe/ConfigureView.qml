@@ -149,6 +149,8 @@ Column {
         destinationHelp: TranscribeWords.destinationHint(view.options.destination)
         folder: view.options.folder || ""
         folderUrl: view.options.folderUrl || ""
+        formatText: TranscribeWords.plainText
+        formatHelp: TranscribeWords.formatHelp
         onDestinationChosen: id => {
             Transcription.setOption("destination", id)
             if (id === "folder" && !view.options.folder) output.chooseFolder()

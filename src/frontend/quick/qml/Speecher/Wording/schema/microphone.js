@@ -52,8 +52,10 @@ var rows = [
       keywords: "vad voice activity detection quiet pauses trim" },
     { id: "vadThresholdPercent", page: "microphone", section: "Advanced", kind: "slider",
       label: "Quiet below",
-      help: "Raise this if background noise gets transcribed; lower it if soft speech is being cut.",
-      min: 1, max: 20, step: 1, unit: "%", enabledWhen: { id: "vadEnabled", equals: true },
-      disabledHelp: "Turn on Skip silence to set what counts as quiet.",
+      help: "Raise this if background noise gets transcribed or keeps a recording going; lower it if soft speech is being cut.",
+      // Recordings' Stop after silence times silence by it too.
+      min: 1, max: 20, step: 1, unit: "%",
+      enabledWhen: [{ id: "vadEnabled", equals: true }, { id: "recordingAutoStop", notEquals: "0" }],
+      disabledHelp: "Turn on Skip silence, or Stop after silence on Recordings, to set what counts as quiet.",
       keywords: "vad threshold silence noise sensitivity" }
 ];

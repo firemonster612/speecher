@@ -42,10 +42,12 @@ var rows = [
     { id: "recordingKeepAudio", page: "recordings", section: "Save transcripts", kind: "toggle",
       label: "Keep each call's audio",
       help: "Saves both sides in one file beside the transcript, so you can play a line back. It stays until you delete the recording, whatever Privacy & data keeps for dictations. Ask the people on the call first. About 30 MB an hour.",
+      micOnlyHelp: "Saves your microphone's audio beside the transcript, so you can play a line back. It stays until you delete the recording, whatever Privacy & data keeps for dictations. Ask the people on the call first. About 30 MB an hour.",
       keywords: "audio sound save m4a play back retention days delete" },
+    // Recordings' page adds what counts as speaking (RecordingWords.js).
     { id: "recordingAutoStop", page: "recordings", section: "Recording settings", kind: "choice", control: "select",
       label: "Stop after silence",
-      help: "Ends a recording you forgot, once neither side has spoken for this long. Sound louder than Quiet below, on Microphone, counts as speaking.",
+      help: "Ends a recording you forgot, once neither side has spoken for this long.",
       keywords: "auto stop silence quiet forgot timeout minutes",
       options: [
           { id: "5", label: "5 minutes" },

@@ -9,8 +9,9 @@ import "RunWords.js" as T
 
 // Where Transcribe files and Recordings save their transcripts, in one
 // shape: where, when the page offers more than a folder; the folder, with
-// Change and Open; and the file format, when the page offers a choice. The
-// page's own rows follow.
+// Change and Open; and the file format, a choice or the one the page
+// writes, while anything is saved ("none" saves nothing). The page's own
+// rows follow.
 Section {
     id: root
 
@@ -23,8 +24,10 @@ Section {
     property string folder
     property url folderUrl
     property string folderHelp
-    // [{ id, label }], or empty for no choice.
+    // [{ id, label }], or empty for no choice, with formatText the one
+    // format the page writes.
     property var formats: []
+    property string formatText
     property string format
     property string formatHelp
     // Rows search lands on, by id; "" for none.
@@ -69,14 +72,19 @@ Section {
     }
     SettingRow {
         id: formatRow
-        shown: root.formats.length > 0
+        shown: (root.formats.length > 0 || root.formatText.length > 0) && root.destination !== "none"
         title: T.text.format
         help: root.formatHelp
         SearchLanding { rowIds: root.formatRowId ? [root.formatRowId] : []; target: formatRow; onLanded: formatRow.highlight() }
-        SegmentedControl {
-            options: root.formats
-            currentId: root.format
-            onActivated: id => root.formatChosen(id)
+        // The choice, or the one format in words; a Row leaves out the other.
+        Row {
+            SegmentedControl {
+                visible: root.formats.length > 0
+                options: root.formats
+                currentId: root.format
+                onActivated: id => root.formatChosen(id)
+            }
+            Txt { visible: root.formats.length === 0; text: root.formatText; tone: "secondary" }
         }
     }
 

@@ -8,11 +8,12 @@ import "HistoryWords.js" as T
 
 // One History entry on its day's card: its words, three lines of them until
 // it opens, where and when, and how it ended where it didn't simply paste;
-// Copy, Play and More on hover. Return or a click opens it in place, and
-// EntryDetail grows under it. A Recording shows its name, and while a search
-// runs the lines that match, each opening the reader there; Return or a click
-// opens the reader (readRequested). The keys the page names act on the row
-// with focus.
+// Copy, Play and More on hover. A dictation opens in place on Return or a
+// click, and EntryDetail grows under it. A file and a Recording open in the
+// reader instead (readRequested): a file shows its name over two lines of
+// its words, a Recording its name, and while a search runs the lines that
+// match, each opening the reader there. The keys the page names act on the
+// row with focus.
 Column {
     id: root
     // One of History.results.
@@ -25,6 +26,8 @@ Column {
     readonly property var whole: open ? History.entry(entry.id) : ({})
     readonly property bool playing: History.playing.id === entry.id
     readonly property bool recording: entry.kind === "recording"
+    // Files and Recordings open in the reader; dictations in place.
+    readonly property bool opensReader: recording || entry.kind === "file"
     readonly property alias rowItem: row
     signal toggled()
     // A Recording's reader, at the line at atMs, or its start for -1.
@@ -50,17 +53,17 @@ Column {
         clickable: true
         selected: root.open
         Accessible.role: Accessible.ListItem
-        Accessible.name: root.recording ? T.recordingTitle(root.entry) : root.entry.text
+        Accessible.name: root.recording ? T.recordingTitle(root.entry) : root.opensReader ? T.fileName(root.entry) : root.entry.text
         Accessible.description: T.detail(root.entry)
         implicitHeight: content.implicitHeight + 22
-        onClicked: root.recording ? root.readRequested(-1) : root.toggled()
+        onClicked: root.opensReader ? root.readRequested(-1) : root.toggled()
         Keys.onUpPressed: root.stepFocus(-1)
         Keys.onDownPressed: root.stepFocus(1)
         Keys.onDeletePressed: root.deleteRequested()
         Keys.onPressed: event => {
             const command = event.modifiers & Qt.ControlModifier
             if (event.matches(StandardKey.Copy)) root.copy()
-            else if (command && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) root.pasteAgain()
+            else if (command && !root.opensReader && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) root.pasteAgain()
             else if (command && event.key === Qt.Key_Space) root.togglePlay()
             else return
             event.accepted = true
@@ -71,15 +74,25 @@ Column {
             width: parent.width
             anchors.verticalCenter: parent.verticalCenter
             spacing: Theme.space1
+            // A file's or a Recording's name.
             Txt {
+                visible: root.opensReader
                 width: parent.width
-                text: root.recording ? RichText.escape(T.recordingTitle(root.entry))
-                    : root.open && root.spoken ? RichText.escape(root.whole.raw || "") : root.entry.html
+                text: root.recording ? T.recordingTitle(root.entry) : T.fileName(root.entry)
+                variant: "label"
+                strong: true
+                elide: Text.ElideRight
+            }
+            // The words, but a Recording's, which are its matching lines.
+            Txt {
+                visible: !root.recording
+                width: parent.width
+                text: root.open && root.spoken ? RichText.escape(root.whole.raw || "") : root.entry.html
                 textFormat: Text.StyledText
-                variant: root.recording ? "label" : "transcript"
-                strong: root.recording
+                variant: "transcript"
+                tone: root.opensReader ? "secondary" : "primary"
                 wrapMode: Text.WordWrap
-                maximumLineCount: root.open ? 2147483647 : 3
+                maximumLineCount: root.open ? 2147483647 : root.opensReader ? 2 : 3
                 elide: Text.ElideRight
             }
             Row {
@@ -138,7 +151,6 @@ Column {
         }
         actions: [
             CopyButton {
-                visible: !root.recording
                 tooltip: T.text.copy
                 copiedText: T.text.copied
                 onCopied: History.copy(root.entry.id, root.spoken)
@@ -158,10 +170,9 @@ Column {
                 Menu {
                     id: more
                     width: 200
-                    items: root.recording
-                        ? [{ id: "open", label: T.text.open, icon: "file-text" }, { id: "delete", label: T.text.delete_, icon: "trash-2" }]
-                        : [{ id: "paste", label: T.text.pasteAgain, icon: "clipboard-paste" },
-                           { id: "delete", label: root.entry.kind === "file" ? T.text.removeFromHistory : T.text.delete_, icon: "trash-2" }]
+                    items: [root.opensReader ? { id: "open", label: T.text.open, icon: "file-text" }
+                                             : { id: "paste", label: T.text.pasteAgain, icon: "clipboard-paste" },
+                            { id: "delete", label: T.text.delete_, icon: "trash-2" }]
                     onPicked: id => id === "paste" ? root.pasteAgain() : id === "open" ? root.readRequested(-1) : root.deleteRequested()
                 }
             }
@@ -169,7 +180,7 @@ Column {
     }
 
     Reveal {
-        open: root.open && !root.recording
+        open: root.open && !root.opensReader
         EntryDetail {
             entry: root.entry
             raw: root.open ? root.whole.raw || "" : ""

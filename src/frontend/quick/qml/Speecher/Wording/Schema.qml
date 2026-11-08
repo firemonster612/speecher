@@ -27,9 +27,10 @@ import "schema/updates.js" as Updates
 // [{ id, label, help?, icon? }], control (segmented, select, cards, or
 // language for the Spoken language's LanguageSelect) for choices, min/max/step/unit for sliders, placeholder for text, actionLabel
 // and actionIcon for actions, keywords for search, and enabledWhen
-// { id, equals } to grey a row out until another row has a value, and
-// hiddenWhen { id, equals } to fold it away while another row has a value
-// (equals is one value, or a list of them).
+// { id, equals } to grey a row out until another row has a value (a list
+// of them: until any has), and hiddenWhen { id, equals } to fold it away
+// while another row has a value (equals is one value, or a list of them;
+// notEquals in its place is any other value).
 // usableWhen names the condition a row needs to be used now (blur,
 // accessibility, automaticDownloads, screenshotReader; Usable in
 // Speecher.App holds them): without it the row is off and greyed on its page
@@ -98,13 +99,17 @@ QtObject {
     // Whether the row that turns this one on (enabledWhen) is on, by the
     // values Settings holds.
     function rowEnabled(spec, values) {
-        return !spec.enabledWhen || values[spec.enabledWhen.id] === spec.enabledWhen.equals
+        return !spec.enabledWhen || [].concat(spec.enabledWhen).some(when => _holds(when, values))
     }
     // Whether hiddenWhen folds the row away now.
     function rowHidden(spec, values) {
-        const when = spec.hiddenWhen
-        if (!when) return false
-        return Array.isArray(when.equals) ? when.equals.indexOf(values[when.id]) >= 0 : values[when.id] === when.equals
+        return !!spec.hiddenWhen && _holds(spec.hiddenWhen, values)
+    }
+    // Whether a row's value meets { id, equals } or { id, notEquals }.
+    function _holds(when, values) {
+        const value = values[when.id]
+        if ("notEquals" in when) return value !== when.notEquals
+        return Array.isArray(when.equals) ? when.equals.indexOf(value) >= 0 : value === when.equals
     }
     // The row's options this computer has.
     function options(spec, has) {
