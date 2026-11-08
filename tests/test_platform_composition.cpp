@@ -3246,7 +3246,7 @@ private slots:
             FakeGlobalShortcutBinder *cancel = nullptr;
             int dictationSuspensions = -1;
             int cancelSuspensions = -1;
-            void deliver(const OutputSettings &, const DeliveryContent &, const Target &) override
+            void deliver(const OutputSettings &, const DeliveryContent &, const Target &, std::optional<PasteMethod>) override
             {
                 dictationSuspensions = dictation->suspendCount - dictation->resumeCount;
                 cancelSuspensions = cancel->suspendCount - cancel->resumeCount;
@@ -3260,7 +3260,7 @@ private slots:
         connect(&delivery, &TextDeliveryAdapter::delivered, this,
                 [&deliveredOk](const DeliveryResult &result) { deliveredOk = result.ok; });
 
-        delivery.deliver({}, {}, {});
+        delivery.deliver({}, {}, {}, {});
         QCOMPARE(inner.dictationSuspensions, 1);
         QCOMPARE(inner.cancelSuspensions, 1);
         QCOMPARE(dictation.resumeCount, 0);
@@ -3281,8 +3281,8 @@ private slots:
         inner.holdsAnswer = true;
         ShortcutSuspendingDelivery delivery(&inner, {&dictation});
 
-        delivery.deliver({}, {}, {});
-        delivery.deliver({}, {}, {});
+        delivery.deliver({}, {}, {}, {});
+        delivery.deliver({}, {}, {}, {});
         QCOMPARE(dictation.suspendCount, 1);
         inner.answer();
         QCOMPARE(dictation.resumeCount, 0);
@@ -3306,7 +3306,7 @@ private slots:
         inner.holdsAnswer = true;
         ShortcutSuspendingDelivery delivery(&inner, {&router});
 
-        delivery.deliver({}, {}, {});
+        delivery.deliver({}, {}, {}, {});
         inner.answer();
         QCOMPARE(combination->suspendCount, 0);
         QCOMPARE(combination->resumeCount, 0);

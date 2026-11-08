@@ -23,8 +23,8 @@ struct DictationRecord {
     // when a fallback stood in. Empty in records from before they were kept.
     QStringList speechProviders;
     QStringList refinementProviders;
-    // The app's ID as paste rules name it (Target::applicationId), so a rule
-    // can be added for the app just dictated into. Only in memory: the log
+    // The app's ID as an App's Id match compares it (Target::applicationId),
+    // for the Apps page's Recently dictated into (SeenApps). The insights log
     // never keeps it.
     QString applicationId;
 };

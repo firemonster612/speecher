@@ -20,6 +20,7 @@
 #include "app/AppImageUpdater.h"
 #endif
 #include "core/InsightsLog.h"
+#include "core/SeenApps.h"
 #include "core/ProviderTable.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
@@ -167,7 +168,7 @@ ApplicationController::ApplicationController(bool popupOnly,
     m_accounts = new Accounts(*m_settings, *m_availability, *m_providers, this);
     connect(m_localModels, &LocalModelStore::downloadFinished,
             this, &ApplicationController::notifyModelReady);
-    TargetProvider *targetProvider = m_platform->createTargetProvider(this);
+    TargetProvider *targetProvider = m_targetProvider = m_platform->createTargetProvider(this);
     targetProvider->setCorrectionObservationEnabled(m_settings->dictationSnapshot().correctionLearningEnabled);
     connect(m_settings,
             &SettingsStore::correctionLearningEnabledChanged,
@@ -251,9 +252,11 @@ ApplicationController::ApplicationController(bool popupOnly,
                           InsightsLog::Access::ReadWrite,
                           this)
         : new InsightsLog(insightsSeed, InsightsLog::Access::ReadOnly, this);
+    m_seenApps = new SeenApps(insightsSeed.isEmpty() ? dataFolder() + QStringLiteral("/seen-apps.json") : QString(), this);
     m_insightsToday =
         QDate::fromString(qEnvironmentVariable("SPEECHER_INSIGHTS_TODAY"), Qt::ISODate);
     connect(m_session, &DictationSession::dictationRecorded, m_insightsLog, &InsightsLog::append);
+    connect(m_session, &DictationSession::dictationRecorded, m_seenApps, &SeenApps::record);
     // The record describes the transcript Home shows, so it goes whenever
     // that transcript does: a new session starting (which drops the last
     // transcript, delivered or not) and a delivery. The session reports a
@@ -394,6 +397,16 @@ InsightsLog *ApplicationController::insightsLog() const
     return m_insightsLog;
 }
 
+SeenApps *ApplicationController::seenApps() const
+{
+    return m_seenApps;
+}
+
+TargetProvider *ApplicationController::targetProvider() const
+{
+    return m_targetProvider;
+}
+
 QDate ApplicationController::insightsToday() const
 {
     return m_insightsToday.isValid() ? m_insightsToday : QDate::currentDate();
@@ -406,7 +419,7 @@ const std::optional<DictationRecord> &ApplicationController::lastRecord() const
 
 bool ApplicationController::clearInsights()
 {
-    if (!m_insightsLog->clear()) {
+    if (!m_insightsLog->clear() || !m_seenApps->clear()) {
         return false;
     }
     forgetLastRecord();

@@ -244,15 +244,18 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/ProviderChain.cpp
   src/core/ProviderTable.cpp
   src/core/OutputFormat.cpp
-  src/core/PasteRules.cpp
+  src/core/PasteMethod.cpp
   src/core/DeliverySteps.cpp
   src/core/ProviderAttemptIssueText.cpp
   src/core/ProviderReadiness.cpp
   src/core/ProviderRatings.cpp
   src/core/ReleaseNotes.cpp
+  src/core/SeenApps.cpp
   src/core/SettingsStore.cpp
   src/core/ShortcutBinding.cpp
   src/core/settings/CorrectionSettingsCodec.cpp
+  src/core/settings/AppsMigration.cpp
+  src/core/settings/AppsSettingsCodec.cpp
   src/core/settings/SettingsCodecs.cpp
   src/core/settings/SettingsFields.cpp
   src/core/settings/SettingsFile.cpp
@@ -261,10 +264,12 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/SecretStore.cpp
   src/core/TranscriptState.cpp
   src/core/Target.cpp
+  src/core/Apps.cpp
   src/core/VocabularyLimit.cpp
   src/core/Vocabulary.cpp
   src/core/VocabularyEdits.cpp
   src/core/WordPreview.cpp
+  src/core/AppEdits.cpp
   src/core/WritingProfileEdits.cpp
   src/core/WritingProfileProviders.cpp
   src/dictation/DictationTypes.cpp
@@ -291,15 +296,18 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/PasteKeys.h
   src/core/DeliverySteps.h
   src/core/OutputFormat.h
-  src/core/PasteRules.h
+  src/core/PasteMethod.h
   src/core/ProviderAttemptIssue.h
   src/core/ProviderAttemptIssueText.h
   src/core/ProviderReadiness.h
   src/core/ProviderRatings.h
   src/core/ReleaseNotes.h
+  src/core/SeenApps.h
   src/core/SettingsStore.h
   src/core/ShortcutBinding.h
   src/core/settings/CorrectionSettingsCodec.h
+  src/core/settings/AppsMigration.h
+  src/core/settings/AppsSettingsCodec.h
   src/core/settings/SettingsCodecs.h
   src/core/settings/SettingsFile.h
   src/core/settings/SettingsKeys.h
@@ -309,11 +317,13 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/SettingsEdit.h
   src/core/TranscriptState.h
   src/core/Target.h
+  src/core/Apps.h
   src/core/VocabularyLimit.h
   src/core/Vocabulary.h
   src/core/VocabularyEdits.h
   src/core/WordPreview.h
   src/core/WordSpacing.h
+  src/core/AppEdits.h
   src/core/WritingProfileEdits.h
   src/core/WritingProfileProviders.h
   src/dictation/DictationTypes.h
@@ -460,6 +470,7 @@ set(SPEECHER_PLATFORM_HEADERS
   src/platform/FallbackPopupPositioner.h
   src/platform/GlobalShortcutBinder.h
   src/platform/HotKeyShortcutBinder.h
+  src/platform/InstalledApps.h
   src/platform/PopupInputRegion.h
   src/platform/PopupPositioner.h
   src/platform/WindowBackdrop.h
@@ -488,6 +499,7 @@ set(SPEECHER_PLATFORM_LINUX_SOURCES
   src/platform/AtSpiTargetProvider.cpp
   src/platform/KGlobalAccelShortcutBinder.cpp
   src/platform/KWinActiveWindow.cpp
+  src/platform/LinuxInstalledApps.cpp
   src/platform/LinuxSessionKeyGrab.cpp
   src/platform/KeywatchSetup.cpp
   src/platform/KeywatchShortcutBinder.cpp
@@ -557,6 +569,7 @@ set(SPEECHER_PLATFORM_MAC_SOURCES
   src/platform/mac/MacSingleKeyShortcutBinder.mm
   src/platform/mac/MacSystemAudioInput.mm
   src/platform/mac/MacTargetProvider.mm
+  src/platform/mac/MacInstalledApps.mm
 )
 
 set(SPEECHER_PLATFORM_MAC_HEADERS
@@ -592,6 +605,7 @@ set(SPEECHER_PLATFORM_WIN_SOURCES
   src/platform/win/WinSingleKeyShortcutBinder.cpp
   src/platform/win/WinSystemAudioInput.cpp
   src/platform/win/WinTargetProvider.cpp
+  src/platform/win/WinInstalledApps.cpp
   src/platform/win/WinWindowBackdrop.cpp
 )
 set(SPEECHER_PLATFORM_WIN_HEADERS
@@ -1479,6 +1493,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_main.cpp
     tests/test_transcript_state.cpp
     tests/test_bindings.cpp
+    tests/test_apps.cpp
     tests/test_settings.cpp
     tests/test_provider_registry.cpp
     tests/test_platform_composition.cpp
@@ -1576,6 +1591,7 @@ if(SPEECHER_BUILD_TESTS)
   set(SPEECHER_TEST_SUITES
     transcript_state
     bindings
+    apps
     settings
     provider_registry
     platform_composition

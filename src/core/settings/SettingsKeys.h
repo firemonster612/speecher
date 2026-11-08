@@ -60,6 +60,8 @@ inline const QString AudioPreRollMs = QStringLiteral("audio/preRollMs");
 inline const QString AudioPostRollMs = QStringLiteral("audio/postRollMs");
 inline const QString AudioReadinessTimeoutMs = QStringLiteral("audio/readinessTimeoutMs");
 inline const QString AudioVadThresholdPercent = QStringLiteral("audio/vadThresholdPercent");
+// Retired: migrateApps moved them into AppsEntries, and leaves them for a
+// downgrade to read.
 inline const QString AppRecognitionRules = QStringLiteral("target/appRecognitionRules");
 inline const QString BindingRules = QStringLiteral("bindings/rules");
 // Only platforms without a desktop-wide shortcut registry of their own store the
@@ -76,8 +78,10 @@ inline const QString InsightsEnabled = QStringLiteral("insights/enabled");
 inline const QString RefinementProvider = QStringLiteral("refinement/provider");
 inline const QString RefinementFallbackProviders = QStringLiteral("refinement/fallbackProviders");
 inline const QString RefinementStyle = QStringLiteral("refinement/style");
+// Retired, as AppRecognitionRules: Other apps' profile in AppsTypes.
 inline const QString DefaultWritingProfile = QStringLiteral("refinement/defaultWritingProfile");
 inline const QString WritingProfiles = QStringLiteral("refinement/writingProfiles");
+// Retired, as AppRecognitionRules.
 inline const QString WritingProfileOverrides = QStringLiteral("refinement/writingProfileOverrides");
 inline const QString UseTargetContext = QStringLiteral("refinement/useTargetContext");
 inline const QString IncludeScreenshotContext = QStringLiteral("refinement/includeScreenshotContext");
@@ -129,7 +133,12 @@ inline const QString KeepOnClipboard = QStringLiteral("output/keepOnClipboard");
 inline const QString OutputFormat = QStringLiteral("output/format");
 inline const QString YdotoolEnabled = QStringLiteral("output/ydotoolEnabled");
 inline const QString CompletionStatusDurationMs = QStringLiteral("output/completionStatusDurationMs");
+// Retired, as AppRecognitionRules: single apps' rules went to AppsEntries,
+// app types' to AppsTypes.
 inline const QString PasteRules = QStringLiteral("output/pasteRules");
+// The person's Apps and what each App Type sets (AppsSettingsCodec).
+inline const QString AppsEntries = QStringLiteral("apps/entries");
+inline const QString AppsTypes = QStringLiteral("apps/types");
 inline const QString UpdatesChannel = QStringLiteral("updates/channel");
 inline const QString UpdatesAutoCheck = QStringLiteral("updates/autoCheck");
 inline const QString UpdatesAutoInstall = QStringLiteral("updates/autoInstall");
@@ -146,6 +155,7 @@ inline const QString RecordingConsentNoticeShown = QStringLiteral("recording/con
 inline const QString IdentityMigrationVersion = QStringLiteral("migration/identityVersion");
 inline const QString RefinementModelMigrationVersion = QStringLiteral("migration/refinementModelVersion");
 inline const QString DeliveryStepsMigrationVersion = QStringLiteral("migration/deliveryStepsVersion");
+inline const QString AppsMigrationVersion = QStringLiteral("migration/appsVersion");
 inline const QString ClaudeCredentialsPath = QStringLiteral("claude/credentialsPath");
 inline const QString ClaudeEndpointBase = QStringLiteral("claude/endpointBase");
 inline const QString ClaudeVoicePath = QStringLiteral("claude/voicePath");

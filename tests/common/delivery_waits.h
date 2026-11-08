@@ -18,12 +18,13 @@ inline DeliveryResult deliverAndWait(TextDeliveryAdapter &delivery,
                                      const OutputSettings &settings,
                                      const DeliveryContent &content,
                                      const Target &target,
+                                     std::optional<PasteMethod> pasting = std::nullopt,
                                      int timeoutMs = 10000)
 {
     std::optional<DeliveryResult> answer;
     const QMetaObject::Connection connection = QObject::connect(
         &delivery, &TextDeliveryAdapter::delivered, [&answer](const DeliveryResult &result) { answer = result; });
-    delivery.deliver(settings, content, target);
+    delivery.deliver(settings, content, target, pasting);
     const bool answered = QTest::qWaitFor([&answer] { return answer.has_value(); }, timeoutMs);
     QObject::disconnect(connection);
     if (!answered) {

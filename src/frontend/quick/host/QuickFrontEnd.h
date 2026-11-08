@@ -3,6 +3,7 @@
 #include "app/AppFrontEnd.h"
 #include "app/VirtualKeyboardSetup.h"
 #include "frontend/quick/host/QuickAccounts.h"
+#include "frontend/quick/host/QuickApps.h"
 #include "frontend/quick/host/QuickAppearance.h"
 #include "frontend/quick/host/QuickAudio.h"
 #include "frontend/quick/host/QuickDictation.h"
@@ -89,6 +90,7 @@ private:
     QuickInsights m_insights;
     QuickAccounts m_accounts;
     QuickLibrary::ControllerScope m_library;
+    QuickApps m_apps;
     QuickNavigation m_navigation;
     QQmlEngine m_engine;
     QObject *m_themeSetting = nullptr;

@@ -1,4 +1,5 @@
 #include "common/test_suites.h"
+#include "common/apps_fixtures.h"
 #include "common/test_system_singletons.h"
 
 #include "app/ApplicationController.h"
@@ -139,11 +140,6 @@ private slots:
                                             {QStringLiteral("replacement"), QString()}}),
                  QStringLiteral("incomplete"));
 
-        const QString rules = QStringLiteral("recognitionRules");
-        QCOMPARE(library.add(rules, {{QStringLiteral("match"), QStringLiteral("obsidian")}}), QStringLiteral("incomplete"));
-        QCOMPARE(library.add(rules, {{QStringLiteral("match"), QStringLiteral("obsidian")},
-                                     {QStringLiteral("profile"), QStringLiteral("custom_profile_gone")}}),
-                 QStringLiteral("missing"));
         QCOMPARE(library.add(QStringLiteral("terms"), {{QStringLiteral("term"), QStringLiteral(" ")}}), QStringLiteral("blank"));
 
         // A field no record has is the page's mistake, not the person's.
@@ -154,7 +150,6 @@ private slots:
         QCOMPARE(library.remove(QStringLiteral("profiles"), QStringLiteral("work")), -1);
         QCOMPARE(SettingsStore().dictationSnapshot().refinement.writingProfiles.size(), 6);
         QCOMPARE(SettingsStore().dictationSnapshot().bindings.size(), 1);
-        QVERIFY(SettingsStore().dictationSnapshot().appRecognitionRules.isEmpty());
     }
 
     void removingAToneMovesItsProfilesUntilUndone()
@@ -239,23 +234,24 @@ private slots:
         QCOMPARE(toneOf(WritingProfile::Work), QStringLiteral("none"));
     }
 
-    void removingAProfileResetsTheFallbackSetting()
+    // Removing a profile leaves the Apps and Other apps that picked it
+    // following their wider place.
+    void removingAProfileResetsTheAppsThatPickedIt()
     {
         ApplicationController controller(true);
         QuickLibrary library(&controller);
-        QuickSettings settings(&controller);
         const QString id = library.newId(QStringLiteral("custom_profile"));
         QCOMPARE(library.add(QStringLiteral("profiles"), profileItem(id, QStringLiteral("Notes"))), saved);
-        settings.set(QStringLiteral("defaultWritingProfile"), id);
-        QCOMPARE(library.add(QStringLiteral("recognitionRules"),
-                             {{QStringLiteral("match"), QStringLiteral("obsidian")}, {QStringLiteral("profile"), id}}),
-                 saved);
-        QCOMPARE(SettingsStore().dictationSnapshot().refinement.defaultWritingProfile, id);
+        controller.settings()->edit([&id](AppSettings &draft) {
+            draft.apps.apps = {test::textApp(QStringLiteral("obsidian"), std::nullopt, id)};
+            test::setOtherAppsProfile(draft.apps, id);
+            return true;
+        });
+        QCOMPARE(fallbackWritingProfile(SettingsStore().dictationSnapshot().apps), id);
 
         library.removeProfile(id);
-        QCOMPARE(SettingsStore().dictationSnapshot().refinement.defaultWritingProfile, WritingProfile::Other);
-        QCOMPARE(settings.values().value(QStringLiteral("defaultWritingProfile")).toString(), WritingProfile::Other);
-        QVERIFY(SettingsStore().dictationSnapshot().appRecognitionRules.isEmpty());
+        QCOMPARE(fallbackWritingProfile(SettingsStore().dictationSnapshot().apps), WritingProfile::Other);
+        QCOMPARE(SettingsStore().dictationSnapshot().apps.apps.first().writingProfile, std::nullopt);
         QCOMPARE(library.profiles().size(), 5);
     }
 
@@ -411,57 +407,6 @@ private slots:
         QCOMPARE(SettingsStore().dictationSnapshot().vocabulary.first().term, QStringLiteral("Kafka"));
     }
 
-    void appMatchesTakeOverTheOldPerAppOverrides()
-    {
-        SettingsStore().edit([](AppSettings &draft) {
-            draft.refinement.writingProfileOverrides = {{QStringLiteral("org.kde.kate"), WritingProfile::Email, true}};
-            return true;
-        });
-        ApplicationController controller(true);
-        QuickLibrary library(&controller);
-        QCOMPARE(library.recognitionRules().size(), 1);
-        QCOMPARE(library.recognitionRules().first().toMap().value(QStringLiteral("profile")).toString(), WritingProfile::Email);
-        QVERIFY(!library.builtInRecognitionRules().isEmpty());
-
-        QCOMPARE(library.add(QStringLiteral("recognitionRules"),
-                             {{QStringLiteral("match"), QStringLiteral("konsole")}, {QStringLiteral("category"), QStringLiteral("terminal")}}),
-                 saved);
-        SettingsStore another;
-        QVERIFY(another.dictationSnapshot().refinement.writingProfileOverrides.isEmpty());
-        QCOMPARE(another.dictationSnapshot().appRecognitionRules.size(), 2);
-        QCOMPARE(another.dictationSnapshot().appRecognitionRules.last().category, AppCategory::Terminal);
-
-        QCOMPARE(library.add(QStringLiteral("recognitionRules"), {{QStringLiteral("match"), QStringLiteral("Konsole")},
-                                                                   {QStringLiteral("profile"), WritingProfile::Work}}),
-                 QStringLiteral("taken"));
-        QCOMPARE(library.update(QStringLiteral("recognitionRules"), QStringLiteral("konsole"), {{QStringLiteral("category"), QString()}}),
-                 QStringLiteral("incomplete"));
-    }
-
-    // Renaming a match keeps its place and what it sets.
-    void anAppMatchCanBeRenamedInPlace()
-    {
-        SettingsStore().edit([](AppSettings &draft) {
-            draft.appRecognitionRules = {{QStringLiteral("obsidian"), AppCategory::Office, WritingProfile::Personal},
-                                                    {QStringLiteral("neochat"), std::nullopt, WritingProfile::Personal}};
-            return true;
-        });
-        ApplicationController controller(true);
-        QuickLibrary library(&controller);
-
-        QCOMPARE(library.update(QStringLiteral("recognitionRules"), QStringLiteral("Obsidian"),
-                                {{QStringLiteral("match"), QStringLiteral(" md.obsidian ")}}),
-                 saved);
-        const QList<AppRecognitionRule> rules = SettingsStore().dictationSnapshot().appRecognitionRules;
-        QCOMPARE(rules.size(), 2);
-        QCOMPARE(rules.first().match, QStringLiteral("md.obsidian"));
-        QCOMPARE(rules.first().category, AppCategory::Office);
-        QCOMPARE(rules.first().writingProfile, WritingProfile::Personal);
-        QCOMPARE(library.update(QStringLiteral("recognitionRules"), QStringLiteral("md.obsidian"),
-                                {{QStringLiteral("match"), QStringLiteral("NeoChat")}}),
-                 QStringLiteral("taken"));
-    }
-
     // CSV terms merge into the list as the old editor merged them: a term
     // listed already keeps its own settings, takes a context it lacked and
     // the higher use count.
@@ -559,49 +504,6 @@ private slots:
         QCOMPARE(SettingsStore().dictationSnapshot().learnedCorrections.first().id, QStringLiteral("c2"));
         library.undo(undo);
         QCOMPARE(SettingsStore().dictationSnapshot().learnedCorrections.last(), edited);
-    }
-
-    // A choice in a match's row that core refuses, such as clearing the
-    // only thing a match sets, is said in a toast and saves nothing.
-    void anAppMatchRowSaysWhyAChoiceWasRefused()
-    {
-        SettingsStore().edit([](AppSettings &draft) {
-            draft.appRecognitionRules = {{QStringLiteral("obsidian"), AppCategory::Office, std::nullopt}};
-            return true;
-        });
-        ApplicationController controller(true);
-        const QuickLibrary::ControllerScope scope(&controller);
-        QuickSettings settings(&controller);
-        // Library's key-term line names Models' speech service, and the host
-        // always has Models.
-        QuickModels models(&controller);
-        QuickNavigation navigation(nullptr);
-        // Its accessibility notice reads System.
-        const test::SystemSingletons system(&controller);
-        QQmlEngine engine;
-        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/text/AppRecognitionRules.qml")));
-        const std::unique_ptr<QObject> section(component.create());
-        QVERIFY2(section, qPrintable(component.errorString()));
-        // A row is a ListView delegate: an item child, not a QObject one.
-        QObject *typeSelect = nullptr;
-        QList<QQuickItem *> items{qobject_cast<QQuickItem *>(section.get())};
-        while (!items.isEmpty()) {
-            QQuickItem *item = items.takeLast();
-            items += item->childItems();
-            if (QByteArray(item->metaObject()->className()).startsWith("Select_")
-                && item->property("currentId").toString() == QLatin1String("office")) {
-                typeSelect = item;
-            }
-        }
-        QVERIFY(typeSelect);
-        QObject *toaster = engine.singletonInstance<QObject *>("Speecher.Controls", "Toaster");
-        QSignalSpy posted(toaster, SIGNAL(posted(QVariant)));
-
-        QMetaObject::invokeMethod(typeSelect, "chosen", Q_ARG(QString, QString()));
-        QCOMPARE(posted.count(), 1);
-        QCOMPARE(posted.first().first().toMap().value(QStringLiteral("text")).toString(),
-                 QStringLiteral("Choose an app type, a profile or both."));
-        QCOMPARE(SettingsStore().dictationSnapshot().appRecognitionRules.first().category, std::optional(AppCategory::Office));
     }
 
     // The app's Library is Library.qml over this type: its wording reads the

@@ -1,5 +1,7 @@
 #include "platform/AtSpiTargetProvider.h"
 
+#include "core/Apps.h"
+
 #include "platform/InsertionBaseline.h"
 #include "platform/KWinActiveWindow.h"
 #include "platform/atspi/AtSpiAccess.h"
@@ -74,7 +76,10 @@ void AtSpiTargetProvider::compositorFallbackTarget(std::function<void(const Targ
             return;
         }
         Target target;
-        target.applicationId = window->resourceClass.toCaseFolded();
+        // The desktop file id is what the installed-app picker knows an app
+        // by; the class is often only the program's name.
+        target.applicationId = !window->desktopFileName.isEmpty() ? window->desktopFileName
+                                                                  : window->resourceClass.toCaseFolded();
         target.applicationName = window->resourceClass;
         target.windowTitle = window->caption;
         target.processName = !window->resourceName.isEmpty()

@@ -8,6 +8,7 @@
 #include "frontend/quick/host/QuickAppearance.h"
 #include "frontend/quick/host/QuickAudio.h"
 #include "frontend/quick/host/QuickDictation.h"
+#include "frontend/quick/host/QuickApps.h"
 #include "frontend/quick/host/QuickInsights.h"
 #include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickModels.h"
@@ -573,6 +574,7 @@ private slots:
         QuickUpdates updates(&controller, controller.updates());
         QuickModels models(&controller);
         QuickInsights insights(&controller);
+        QuickApps apps(&controller);
         // Home reads Audio for its microphone.
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         // The window and General read Appearance, as the host always has it.
@@ -640,6 +642,7 @@ private slots:
         QuickPhone &phone = standIn.phone;
         // General clears Insights' history, as the host always has it.
         QuickInsights insights(&controller);
+        QuickApps apps(&controller);
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         const std::unique_ptr<QObject> created = createQml(engine, R"(
@@ -808,6 +811,7 @@ private slots:
         StandInSystem standIn(&controller, keyboard);
         QuickDictation dictation(&controller);
         QuickInsights insights(&controller);
+        QuickApps apps(&controller);
         QuickModels models(&controller);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         QuickNavigation navigation(nullptr);
@@ -909,6 +913,7 @@ private slots:
         // the host always has them.
         QuickDictation dictation(&controller);
         QuickInsights insights(&controller);
+        QuickApps apps(&controller);
         QuickModels models(&controller);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         QuickNavigation navigation(nullptr);
@@ -980,71 +985,65 @@ private slots:
         QCOMPARE(stepIds, (QStringList{"welcome", "transcription", "microphone", "delivery", "refinement", "shortcut", "ready"}));
     }
 
-    // Exceptions list only the rules that differ from the steps: on a fresh
-    // install the terminals' keys, where they differ, then what is added,
-    // each with what it leaves of the steps. They can be set without
-    // accessibility, and apply once Speecher can tell the app.
-    void exceptionsListOnlyTheRulesThatDiffer()
+    // Pasting lists only the Apps and App Types whose Pasting choice
+    // narrows the steps: on a fresh install the terminals' keys, where they
+    // differ, then what Apps sets, each with what it leaves of the steps.
+    void pastingListsOnlyTheChoicesThatDiffer()
     {
         ApplicationController controller(true);
-        // The pages read Library, which works through this controller.
+        // The page reads Library, which works through this controller.
         const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
         FakeKeyboard keyboard;
         StandInSystem standIn(&controller, keyboard);
-        // The page's Library reads Models and its exceptions Insights, as
-        // the host always has them.
         QuickModels models(&controller);
         QuickInsights insights(&controller);
+        QuickApps apps(&controller);
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/PastingPage.qml")));
         const std::unique_ptr<QObject> page(component.create());
         QVERIFY2(page, qPrintable(component.errorString()));
-        QObject *section = page->findChild<QObject *>(QStringLiteral("appPasteRules"));
+        QObject *section = page->findChild<QObject *>(QStringLiteral("appsPasteDifferently"));
         QVERIFY(section);
-        const auto exceptions = [section] {
+        const auto listed = [section] {
             QStringList ids;
-            for (const QVariant &entry : plain(section->property("exceptions")).toList()) {
+            for (const QVariant &entry : plain(section->property("entries")).toList()) {
                 ids << entry.toMap().value(QStringLiteral("id")).toString();
             }
             return ids;
         };
-        QCOMPARE(exceptions(), terminalKeysDiffer ? QStringList{QStringLiteral("type:terminal")} : QStringList());
+        QCOMPARE(listed(), terminalKeysDiffer ? QStringList{QStringLiteral("apptype:terminal")} : QStringList());
 
-        settings.set(QStringLiteral("categoryPasteRule_browser"), QStringLiteral("direct_insert"));
-        settings.set(QStringLiteral("applicationPasteRules"),
-                     QVariantList{QVariantMap{{QStringLiteral("app"), QStringLiteral("org.kde.kate")},
-                                              {QStringLiteral("method"), QStringLiteral("clipboard_only")},
-                                              {QStringLiteral("enabled"), true}}});
-        QStringList expected{QStringLiteral("type:browser"), QStringLiteral("app:org.kde.kate")};
+        QCOMPARE(apps.updateType(QStringLiteral("browser"), {{QStringLiteral("pasting"), QStringLiteral("direct_insert")}}), QString());
+        const QString kate = apps.add({{QStringLiteral("name"), QStringLiteral("Kate")},
+                                       {QStringLiteral("ids"), QStringList{QStringLiteral("org.kde.kate")}}})
+                                 .value(QStringLiteral("id")).toString();
+        QCOMPARE(apps.update(kate, {{QStringLiteral("pasting"), QStringLiteral("clipboard_only")}}), QString());
+        QStringList expected{QStringLiteral("apptype:browser"), QStringLiteral("appentry:") + kate};
         if (terminalKeysDiffer) {
-            expected.prepend(QStringLiteral("type:terminal"));
+            expected.prepend(QStringLiteral("apptype:terminal"));
         }
-        QCOMPARE(exceptions(), expected);
-        // What an exception does here, as its row and the add form say it.
-        const auto result = [section](const char *method, const char *type = "", bool off = false) {
-            QVariant text;
-            QMetaObject::invokeMethod(section, "result", Q_RETURN_ARG(QVariant, text),
-                                      Q_ARG(QVariant, QString::fromLatin1(method)), Q_ARG(QVariant, QString::fromLatin1(type)),
-                                      Q_ARG(QVariant, off));
-            return text.toString();
+        QCOMPARE(listed(), expected);
+
+        // What a choice does here, as Apps' editor and this list say it.
+        QObject *schema = engine.singletonInstance<QObject *>(QStringLiteral("Speecher.Wording"), QStringLiteral("Schema"));
+        QVERIFY(schema);
+        const auto result = [&](const char *method, bool terminalWins = false) {
+            QJSValue pasting = engine.toScriptValue(schema).property(QStringLiteral("pasting"));
+            const QVariant plan = standIn.system.rulePlan(QString::fromLatin1(method));
+            return pasting.property(QStringLiteral("ruleResult"))
+                .call({engine.toScriptValue(plan), QString::fromLatin1(method), terminalWins})
+                .toString();
         };
         QCOMPARE(result("clipboard_only"), QStringLiteral("Clipboard only"));
-        QCOMPARE(result("clipboard_only", "", true), QStringLiteral("Off, so the app follows the other rules"));
 #ifdef Q_OS_LINUX
         // Without accessibility only the copy it keeps can run here.
         QCOMPARE(result("direct_insert"), QStringLiteral("Clipboard only. Insert can't run here yet"));
 #endif
-        // AI coding apps in a terminal follow a Terminals exception.
-        settings.set(QStringLiteral("categoryPasteRule_terminal"), QStringLiteral("inherit"));
-        QVERIFY(!result("clipboard_only", "ai_coding").contains(QStringLiteral("Terminals")));
-        settings.set(QStringLiteral("categoryPasteRule_terminal"), QStringLiteral("clipboard_only"));
-        QCOMPARE(result("clipboard_only", "ai_coding"),
-                 QStringLiteral("Clipboard only. A Terminals exception wins for apps in a terminal"));
-        QVERIFY(!result("clipboard_only", "browser").contains(QStringLiteral("Terminals")));
+        QCOMPARE(result("clipboard_only", true), QStringLiteral("Clipboard only. Apps in a terminal paste like Terminals"));
 
-        // An exception that relies on an off step, and leaves none, says so.
+        // A choice that relies on an off step, and leaves none, says so.
         settings.set(QStringLiteral("keepOnClipboard"), false);
         settings.set(QStringLiteral("insertThroughAccessibility"), false);
         QCOMPARE(result("clipboard_only"), QStringLiteral("No delivery: Keep is off"));
@@ -1067,21 +1066,24 @@ private slots:
         StandInSystem standIn(&controller, keyboard);
         QuickModels models(&controller);
         QuickInsights insights(&controller);
+        QuickApps apps(&controller);
         QuickNavigation navigation(nullptr);
         settings.set(QStringLiteral("keepOnClipboard"), false);
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/PastingPage.qml")));
         const std::unique_ptr<QObject> page(component.create());
         QVERIFY2(page, qPrintable(component.errorString()));
-        QObject *section = page->findChild<QObject *>(QStringLiteral("appPasteRules"));
-        QVERIFY(section);
-        QVariant text;
-        QMetaObject::invokeMethod(section, "result", Q_RETURN_ARG(QVariant, text), Q_ARG(QVariant, QStringLiteral("direct_insert")),
-                                  Q_ARG(QVariant, QString()), Q_ARG(QVariant, false));
-        QCOMPARE(text.toString(), QStringLiteral("No delivery: nothing it allows can run here"));
-        QMetaObject::invokeMethod(section, "result", Q_RETURN_ARG(QVariant, text), Q_ARG(QVariant, QStringLiteral("terminal_paste")),
-                                  Q_ARG(QVariant, QString()), Q_ARG(QVariant, false));
-        QCOMPARE(text.toString(), QStringLiteral("Press Ctrl+Shift+V. Insert can't run here yet"));
+        // What a Pasting choice does here, as Apps and Pasting say it.
+        QObject *schema = engine.singletonInstance<QObject *>(QStringLiteral("Speecher.Wording"), QStringLiteral("Schema"));
+        QVERIFY(schema);
+        const auto result = [&](const QString &method) {
+            const QJSValue pasting = engine.toScriptValue(schema).property(QStringLiteral("pasting"));
+            return pasting.property(QStringLiteral("ruleResult"))
+                .call({engine.toScriptValue(standIn.system.rulePlan(method)), method, false})
+                .toString();
+        };
+        QCOMPARE(result(QStringLiteral("direct_insert")), QStringLiteral("No delivery: nothing it allows can run here"));
+        QCOMPARE(result(QStringLiteral("terminal_paste")), QStringLiteral("Press Ctrl+Shift+V. Insert can't run here yet"));
         QCOMPARE(page->property("_selectionLimit").toString(),
                  QStringLiteral("Reading the selection needs Desktop accessibility, which Insert above turns on."));
     }

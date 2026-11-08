@@ -42,14 +42,6 @@ bool isBuiltInWritingProfile(const QString &id);
 // or a custom profile's id. Anything else reads as Other.
 QString writingProfileFromName(const QString &name);
 
-struct WritingProfileOverride {
-    QString applicationId;
-    QString profile = WritingProfile::Other;
-    bool enabled = true;
-
-    bool operator==(const WritingProfileOverride &other) const = default;
-};
-
 struct WritingProfileSettings {
     QString profile = WritingProfile::Other;
     QString cleanupStrength = QStringLiteral("balanced");
@@ -81,14 +73,6 @@ QString writingProfileLabel(const QString &id, const QList<WritingProfileSetting
 QString offeredWritingProfile(const QString &id,
                               const QList<WritingProfileSettings> &profiles,
                               const QString &fallback = WritingProfile::Other);
-
-struct AppRecognitionRule {
-    QString match;
-    std::optional<AppCategory> category;
-    std::optional<QString> writingProfile;
-
-    bool operator==(const AppRecognitionRule &other) const = default;
-};
 
 QList<WritingProfileSettings> defaultWritingProfileSettings();
 WritingProfileSettings writingProfileSettingsFor(const QList<WritingProfileSettings> &settings,
@@ -180,33 +164,6 @@ struct Target {
     // records that the text was read. Call it only with text that was.
     void setNearbyText(const QString &text, int start, int end);
 };
-
-QList<AppRecognitionRule> builtInAppRecognitionRules();
-// Recognition rules replaced per-application Writing Profile overrides. This
-// folds any surviving override into the rule list that supersedes it; saving
-// the folded list and clearing the overrides is what retires them for good.
-QList<AppRecognitionRule> recognitionRulesWithMigratedProfileOverrides(
-    const QList<AppRecognitionRule> &rules,
-    const QList<WritingProfileOverride> &overrides);
-bool isTerminalTarget(const Target &target);
-AppCategory classifyTarget(const Target &target,
-                           const QList<AppRecognitionRule> &customRules = {});
-// Whether a running process is an AI coding tool, from its name and its
-// command line. Only the first two arguments count: the executable, or an
-// interpreter and the script it runs.
-bool isAiCodingProcess(const QString &processName, const QStringList &commandLine);
-// Whether a terminal's window title names an AI coding tool, such as "Claude
-// Code". Only for terminals: the AI coding rules otherwise ignore titles,
-// which a browser tab or a document can carry.
-bool terminalTitleNamesAiCodingTool(const Target &target);
-QString inferWritingProfile(const Target &target, const QString &fallback = WritingProfile::Other);
-QString resolveWritingProfile(const Target &target,
-                              const QList<WritingProfileOverride> &overrides,
-                              const QString &fallback = WritingProfile::Other);
-QString resolveWritingProfile(const Target &target,
-                              const QList<WritingProfileOverride> &overrides,
-                              const QList<AppRecognitionRule> &recognitionRules,
-                              const QString &fallback = WritingProfile::Other);
 
 struct RefinementContext {
     Target target;

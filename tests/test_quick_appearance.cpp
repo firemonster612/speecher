@@ -4,6 +4,7 @@
 #include "app/ApplicationController.h"
 #include "core/ColorSchemes.h"
 #include "core/SettingsStore.h"
+#include "frontend/quick/host/QuickApps.h"
 #include "frontend/quick/host/QuickAppearance.h"
 #include "frontend/quick/host/QuickSettings.h"
 
@@ -905,6 +906,8 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickAppearance appearance(&controller);
+        // Search lists the Apps saved.
+        QuickApps apps(&controller);
         // Search asks System what the computer has, as the host always can.
         test::SystemSingletons system(&controller);
         // On Linux no test runs under a compositor that blurs; macOS, and

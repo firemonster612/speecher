@@ -7,6 +7,7 @@
 #include "core/VocabularyEdits.h"
 #include "core/VocabularyLimit.h"
 #include "core/WritingProfileEdits.h"
+#include "frontend/quick/host/QmlValues.h"
 
 #include <QDebug>
 #include <QFile>
@@ -20,28 +21,6 @@ namespace speecher {
 namespace {
 
 ApplicationController *g_controller = nullptr;
-
-// What add and update return for a record they can't convert.
-const QString invalidRecord = QStringLiteral("invalid");
-
-QString refusalName(EditRefusal refusal)
-{
-    switch (refusal) {
-    case EditRefusal::None:
-        return {};
-    case EditRefusal::Blank:
-        return QStringLiteral("blank");
-    case EditRefusal::Taken:
-        return QStringLiteral("taken");
-    case EditRefusal::Incomplete:
-        return QStringLiteral("incomplete");
-    case EditRefusal::Missing:
-        return QStringLiteral("missing");
-    case EditRefusal::BuiltIn:
-        return QStringLiteral("builtIn");
-    }
-    return invalidRecord;
-}
 
 // Each setter below copies the record fields `fields` names onto an entry;
 // the list's EditedList names the fields it takes.
@@ -134,22 +113,6 @@ void setReplacementFields(BindingRule &rule, const QVariantMap &fields)
     }
 }
 
-// An empty category or profile sets none.
-void setRuleFields(AppRecognitionRule &rule, const QVariantMap &fields)
-{
-    if (fields.contains(QStringLiteral("match"))) {
-        rule.match = fields.value(QStringLiteral("match")).toString();
-    }
-    if (fields.contains(QStringLiteral("category"))) {
-        const QString category = fields.value(QStringLiteral("category")).toString();
-        rule.category = category.isEmpty() ? std::nullopt : std::optional(appCategoryFromName(category));
-    }
-    if (fields.contains(QStringLiteral("profile"))) {
-        const QString profile = fields.value(QStringLiteral("profile")).toString();
-        rule.writingProfile = profile.isEmpty() ? std::nullopt : std::optional(profile);
-    }
-}
-
 // One list the UI edits: the fields its records take, adding to it, changing
 // the entry a key names, and removing that entry. Adding and changing take
 // the built-in names the page shows, which only tones and levels use. A list
@@ -232,17 +195,6 @@ const EditedList editedLists[] = {
          return editBindingRule(s, phrase, [&patch](BindingRule &rule) { setReplacementFields(rule, patch); });
      },
      removeBindingRule},
-    {"recognitionRules",
-     {QStringLiteral("match"), QStringLiteral("category"), QStringLiteral("profile")},
-     [](AppSettings &s, const QVariantMap &item, const QStringList &) {
-         AppRecognitionRule rule;
-         setRuleFields(rule, item);
-         return addAppRecognitionRule(s, rule);
-     },
-     [](AppSettings &s, const QString &match, const QVariantMap &patch, const QStringList &) {
-         return editAppRecognitionRule(s, match, [&patch](AppRecognitionRule &rule) { setRuleFields(rule, patch); });
-     },
-     removeAppRecognitionRule},
 };
 
 const EditedList *findList(const QString &name)
@@ -260,19 +212,10 @@ const EditedList *findList(const QString &name)
 bool convertible(const EditedList &list, QVariantMap record)
 {
     record.remove(QStringLiteral("id"));
-    const QString category = record.value(QStringLiteral("category")).toString();
-    const bool knownCategory = category.isEmpty() || appCategoryFromName(category) != AppCategory::Unknown;
     const QStringList keys = record.keys();
-    return knownCategory && std::all_of(keys.cbegin(), keys.cend(), [&list](const QString &key) {
+    return std::all_of(keys.cbegin(), keys.cend(), [&list](const QString &key) {
         return list.fields.contains(key);
     });
-}
-
-QVariantMap ruleRecord(const AppRecognitionRule &rule)
-{
-    return {{QStringLiteral("match"), rule.match},
-            {QStringLiteral("category"), rule.category ? appCategoryName(*rule.category) : QString()},
-            {QStringLiteral("profile"), rule.writingProfile.value_or(QString())}};
 }
 
 // The file chosen for an import, read whole, or nothing with why.
@@ -319,15 +262,6 @@ QuickLibrary::ControllerScope::ControllerScope(ApplicationController *controller
 QuickLibrary::ControllerScope::~ControllerScope()
 {
     g_controller = nullptr;
-}
-
-QVariantList QuickLibrary::builtInRecognitionRules() const
-{
-    QVariantList rules;
-    for (const AppRecognitionRule &rule : builtInAppRecognitionRules()) {
-        rules.append(ruleRecord(rule));
-    }
-    return rules;
 }
 
 int QuickLibrary::keyTermLimit() const
@@ -391,7 +325,7 @@ int QuickLibrary::remove(const QString &list, const QString &key)
 
 void QuickLibrary::removeProfile(const QString &id)
 {
-    // Saving drops what named it: app matches, term limits, the fallback.
+    // Saving drops what named it: Apps' and App Types' profile, term limits.
     if (!save([&id](AppSettings &s) { return removeWritingProfile(s, id); })) {
         qWarning().noquote() << "Library.removeProfile:" << id << "is not one of the user's profiles";
     }
@@ -552,17 +486,12 @@ void QuickLibrary::refresh()
         replacements.append(QVariantMap{{QStringLiteral("phrase"), rule.phrase},
                                         {QStringLiteral("replacement"), rule.replacement}});
     }
-    QVariantList rules;
-    for (const AppRecognitionRule &rule :
-         recognitionRulesWithMigratedProfileOverrides(settings.appRecognitionRules, refinement.writingProfileOverrides)) {
-        rules.append(ruleRecord(rule));
-    }
     const QString &speech = settings.speech.providerId;
     const bool takesKeyTerms = VocabularyLimit::takesKeyterms(speech);
     const int keyTermsSent = int(VocabularyLimit::speechKeyterms(keyTerms, speech).size());
 
     if (profiles == m_profiles && tones == m_customTones && levels == m_customCleanupLevels && terms == m_terms
-        && corrections == m_corrections && replacements == m_replacements && rules == m_recognitionRules
+        && corrections == m_corrections && replacements == m_replacements
         && takesKeyTerms == m_speechTakesKeyTerms && keyTermsSent == m_keyTermsSent) {
         return;
     }
@@ -572,7 +501,6 @@ void QuickLibrary::refresh()
     m_terms = terms;
     m_corrections = corrections;
     m_replacements = replacements;
-    m_recognitionRules = rules;
     m_speechTakesKeyTerms = takesKeyTerms;
     m_keyTermsSent = keyTermsSent;
     emit listsChanged();

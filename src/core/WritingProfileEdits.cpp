@@ -156,51 +156,6 @@ EditRefusal checkLevel(CustomCleanupLevel &level, qsizetype self, const QList<Cu
     return instructed ? EditRefusal::None : EditRefusal::Incomplete;
 }
 
-QString ruleMatch(const AppRecognitionRule &rule)
-{
-    return rule.match;
-}
-
-bool sameMatch(const QString &left, const QString &right)
-{
-    return left.compare(right, Qt::CaseInsensitive) == 0;
-}
-
-// The app matches with the overrides they replaced folded in and the
-// overrides cleared, so saving the draft retires them.
-QList<AppRecognitionRule> &rulesWithOverridesRetired(AppSettings &settings)
-{
-    settings.appRecognitionRules = recognitionRulesWithMigratedProfileOverrides(
-        settings.appRecognitionRules, settings.refinement.writingProfileOverrides);
-    settings.refinement.writingProfileOverrides.clear();
-    return settings.appRecognitionRules;
-}
-
-qsizetype indexOfMatch(const QList<AppRecognitionRule> &rules, const QString &match)
-{
-    const auto found = std::find_if(rules.cbegin(), rules.cend(), [&match](const AppRecognitionRule &rule) {
-        return sameMatch(rule.match, match.trimmed());
-    });
-    return found == rules.cend() ? -1 : found - rules.cbegin();
-}
-
-EditRefusal checkRule(AppRecognitionRule &rule, qsizetype self, const AppSettings &settings)
-{
-    rule.match = rule.match.trimmed();
-    if (rule.match.isEmpty()) {
-        return EditRefusal::Blank;
-    }
-    if (!nameFree(settings.appRecognitionRules, self, rule.match, ruleMatch)) {
-        return EditRefusal::Taken;
-    }
-    if (!rule.category && !rule.writingProfile) {
-        return EditRefusal::Incomplete;
-    }
-    const bool profileOffered = !rule.writingProfile
-        || !offeredWritingProfile(*rule.writingProfile, settings.refinement.writingProfiles, {}).isEmpty();
-    return profileOffered ? EditRefusal::None : EditRefusal::Missing;
-}
-
 // Removes entry id from `entries` and points every profile field that chose
 // it at `instead`. The edit it returns puts the entry back at its place,
 // unless one by its id or name is there by then, and once it is back points
@@ -335,34 +290,6 @@ SettingsEdit removeCustomCleanupLevel(AppSettings &settings, const QString &id)
                                                                                        : levels.at(index).base;
     return removeChoice(&RefinementSettings::customCleanupLevels, &WritingProfileSettings::cleanupStrength,
                         settings, id, base);
-}
-
-EditRefusal addAppRecognitionRule(AppSettings &settings, AppRecognitionRule rule)
-{
-    return appendEntry(rulesWithOverridesRetired(settings), rule, [&settings](AppRecognitionRule &added, qsizetype self) {
-        return checkRule(added, self, settings);
-    });
-}
-
-EditRefusal editAppRecognitionRule(AppSettings &settings, const QString &match,
-                                   const EntryChange<AppRecognitionRule> &change)
-{
-    QList<AppRecognitionRule> &rules = rulesWithOverridesRetired(settings);
-    return changeEntry(rules, indexOfMatch(rules, match), change,
-                       [&settings](AppRecognitionRule &rule, qsizetype self) { return checkRule(rule, self, settings); });
-}
-
-SettingsEdit removeAppRecognitionRule(AppSettings &settings, const QString &match)
-{
-    QList<AppRecognitionRule> &rules = rulesWithOverridesRetired(settings);
-    const qsizetype index = indexOfMatch(rules, match);
-    if (index < 0) {
-        return {};
-    }
-    const auto putBack = takeEntry(rules, index, [](const AppRecognitionRule &entry, const AppRecognitionRule &removed) {
-        return sameMatch(entry.match, removed.match);
-    });
-    return [putBack](AppSettings &draft) { putBack(rulesWithOverridesRetired(draft)); };
 }
 
 } // namespace speecher

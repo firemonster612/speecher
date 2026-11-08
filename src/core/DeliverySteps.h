@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/PasteRules.h"
+#include "core/PasteMethod.h"
 
 #include <QString>
 #include <QStringList>

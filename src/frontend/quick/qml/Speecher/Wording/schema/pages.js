@@ -43,12 +43,13 @@ var pages = [
       subtitle: "Words Speecher spells your way, corrections it learned from your edits, and phrases that become exact text.",
       keywords: "words names spelling corrections replacements snippets terms" },
 
+    { id: "apps", title: "Apps", icon: "app-window", file: "AppsPage.qml",
+      subtitle: "Set how Speecher writes and pastes in each app.",
+      keywords: "app application per-app type category recognize match writing profile paste terminal browser email exceptions" },
+
     { id: "pasting", title: "Pasting", icon: "clipboard-paste", file: "PastingPage.qml",
-      subtitle: "How your words get into the app you're using, and the apps that get them differently.",
-      keywords: "output delivery paste clipboard insertion virtual keyboard formatting per-app rules app type terminal exceptions" },
-    { id: "appRecognition", parent: "pasting", title: "App recognition", icon: "scan-search", file: "AppRecognitionPage.qml",
-      subtitle: "How Speecher tells which app you're in. Paste rules and writing profiles both go by it.",
-      keywords: "recognize identify match app type category writing profile built-in" },
+      subtitle: "How your words get into the app you're using.",
+      keywords: "output delivery paste clipboard insertion virtual keyboard formatting" },
 
     { id: "accounts", title: "Accounts", icon: "key-round", file: "AccountsPage.qml",
       subtitle: "The sign-ins Speecher uses for dictation and cleanup. Keys are kept in your system keychain.",

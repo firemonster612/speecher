@@ -12,8 +12,8 @@ namespace speecher {
 class ApplicationController;
 
 // The UI's LibraryLists: the Writing Profiles with the user's tones and
-// cleanup levels, the vocabulary terms, Learned Corrections, replacements
-// and app matches, as plain values read from and written through the
+// cleanup levels, the vocabulary terms, Learned Corrections and
+// replacements, as plain values read from and written through the
 // daemon's SettingsStore. The Library singleton (Library.qml) builds on it
 // and words it. Edits name a list by its property and an entry by its key
 // there (see update). Core's WritingProfileEdits and VocabularyEdits make
@@ -40,11 +40,6 @@ class QuickLibrary : public QObject {
     Q_PROPERTY(QVariantList corrections READ corrections NOTIFY listsChanged)
     // { phrase, replacement }
     Q_PROPERTY(QVariantList replacements READ replacements NOTIFY listsChanged)
-    // { match, category, profile }: the user's app matches, which win over
-    // the built-in ones. An empty category or profile sets none.
-    Q_PROPERTY(QVariantList recognitionRules READ recognitionRules NOTIFY listsChanged)
-    // The same for the matches Speecher ships with.
-    Q_PROPERTY(QVariantList builtInRecognitionRules READ builtInRecognitionRules CONSTANT)
     // How many key terms a speech service takes at most, and how many terms
     // refinement reads.
     Q_PROPERTY(int keyTermLimit READ keyTermLimit CONSTANT)
@@ -76,8 +71,6 @@ public:
     QVariantList terms() const { return m_terms; }
     QVariantList corrections() const { return m_corrections; }
     QVariantList replacements() const { return m_replacements; }
-    QVariantList recognitionRules() const { return m_recognitionRules; }
-    QVariantList builtInRecognitionRules() const;
     int keyTermLimit() const;
     int refinementTermLimit() const;
     bool speechTakesKeyTerms() const { return m_speechTakesKeyTerms; }
@@ -87,7 +80,7 @@ public:
     // prefix (custom_profile, custom_tone, custom_level).
     Q_INVOKABLE QString newId(const QString &prefix) const;
     // Adds item to the list named (profiles, customTones, customCleanupLevels,
-    // terms, replacements, recognitionRules), with the fields its records
+    // terms, replacements), with the fields its records
     // show; one of the first three carries its newId. A tone or level takes
     // builtInNames, the names the page shows the built-in ones by, which it
     // can't be called. Returns why it was refused, as EditRefusal says: blank,
@@ -96,17 +89,17 @@ public:
     Q_INVOKABLE QString add(const QString &list, const QVariantMap &item, const QStringList &builtInNames = {});
     // Changes the fields patch names on the entry `key` names in the list
     // named: a profile's, tone's, level's or correction's id, a term, a
-    // replacement's phrase or a match's app. What the record does not show
+    // replacement's phrase. What the record does not show
     // stays. Returns as add does; missing once the entry is gone.
     Q_INVOKABLE QString update(const QString &list, const QString &key, const QVariantMap &patch,
                                const QStringList &builtInNames = {});
-    // Removes the entry key names from terms, corrections, replacements or
-    // recognitionRules. Returns the token undo takes to put it back, or -1
+    // Removes the entry key names from terms, corrections or replacements.
+    // Returns the token undo takes to put it back, or -1
     // when nothing was removed.
     Q_INVOKABLE int remove(const QString &list, const QString &key);
     // Removes one of the user's profiles, and saving it drops what named it:
-    // app matches lose it, terms limited to it lose the limit, and the
-    // fallback profile becomes Other. No undo: the page asks first.
+    // Apps and App Types follow the wider place instead, and terms limited
+    // to it lose the limit. No undo: the page asks first.
     Q_INVOKABLE void removeProfile(const QString &id);
     // Remove one of the user's tones or cleanup levels, moving the profiles
     // that chose it, and return the undo token, or -1.
@@ -145,7 +138,6 @@ private:
     QVariantList m_terms;
     QVariantList m_corrections;
     QVariantList m_replacements;
-    QVariantList m_recognitionRules;
     bool m_speechTakesKeyTerms = false;
     int m_keyTermsSent = 0;
 };

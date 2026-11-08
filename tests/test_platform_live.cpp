@@ -308,16 +308,12 @@ private slots:
         }
         AtSpiTargetProvider provider;
         Target target = test::captureAndWait(provider);
-        target.category = classifyTarget(target);
-        const AppSettings settings = SettingsStore().snapshot();
-        const QString profile = resolveWritingProfile(
-            target,
-            settings.refinement.writingProfileOverrides,
-            writingProfileFromName(settings.refinement.defaultWritingProfile));
-        const PasteRule pasteRule = resolvePasteRule(settings.output.pasteRules, target);
+        const AppResolution app = resolveApp(target, SettingsStore().snapshot().apps);
+        target.category = app.type;
+        const QString profile = app.writingProfile;
         const bool directInsert = provider.canInsertText(target);
         qInfo().noquote()
-            << QStringLiteral("target appId=%1 appName=%2 process=%3 role=%4 category=%5 profile=%6 accessible=%7 secure=%8 focused=%9 directInsert=%10 titleChars=%11 urlChars=%12 controlChars=%13 caret=%14 selectionStart=%15 selectionEnd=%16 selectedChars=%17 before=%18 after=%19 pasteScope=%20 pasteMethod=%21 correctionEligible=%22")
+            << QStringLiteral("target appId=%1 appName=%2 process=%3 role=%4 category=%5 profile=%6 accessible=%7 secure=%8 focused=%9 directInsert=%10 titleChars=%11 urlChars=%12 controlChars=%13 caret=%14 selectionStart=%15 selectionEnd=%16 selectedChars=%17 before=%18 after=%19 pasting=%20 correctionEligible=%21")
                    .arg(target.applicationId,
                         target.applicationName,
                         target.processName,
@@ -337,8 +333,7 @@ private slots:
                         QString::number(target.selectedText.size()),
                         QString::number(target.nearbyTextBefore.size()),
                         QString::number(target.nearbyTextAfter.size()),
-                        pasteRuleScopeName(pasteRule.scope),
-                        pasteMethodName(pasteRule.method),
+                        app.pasting ? pasteMethodName(*app.pasting) : QStringLiteral("steps"),
                         target.accessible && !target.secure && directInsert && target.caretOffset >= 0
                             ? QStringLiteral("yes")
                             : QStringLiteral("no"));
@@ -886,15 +881,14 @@ private slots:
 
         AtSpiTargetProvider provider;
         Target target = test::captureAndWait(provider);
-        target.category = classifyTarget(target);
+        const AppResolution app = resolveApp(target, {});
+        target.category = app.type;
         QVERIFY2(target.hasIdentity(), "No focused Plasma target was found");
         QVERIFY2(!target.secure, "Live delivery refuses secure targets");
 
         OutputSettings output = SettingsStore().snapshot().output;
         output.steps = {.insert = true, .press = true, .keep = false};
         output.ydotoolEnabled = true;
-        output.pasteRules = defaultPasteRules();
-        const PasteRule rule = resolvePasteRule(output.pasteRules, target);
 
         const ClipboardCaptured capturedBefore = test::captureWaylandAndWait();
         const ClipboardSnapshot &before = capturedBefore.snapshot;
@@ -902,7 +896,7 @@ private slots:
         const DeliveryResult result = test::deliverAndWait(
             delivery, output,
             makeDeliveryContent(QStringLiteral(" Speecher matrix insertion "), OutputFormat::Html),
-            target);
+            target, app.pasting);
         QVERIFY2(result.ok, qPrintable(result.message));
         QVERIFY(result.receipt != DeliveryReceipt::None);
 
@@ -937,11 +931,10 @@ private slots:
                 return part.mimeType == QStringLiteral("text/html");
             });
         qInfo().noquote()
-            << QStringLiteral("delivery appId=%1 category=%2 pasteScope=%3 pasteMethod=%4 receipt=%5 downgraded=%6 clipboardRestored=%7 clipboardPlain=%8 clipboardHtml=%9")
+            << QStringLiteral("delivery appId=%1 category=%2 pasting=%3 receipt=%4 downgraded=%5 clipboardRestored=%6 clipboardPlain=%7 clipboardHtml=%8")
                    .arg(target.applicationId,
                         appCategoryName(target.category),
-                        pasteRuleScopeName(rule.scope),
-                        pasteMethodName(rule.method),
+                        app.pasting ? pasteMethodName(*app.pasting) : QStringLiteral("steps"),
                         result.message,
                         result.formatDowngraded ? QStringLiteral("yes") : QStringLiteral("no"),
                         restored ? QStringLiteral("yes") : QStringLiteral("no"),
@@ -1099,7 +1092,6 @@ private slots:
         OutputSettings output;
         output.steps = {.insert = true, .press = true, .keep = false};
         output.ydotoolEnabled = true;
-        output.pasteRules = defaultPasteRules();
         QSignalSpy corrections(&provider, &TargetProvider::correctionObserved);
         TextDelivery delivery(&provider);
         const DeliveryResult result = test::deliverAndWait(

@@ -12,8 +12,10 @@
 #include <UIAutomation.h>
 #include <wrl/client.h>
 
+#include <iterator>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace speecher {
 namespace {
@@ -178,6 +180,28 @@ QString processImagePath(DWORD processId)
     return ok ? QString::fromWCharArray(path, int(size)) : QString();
 }
 
+// The process a window's app runs in. A store app's window belongs to
+// ApplicationFrameHost, which only draws its frame; the app is the process of
+// the CoreWindow it hosts, once that has been created.
+DWORD windowProcessId(HWND window)
+{
+    DWORD processId = 0;
+    GetWindowThreadProcessId(window, &processId);
+    wchar_t className[64] = {};
+    if (GetClassNameW(window, className, int(std::size(className))) == 0
+        || std::wstring_view(className) != L"ApplicationFrameWindow") {
+        return processId;
+    }
+    if (const HWND core = FindWindowExW(window, nullptr, L"Windows.UI.Core.CoreWindow", nullptr)) {
+        DWORD hosted = 0;
+        GetWindowThreadProcessId(core, &hosted);
+        if (hosted != 0) {
+            return hosted;
+        }
+    }
+    return processId;
+}
+
 QString windowTitle(HWND window)
 {
     const int length = GetWindowTextLengthW(window);
@@ -265,8 +289,7 @@ Target WinTargetProvider::captureNow()
         return target;
     }
 
-    DWORD processId = 0;
-    GetWindowThreadProcessId(foreground, &processId);
+    const DWORD processId = windowProcessId(foreground);
     const QFileInfo executable(processImagePath(processId));
     target.processId = processId;
     target.processName = executable.fileName();
@@ -340,9 +363,7 @@ bool WinTargetProvider::stillFocused(const Target &target)
     if (target.processId <= 0 || !m_native->window || GetForegroundWindow() != m_native->window) {
         return false;
     }
-    DWORD processId = 0;
-    GetWindowThreadProcessId(GetForegroundWindow(), &processId);
-    if (processId != DWORD(target.processId)) return false;
+    if (windowProcessId(GetForegroundWindow()) != DWORD(target.processId)) return false;
     if (!m_native->focused) return true;
     ComPtr<IUIAutomationElement> focused;
     BOOL same = FALSE;

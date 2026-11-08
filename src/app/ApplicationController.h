@@ -28,6 +28,7 @@ class AudioInput;
 class SessionKeyGrab;
 class ShortcutGesture;
 class InsightsLog;
+class SeenApps;
 class IpcCommandHandler;
 class LocalModelStore;
 class LocalSetup;
@@ -37,6 +38,7 @@ class ProviderRegistry;
 class RecordingSession;
 class SecretStore;
 class SettingsStore;
+class TargetProvider;
 class UpdateController;
 class WhatsNewTracker;
 
@@ -95,14 +97,17 @@ public:
     SettingsStore *settings() const;
     UpdateController *updates() const;
     InsightsLog *insightsLog() const;
+    // The apps dictated into lately, recorded while insights are.
+    SeenApps *seenApps() const;
     // The day Home summarizes up to. SPEECHER_INSIGHTS_TODAY pins it for
     // screenshots, so front ends ask here rather than reading the clock.
     QDate insightsToday() const;
     // What insights recorded of the last delivered transcript: its app and
     // day. Empty while insights did not record it.
     const std::optional<DictationRecord> &lastRecord() const;
-    // The Clear insights history action, once the person has confirmed it.
-    // False when the history file could not be deleted.
+    // The Clear insights history action, once the person has confirmed it:
+    // the history, and the apps dictated into with it. False when a file
+    // could not be deleted.
     bool clearInsights();
     WhatsNewTracker *whatsNew() const;
     SecretStore *secretStore() const;
@@ -120,6 +125,9 @@ public:
     // window first asks.
     Accounts *accounts() const;
     const PlatformComposition *platform() const;
+    // What tells which app is in front, as dictation captures it; the Apps
+    // page's Switch to it captures through it too.
+    TargetProvider *targetProvider() const;
     // The Dictation Session's state.
     DictationState dictationState() const;
     // What a status line says about dictation now (dictationStatusLabel);
@@ -244,6 +252,7 @@ private:
     ProviderAvailability *m_availability = nullptr;
     Accounts *m_accounts = nullptr;
     AudioInput *m_audio = nullptr;
+    TargetProvider *m_targetProvider = nullptr;
     DictationSession *m_session = nullptr;
     FileTranscriptionSession *m_fileTranscription = nullptr;
     TranscribeQueue *m_transcribeQueue = nullptr;
@@ -255,6 +264,7 @@ private:
     bool m_mainWindowByDefault = false;
     UpdateController *m_updates = nullptr;
     InsightsLog *m_insightsLog = nullptr;
+    SeenApps *m_seenApps = nullptr;
     std::optional<DictationRecord> m_lastRecord;
     QString m_lastTranscript;
     QDate m_insightsToday;

@@ -67,7 +67,7 @@ std::function<bool(const AppSettings &, const AppSettings &)> sameValue(Member m
 
 // In the order the setters need: a provider before its fallbacks, custom
 // tones and levels before the profiles that fall back from a deleted one,
-// and the profiles before the rules, terms and default that name them.
+// and the profiles before the apps and terms that name them.
 // SettingsStore keeps the keyring keys and unreadSecretKeys itself.
 const std::vector<SettingsCodecs::Field> &SettingsCodecs::fields()
 {
@@ -144,13 +144,7 @@ const std::vector<SettingsCodecs::Field> &SettingsCodecs::fields()
                &C::customCleanupLevels, &C::setCustomCleanupLevels),
         stored("refinement.writingProfiles", member(&A::refinement, &RefinementSettings::writingProfiles),
                &C::writingProfileSettings, &C::setWritingProfileSettings),
-        stored("appRecognitionRules", member(&A::appRecognitionRules), &C::appRecognitionRules,
-               &C::setAppRecognitionRules),
-        stored("refinement.defaultWritingProfile", member(&A::refinement, &RefinementSettings::defaultWritingProfile),
-               &C::defaultWritingProfile, &C::setDefaultWritingProfile),
-        stored("refinement.writingProfileOverrides",
-               member(&A::refinement, &RefinementSettings::writingProfileOverrides), &C::writingProfileOverrides,
-               &C::setWritingProfileOverrides),
+        stored("apps", member(&A::apps), &C::apps, &C::setApps),
         stored("refinement.useTargetContext", member(&A::refinement, &RefinementSettings::useTargetContext),
                &C::useTargetContext, &C::setUseTargetContext),
         stored("refinement.includeScreenshotContext",
@@ -206,7 +200,6 @@ const std::vector<SettingsCodecs::Field> &SettingsCodecs::fields()
 
         stored("output.steps", member(&A::output, &OutputSettings::steps), &C::deliverySteps, &C::setDeliverySteps),
         stored("output.format", member(&A::output, &OutputSettings::format), &C::outputFormat, &C::setOutputFormat),
-        stored("output.pasteRules", member(&A::output, &OutputSettings::pasteRules), &C::pasteRules, &C::setPasteRules),
         stored("output.completionStatusDurationMs", member(&A::output, &OutputSettings::completionStatusDurationMs),
                &C::completionStatusDurationMs, &C::setCompletionStatusDurationMs),
         // VirtualKeyboardSetup sets it once ydotool is set up.

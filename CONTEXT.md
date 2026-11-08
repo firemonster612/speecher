@@ -29,7 +29,7 @@ The desktop application and editable control selected when a Dictation Session s
 _Avoid_: Destination, focused app
 
 **Writing Profile**:
-How refinement treats a Target, inferred from it, with a user-selected fallback and optional override. A profile is built-in (Work, Email, Personal, AI coding, Other) or user-defined, and sets a Cleanup Level, a Tone, Additional Instructions and an optional output language that refinement translates into. AI coding wins over a terminal's own identity when a coding agent is detected inside it.
+How refinement treats a Target, chosen by its App or App Type. A profile is built-in (Work, Email, Personal, AI coding, Other) or user-defined, and sets a Cleanup Level, a Tone, Additional Instructions and an optional output language that refinement translates into. AI coding wins over a terminal's own identity when a coding agent is detected inside it.
 _Avoid_: Style preset, persona
 
 **Cleanup Level**:
@@ -48,9 +48,17 @@ _Avoid_: Custom prompt, system prompt
 One way Speecher gets words out, which the person turns on or off: Insert through accessibility, Press the paste keys (copies the words and presses Ctrl+V, or ⌘V), and Keep the words on the clipboard. Delivery tries Insert, then Press when insertion is off, unavailable or rejected; Keep leaves the words on the clipboard afterwards. With Keep off, Press borrows the clipboard only once Speecher has saved what was there in a form it can put back, and puts it back after a confirmed paste or when no keys went out; a paste it can't confirm, or keys that may have partly gone out, leave the words there. At least one is on.
 _Avoid_: Output method, paste mode
 
-**Paste Rule**:
-A setting that narrows the Delivery Steps for an application or application category: the same steps with a terminal's paste keys, skipping the paste keys, or the clipboard only. It never turns on a step that is off. A rule for the application wins, then the terminal rule for anything running in a terminal, then the category's. The Pasting page lists the rules that differ from the steps as Exceptions.
-_Avoid_: Output route, injection rule
+**App**:
+An application the person set something for, picked from installed apps or apps they dictated into. It holds an App Type, a Writing Profile and a Pasting choice, each "Same as" what its App Type gives until changed. An App is recognized by its ids (desktop file id, bundle id or program name), or, for web apps and programs in a terminal, by text its name or window title contains; a window title never sets the App Type.
+_Avoid_: App rule, app match, recognition rule, exception
+
+**App Type**:
+The kind of app a Target is: Terminal, Browser, Email, Office, Code editor, AI coding, or Other. Speecher sorts common apps into them from a built-in list, and each carries a Writing Profile and a Pasting choice its apps follow. Other apps' profile is what any app Speecher doesn't recognize writes with.
+_Avoid_: Category, app category
+
+**Pasting choice**:
+How an App or App Type narrows the Delivery Steps: the steps as they are, Terminal keys, Skip paste keys, or Clipboard only. It never turns on a step that is off. An app's own choice wins, then Terminals' for anything running in a terminal, then its App Type's. The Pasting page lists those that differ from the steps, read-only, and Apps changes them.
+_Avoid_: Paste Rule, exception, output route
 
 **Vocabulary Entry**:
 A word or phrase Speecher should recognize, preserve, or replace during dictation. It may carry a context, which tells refinement what it means and when it applies, and may be limited to some Writing Profiles; under any other profile neither the speech service nor refinement gets it.

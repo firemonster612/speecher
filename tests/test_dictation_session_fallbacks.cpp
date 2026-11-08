@@ -1,5 +1,6 @@
 #include "common/test_prelude.h"
 #include "common/test_doubles.h"
+#include "common/apps_fixtures.h"
 #include "common/audio_input_waits.h"
 #include "core/ProviderAttemptIssueText.h"
 #include "core/ProviderReadiness.h"
@@ -194,7 +195,7 @@ private slots:
                             QStringLiteral("Anthropic"));
         rig.registry.refinementProvider(QStringLiteral("anthropic"));
         AppSettings draft = rig.settings.snapshot();
-        draft.appRecognitionRules = {{QStringLiteral("kate"), std::nullopt, WritingProfile::Email}};
+        draft.apps.apps = {textApp(QStringLiteral("kate"), std::nullopt, WritingProfile::Email)};
         WritingProfileSettings &email = draft.refinement.writingProfiles[1];
         email.speechProvider = QStringLiteral("local");
         email.speechModel = QStringLiteral("moonshine-small");
@@ -231,7 +232,7 @@ private slots:
         rig.registry.speechProvider(QStringLiteral("local"));
         rig.settings.edit([](AppSettings &draft) { draft.speech.language = QStringLiteral("ja"); return true; });
         AppSettings draft = rig.settings.snapshot();
-        draft.refinement.defaultWritingProfile = WritingProfile::Personal;
+        setOtherAppsProfile(draft.apps, WritingProfile::Personal);
         draft.refinement.writingProfiles[2].speechProvider = QStringLiteral("local");
         draft.refinement.writingProfiles[2].speechModel = QStringLiteral("parakeet");
         rig.settings.applySnapshot(draft);
@@ -249,7 +250,7 @@ private slots:
     {
         ChainRig rig({QStringLiteral("claude")});
         AppSettings draft = rig.settings.snapshot();
-        draft.refinement.defaultWritingProfile = WritingProfile::Personal;
+        setOtherAppsProfile(draft.apps, WritingProfile::Personal);
         draft.refinement.writingProfiles[2].speechProvider = QStringLiteral("codex");
         rig.settings.applySnapshot(draft);
 

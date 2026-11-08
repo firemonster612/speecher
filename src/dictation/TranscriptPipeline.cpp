@@ -50,10 +50,7 @@ QString writingProfileFor(const AppSettings &settings, const RunChoices &choices
     if (!choices.writingProfile.isEmpty()) {
         return choices.writingProfile;
     }
-    return resolveWritingProfile(target,
-                                 settings.refinement.writingProfileOverrides,
-                                 settings.appRecognitionRules,
-                                 writingProfileFromName(settings.refinement.defaultWritingProfile));
+    return resolveApp(target, settings.apps).writingProfile;
 }
 
 // The run's own terms in their order, then every stored term for the Writing

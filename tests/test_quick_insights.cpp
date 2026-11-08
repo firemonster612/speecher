@@ -3,6 +3,7 @@
 
 #include "app/ApplicationController.h"
 #include "core/InsightsLog.h"
+#include "core/SeenApps.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
 #include "frontend/quick/host/QuickAudio.h"
@@ -230,7 +231,12 @@ private slots:
     void clearDeletesTheHistoryOrSaysItCouldNot()
     {
         ApplicationController controller(true);
-        controller.insightsLog()->append(recordOn(kToday, 10));
+        DictationRecord seen = recordOn(kToday, 10);
+        seen.applicationId = QStringLiteral("org.kde.kate");
+        // The session's record, which it makes only while insights record,
+        // goes to the history and the apps dictated into.
+        emit controller.session()->dictationRecorded(seen);
+        QCOMPARE(controller.seenApps()->apps().size(), 1);
         QuickInsights insights(&controller);
         QVERIFY(QFile::exists(logPath()));
 
@@ -245,6 +251,7 @@ private slots:
         QVERIFY(QDir(logPath()).removeRecursively());
         QVERIFY(insights.clear());
         QCOMPARE(insights.kept(), 0);
+        QVERIFY(controller.seenApps()->apps().isEmpty());
         QCOMPARE(insights.state(), QStringLiteral("empty"));
     }
 

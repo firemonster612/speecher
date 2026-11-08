@@ -9,11 +9,6 @@
 
 namespace speecher {
 
-// How output/pasteRules is stored. Nothing stored, or something that isn't
-// a list, reads as defaultPasteRules(); an empty list is no rules.
-QList<PasteRule> pasteRulesFromJson(const QByteArray &encoded);
-QByteArray pasteRulesToJson(const QList<PasteRule> &rules);
-
 // Where Claude Code keeps its sign-in: its config directory, which
 // CLAUDE_CONFIG_DIR moves from ~/.claude.
 QString defaultClaudeCredentialsPath();
@@ -53,7 +48,8 @@ public:
     // or nothing when the settings could not be written.
     static std::optional<QStringList> addVocabularyTerms(const QStringList &terms);
     AudioCaptureSettings audioCaptureSettings() const; void setAudioCaptureSettings(const AudioCaptureSettings &value);
-    QList<AppRecognitionRule> appRecognitionRules() const; void setAppRecognitionRules(const QList<AppRecognitionRule> &rules);
+    // An app or type naming a deleted profile reads and saves without it.
+    AppsSettings apps() const; void setApps(const AppsSettings &value);
     QList<BindingRule> bindingRules() const; bool setBindingRules(const QList<BindingRule> &rules, QString *error = nullptr);
     bool correctionLearningEnabled() const; void setCorrectionLearningEnabled(bool value);
     bool insightsEnabled() const; void setInsightsEnabled(bool value);
@@ -63,9 +59,7 @@ public:
     // The cleanup level an older release saved, which seeds the Writing
     // Profiles until they are saved. Nothing writes it now.
     QString refinementStyle() const;
-    QString defaultWritingProfile() const; void setDefaultWritingProfile(const QString &value);
     QList<WritingProfileSettings> writingProfileSettings() const; void setWritingProfileSettings(const QList<WritingProfileSettings> &value);
-    QList<WritingProfileOverride> writingProfileOverrides() const; void setWritingProfileOverrides(const QList<WritingProfileOverride> &value);
     bool useTargetContext() const; void setUseTargetContext(bool value);
     bool includeScreenshotContext() const; void setIncludeScreenshotContext(bool value);
     QString additionalInstructions() const; void setAdditionalInstructions(const QString &value);
@@ -90,7 +84,6 @@ public:
     OutputFormat outputFormat() const; void setOutputFormat(OutputFormat value);
     bool ydotoolEnabled() const; void setYdotoolEnabled(bool value);
     int completionStatusDurationMs() const; void setCompletionStatusDurationMs(int value);
-    QList<PasteRule> pasteRules() const; void setPasteRules(const QList<PasteRule> &rules);
     ShortcutActivationMode shortcutActivationMode() const; void setShortcutActivationMode(ShortcutActivationMode value);
     // The binding Speecher keeps for a Global Shortcut, a combination or a
     // single key; empty when none is stored. Where a desktop shortcut service

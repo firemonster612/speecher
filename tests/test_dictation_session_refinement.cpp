@@ -1,5 +1,6 @@
 #include "common/test_prelude.h"
 #include "common/test_doubles.h"
+#include "common/apps_fixtures.h"
 
 #include <QScopeGuard>
 
@@ -424,7 +425,8 @@ private slots:
         QTRY_COMPARE(delivery.answers, 1);
         QCOMPARE(delivery.lastText, QStringLiteral("Move the standup to Thursday."));
         QCOMPARE(delivery.lastTarget.selectionStart, 4);
-        QCOMPARE(delivery.lastSettings.pasteRules, defaultPasteRules());
+        // Kate is a code editor, which narrows the steps in no way.
+        QCOMPARE(delivery.lastPasting, std::nullopt);
         QCOMPARE(session.lastMessage(), QStringLiteral("Sent to the app"));
     }
 
@@ -930,9 +932,7 @@ private slots:
                 {WritingProfile::Personal, QStringLiteral("light_cleanup"), QStringLiteral("casual")},
                 {WritingProfile::Other, QStringLiteral("none"), QStringLiteral("none")},
             };
-            draft.refinement.writingProfileOverrides = {
-                {QStringLiteral("firefox"), WritingProfile::Work, true},
-            };
+            draft.apps.apps = {idApp(QStringLiteral("firefox"), WritingProfile::Work)};
             return true;
         });
 

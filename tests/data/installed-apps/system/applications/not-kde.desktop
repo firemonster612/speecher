@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=Not on KDE
+NotShowIn=KDE;
+Exec=notkde

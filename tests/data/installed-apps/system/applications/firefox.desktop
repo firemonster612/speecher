@@ -1,0 +1,12 @@
+# A comment, and a group that is not the entry
+[Desktop Entry]
+Type=Application
+Name=Firefox
+Name[de]=Firefox-Webbrowser
+Icon=/usr/share/pixmaps/firefox.png
+StartupWMClass=Firefox
+Exec=env MOZ_ENABLE_WAYLAND=1 /usr/lib/firefox/firefox-bin %u
+
+[Desktop Action new-window]
+Name=New Window
+Exec=firefox --new-window

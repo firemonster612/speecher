@@ -14,7 +14,8 @@ Column {
     id: editor
 
     property var profile: ({})
-    property bool isFallback: false
+    // The Apps and App Types that write with it, as Library.profileUsers
+    // lists them: [{ id (where it lands in Apps), name, icon, typeIcon }].
     property var apps: []
     // Why the page refused the last edit, under the name; empty after one it saved.
     property string refusal
@@ -69,7 +70,6 @@ Column {
         Ease { target: slide; property: "x"; to: 0; duration: Theme.page }
     }
 
-    readonly property string usedIn: Library.profileUse(apps, isFallback)
 
     // Header: the name (editable on your own profiles), where it's used, and
     // the question before deleting one.
@@ -101,15 +101,24 @@ Column {
                     open: editor.refusal.length > 0
                     Txt { text: editor.refusal; variant: "small"; tone: "negative"; width: parent.width; wrapMode: Text.WordWrap }
                 }
-                // The count of matches opens them, under App recognition.
-                LinkedText {
-                    plainText: editor.usedIn
-                    link: Library.profileMatches(editor.apps)
-                    variant: "small"
-                    tone: "secondary"
+                // Each app or type that uses it opens in Apps.
+                Flow {
                     width: parent.width
-                    wrapMode: Text.WordWrap
-                    onActivated: Navigation.follow(Schema.row("appRecognitionRules").page, "appRecognitionRules")
+                    spacing: Theme.space2
+                    Txt {
+                        text: editor.apps.length ? Schema.row("profileApps").label : Library.profilesText.unused
+                        variant: "small"
+                        tone: "secondary"
+                    }
+                    Repeater {
+                        model: editor.apps
+                        TextLink {
+                            required property var modelData
+                            text: modelData.name
+                            iconName: modelData.typeIcon
+                            onActivated: Navigation.follow("apps", modelData.id)
+                        }
+                    }
                 }
             }
             Button {
@@ -130,7 +139,7 @@ Column {
             inset: 0
             ruled: false
             text: Library.profileDeleteQuestion(editor.profile.name)
-            detail: Library.profileDeleteDetail(editor.apps, editor.isFallback)
+            detail: Library.profileDeleteDetail(editor.apps)
             confirmText: Words.delete_
             onConfirmed: editor.deleteRequested()
             onCancelled: editor.confirmingDelete = false

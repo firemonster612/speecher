@@ -69,6 +69,8 @@ speecher_add_qml_module(speecher_quick_backend Speecher.Backend "${SPEECHER_QUIC
     "${SPEECHER_QUICK_DIR}/host/QmlValues.h"
     "${SPEECHER_QUICK_DIR}/host/QuickAccounts.cpp"
     "${SPEECHER_QUICK_DIR}/host/QuickAccounts.h"
+    "${SPEECHER_QUICK_DIR}/host/QuickApps.cpp"
+    "${SPEECHER_QUICK_DIR}/host/QuickApps.h"
     "${SPEECHER_QUICK_DIR}/host/QuickAppearance.cpp"
     "${SPEECHER_QUICK_DIR}/host/QuickAppearance.h"
     "${SPEECHER_QUICK_DIR}/host/QuickAudio.cpp"

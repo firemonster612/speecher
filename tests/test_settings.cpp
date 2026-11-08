@@ -1,4 +1,5 @@
 #include "common/test_prelude.h"
+#include "common/apps_fixtures.h"
 #include "core/ProviderChain.h"
 #include "core/WritingProfileEdits.h"
 #include "core/WritingProfileProviders.h"
@@ -353,11 +354,10 @@ private slots:
         QCOMPARE(settings.dictationSnapshot().bindings.size(), 0);
         QCOMPARE(settings.dictationSnapshot().refinement.providerId, QStringLiteral("openai"));
         QCOMPARE(settings.dictationSnapshot().refinement.style, QStringLiteral("balanced"));
-        QCOMPARE(settings.dictationSnapshot().refinement.defaultWritingProfile, QStringLiteral("other"));
+        QCOMPARE(fallbackWritingProfile(settings.dictationSnapshot().apps), QStringLiteral("other"));
         QCOMPARE(settings.dictationSnapshot().refinement.writingProfiles, defaultWritingProfileSettings());
         QCOMPARE(settings.dictationSnapshot().refinement.writingProfiles.size(), 5);
-        QVERIFY(settings.dictationSnapshot().refinement.writingProfileOverrides.isEmpty());
-        QVERIFY(settings.dictationSnapshot().appRecognitionRules.isEmpty());
+        QCOMPARE(settings.dictationSnapshot().apps, AppsSettings{});
         QCOMPARE(settings.dictationSnapshot().refinement.useTargetContext, true);
         QCOMPARE(settings.dictationSnapshot().refinement.includeScreenshotContext, false);
         QCOMPARE(settings.dictationSnapshot().refinement.openAiModel, QStringLiteral("gpt-6-luna"));
@@ -375,7 +375,6 @@ private slots:
         QCOMPARE(settings.snapshot().speech.language, QStringLiteral("en"));
         QCOMPARE(settings.dictationSnapshot().output.steps, (DeliverySteps{.insert = true, .press = true, .keep = true}));
         QCOMPARE(settings.dictationSnapshot().output.format, OutputFormat::PlainText);
-        QCOMPARE(settings.dictationSnapshot().output.pasteRules, defaultPasteRules());
         QCOMPARE(settings.dictationSnapshot().output.ydotoolEnabled, false);
         QCOMPARE(settings.snapshot().output.completionStatusDurationMs, 500);
         const AudioCaptureSettings audio = settings.dictationSnapshot().audio;
@@ -400,16 +399,6 @@ private slots:
         QCOMPARE(settings.dictationSnapshot().refinement.style, QStringLiteral("light_cleanup"));
         settings.raw().setValue(SettingsKeys::RefinementStyle, QStringLiteral("unknown"));
         QCOMPARE(settings.dictationSnapshot().refinement.style, QStringLiteral("balanced"));
-        settings.edit([](AppSettings &draft) {
-            draft.refinement.defaultWritingProfile = QStringLiteral("personal");
-            return true;
-        });
-        QCOMPARE(settings.dictationSnapshot().refinement.defaultWritingProfile, QStringLiteral("personal"));
-        settings.edit([](AppSettings &draft) {
-            draft.refinement.defaultWritingProfile = QStringLiteral("ai_coding");
-            return true;
-        });
-        QCOMPARE(settings.dictationSnapshot().refinement.defaultWritingProfile, QStringLiteral("ai_coding"));
         settings.raw().setValue(QStringLiteral("refinement/writingProfiles"),
                                 QByteArray(R"([{"profile":"work","cleanupStrength":"strong_polish","tone":"formal"},)"
                                            R"({"profile":"email","cleanupStrength":"balanced","tone":"casual"},)"
@@ -435,26 +424,6 @@ private slots:
                  QStringLiteral("very_casual"));
         QCOMPARE(writingProfileSettingsFor(settings.dictationSnapshot().refinement.writingProfiles, WritingProfile::AiCoding).cleanupStrength,
                  QStringLiteral("none"));
-        settings.edit([](AppSettings &draft) {
-            draft.refinement.writingProfileOverrides = {
-                {QStringLiteral("org.mozilla.firefox"), WritingProfile::Personal, true},
-                {QStringLiteral("org.kde.kate"), WritingProfile::Other, false},
-            };
-            return true;
-        });
-        QCOMPARE(settings.dictationSnapshot().refinement.writingProfileOverrides.size(), 2);
-        QCOMPARE(settings.dictationSnapshot().refinement.writingProfileOverrides.first().profile, WritingProfile::Personal);
-        settings.edit([](AppSettings &draft) {
-            draft.appRecognitionRules = {
-                {QStringLiteral("com.acme.shell"), AppCategory::Terminal, WritingProfile::Work},
-                {QStringLiteral("chat.example"), std::nullopt, WritingProfile::Personal},
-            };
-            return true;
-        });
-        QCOMPARE(settings.dictationSnapshot().appRecognitionRules.size(), 2);
-        QCOMPARE(settings.dictationSnapshot().appRecognitionRules.first().category, AppCategory::Terminal);
-        QCOMPARE(settings.dictationSnapshot().appRecognitionRules.last().writingProfile, WritingProfile::Personal);
-        QCOMPARE(settings.snapshot().appRecognitionRules.size(), 2);
         settings.edit([](AppSettings &draft) { draft.refinement.useTargetContext = false; return true; });
         QCOMPARE(settings.dictationSnapshot().refinement.useTargetContext, false);
         settings.edit([](AppSettings &draft) { draft.refinement.includeScreenshotContext = true; return true; });
@@ -621,17 +590,6 @@ private slots:
         QCOMPARE(settings.dictationSnapshot().output.format, OutputFormat::Html);
         settings.raw().setValue(QStringLiteral("output/format"), QStringLiteral("unsupported"));
         QCOMPARE(settings.dictationSnapshot().output.format, OutputFormat::PlainText);
-        settings.edit([](AppSettings &draft) {
-            draft.output.pasteRules = {
-                {PasteRuleScope::Application, QStringLiteral("org.kde.kate"), PasteMethod::DirectInsert, true},
-                {PasteRuleScope::Category, QStringLiteral("browser"), PasteMethod::StandardPaste, true},
-            };
-            return true;
-        });
-        QCOMPARE(settings.dictationSnapshot().output.pasteRules.size(), 2);
-        QCOMPARE(settings.dictationSnapshot().output.pasteRules.first().match, QStringLiteral("org.kde.kate"));
-        QCOMPARE(settings.dictationSnapshot().output.pasteRules.first().method, PasteMethod::DirectInsert);
-
         settings.edit([](AppSettings &draft) {
             draft.audio = {
                 QStringLiteral(" mic-id "),
@@ -1028,10 +986,10 @@ private slots:
         settings.raw().clear();
     }
 
-    // A rule keeps a custom profile while it exists. Deleting the profile
-    // clears it from a rule that also sets an app type, drops a rule that set
-    // nothing else, and turns a fallback that named it into Other.
-    void deletingAProfileClearsItsRulesAndTheFallback()
+    // An App or App Type keeps a custom profile while it exists. Deleting
+    // the profile leaves each following its wider place, and Other apps on
+    // the Other profile.
+    void deletingAProfileClearsItFromAppsAndTypes()
     {
         SettingsStore settings;
         settings.raw().clear();
@@ -1039,22 +997,23 @@ private slots:
         draft.refinement.writingProfiles.append(
             {QStringLiteral("custom_standup"), QStringLiteral("light_cleanup"), QStringLiteral("none"), QString(),
              QStringLiteral("Standup")});
-        draft.refinement.defaultWritingProfile = QStringLiteral("custom_standup");
-        draft.appRecognitionRules = {
-            {QStringLiteral("zulip"), std::nullopt, QStringLiteral("custom_standup")},
-            {QStringLiteral("mattermost"), AppCategory::Browser, QStringLiteral("custom_standup")},
+        test::setOtherAppsProfile(draft.apps, QStringLiteral("custom_standup"));
+        draft.apps.apps = {
+            test::textApp(QStringLiteral("zulip"), std::nullopt, QStringLiteral("custom_standup")),
+            test::textApp(QStringLiteral("mattermost"), AppCategory::Browser, QStringLiteral("custom_standup")),
         };
         settings.applySnapshot(draft);
         AppSettings loaded = SettingsStore().snapshot();
-        QCOMPARE(loaded.appRecognitionRules, draft.appRecognitionRules);
-        QCOMPARE(loaded.refinement.defaultWritingProfile, QStringLiteral("custom_standup"));
+        QCOMPARE(loaded.apps, draft.apps);
 
         loaded.refinement.writingProfiles.removeLast();
         settings.applySnapshot(loaded);
         const AppSettings deleted = SettingsStore().snapshot();
-        QCOMPARE(deleted.appRecognitionRules,
-                 (QList<AppRecognitionRule>{{QStringLiteral("mattermost"), AppCategory::Browser, std::nullopt}}));
-        QCOMPARE(deleted.refinement.defaultWritingProfile, QStringLiteral("other"));
+        QCOMPARE(deleted.apps.apps.size(), 2);
+        QCOMPARE(deleted.apps.apps.at(0).writingProfile, std::nullopt);
+        QCOMPARE(deleted.apps.apps.at(1).type, AppCategory::Browser);
+        QCOMPARE(deleted.apps.apps.at(1).writingProfile, std::nullopt);
+        QCOMPARE(fallbackWritingProfile(deleted.apps), WritingProfile::Other);
         settings.raw().clear();
     }
 
@@ -1422,13 +1381,18 @@ private slots:
                     profile.tone = QStringLiteral("custom_pirate");
                 }
             }
-            s.appRecognitionRules = {{.match = QStringLiteral("org.example.Notes"),
-                                      .category = AppCategory::Office,
-                                      .writingProfile = WritingProfile::Work}};
-            s.refinement.defaultWritingProfile = WritingProfile::Work;
-            s.refinement.writingProfileOverrides = {{.applicationId = QStringLiteral("org.mozilla.firefox"),
-                                                     .profile = WritingProfile::Personal,
-                                                     .enabled = false}};
+            s.apps.apps = {{.id = QStringLiteral("app:notes"),
+                            .name = QStringLiteral("Notes"),
+                            .icon = QStringLiteral("org.example.Notes"),
+                            .matches = {{AppMatchKind::Id, QStringLiteral("org.example.Notes")},
+                                        {AppMatchKind::Name, QStringLiteral("notes")},
+                                        {AppMatchKind::WindowTitle, QStringLiteral("Gmail")}},
+                            .type = AppCategory::Office,
+                            .writingProfile = WritingProfile::Work,
+                            .pasting = PasteMethod::StandardPaste}};
+            test::setOtherAppsProfile(s.apps, WritingProfile::Work);
+            s.apps.types[1].pasting = PasteMethod::ClipboardOnly;
+            s.apps.types[0].writingProfile.reset();
             s.refinement.useTargetContext = false;
             s.refinement.includeScreenshotContext = true;
             s.refinement.additionalInstructions = QStringLiteral("Use British spelling.");
@@ -1452,10 +1416,6 @@ private slots:
             s.accounts.cliproxyOauthDirConfigured = QStringLiteral("/custom/cliproxy");
             s.output.steps = {.insert = true, .press = false, .keep = false};
             s.output.format = OutputFormat::Html;
-            s.output.pasteRules = {{.scope = PasteRuleScope::Category,
-                                    .match = QStringLiteral("browser"),
-                                    .method = PasteMethod::ClipboardOnly,
-                                    .enabled = true}};
             s.output.completionStatusDurationMs = 2000;
             s.shortcutActivationMode = ShortcutActivationMode::Toggle;
             s.updates = {.channel = UpdateChannel::Nightly,
@@ -1490,7 +1450,7 @@ private slots:
         QCOMPARE(saved.ui, edited.ui);
         QCOMPARE(saved.speech, edited.speech);
         QCOMPARE(saved.audio, edited.audio);
-        QCOMPARE(saved.appRecognitionRules, edited.appRecognitionRules);
+        QCOMPARE(saved.apps, edited.apps);
         QCOMPARE(saved.refinement, edited.refinement);
         QCOMPARE(saved.accounts, edited.accounts);
         QCOMPARE(saved.output, edited.output);
@@ -1550,16 +1510,12 @@ private slots:
         settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
         settings.raw().setValue(SettingsKeys::RefinementStyle, QStringLiteral("strong_polish"));
         settings.edit([](AppSettings &draft) {
-            draft.refinement.defaultWritingProfile = QStringLiteral("personal");
             draft.refinement.writingProfiles = {
                 {WritingProfile::Work, QStringLiteral("strong_polish"), QStringLiteral("formal")},
                 {WritingProfile::Email, QStringLiteral("balanced"), QStringLiteral("none")},
                 {WritingProfile::Personal, QStringLiteral("light_cleanup"), QStringLiteral("casual")},
                 {WritingProfile::AiCoding, QStringLiteral("none"), QStringLiteral("formal")},
                 {WritingProfile::Other, QStringLiteral("balanced"), QStringLiteral("none")},
-            };
-            draft.refinement.writingProfileOverrides = {
-                {QStringLiteral("org.mozilla.firefox"), WritingProfile::Personal, true},
             };
             draft.refinement.useTargetContext = false;
             draft.refinement.includeScreenshotContext = true;
@@ -1571,10 +1527,6 @@ private slots:
             draft.refinement.anthropicEffort = QStringLiteral("xhigh");
             draft.refinement.anthropicFastMode = false;
             draft.output.format = OutputFormat::Html;
-            draft.output.pasteRules = {
-                {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true},
-                {PasteRuleScope::Category, QStringLiteral("browser"), PasteMethod::ClipboardOnly, true},
-            };
             draft.output.steps.keep = false;
             draft.output.completionStatusDurationMs = 900;
             draft.audio = {
@@ -1614,10 +1566,6 @@ private slots:
         QCOMPARE(snapshot.bindings.at(0).replacement, QStringLiteral("efox@example.com"));
         QCOMPARE(snapshot.refinement.providerId, QStringLiteral("openai"));
         QCOMPARE(snapshot.refinement.style, QStringLiteral("strong_polish"));
-        QCOMPARE(snapshot.refinement.defaultWritingProfile, QStringLiteral("personal"));
-        QCOMPARE(snapshot.refinement.writingProfileOverrides.size(), 1);
-        QCOMPARE(snapshot.refinement.writingProfileOverrides.first().applicationId,
-                 QStringLiteral("org.mozilla.firefox"));
         QCOMPARE(writingProfileSettingsFor(snapshot.refinement.writingProfiles, WritingProfile::Work).tone,
                  QStringLiteral("formal"));
         QCOMPARE(writingProfileSettingsFor(snapshot.refinement.writingProfiles, WritingProfile::AiCoding).tone,
@@ -1638,8 +1586,6 @@ private slots:
         QCOMPARE(snapshot.output.format, OutputFormat::Html);
         QCOMPARE(snapshot.output.ydotoolEnabled, false);
         QCOMPARE(snapshot.output.completionStatusDurationMs, 900);
-        QCOMPARE(snapshot.output.pasteRules.size(), 2);
-        QCOMPARE(snapshot.output.pasteRules.last().method, PasteMethod::ClipboardOnly);
     }
 
     void removingAToneMovesItsProfilesAndUndoMovesBackOnlyTheUnchanged()

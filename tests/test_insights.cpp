@@ -2,6 +2,7 @@
 #include "core/InsightsExport.h"
 #include "core/InsightsLog.h"
 #include "core/InsightsSummary.h"
+#include "core/SeenApps.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -214,6 +215,45 @@ private slots:
         QVERIFY(QFileInfo(path).isDir());
         QCOMPARE(log.records().size(), 1);
         QCOMPARE(changed.count(), 0);
+    }
+
+    // The apps dictated into, most recent first, each counted, kept across
+    // restarts and capped; a record with no app id adds none.
+    void seenAppsKeepTheAppsDictatedInto()
+    {
+        QTemporaryDir dir;
+        const QString path = dir.filePath(QStringLiteral("seen-apps.json"));
+        const auto into = [](const char *id, const char *name, int minute) {
+            DictationRecord record = recordOn(kToday);
+            record.finishedAt = record.finishedAt.addSecs(minute * 60);
+            record.appName = QString::fromUtf8(name);
+            record.applicationId = QString::fromUtf8(id);
+            return record;
+        };
+        {
+            SeenApps seen(path);
+            seen.record(into("org.kde.kate", "Kate", 0));
+            seen.record(into("slack", "Slack", 1));
+            seen.record(into("org.kde.kate", "", 2));
+            seen.record(into("", "Unknown", 3));
+            QCOMPARE(seen.apps().size(), 2);
+        }
+        SeenApps reloaded(path);
+        QCOMPARE(reloaded.apps(), (QList<SeenApp>{
+                                      {QStringLiteral("org.kde.kate"), QStringLiteral("Kate"),
+                                       QDateTime(kToday, QTime(10, 2)).toMSecsSinceEpoch(), 2},
+                                      {QStringLiteral("slack"), QStringLiteral("Slack"),
+                                       QDateTime(kToday, QTime(10, 1)).toMSecsSinceEpoch(), 1},
+                                  }));
+        for (int i = 0; i < SeenApps::capacity + 5; ++i) {
+            reloaded.record(into(qPrintable(QStringLiteral("app%1").arg(i)), "App", 10 + i));
+        }
+        QCOMPARE(reloaded.apps().size(), SeenApps::capacity);
+        QCOMPARE(reloaded.apps().first().applicationId, QStringLiteral("app104"));
+
+        QVERIFY(reloaded.clear());
+        QVERIFY(!QFile::exists(path));
+        QVERIFY(reloaded.apps().isEmpty());
     }
 
     void readOnlyLogNeverTouchesItsFile()

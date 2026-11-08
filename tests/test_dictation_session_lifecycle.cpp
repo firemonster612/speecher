@@ -1,5 +1,6 @@
 #include "common/test_prelude.h"
 #include "common/test_doubles.h"
+#include "common/apps_fixtures.h"
 #include "common/audio_input_waits.h"
 #include "providers/PreparationRunner.h"
 
@@ -340,7 +341,7 @@ private slots:
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
             draft.refinement.providerId = QStringLiteral("none");
-            draft.refinement.defaultWritingProfile = WritingProfile::Work;
+            setOtherAppsProfile(draft.apps, WritingProfile::Work);
             return true;
         });
         VocabularyEntry kubernetes{QStringLiteral("Kubernetes")};
@@ -772,9 +773,7 @@ private slots:
         settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
         // The person's own rule outranks Kate's built-in Code editor match.
         settings.edit([](AppSettings &draft) {
-            draft.appRecognitionRules = {
-                {QStringLiteral("org.kde.kate"), AppCategory::Terminal, std::nullopt},
-            };
+            draft.apps.apps = {textApp(QStringLiteral("org.kde.kate"), AppCategory::Terminal)};
             return true;
         });
 
