@@ -557,6 +557,29 @@ private slots:
         QVERIFY(QFile::exists(file.fileName()));
     }
 
+    // A recording whose transcript file is gone still finishes on the lines
+    // History has, so it doesn't look live for ever and stays searchable.
+    void recoveryWithoutItsFileFinishesOnHistorysLines()
+    {
+        HistoryStore store(QStringLiteral(":memory:"), QString());
+        HistoryEntry recording;
+        recording.kind = HistoryKind::Recording;
+        recording.kept = HistoryKeep::Text;
+        recording.startedAt = kNow.addSecs(-60);
+        recording.transcriptPath = m_dir.filePath(QStringLiteral("missing.md"));
+        const qint64 id = store.add(recording);
+        QVERIFY(store.appendLine(id, {1000, QStringLiteral("me"), QStringLiteral("known words")}));
+
+        store.finishUnfinishedRecordings();
+
+        const HistoryEntry recovered = *store.entry(id);
+        QVERIFY(recovered.stats.finishedAt.isValid());
+        QCOMPARE(recovered.text, std::optional(QStringLiteral("known words")));
+        HistoryQuery query;
+        query.text = QStringLiteral("known");
+        QCOMPARE(store.search(query).size(), 1);
+    }
+
     void recoveryReconcilesEveryTranscriptLine()
     {
         HistoryStore store(databasePath(QStringLiteral("reconcile.sqlite3")), QString());

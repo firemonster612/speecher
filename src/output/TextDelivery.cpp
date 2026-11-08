@@ -12,6 +12,7 @@
 #include "output/win/WinPasteDelivery.h"
 #endif
 
+#include <QCoreApplication>
 #include <QDebug>
 #include <QPointer>
 #include <QTimer>
@@ -145,15 +146,23 @@ void takeClipboardTurn(QObject *context, std::function<void()> next)
 void giveClipboardTurn()
 {
     ClipboardTurns &turns = clipboardTurns();
-    while (!turns.waiting.isEmpty()) {
-        auto [context, next] = turns.waiting.takeFirst();
-        if (context) {
-            // Not inside the giver, which is going away.
-            QMetaObject::invokeMethod(context, std::move(next), Qt::QueuedConnection);
-            return;
-        }
+    if (turns.waiting.isEmpty()) {
+        turns.taken = false;
+        return;
     }
-    turns.taken = false;
+    auto [context, next] = turns.waiting.takeFirst();
+    // Not inside the giver, which is going away, and through the application:
+    // a waiter that goes before this runs passes the turn on.
+    QMetaObject::invokeMethod(
+        QCoreApplication::instance(),
+        [context, next = std::move(next)] {
+            if (context) {
+                next();
+            } else {
+                giveClipboardTurn();
+            }
+        },
+        Qt::QueuedConnection);
 }
 
 } // namespace

@@ -816,11 +816,10 @@ void HistoryStore::finishUnfinishedRecordings()
     }
     for (const auto &[id, transcriptPath, finishedAt] : std::as_const(unfinished)) {
         // Lines can reach the file and not History before a crash. Taken in
-        // now, since finishing keeps the file's last change as in step.
+        // now, since finishing keeps the file's last change as in step; a
+        // file that's gone or can't be read leaves the lines History has.
         const std::optional<QList<HistoryLine>> read = transcriptLines(transcriptPath);
-        if (!read) {
-            continue;
-        }
+        const QList<HistoryLine> recovered = read ? *read : lines(id);
         const std::optional<HistoryEntry> found = entry(id);
         if (!found) {
             continue;
@@ -828,7 +827,7 @@ void HistoryStore::finishUnfinishedRecordings()
         const qint64 audioMs = found->startedAt.isValid() ? found->startedAt.msecsTo(finishedAt) : 0;
         RecordingEnd end;
         end.reason = RecordingEnd::Reason::Interrupted;
-        const auto [said, words] = textOf(*read);
+        const auto [said, words] = textOf(recovered);
         QSqlDatabase db = QSqlDatabase::database(m_connection);
         if (!db.transaction()) {
             continue;
@@ -837,7 +836,7 @@ void HistoryStore::finishUnfinishedRecordings()
         removeLines.prepare(QStringLiteral("DELETE FROM lines WHERE entry_id = ?"));
         removeLines.addBindValue(id);
         bool written = removeLines.exec();
-        for (const HistoryLine &line : *read) {
+        for (const HistoryLine &line : recovered) {
             if (written) {
                 written = appendLine(id, line);
             }

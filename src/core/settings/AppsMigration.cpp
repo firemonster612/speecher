@@ -137,9 +137,12 @@ PastingChoice narrowedBy(PasteMethod method, const DeliverySteps &base)
         break;
     case PasteMethod::DirectInsert:
         // The old delivery inserted for this rule whatever the output method,
-        // a keyboard-only one included, and never pressed keys after it.
+        // a keyboard-only one included, and never pressed keys after it. It
+        // copied first, too, so an insertion that failed left the words on
+        // the clipboard: with no paste to fall back on, Keep stays on.
         steps.insert = true;
         steps.press = false;
+        steps.keep = true;
         break;
     }
     if (!steps.any()) {

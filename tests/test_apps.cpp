@@ -543,7 +543,8 @@ private slots:
                                    R"({"type":"general","pasting":"clipboard_only","writingProfile":"other"}])"));
         migrateApps(stored);
         const AppsSettings apps = AppsSettingsCodec::load(stored);
-        QCOMPARE(apps.apps.at(0).pasting, (PastingChoice{insertAndKeep.withStep(DeliveryStep::Keep, false), std::nullopt}));
+        // Direct insertion copied first, so a failed insertion kept the words.
+        QCOMPARE(apps.apps.at(0).pasting, (PastingChoice{insertAndKeep, std::nullopt}));
         // Other apps have steps of their own, which its Standard paste hid.
         QCOMPARE(apps.apps.at(1).pasting,
                  (PastingChoice{DeliverySteps{.insert = true, .press = true, .keep = false}, PasteKeyCombo::Standard}));
@@ -737,7 +738,8 @@ private slots:
         QCOMPARE(delivery(target("org.kde.kate", "Kate", "kate"), apps, steps), QStringLiteral("insert press standard"));
         QCOMPARE(delivery(konsole, apps, steps), u"insert press " + terminal);
         QCOMPARE(delivery(agent, apps, steps), u"insert press " + terminal);
-        QCOMPARE(delivery(target("firefox", "Firefox", "firefox"), apps, steps), QStringLiteral("insert"));
+        // Direct insertion copied first and kept the words when it failed.
+        QCOMPARE(delivery(target("firefox", "Firefox", "firefox"), apps, steps), QStringLiteral("insert keep"));
         QCOMPARE(delivery(target("org.kde.dolphin", "Dolphin", "dolphin"), apps, steps), QStringLiteral("keep"));
     }
 

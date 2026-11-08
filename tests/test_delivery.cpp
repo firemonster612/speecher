@@ -2564,6 +2564,40 @@ fi
         QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("original user clipboard"));
     }
 
+    // A paste waiting for the clipboard that goes before its turn comes
+    // passes the turn on, so the pastes after it still run.
+    void aWaitingPasteThatGoesPassesTheClipboardOn()
+    {
+        QApplication::clipboard()->setText(QStringLiteral("original"));
+        QList<QString> attempts;
+        QHash<QString, bool> results{{virtualKeyboardMethod(), true}};
+        const auto backend = [&attempts, &results](const QString &method, const OutputSettings &, PasteKeyCombo) {
+            return std::make_unique<FakeBackend>(method, &attempts, &results);
+        };
+        FakeTargetProvider targetProvider;
+        OutputSettings settings;
+        settings.ydotoolEnabled = true;
+        settings.steps = {.insert = false, .press = true, .keep = false};
+        Target target;
+        target.applicationId = QStringLiteral("org.kde.kate");
+
+        auto first = std::make_unique<TextDelivery>(backend, &targetProvider);
+        auto second = std::make_unique<TextDelivery>(backend, &targetProvider);
+        first->deliver(settings, makeDeliveryContent(QStringLiteral("A"), OutputFormat::PlainText), target, {});
+        second->deliver(settings, makeDeliveryContent(QStringLiteral("B"), OutputFormat::PlainText), target, {});
+        QCoreApplication::processEvents();
+        // The first goes, handing the turn to the second, which goes too
+        // before it takes it.
+        first.reset();
+        second.reset();
+
+        TextDelivery third(backend, &targetProvider);
+        third.setAnswerDeadlineMs(2000);
+        const DeliveryResult result = deliverAndWait(
+            third, settings, makeDeliveryContent(QStringLiteral("C"), OutputFormat::PlainText), target);
+        QVERIFY2(result.ok, qPrintable(result.message));
+    }
+
     void clipboardSnapshotCapturesAndRestoresEveryMimeType()
     {
         auto *original = new QMimeData;

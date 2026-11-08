@@ -619,9 +619,10 @@ private:
 
         // Insights were on, and the upgrade keeps their promise: stats only.
         QCOMPARE(settings.history.keeps, HistoryKeep::Stats);
-        // A Direct insertion default turns Press off, and restoring the
-        // clipboard turns Keep off. Terminals' own rule still pastes.
-        QCOMPARE(settings.output.steps, (DeliverySteps{.insert = true, .press = false, .keep = false}));
+        // A Direct insertion default turns Press off. It copied first and
+        // kept the words when insertion failed, so Keep stays on whatever the
+        // restore switch said. Terminals' own rule still pastes.
+        QCOMPARE(settings.output.steps, (DeliverySteps{.insert = true, .press = false, .keep = true}));
         QCOMPARE(readField(controller, QStringLiteral("terminalDelivery")).toString(), QStringLiteral("insert press"));
         // 45 days, which the interval now caps at 30.
         QCOMPARE(store.dictationSnapshot().updates.checkIntervalMinutes, 30 * 24 * 60);
