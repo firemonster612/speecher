@@ -50,7 +50,7 @@ SchemaRow {
     readonly property real _statusWidth: {
         let widest = 0
         for (let i = 0; i < needRows.count; ++i) {
-            const need = needRows.itemAt(i)
+            const need = needRows.itemAt(i) as NeedStatus
             if (need) widest = Math.max(widest, need.naturalStatusWidth)
         }
         return widest
