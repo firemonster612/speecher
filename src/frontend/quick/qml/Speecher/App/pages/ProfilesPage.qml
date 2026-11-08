@@ -9,6 +9,7 @@ import "text"
 
 Page {
     id: page
+    objectName: "profilesPage"
     title: Schema.page("profiles").title
     subtitle: Schema.page("profiles").subtitle
 
@@ -24,17 +25,34 @@ Page {
             selectedId = id
     }
 
+    // A search for a profile shows it in the editor; one for your own tone
+    // or cleanup level opens it to edit.
+    function landOn(rowId) {
+        const at = rowId.indexOf(":")
+        const kind = rowId.slice(0, at)
+        const id = rowId.slice(at + 1)
+        if (kind === "profile") selectedId = id
+        if (kind === "tone") toneForm.startEdit(Library.customTones.findIndex(t => t.id === id))
+        if (kind === "level") levelForm.startEdit(Library.customCleanupLevels.findIndex(l => l.id === id))
+    }
+
     // Profiles on the left, the chosen one's settings on the right, on one
     // card.
     Section {
         id: profilesSection
         SearchLanding { rowIds: ["writingProfileBehavior"]; target: profilesSection }
+        SearchLanding {
+            rowIds: page.profiles.map(p => "profile:" + p.id)
+            target: profilesSection
+            onLanded: rowId => page.landOn(rowId)
+        }
         // Without app detection, every dictation takes the profile for apps
         // Speecher doesn't recognize; with another way to detect apps, only
         // some may.
         AccessibilityNotice {
             text: System.identifiesAppsWithoutAccessibility ? Schema.row("writingProfileBehavior").limited
-                : Schema.row("writingProfileBehavior").undetected.arg(Library.profileName((Apps.types.find(o => o.id === "general") || { profile: "" }).profile))
+                : Schema.row("writingProfileBehavior").undetected.arg(Schema.apps.type("general").label)
+                      .arg(Library.profileName((Apps.types.find(o => o.id === "general") || { profile: "" }).profile))
         }
         Item {
             width: parent.width
@@ -119,7 +137,13 @@ Page {
 
     // Your own tones and cleanup levels, side by side.
     Row {
+        id: ownChoices
         width: parent.width
+        SearchLanding {
+            rowIds: Library.customTones.map(t => "tone:" + t.id).concat(Library.customCleanupLevels.map(l => "level:" + l.id))
+            target: ownChoices
+            onLanded: rowId => page.landOn(rowId)
+        }
         spacing: Theme.space4
 
         Section {
@@ -148,6 +172,7 @@ Page {
                 InlineForm {
                     cancelText: Words.cancel
                     id: toneForm
+                    objectName: "toneForm"
                     // The tone being edited, by id, or empty while adding.
                     property string editing
                     function startAdd() { editing = ""; toneName.text = ""; toneText.text = ""; error = ""; open = true }

@@ -7,7 +7,8 @@ import Speecher.Theme
 // grows open from the button's corner and each option can carry a line of
 // help; its entries are the same MenuItem a Menu shows, greyed out and not
 // chosen when enabled is false. It shows currentId and only asks for a
-// change through chosen: the caller sets currentId.
+// change through chosen: the caller sets currentId. With wrap, a label too
+// long for the button takes a second line rather than being cut off.
 T.ComboBox {
     id: control
 
@@ -15,6 +16,7 @@ T.ComboBox {
     property string currentId: options.length ? options[0].id : ""
     property string placeholder
     property int menuWidth: Math.max(width, 280)
+    property bool wrap: false
     signal chosen(string id)
 
     model: options
@@ -31,7 +33,7 @@ T.ComboBox {
     }
     onModelChanged: currentIndex = Qt.binding(() => _index)
 
-    implicitHeight: Theme.controlHeight
+    implicitHeight: Math.max(Theme.controlHeight, label.implicitHeight + 12)
     implicitWidth: Theme.selectWidth
     hoverEnabled: true
     focusPolicy: Qt.StrongFocus
@@ -61,12 +63,15 @@ T.ComboBox {
             anchors.verticalCenter: parent.verticalCenter
         }
         Txt {
+            id: label
             text: control._current ? control._current.label : control.placeholder
             // A placeholder asks for a choice, so it reads more strongly
             // than a field's hint, apart from a disabled Select.
             tone: control._current ? "primary" : "secondary"
             variant: "label"
             elide: Text.ElideRight
+            wrapMode: control.wrap ? Text.Wrap : Text.NoWrap
+            maximumLineCount: 2
             width: Math.min(implicitWidth, control.availableWidth - 22)
             anchors.verticalCenter: parent.verticalCenter
         }

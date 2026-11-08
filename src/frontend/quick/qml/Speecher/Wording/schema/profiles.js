@@ -8,9 +8,9 @@ var rows = [
       label: "Profiles",
       help: "Each profile has a cleanup level, a tone and optional instructions. An output language translates what you say.",
       // Without accessibility, where Speecher has no other way to tell apps
-      // apart (%1 is the profile every dictation then uses), and where it
-      // has one that may not always tell.
-      undetected: "Without desktop accessibility Speecher can't tell which app you're in, so every dictation uses %1.",
+      // apart (%1 is Other apps, %2 the profile every dictation then uses),
+      // and where it has one that may not always tell.
+      undetected: "Without desktop accessibility Speecher can't tell which app you're in, so every dictation uses %1' profile, %2.",
       limited: (Qt.platform.os === "osx" ? "Without Accessibility" : "Without desktop accessibility")
                + ", app detection may be limited.",
       keywords: "profile app per-app cleanup level tone instructions translate language edit add" },

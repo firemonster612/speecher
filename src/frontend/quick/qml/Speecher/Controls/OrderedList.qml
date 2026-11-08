@@ -18,7 +18,8 @@ import Speecher.Theme
 //            required modelData and place, such as its own choices
 // minCount rows always stay: their remove button goes. emptyText and
 // addLabel give the list its own empty and add rows; leave them empty to
-// put those elsewhere. edited fires with the new order.
+// put those elsewhere. Once every option is listed the add row stays, saying
+// allAddedText instead of offering a choice. edited fires with the new order.
 Column {
     id: root
 
@@ -28,12 +29,12 @@ Column {
     property Component rowControl: null
     property Component rowDetail: null
     property int minCount: 0
-    property int maxCount: 99
     // A row's height, without its detail.
     property int rowHeight: 60
     property string emptyText
     property string addLabel
     property string addHelp
+    property string allAddedText
     property string addPlaceholder
     property string moveUpText
     property string moveDownText
@@ -72,7 +73,8 @@ Column {
             readonly property var status: root._status(key, index)
 
             width: ListView.view.width
-            height: root.rowHeight + (detail.item ? (detail.item as Item).implicitHeight + Theme.space3 : 0)
+            readonly property real detailHeight: detail.item ? (detail.item as Item).implicitHeight : 0
+            height: root.rowHeight + (detailHeight > 0 ? detailHeight + Theme.space3 : 0)
             onIndexChanged: if (grip.active) root._dragIndex = index
 
             // Another row dragged over this one takes its place.
@@ -214,11 +216,12 @@ Column {
     // One more, from the options not in the list yet. Its help speaks of
     // the ones above, so it waits for there to be some.
     SettingRow {
-        shown: root.addLabel.length > 0 && root.ids.length < root.maxCount && root.available.length > 0
+        shown: root.addLabel.length > 0
         title: root.addLabel
-        help: root.ids.length ? root.addHelp : ""
+        help: !root.available.length ? root.allAddedText : root.ids.length ? root.addHelp : ""
         iconName: "plus"
         Select {
+            visible: root.available.length > 0
             options: root.available
             currentId: ""
             placeholder: root.addPlaceholder

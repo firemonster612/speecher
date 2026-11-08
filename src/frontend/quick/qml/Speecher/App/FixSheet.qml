@@ -89,9 +89,17 @@ T.Popup {
         }
     }
 
+    // A sign-in through CLI Proxy API brings the rows both services share.
     Component {
         id: signIn
-        SignInCard { serviceId: sheet.card === "chatgpt" ? "openai" : "anthropic" }
+        Column {
+            spacing: Theme.sectionGap
+            SignInCard { id: signInCard; width: parent.width; serviceId: sheet.card === "chatgpt" ? "openai" : "anthropic" }
+            Reveal {
+                open: signInCard.cliproxy
+                CliproxySection {}
+            }
+        }
     }
     Component {
         id: computer

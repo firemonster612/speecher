@@ -1,4 +1,6 @@
+pragma ComponentBehavior: Bound
 import QtQuick
+import Speecher.Theme
 import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
@@ -40,6 +42,23 @@ Page {
             }
         }
         StartCommandRow {}
+        // The rest of a dictation without shortcuts: finishing, cancelling
+        // and pasting again.
+        SchemaRow {
+            id: controls
+            rowId: "controlCommands"
+            shown: page.noShortcuts
+            stacked: true
+            Flow {
+                width: parent.width
+                spacing: Theme.space2
+                Repeater {
+                    model: controls.spec.commands
+                    CommandChip { required property string modelData; command: modelData }
+                }
+                Button { text: controls.spec.historyLabel; size: "small"; onClicked: Navigation.follow("history") }
+            }
+        }
     }
     Reveal { open: page.noShortcuts; Reach {} }
 
@@ -79,6 +98,16 @@ Page {
         Section {
             title: Schema.row("pasteAgainShortcut").section
             SchemaRow { rowId: "pasteAgainShortcut" }
+        }
+    }
+
+    // Recording a call has its key here too, so every shortcut is set, and
+    // checked against the others, in one place.
+    Reveal {
+        open: !page.noShortcuts
+        Section {
+            title: Schema.row("recordingShortcut").section
+            SchemaRow { rowId: "recordingShortcut" }
         }
     }
 

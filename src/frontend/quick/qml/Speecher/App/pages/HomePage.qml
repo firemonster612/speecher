@@ -13,8 +13,9 @@ import "home/words.js" as T
 // Home: the latest dictation and whether Speecher is ready, then the chosen
 // period's figures, the year's activity, and the lists that go with them in
 // pairs across the page. With History keeping nothing or nothing dictated
-// yet, one line says so in their place. History, its subpage, ends it. The
-// words are home/words.js's.
+// yet, one line says so in their place. History, its subpage, opens from the
+// Your dictation card, which says what it holds, so one card stands for
+// what Speecher kept. The words are home/words.js's.
 Page {
     id: page
     // Whether the speech chain's services are signed in, for whether
@@ -90,6 +91,15 @@ Page {
         })
     }
 
+    // History, under what Speecher counted of your dictation.
+    component HistoryLink: SettingRow {
+        objectName: "homeHistory"
+        title: Schema.page("history").title
+        help: History.kept > 0 ? T.historyLine(History.kept) : T.historyKeeps(Settings.values.historyKeeps)
+        clickable: true
+        onClicked: Navigation.go("history")
+    }
+
     SessionSection {}
 
     // Insights off, or nothing dictated yet.
@@ -101,8 +111,9 @@ Page {
             SettingRow {
                 title: Insights.state === "off" ? page.t.offTitle : page.t.emptyTitle
                 help: Insights.state === "off" ? page.t.offBody : page.t.emptyBody
-                Button { text: page.t.insightsSettings; size: "small"; onClicked: Navigation.goToRow("general", "historyKeeps") }
+                Button { text: page.t.insightsSettings; size: "small"; onClicked: Navigation.goToRow("privacy", "historyKeeps") }
             }
+            HistoryLink {}
         }
     }
 
@@ -121,6 +132,7 @@ Page {
                 }
                 LatestDictation {}
                 Figures { rows: page.summary ? T.figures(page.summary, Insights.period, Insights.today) : [] }
+                HistoryLink {}
             }
 
             ActivitySection {}
@@ -293,14 +305,9 @@ Page {
                     width: parent.width
                     spacing: Theme.space2
                     Txt { text: page.t.privacyNote; variant: "small"; tone: "tertiary" }
-                    TextLink { text: page.t.insightsSettings; onActivated: Navigation.goToRow("general", "historyKeeps") }
+                    TextLink { text: page.t.insightsSettings; onActivated: Navigation.goToRow("privacy", "historyKeeps") }
                 }
             }
         }
-    }
-
-    SubpageRows {
-        pageId: "home"
-        lines: ({ history: History.kept > 0 ? T.historyLine(History.kept) : T.historyKeeps(Settings.values.historyKeeps) })
     }
 }

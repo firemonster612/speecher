@@ -8,10 +8,11 @@ import Speecher.App
 import "services"
 
 // The services Speecher can use, each connected once: ChatGPT and Claude
-// side by side with their sign-ins, This computer's Local Model and Local
-// Runner, and Your servers, one for speech and one for refinement. Speech to
-// text and Refinement put them in order; each order row's Fix opens the
-// same card in a sheet.
+// side by side with their sign-ins, CLI Proxy API's shared rows while either
+// signs in through it, This computer's Local Models and Local Runner, and
+// Your servers, one for speech and one for refinement. Speech to text and
+// Refinement put them in order and choose their models; each order row's
+// Fix opens the same card in a sheet.
 Page {
     id: page
     title: Schema.page("services").title
@@ -52,13 +53,17 @@ Page {
             minimumHeadHeight: openAi.naturalHeadHeight
         }
     }
-    // CLI Proxy API's rows show in the card that signs in through it; a
-    // search for one while neither does lands on the sign-ins.
+    // CLI Proxy API's shared rows, while a sign-in goes through it; a search
+    // for one while neither does lands on the sign-ins.
+    readonly property bool _cliproxy: Settings.values.openAiAuthMode === Accounts.authModes.openAi.cliproxy
+                                      || Settings.values.anthropicAuthMode === Accounts.authModes.anthropic.cliproxy
     SearchLanding {
-        rowIds: Settings.values.openAiAuthMode === Accounts.authModes.openAi.cliproxy
-                || Settings.values.anthropicAuthMode === Accounts.authModes.anthropic.cliproxy
-                ? [] : ["cliproxyOauthDir", "cliproxyBaseUrl", "cliproxyApiKey"]
+        rowIds: page._cliproxy ? [] : ["cliproxyOauthDir", "cliproxyBaseUrl", "cliproxyApiKey"]
         target: pair
+    }
+    Reveal {
+        open: page._cliproxy
+        CliproxySection { objectName: "cliproxySection" }
     }
 
     ComputerSection { objectName: "thisComputer" }

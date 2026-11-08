@@ -93,6 +93,8 @@ Page {
                 onActivated: id => Settings.set("boringMode", id === "bars")
             }
         }
+        // While a recording runs, the popup shows its pill.
+        SchemaRow { rowId: "recordingPill" }
     }
 
     Section {

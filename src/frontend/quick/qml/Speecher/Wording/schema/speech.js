@@ -5,12 +5,13 @@
 var rows = [
     { id: "speechServices", page: "speech", section: "Services, in order", kind: "custom",
       label: "Services, in order",
-      help: "Speecher uses the first one that works, and tells you when it used a later one.",
+      help: "Speecher uses the first one that works, and tells you when it used a later one. Each service's model is chosen here; a writing profile can pick its own.",
       addLabel: "Add a service", addHelp: "Used when the ones above are unavailable.",
-      maxCount: 3,
+      // Every service of the job is in the order: none left to add.
+      allAddedText: "Every service is in the list. Removing one keeps its sign-in and its choices here.",
       // A later entry's language picker: its first entry drops its own choice.
       sameAsMain: "Same as Spoken language", listensFor: "Listens for",
-      keywords: "provider service transcription engine claude voice chatgpt codex local model server fallback backup order chain rating accuracy" },
+      keywords: "provider service transcription engine claude voice chatgpt codex local model server fallback backup order chain rating accuracy local model parakeet whisper server model" },
 
     // Every language core knows (knownSpokenLanguages), named in English
     // with the language's own name, which the language picker searches too.

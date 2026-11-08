@@ -7,7 +7,8 @@ import Speecher.Wording
 
 // One job's Service Order, speech or refinement, first to last: each
 // service with its status, a Fix that opens its Services card in a sheet
-// while it can't run, and under it its own choices (ServiceChoiceRow).
+// while it can't run, Check again while no check has vouched for its
+// sign-in, and under it its own choices (ServiceChoiceRow).
 // Reordering, adding and removing save the order at once; a service always
 // stays.
 Column {
@@ -15,6 +16,9 @@ Column {
 
     // "speech" or "refinement".
     required property string role
+    // Each service's own choices under it; folded away, only the services
+    // and their states show.
+    property bool choicesShown: true
     readonly property var spec: Schema.row(role === "speech" ? "speechServices" : "refinementServices")
     readonly property var services: role === "speech" ? Models.speechServices : Models.refinementProviders
 
@@ -42,31 +46,51 @@ Column {
             return { text: s.text, tone: States.tone(s.state) }
         }
         minCount: 1
-        maxCount: list.spec.maxCount
         addLabel: list.spec.addLabel
         addHelp: list.spec.addHelp
+        allAddedText: list.spec.allAddedText
         addPlaceholder: Words.choose
         moveUpText: Words.moveUp
         moveDownText: Words.moveDown
         removeText: Words.remove
         onEdited: ids => list.save(ids.map(id => ModelText.entry(list.role, id)))
         rowControl: Component {
-            Button {
-                id: fixButton
+            Row {
+                id: actions
                 required property string modelData
                 readonly property var service: ModelText.serviceOf(list.role, modelData)
-                objectName: "fix_" + modelData
-                text: Words.fix
-                size: "small"
-                visible: ModelText.fixable(service) && ModelText.cardOf(modelData) !== ""
-                onClicked: sheet.openFor(list.role, fixButton.modelData)
+                readonly property bool unknown: ModelText.unchecked(service)
+                spacing: Theme.space2
+                Button {
+                    objectName: "check_" + actions.modelData
+                    visible: actions.unknown
+                    text: Words.checkAgain
+                    size: "small"
+                    busy: actions.unknown && ModelText.checkingSignIn(list.role, actions.service)
+                    onClicked: ModelText.checkSignIn(list.role, actions.modelData)
+                }
+                Button {
+                    objectName: "fix_" + actions.modelData
+                    text: Words.fix
+                    size: "small"
+                    visible: (ModelText.fixable(actions.service) || actions.unknown) && ModelText.cardOf(actions.modelData) !== ""
+                    onClicked: sheet.openFor(list.role, actions.modelData)
+                }
             }
         }
         rowDetail: Component {
-            ServiceChoiceRow {
-                role: list.role
-                onEdited: (field, value) => list.setField(modelData, field, value)
-                onLanguagesRequested: (at, codes) => languages.show(at, codes)
+            Reveal {
+                id: detail
+                property string modelData
+                property int place
+                open: list.choicesShown
+                ServiceChoiceRow {
+                    role: list.role
+                    modelData: detail.modelData
+                    place: detail.place
+                    onEdited: (field, value) => list.setField(detail.modelData, field, value)
+                    onLanguagesRequested: (at, codes) => languages.show(at, codes)
+                }
             }
         }
     }

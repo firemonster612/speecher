@@ -111,6 +111,8 @@ QtObject {
         searchSettings: "Search settings",
         searchPlaceholder: "Search settings and pages",
         suggested: "Suggested",
+        // Over Search History when no page or setting matches the words.
+        noSettings: "No settings match",
         page: "Page",
         showSubpages: "Show subpages",
         hideSubpages: "Hide subpages",

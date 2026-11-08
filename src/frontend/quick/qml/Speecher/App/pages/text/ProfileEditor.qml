@@ -50,9 +50,13 @@ Column {
     readonly property bool skipsRefinement: level.id === "none" && !outputLanguage
     readonly property bool translatesOnly: level.id === "none" && !!outputLanguage
     // What the profile runs: its own first services, else the pages'
-    // orders'. With Clean up my words off, nothing refines, unless a run
-    // names a service.
-    readonly property var speech: ModelText.service(profile.speech || (runMode ? inherited.speech : ModelText.mainSpeech))
+    // orders'. A speech service the resolver passes over (it can't listen
+    // for the Spoken Language, or this build lacks it) leaves the page's.
+    // With Clean up my words off, nothing refines, unless a run names a
+    // service.
+    readonly property string speechSkipped: runMode ? "" : profile.speechSkipped || ""
+    readonly property var speech: ModelText.service((speechSkipped ? "" : profile.speech)
+                                                    || (runMode ? inherited.speech : ModelText.mainSpeech))
     readonly property bool refinementOff: !runMode && ModelText.mainRefiner === "none"
     readonly property var refiner: ModelText.provider(refinementOff ? "none"
         : profile.refinement || (runMode ? inherited.refinement : ModelText.mainRefiner))
@@ -63,31 +67,22 @@ Column {
     readonly property string refinementPlace: runMode ? inherited.refinementPlace : Schema.page("refinement").title
     readonly property string inheritedSpeech: runMode ? inherited.speech : ModelText.mainSpeech
     readonly property string inheritedRefiner: runMode ? inherited.refinement : ModelText.mainRefiner
-    // The models a service has to choose from, [{ id, label }]: a Local
-    // Model, ChatGPT's and Claude's, and the Local Runner's and the
-    // servers' as they were listed.
-    function named(models) { return models.map(m => ({ id: m, label: m })) }
-    function speechModels(id) {
-        return id === "local" ? ModelText.downloadedModels : id === "endpoint" ? named(Models.speechEndpoint.models || []) : []
-    }
-    function refinementModelsOf(id) {
-        const runner = Models.runners.find(r => r.id === Settings.values.localRunner)
-        return id === "local" ? named(runner ? runner.models : [])
-             : id === "endpoint" ? named(Models.refinementEndpoint.models || []) : ModelText.suggestedModels(id)
-    }
-    function speechModelName(model) { return (ModelText.catalogModel(model) || { name: model }).name }
-    // The speech service whose model the editor chooses: the profile's own,
-    // or in run mode the one the run hears with.
+    function speechModelName(model) { return (ModelText.catalogModel(model) || { name: model }).name || Library.profilesText.serviceDefault }
+    // The services whose models the editor chooses: the profile's own, or
+    // in run mode the ones the run hears and refines with.
     readonly property string modelSpeech: runMode ? speech.id : profile.speech || ""
-    readonly property var refinementModels: refinementModelsOf(profile.refinement || (runMode ? refiner.id : ""))
+    readonly property string modelRefiner: profile.refinement || (runMode ? refiner.id : "")
     // "Same as …" for a model: the run's inherited service keeps its place's
     // model; any other service runs its page's entry.
     readonly property string inheritedSpeechModel: runMode && speech.id === inheritedSpeech
         ? Words.sameAs(speechPlace, speechModelName(inherited.speechModel))
         : Words.sameAs(Schema.page("speech").title, speechModelName(ModelText.entry("speech", modelSpeech).model || ""))
     readonly property string inheritedRefinementModel: runMode && refiner.id === inheritedRefiner
-        ? Words.sameAs(refinementPlace, inherited.refinementModel)
-        : Words.sameAs(Schema.page("refinement").title, ModelText.refinementModel(refiner.id))
+        ? Words.sameAs(refinementPlace, inherited.refinementModel || Library.profilesText.serviceDefault)
+        : Words.sameAs(Schema.page("refinement").title, ModelText.refinementModel(refiner.id) || Library.profilesText.serviceDefault)
+    // The language the Spoken Language names, for why a service is skipped.
+    readonly property string spokenLanguageName: (Schema.row("spokenLanguage").options.find(o => o.id === Settings.values.spokenLanguage)
+                                                  || { label: "" }).label
     // "Heard by Claude, cleaned up by gpt-6-luna.", then what stands in the
     // way of either, so a profile that seems to ignore a change says why.
     readonly property string pipeline: {
@@ -187,6 +182,7 @@ Column {
                     wrapMode: Text.WordWrap
                     onActivated: Navigation.follow("vocabulary", "vocabularyFor:" + limit)
                 }
+                Txt { text: Library.profilesText.savesAsYouGo; variant: "small"; tone: "tertiary" }
             }
             Button {
                 id: deleteButton
@@ -324,11 +320,15 @@ Column {
         objectName: "profileServices"
         x: -Theme.rowInset
         width: parent.width + Theme.rowInset * 2
-        readonly property bool custom: !!(editor.profile.speech || editor.profile.refinement)
+        readonly property int changes: [editor.profile.speech, editor.profile.refinement].filter(s => !!s).length
         title: editor.servicesTitle
         help: editor.pipeline
-        trailingText: custom ? Library.profilesText.custom : Library.profilesText.default_
-        open: custom
+        // What it inherits while it changes nothing, as an InheritSelect's
+        // first option says it.
+        trailingText: changes ? Words.count(changes, Library.profilesText.change, Library.profilesText.changes)
+                    : editor.runMode ? Library.profilesText.sameAs(editor.inherited.profileName || "")
+                    : Library.profilesText.sameAsOrders
+        open: changes > 0
         SearchLanding {
             rowIds: editor.landsOn(["profileServices"])
             target: services
@@ -337,7 +337,9 @@ Column {
 
         SettingRow {
             title: Library.profilesText.speech
-            help: editor.profile.speech ? Library.profilesText.ownSpeechHelp : Library.profilesText.defaultSpeechHelp
+            help: editor.speechSkipped ? Library.skippedSpeechHelp(editor.speechSkipped, Models.service(editor.profile.speech).label,
+                                                                    editor.spokenLanguageName)
+                : editor.profile.speech ? Library.profilesText.ownSpeechHelp : Library.profilesText.defaultSpeechHelp
             InheritSelect {
                 inheritedText: Words.sameAs(editor.speechPlace, Models.service(editor.inheritedSpeech).label)
                 choices: Models.speechServices.map(s => ({ id: s.id, label: s.label }))
@@ -345,15 +347,17 @@ Column {
                 onChosen: id => editor.edited({ speech: id, speechModel: "" })
             }
         }
-        // A model to choose, where the service has them.
+        // A model to choose, where the service runs one, as its order row
+        // chooses it.
         SettingRow {
             title: Library.profilesText.speechModel
-            shown: editor.speechModels(editor.modelSpeech).length > 0
-            InheritSelect {
+            shown: !!editor.modelSpeech && ModelText.choosesModel("speech", editor.modelSpeech)
+            ServiceModelField {
+                role: "speech"
+                service: editor.modelSpeech
+                value: editor.profile.speechModel || ""
                 inheritedText: editor.inheritedSpeechModel
-                choices: editor.speechModels(editor.modelSpeech)
-                currentId: editor.profile.speechModel || ""
-                onChosen: id => editor.edited({ speechModel: id })
+                onChosen: model => editor.edited({ speechModel: model })
             }
         }
         SettingRow {
@@ -374,13 +378,14 @@ Column {
         }
         SettingRow {
             title: Library.profilesText.refinementModel
-            shown: editor.refinementModels.length > 0
+            shown: !!editor.modelRefiner && editor.modelRefiner !== "none"
             enabled: !editor.skipsRefinement && !editor.refinementOff
-            InheritSelect {
+            ServiceModelField {
+                role: "refinement"
+                service: editor.modelRefiner
+                value: editor.profile.refinementModel || ""
                 inheritedText: editor.inheritedRefinementModel
-                choices: editor.refinementModels.map(m => ({ id: m.id, label: m.label }))
-                currentId: editor.profile.refinementModel || ""
-                onChosen: id => editor.edited({ refinementModel: id })
+                onChosen: model => editor.edited({ refinementModel: model })
             }
         }
     }

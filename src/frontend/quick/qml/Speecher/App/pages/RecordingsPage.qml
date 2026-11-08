@@ -100,8 +100,21 @@ Page {
         SchemaRow { rowId: "recordingFormat" }
         SchemaRow { rowId: "recordingKeepAudio" }
         SchemaRow { rowId: "recordingAutoStop" }
-        SchemaRow { rowId: "recordingShortcut" }
-        SchemaRow { rowId: "recordingPill" }
+        // The shortcut is set on Dictation with the others; this says
+        // which it is.
+        SettingRow {
+            id: shortcutLine
+            readonly property var spec: Schema.row("recordingShortcut")
+            readonly property var keys: Settings.values.recordingShortcut || []
+            shown: !!System.hasGlobalShortcuts
+            title: spec.label
+            help: keys.length ? spec.setOn : spec.notSet
+            Row {
+                spacing: Theme.space3
+                KeyCombo { visible: shortcutLine.keys.length > 0; keys: shortcutLine.keys; anchors.verticalCenter: parent.verticalCenter }
+                Button { text: shortcutLine.spec.change; size: "small"; onClicked: Navigation.follow("dictation", "recordingShortcut") }
+            }
+        }
     }
 
     Section {

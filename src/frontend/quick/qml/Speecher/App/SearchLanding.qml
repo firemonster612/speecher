@@ -4,23 +4,25 @@ import Speecher.Controls
 import Speecher.Backend
 
 // Where a search jump to schema rows lands, for rows a page builds itself.
-// Once the page has loaded it scrolls target into view and emits landed, so
-// the target can flash or open. SchemaRow has one already; give one to a
-// custom row, Disclosure, card or section that stands for schema rows:
+// Once the page has loaded it scrolls target into view and emits landed with
+// the row it landed for, so the target can flash or open. SchemaRow has one
+// already; give one to a custom row, Disclosure, card or section that stands
+// for schema rows:
 //   Disclosure { id: more; SearchLanding { rowIds: ["x"]; target: more; onLanded: more.highlight() } }
 QtObject {
     id: landing
 
     required property var rowIds
     required property Item target
-    signal landed()
+    signal landed(string rowId)
 
     function _land() {
         let p = target.parent
         while (p && !(p as Page)) p = p.parent
         if (p) (p as Page).reveal(target)
+        const rowId = Navigation.pendingRow
         Navigation.pendingRow = ""
-        landed()
+        landed(rowId)
     }
     // Each step of a search jump is logged at info level, so a failure shows
     // which landing fired and whether its target was still there.

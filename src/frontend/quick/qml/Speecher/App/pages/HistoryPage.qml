@@ -139,7 +139,7 @@ Page {
                 width: parent.width
                 spacing: Theme.space2
                 Txt { text: T.keeping(page.keeps, Number(Settings.values.historyTextDays), Number(Settings.values.historyAudioDays)); tone: "secondary" }
-                TextLink { text: page.t.settings; onActivated: Navigation.follow("general", "historyKeeps") }
+                TextLink { text: page.t.settings; onActivated: Navigation.follow("privacy", "historyKeeps") }
             }
 
             ClearConfirm { id: clearConfirm; ruled: false; inset: 0 }
@@ -216,7 +216,7 @@ Page {
                             visible: page.keeps === "nothing"
                             text: page.t.settings
                             size: "small"
-                            onClicked: Navigation.follow("general", "historyKeeps")
+                            onClicked: Navigation.follow("privacy", "historyKeeps")
                         }
                         Button {
                             visible: page.keeps === "stats"

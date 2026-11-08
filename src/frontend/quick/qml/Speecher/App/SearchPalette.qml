@@ -22,7 +22,7 @@ FocusScope {
     property bool shown: false
     property alias query: input.text
     readonly property var results: query.trim().length
-        ? Schema.search(query, 40, need => System[need], _apps.concat(_vocabulary)).concat(_historyResult)
+        ? Schema.search(query, 40, need => System[need], _apps.concat(_vocabulary, _library)).concat(_historyResult)
         : _suggestions
     // While History keeps text, the last result looks for the query in what
     // was dictated, landing on History with it typed in its search
@@ -44,6 +44,23 @@ FocusScope {
         type: "vocabulary", id: "vocab:" + e.id, page: "vocabulary", section: Schema.vocabulary.t.yourVocabulary,
         label: e.term, keywords: [e.replacement, e.context].join(" ")
     }))
+    // The Writing Profiles and your own tones and cleanup levels, found by
+    // name and landing on them on Writing profiles (profile:<id>, tone:<id>,
+    // level:<id>).
+    readonly property var _library: Library.profiles.map(p => ({
+        type: "profile", id: "profile:" + p.id, page: "profiles", section: Schema.row("writingProfileBehavior").section,
+        label: p.name, keywords: "writing profile " + Library.profileSummary(p)
+    })).concat(Library.customTones.map(t => ({
+        type: "tone", id: "tone:" + t.id, page: "profiles", section: Schema.row("customTones").label,
+        label: t.name, keywords: "tone " + t.instruction
+    })), Library.customCleanupLevels.map(l => ({
+        type: "level", id: "level:" + l.id, page: "profiles", section: Schema.row("customCleanupLevels").label,
+        label: l.name, keywords: "cleanup level " + l.instructions
+    })))
+    // How many results are pages and settings: Search History is an offer
+    // to look elsewhere, not a match, so it is never counted.
+    readonly property int _matches: results.filter(r => r.type !== "history").length
+    readonly property bool _searching: query.trim().length > 0
     // The suggested rows this computer has, as search offers only those.
     readonly property var _suggestions: Schema.suggestions
         .map(id => Schema.row(id)).filter(r => r.kind !== "missing" && Schema.available(r, need => System[need]))
@@ -170,11 +187,13 @@ FocusScope {
             height: root.results.length ? list.anchors.topMargin + 8 + list.rowHeight * Math.min(root.results.length, _fits)
                                         : empty.height
 
+            // Over the suggestions, and over Search History alone when no
+            // setting matches.
             Txt {
-                visible: root.query.trim().length === 0
+                visible: !root._searching || (root._matches === 0 && root.results.length > 0)
                 x: 22
                 y: 12
-                text: Words.shell.suggested
+                text: root._searching ? Words.shell.noSettings : Words.shell.suggested
                 variant: "small"
                 strong: true
                 tone: "tertiary"
@@ -185,7 +204,7 @@ FocusScope {
                 readonly property int rowHeight: 50
                 anchors.fill: parent
                 anchors.margins: 8
-                anchors.topMargin: root.query.trim().length === 0 ? 30 : 8
+                anchors.topMargin: !root._searching || root._matches === 0 ? 30 : 8
                 clip: true
                 model: root.results
                 opacity: root.results.length ? 1 : 0
@@ -319,7 +338,7 @@ FocusScope {
                 anchors.right: parent.right
                 anchors.rightMargin: 18
                 anchors.verticalCenter: parent.verticalCenter
-                text: Words.results(root.results.length)
+                text: Words.results(root._searching ? root._matches : root.results.length)
                 variant: "small"
                 tone: "tertiary"
             }

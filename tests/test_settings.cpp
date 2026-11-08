@@ -79,7 +79,8 @@ private slots:
         QCOMPARE(actual, QSettings::IniFormat);
     }
 
-    void serviceOrdersAreStoredInOrderWithinTheCap()
+    // An order holds every service of its job, each once, in order.
+    void serviceOrdersAreStoredInOrder()
     {
         const QString claude = QStringLiteral("claude");
         const QString codex = QStringLiteral("codex");
@@ -88,8 +89,7 @@ private slots:
         QCOMPARE(normalizedServiceOrder(ProviderRole::Speech,
                                         {{endpoint, QString(), QStringLiteral("whisper"), claude, endpoint, local, codex}})
                      .order,
-                 (QStringList{endpoint, claude, local}));
-        // A profile's service may lead the whole order, so a chain has no cap.
+                 (QStringList{endpoint, claude, local, codex}));
         QCOMPARE(serviceChain(ProviderRole::Speech, {codex, local, claude, local, endpoint}),
                  (QStringList{codex, local, claude, endpoint}));
         QCOMPARE(normalizedServiceOrder(ProviderRole::Refinement, {{QStringLiteral("none"), claude, QStringLiteral("anthropic")}})
@@ -105,10 +105,10 @@ private slots:
             draft.speech.services.order = {codex, local, codex, endpoint, claude};
             return true;
         });
-        QCOMPARE(SettingsStore().dictationSnapshot().speech.services.order, (QStringList{codex, local, endpoint}));
+        QCOMPARE(SettingsStore().dictationSnapshot().speech.services.order, (QStringList{codex, local, endpoint, claude}));
         // A service moved first leaves its old place.
         settings.edit([&](AppSettings &draft) { draft.speech.services = draft.speech.services.withMain(local); return true; });
-        QCOMPARE(SettingsStore().dictationSnapshot().speech.services.order, (QStringList{local, codex, endpoint}));
+        QCOMPARE(SettingsStore().dictationSnapshot().speech.services.order, (QStringList{local, codex, endpoint, claude}));
     }
 
     // Each entry keeps its own choice, and keeps it while it is out of the

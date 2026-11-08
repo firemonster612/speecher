@@ -85,11 +85,11 @@ One dictation, selection edit, transcribed file or Recording in History: its tim
 _Avoid_: Record, item, transcript (alone)
 
 **What Speecher Keeps**:
-How much of each dictation History holds, set in General's Privacy & data: Nothing, Stats, Text, or Text and audio. A new install keeps Text; an upgrade from Keep insights keeps Stats, or Nothing where insights were off. An App or App Type may lower it with its History choice, never raise it, and a password field always keeps Stats. Text and audio are deleted after their days (90 and 7 by default), and the stats stay; a cancelled dictation keeps nothing.
+How much of each dictation History holds, set in Privacy & data: Nothing, Stats, Text, or Text and audio. A new install keeps Text; an upgrade from Keep insights keeps Stats, or Nothing where insights were off. An App or App Type may lower it with its History choice, never raise it, and a password field always keeps Stats. Text and audio are deleted after their days (90 and 7 by default), and the stats stay; a cancelled dictation keeps nothing.
 _Avoid_: History mode, logging level, privacy level, Keep insights
 
 **Privacy & data**:
-The section of General that holds every choice about what Speecher keeps or shares, each in one place: What Speecher Keeps and its days, the History choices that keep less, Clear history, and links to what refinement sees (the text around the cursor and a screenshot, set on Refinement) and to learning Learned Corrections (set on Vocabulary). The last dictation's text stays in memory until Speecher quits, whatever History keeps, for Paste Again and `speecher last`.
+The subpage of General that holds every choice about what Speecher keeps or shares, each in one place: What Speecher Keeps and its days, the History choices that keep less, Clear history, and links to what refinement sees (the text around the cursor and a screenshot, set on Refinement) and to learning Learned Corrections (set on Vocabulary). The last dictation's text stays in memory until Speecher quits, whatever History keeps, for Paste Again and `speecher last`.
 _Avoid_: Insights section, privacy settings (as several places)
 
 **Paste Again**:

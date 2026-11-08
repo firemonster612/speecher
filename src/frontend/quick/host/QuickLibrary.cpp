@@ -7,7 +7,9 @@
 #include "core/VocabularyEdits.h"
 #include "core/VocabularyLimit.h"
 #include "core/WritingProfileEdits.h"
+#include "dictation/DictationPlan.h"
 #include "frontend/quick/host/QmlValues.h"
+#include "providers/ProviderRegistry.h"
 
 #include <QDebug>
 #include <QFile>
@@ -19,6 +21,24 @@
 namespace speecher {
 
 namespace {
+
+// Why a dictation with this profile doesn't lead with its own speech
+// service, as QuickLibrary::profiles words it, or empty while it does. The
+// resolver decides, so the editor never claims a service a dictation skips.
+QString speechSkipped(const AppSettings &settings, const WritingProfileSettings &profile, const OffersSpeech &offersSpeech)
+{
+    if (!profile.speechFirst) {
+        return {};
+    }
+    RunOverrides run;
+    run.writingProfile = profile.profile;
+    const DictationPlan plan = planDictation(settings, Target{}, run, offersSpeech);
+    if (plan.sources.value(QStringLiteral("speech")) == QStringLiteral("profile:") + profile.profile) {
+        return {};
+    }
+    return offersSpeech && !offersSpeech(profile.speechFirst->service) ? QStringLiteral("unavailable")
+                                                                       : QStringLiteral("language");
+}
 
 ApplicationController *g_controller = nullptr;
 
@@ -404,6 +424,8 @@ void QuickLibrary::refresh()
 {
     const AppSettings settings = m_controller->settings()->dictationSnapshot();
     const RefinementSettings &refinement = settings.refinement;
+    const ProviderRegistry *registry = m_controller->providerRegistry();
+    const OffersSpeech offersSpeech = registry ? registry->offersSpeech() : OffersSpeech();
 
     QVariantList profiles;
     for (const WritingProfileSettings &profile : refinement.writingProfiles) {
@@ -417,6 +439,7 @@ void QuickLibrary::refresh()
             {QStringLiteral("instructions"), profile.instructions},
             {QStringLiteral("speech"), profile.speechFirst ? profile.speechFirst->service : QString()},
             {QStringLiteral("speechModel"), profile.speechFirst ? profile.speechFirst->model : QString()},
+            {QStringLiteral("speechSkipped"), speechSkipped(settings, profile, offersSpeech)},
             {QStringLiteral("refinement"), profile.refinementFirst ? profile.refinementFirst->service : QString()},
             {QStringLiteral("refinementModel"), profile.refinementFirst ? profile.refinementFirst->model : QString()},
         });
