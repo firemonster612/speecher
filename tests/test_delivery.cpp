@@ -498,7 +498,8 @@ fi
         deliverAndWait(delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target,
                        resolveApp(target, {}).pasting);
 
-        QCOMPARE(attemptedMethod, PasteMethod::TerminalPaste);
+        // macOS terminals take Cmd+V like everything else.
+        QCOMPARE(attemptedMethod, terminalKeysDiffer ? PasteMethod::TerminalPaste : PasteMethod::StandardPaste);
     }
 
     void aiCodingProcessesAreRecognizedByNameOrCommandLine()
