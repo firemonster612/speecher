@@ -1587,7 +1587,10 @@ private slots:
                          continue;
                      }
                      QVERIFY2(item->width() >= item->implicitWidth(),
-                              qPrintable(item->property("text").toString() + QStringLiteral(" is cut short")));
+                              qPrintable(QStringLiteral("%1 is cut short: %2 of %3 px")
+                                             .arg(item->property("text").toString())
+                                             .arg(item->width())
+                                             .arg(item->implicitWidth())));
                  }
              }},
             {QStringLiteral("an App's own steps"), [&] {

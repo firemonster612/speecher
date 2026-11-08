@@ -1694,6 +1694,11 @@ if(SPEECHER_BUILD_TESTS)
     set_tests_properties(speecher_${suite} PROPERTIES
       ENVIRONMENT "${SPEECHER_TEST_ENVIRONMENT}" TIMEOUT 240)
   endforeach()
+  # Every page in both themes, setup and their states: over 200 s on a
+  # Windows runner by itself, more beside the other suites.
+  if(TEST speecher_quick_pages)
+    set_tests_properties(speecher_quick_pages PROPERTIES TIMEOUT 480)
+  endif()
   # Suites run in parallel: test_main.cpp gives each process its own settings
   # and sign-in homes, and each suite its own data folders. These share what
   # the computer has one of.
