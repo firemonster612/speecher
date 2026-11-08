@@ -97,7 +97,6 @@ Page {
         caption: page.nextRecording
         folder: Recording.plan.folder
         folderUrl: Recording.plan.folderUrl
-        folderHelp: ""
         folderRowId: "recordingFolder"
         formats: Schema.row("recordingFormat").options
         format: Settings.values.recordingFormat
