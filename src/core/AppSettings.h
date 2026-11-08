@@ -2,7 +2,7 @@
 
 #include "core/DeliverySteps.h"
 #include "core/OutputFormat.h"
-#include "core/PasteRules.h"
+#include "core/Apps.h"
 #include "core/LearnedCorrection.h"
 #include "core/ProviderTable.h"
 #include "core/Target.h"
@@ -375,9 +375,7 @@ struct RefinementSettings {
     RefinementEndpointSettings endpoint;
     LocalRunnerSettings localRunner;
     QString anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
-    QString defaultWritingProfile = WritingProfile::Other;
     QList<WritingProfileSettings> writingProfiles = defaultWritingProfileSettings();
-    QList<WritingProfileOverride> writingProfileOverrides;
     bool useTargetContext = true;
     bool includeScreenshotContext = false;
     // Added to every refinement prompt.
@@ -421,7 +419,6 @@ struct OutputSettings {
     // The virtual keyboard is set up for Linux's Press step.
     bool ydotoolEnabled = false;
     int completionStatusDurationMs = 500;
-    QList<PasteRule> pasteRules = defaultPasteRules();
 
     bool operator==(const OutputSettings &other) const = default;
 };
@@ -458,7 +455,7 @@ struct AppSettings {
     UiSettings ui;
     SpeechSettings speech;
     AudioCaptureSettings audio;
-    QList<AppRecognitionRule> appRecognitionRules;
+    AppsSettings apps;
     RefinementSettings refinement;
     AccountSettings accounts;
     OutputSettings output;

@@ -18,7 +18,7 @@
 #include "app/ApplicationController.h"
 #include "core/InsightsLog.h"
 #include "core/LocalModelCatalog.h"
-#include "core/PasteRules.h"
+#include "core/PasteMethod.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
@@ -98,6 +98,16 @@ void editColorScheme(ApplicationController &controller)
     settings.set(QStringLiteral("colorScheme"), QStringLiteral("fixture-scheme"));
 }
 
+// An App as migration made it, without the random part of its id.
+AppEntry withoutId(AppEntry app)
+{
+    if (!app.id.startsWith(QStringLiteral("app:"))) {
+        return app;
+    }
+    app.id.clear();
+    return app;
+}
+
 const WritingProfileSettings &profile(const AppSettings &settings, const QString &id)
 {
     for (const WritingProfileSettings &entry : settings.refinement.writingProfiles) {
@@ -116,12 +126,13 @@ QVariant readField(ApplicationController &controller, const QString &name)
     const AppSettings settings = store.snapshot();
     // The steps a delivery to target takes, in order.
     const auto delivery = [&](const Target &target) {
-        return deliveryPlan(settings.output.steps, resolvePasteRule(settings.output.pasteRules, target).method)
+        return deliveryPlan(settings.output.steps,
+                            resolveApp(target, settings.apps).pasting.value_or(PasteMethod::StandardPaste))
             .route()
             .join(u' ');
     };
     Target terminal;
-    terminal.category = AppCategory::Terminal;
+    terminal.terminalHost = true;
     Target kate;
     kate.applicationId = QStringLiteral("org.kde.kate");
     Target unruled;
@@ -402,11 +413,25 @@ private:
         QCOMPARE(settings.vocabulary[1].source, QStringLiteral("learned"));
         QVERIFY(settings.vocabulary[1].keyTerm);
 
-        QCOMPARE(settings.appRecognitionRules.size(), 2);
-        QCOMPARE(settings.appRecognitionRules[0].match, QStringLiteral("org.kde.konsole"));
-        QCOMPARE(settings.appRecognitionRules[0].category, std::optional(AppCategory::Terminal));
-        QCOMPARE(settings.appRecognitionRules[0].writingProfile, std::optional(QStringLiteral("ai_coding")));
-        QCOMPARE(settings.appRecognitionRules[1].writingProfile, std::optional(QStringLiteral("email")));
+        // The override and the paste rule for Kate are one App matched by its
+        // id; the ones turned off are gone. Each recognition rule is an App
+        // matched by name, and by title where it set a profile.
+        QCOMPARE(settings.apps.apps.size(), 3);
+        QCOMPARE(withoutId(settings.apps.apps[0]),
+                 (AppEntry{{}, QStringLiteral("Kate"), {}, {{AppMatchKind::Id, QStringLiteral("org.kde.kate")}},
+                           std::nullopt, QStringLiteral("personal"), PasteMethod::StandardPaste}));
+        QCOMPARE(withoutId(settings.apps.apps[1]),
+                 (AppEntry{{}, QStringLiteral("Konsole"), {},
+                           {{AppMatchKind::Name, QStringLiteral("org.kde.konsole")},
+                            {AppMatchKind::WindowTitle, QStringLiteral("org.kde.konsole")}},
+                           AppCategory::Terminal, QStringLiteral("ai_coding"), std::nullopt}));
+        QCOMPARE(withoutId(settings.apps.apps[2]),
+                 (AppEntry{{}, QStringLiteral("Thunderbird"), {},
+                           {{AppMatchKind::Name, QStringLiteral("thunderbird")},
+                            {AppMatchKind::WindowTitle, QStringLiteral("thunderbird")}},
+                           std::nullopt, QStringLiteral("email"), std::nullopt}));
+        // The default profile is Other apps'.
+        QCOMPARE(fallbackWritingProfile(settings.apps), QStringLiteral("work"));
         QCOMPARE(settings.bindings.size(), 1);
         QCOMPARE(settings.bindings[0].phrase, QStringLiteral("smiley face"));
         QCOMPARE(settings.bindings[0].replacement, QStringLiteral(":)"));
@@ -418,15 +443,11 @@ private:
         QCOMPARE(settings.learnedCorrections[0].lastObservedAtMs, 1757100000000);
 
         QCOMPARE(settings.refinement.providerId, QStringLiteral("anthropic"));
-        QCOMPARE(settings.refinement.defaultWritingProfile, QStringLiteral("work"));
         QCOMPARE(profile(settings, QStringLiteral("work")).cleanupStrength, QStringLiteral("light_cleanup"));
         QCOMPARE(profile(settings, QStringLiteral("work")).tone, QStringLiteral("formal"));
         QCOMPARE(profile(settings, QStringLiteral("email")).cleanupStrength, QStringLiteral("strong_polish"));
         QCOMPARE(profile(settings, QStringLiteral("personal")).tone, QStringLiteral("gen_z"));
         QCOMPARE(profile(settings, QStringLiteral("ai_coding")).tone, QStringLiteral("formal"));
-        QCOMPARE(settings.refinement.writingProfileOverrides.size(), 2);
-        QCOMPARE(settings.refinement.writingProfileOverrides[0].profile, QStringLiteral("personal"));
-        QVERIFY(!settings.refinement.writingProfileOverrides[1].enabled);
         QVERIFY(!settings.refinement.useTargetContext);
         QVERIFY(settings.refinement.includeScreenshotContext);
 
@@ -452,15 +473,9 @@ private:
         // Copying only leaves Keep alone on, which no rule can widen; restoring
         // the clipboard meant nothing without a paste.
         QCOMPARE(settings.output.steps, (DeliverySteps{.insert = false, .press = false, .keep = true}));
-        QList<PasteRule> rules{
-            {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true},
-            {PasteRuleScope::Application, QStringLiteral("org.kde.kate"), PasteMethod::StandardPaste, true},
-            {PasteRuleScope::Application, QStringLiteral("firefox"), PasteMethod::ClipboardOnly, false},
-        };
-        if constexpr (!terminalKeysDiffer) {
-            rules.removeFirst();
-        }
-        QCOMPARE(settings.output.pasteRules, rules);
+        // Terminals' rule is their Pasting choice; macOS has none.
+        QCOMPARE(appTypeSettings(settings.apps, AppCategory::Terminal).pasting,
+                 terminalKeysDiffer ? std::optional(PasteMethod::TerminalPaste) : std::nullopt);
         QCOMPARE(settings.output.format, OutputFormat::Html);
         QCOMPARE(settings.output.completionStatusDurationMs, 1500);
 
@@ -505,11 +520,16 @@ private:
         QCOMPARE(settings.refinement.customCleanupLevels,
                  (QList<CustomCleanupLevel>{{QStringLiteral("custom_level_fixture1"), QStringLiteral("Light plus"),
                                              QStringLiteral("light_cleanup"), QStringLiteral("Keep the filler words.")}}));
-        QCOMPARE(settings.refinement.defaultWritingProfile, customProfile);
-        QCOMPARE(settings.refinement.writingProfileOverrides,
-                 (QList<WritingProfileOverride>{{QStringLiteral("org.kde.kate"), customProfile, true}}));
-        QCOMPARE(settings.appRecognitionRules.size(), 1);
-        QCOMPARE(settings.appRecognitionRules[0].writingProfile, std::optional(customProfile));
+        QCOMPARE(fallbackWritingProfile(settings.apps), customProfile);
+        QCOMPARE(settings.apps.apps.size(), 2);
+        QCOMPARE(withoutId(settings.apps.apps[0]),
+                 (AppEntry{{}, QStringLiteral("Kate"), {}, {{AppMatchKind::Id, QStringLiteral("org.kde.kate")}},
+                           std::nullopt, customProfile, std::nullopt}));
+        QCOMPARE(withoutId(settings.apps.apps[1]),
+                 (AppEntry{{}, QStringLiteral("Obsidian"), {},
+                           {{AppMatchKind::Name, QStringLiteral("obsidian")},
+                            {AppMatchKind::WindowTitle, QStringLiteral("obsidian")}},
+                           std::nullopt, customProfile, std::nullopt}));
 
         QCOMPARE(settings.speech.providerId, QStringLiteral("local"));
         QCOMPARE(settings.speech.fallbackProviderIds, QStringList{QStringLiteral("codex")});

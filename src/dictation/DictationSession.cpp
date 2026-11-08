@@ -371,7 +371,7 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
 void DictationSession::continueStartupWithTarget(quint64 generation, const Target &target)
 {
     m_target = target;
-    m_target.category = classifyTarget(m_target, m_sessionSettings->appRecognitionRules);
+    m_target.category = resolveApp(m_target, m_sessionSettings->apps).type;
     // Lengths only: the text itself stays out of the log.
     qInfo().noquote() << (m_review.followingUp() ? "target kept for follow-up app=" : "target captured app=")
                              + m_target.applicationId
@@ -1215,7 +1215,8 @@ void DictationSession::deliverFinal(const QString &text, const QString &note, st
     m_awaitedDelivery = AwaitedDelivery{step, text, note, words, appName, m_target.applicationId.trimmed(), profile, profileName,
                                         settings.output.completionStatusDurationMs};
     ++m_unansweredDeliveries;
-    m_delivery->deliver(settings.output, makeDeliveryContent(text, settings.output.format), m_target);
+    m_delivery->deliver(settings.output, makeDeliveryContent(text, settings.output.format), m_target,
+                        resolveApp(m_target, settings.apps).pasting);
 }
 
 void DictationSession::finishDelivery(const DeliveryResult &result)

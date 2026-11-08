@@ -38,14 +38,15 @@ public:
 
     void deliver(const OutputSettings &settings,
                  const DeliveryContent &content,
-                 const Target &target) override
+                 const Target &target,
+                 std::optional<PasteMethod> pasting) override
     {
         if (m_unanswered++ == 0) {
             for (GlobalShortcutBinder *binder : m_binders) {
                 binder->suspendForDelivery();
             }
         }
-        m_inner->deliver(settings, content, target);
+        m_inner->deliver(settings, content, target, pasting);
     }
 
 private:

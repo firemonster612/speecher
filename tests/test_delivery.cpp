@@ -1,6 +1,9 @@
 #include "common/test_prelude.h"
 #include "common/test_doubles.h"
 #include "common/delivery_waits.h"
+#include "common/apps_fixtures.h"
+#include "core/settings/AppsMigration.h"
+#include "core/settings/AppsSettingsCodec.h"
 #include "output/HelperPath.h"
 #ifdef SPEECHER_WITH_WAYLAND
 #include "output/WaylandClipboardOwner.h"
@@ -21,6 +24,7 @@
 #endif
 
 using namespace speecher::test;
+using Scope = speecher::LegacyPasteRule::Scope;
 
 class FakeBackend final : public DeliveryBackend {
 public:
@@ -449,67 +453,6 @@ fi
                  (DeliverySteps{.insert = false, .press = true, .keep = true}));
     }
 
-    void pasteRulesPreferApplicationThenCategoryThenGlobal()
-    {
-        const QList<PasteRule> rules{
-            {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true},
-            {PasteRuleScope::Application, QStringLiteral("org.kde.konsole"), PasteMethod::StandardPaste, true},
-        };
-        Target target;
-        target.applicationId = QStringLiteral("ORG.KDE.KONSOLE");
-        target.category = AppCategory::Terminal;
-        QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::StandardPaste);
-
-        target.applicationId = QStringLiteral("dev.warp.Warp");
-        QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::TerminalPaste);
-
-        target.category = AppCategory::General;
-        QCOMPARE(resolvePasteRule(rules, target), (PasteRule{PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true}));
-    }
-
-    void pasteRulesAreEditedByScopeAndMatch()
-    {
-        QList<PasteRule> rules{{PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true}};
-        const QString terminal = QStringLiteral("terminal");
-        const QString browser = QStringLiteral("browser");
-
-        rules[0].enabled = false;
-        setPasteRule(rules, PasteRuleScope::Category, terminal, PasteMethod::DirectInsert);
-        setPasteRule(rules, PasteRuleScope::Category, browser, PasteMethod::ClipboardOnly);
-        QCOMPARE(rules.size(), 2);
-        QCOMPARE(*findPasteRule(rules, PasteRuleScope::Category, terminal),
-                 (PasteRule{PasteRuleScope::Category, terminal, PasteMethod::DirectInsert, true}));
-        QCOMPARE(findPasteRule(rules, PasteRuleScope::Category, browser)->method, PasteMethod::ClipboardOnly);
-        // An application named like a category is a rule of its own.
-        QCOMPARE(findPasteRule(rules, PasteRuleScope::Application, browser), nullptr);
-
-        removePasteRule(rules, PasteRuleScope::Category, terminal);
-        QCOMPARE(findPasteRule(rules, PasteRuleScope::Category, terminal), nullptr);
-        QCOMPARE(rules.size(), 1);
-    }
-
-    // A stored rule that differs only in case or spaces is the same rule to
-    // every edit, as it is when a paste resolves it.
-    void pasteRuleEditsMatchAsResolvingDoes()
-    {
-        QList<PasteRule> rules{
-            {PasteRuleScope::Application, QStringLiteral(" Org.KDE.Konsole "), PasteMethod::TerminalPaste, true},
-            {PasteRuleScope::Category, QStringLiteral("Browser"), PasteMethod::DirectInsert, true},
-        };
-        Target target;
-        target.applicationId = QStringLiteral("org.kde.konsole");
-        QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::TerminalPaste);
-
-        QCOMPARE(findPasteRule(rules, PasteRuleScope::Application, QStringLiteral("org.kde.konsole")), &rules[0]);
-        QCOMPARE(findPasteRule(rules, PasteRuleScope::Category, QStringLiteral("browser")), &rules[1]);
-        setPasteRule(rules, PasteRuleScope::Application, QStringLiteral("org.kde.konsole"), PasteMethod::ClipboardOnly);
-        QCOMPARE(rules.size(), 2);
-        QCOMPARE(rules[0].method, PasteMethod::ClipboardOnly);
-        removePasteRule(rules, PasteRuleScope::Category, QStringLiteral("browser"));
-        QCOMPARE(rules.size(), 1);
-        QCOMPARE(validatePasteRules(rules + QList{PasteRule{PasteRuleScope::Application, QStringLiteral("org.kde.konsole")}}).size(), 1);
-    }
-
     void accessibleTerminalWithoutApplicationIdUsesTerminalPaste()
     {
         PasteMethod attemptedMethod = PasteMethod::ClipboardOnly;
@@ -527,37 +470,14 @@ fi
         OutputSettings settings;
         settings.steps.insert = false;
         settings.ydotoolEnabled = true;
-        settings.pasteRules = defaultPasteRules();
         Target target;
         target.accessible = true;
         target.role = QStringLiteral("terminal");
-        target.category = classifyTarget(target);
 
-        deliverAndWait(delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+        deliverAndWait(delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target,
+                       resolveApp(target, {}).pasting);
 
         QCOMPARE(attemptedMethod, PasteMethod::TerminalPaste);
-    }
-
-    void aiCodingAgentInTerminalKeepsTerminalPasteBehavior()
-    {
-        const QList<PasteRule> rules{
-            {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true},
-            {PasteRuleScope::Category, QStringLiteral("ai_coding"), PasteMethod::StandardPaste, true},
-            {PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly, true},
-        };
-        Target target;
-        target.terminalHost = true;
-        target.aiCodingToolActive = true;
-        target.category = classifyTarget(target);
-
-        QCOMPARE(target.category, AppCategory::AiCoding);
-        QVERIFY(isTerminalTarget(target));
-        QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::TerminalPaste);
-
-        target.aiCodingToolActive = false;
-        target.category = AppCategory::General;
-        QVERIFY(isTerminalTarget(target));
-        QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::TerminalPaste);
     }
 
     void aiCodingProcessesAreRecognizedByNameOrCommandLine()
@@ -568,22 +488,6 @@ fi
                                   {QStringLiteral("node"),
                                    QStringLiteral("/usr/lib/node_modules/@openai/codex/bin/codex.js")}));
         QVERIFY(!isAiCodingProcess(QStringLiteral("zsh"), {QStringLiteral("-zsh")}));
-    }
-
-    void recognitionRulesRejectEmptyMatchesAndRespectBuiltInBoundaries()
-    {
-        Target target;
-        target.applicationId = QStringLiteral("org.example.barcode");
-        QCOMPARE(classifyTarget(target), AppCategory::General);
-
-        target.applicationId = QStringLiteral("org.example.!!!");
-        const QList<AppRecognitionRule> punctuationRule{
-            {QStringLiteral("!!!"), AppCategory::Terminal, WritingProfile::Work},
-        };
-        QCOMPARE(classifyTarget(target, punctuationRule), AppCategory::General);
-
-        target.applicationId = QStringLiteral("code");
-        QCOMPARE(classifyTarget(target), AppCategory::CodeEditor);
     }
 
     // The text after a selection starts where the selection ends, however
@@ -624,7 +528,7 @@ fi
         target.selectionStart = 6;
         target.selectionEnd = 10;
         target.nearbyTextRead = true;
-        QCOMPARE(inferWritingProfile(target), WritingProfile::Email);
+        QCOMPARE(resolveApp(target, {}).writingProfile, WritingProfile::Email);
 
         // A detected coding agent inside a named terminal takes the AI coding
         // profile; the terminal's own built-in Work rule must not win.
@@ -633,9 +537,8 @@ fi
         agentInTerminal.windowTitle = QStringLiteral("claude — ~/project");
         agentInTerminal.role = QStringLiteral("terminal");
         agentInTerminal.aiCodingToolActive = true;
-        agentInTerminal.category = classifyTarget(agentInTerminal, {});
-        QCOMPARE(agentInTerminal.category, AppCategory::AiCoding);
-        QCOMPARE(inferWritingProfile(agentInTerminal), WritingProfile::AiCoding);
+        QCOMPARE(resolveApp(agentInTerminal, {}).type, AppCategory::AiCoding);
+        QCOMPARE(resolveApp(agentInTerminal, {}).writingProfile, WritingProfile::AiCoding);
 
         // How a terminal outside accessibility, known only by its window,
         // finds the coding agent in it.
@@ -793,7 +696,7 @@ fi
     void vocabularyFollowsTheDictationsWritingProfile()
     {
         AppSettings settings;
-        settings.refinement.defaultWritingProfile = WritingProfile::Work;
+        setOtherAppsProfile(settings.apps, WritingProfile::Work);
         VocabularyEntry kubernetes{QStringLiteral("Kubernetes")};
         kubernetes.context = QStringLiteral("The container platform.");
         kubernetes.profiles = {WritingProfile::Work, WritingProfile::AiCoding};
@@ -868,7 +771,7 @@ fi
         settings.refinement.writingProfiles.append({QStringLiteral("custom_standup"),
                                                     QStringLiteral("strong_polish"), QStringLiteral("formal"),
                                                     QStringLiteral("Bullets."), QStringLiteral("Standup")});
-        settings.appRecognitionRules = {{QStringLiteral("zulip"), std::nullopt, QStringLiteral("custom_standup")}};
+        settings.apps.apps = {textApp(QStringLiteral("zulip"), std::nullopt, QStringLiteral("custom_standup"))};
         Target target;
         target.applicationId = QStringLiteral("org.zulip.Zulip");
         const TranscriptPipelineResult pipeline =
@@ -1075,10 +978,11 @@ fi
                  std::nullopt);
     }
 
-    void aSessionWritingProfileBeatsTheAppOverride()
+    void aSessionWritingProfileBeatsTheApp()
     {
         AppSettings settings;
-        settings.refinement.writingProfileOverrides = {{QStringLiteral("org.kde.kate"), WritingProfile::Email}};
+        settings.apps.apps = {{QStringLiteral("app:kate"), QStringLiteral("Kate"), {},
+                               {{AppMatchKind::Id, QStringLiteral("org.kde.kate")}}, {}, WritingProfile::Email, {}}};
         Target kate;
         kate.applicationId = QStringLiteral("org.kde.kate");
         QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, kate, settings.speech.language).refinementContext.writingProfile,
@@ -1086,77 +990,6 @@ fi
 
         QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {WritingProfile::Personal}, kate, settings.speech.language).refinementContext.writingProfile,
                  WritingProfile::Personal);
-    }
-
-    void applicationMatrixClassifiesWritingProfiles()
-    {
-        const auto classified = [](const QString &applicationId) {
-            Target target;
-            target.applicationId = applicationId;
-            target.category = classifyTarget(target);
-            return target;
-        };
-
-        QCOMPARE(classified(QStringLiteral("kate")).category, AppCategory::CodeEditor);
-        QCOMPARE(classified(QStringLiteral("konsole")).category, AppCategory::Terminal);
-        QCOMPARE(classified(QStringLiteral("com.mitchellh.ghostty")).category, AppCategory::Terminal);
-        QCOMPARE(classified(QStringLiteral("firefox")).category, AppCategory::Browser);
-        QCOMPARE(classified(QStringLiteral("google-chrome")).category, AppCategory::Browser);
-        QCOMPARE(classified(QStringLiteral("org.chromium.Chromium")).category, AppCategory::Browser);
-        QCOMPARE(classified(QStringLiteral("helium")).category, AppCategory::Browser);
-        QCOMPARE(classified(QStringLiteral("thunderbird")).category, AppCategory::Email);
-        QCOMPARE(classified(QStringLiteral("soffice.bin")).category, AppCategory::Office);
-        for (const QString &application : {
-                 QStringLiteral("t3-code"),
-                 QStringLiteral("chatgpt"),
-                 QStringLiteral("codex"),
-                 QStringLiteral("cursor"),
-                 QStringLiteral("windsurf"),
-                 QStringLiteral("kiro"),
-                 QStringLiteral("opencode"),
-                 QStringLiteral("aider"),
-                 QStringLiteral("goose"),
-                 QStringLiteral("qwen-code"),
-                 QStringLiteral("mistral-vibe"),
-                 QStringLiteral("cline"),
-             }) {
-            QCOMPARE(classified(application).category, AppCategory::AiCoding);
-        }
-
-        QCOMPARE(inferWritingProfile(classified(QStringLiteral("kate"))), WritingProfile::Work);
-        QCOMPARE(inferWritingProfile(classified(QStringLiteral("konsole"))), WritingProfile::Work);
-        QCOMPARE(inferWritingProfile(classified(QStringLiteral("thunderbird"))), WritingProfile::Email);
-        QCOMPARE(inferWritingProfile(classified(QStringLiteral("t3-code"))), WritingProfile::AiCoding);
-        QCOMPARE(inferWritingProfile(classified(QStringLiteral("libreoffice"))), WritingProfile::Work);
-        QCOMPARE(inferWritingProfile(classified(QStringLiteral("org.signal.Signal"))), WritingProfile::Personal);
-        QCOMPARE(inferWritingProfile(classified(QStringLiteral("firefox")), WritingProfile::Other), WritingProfile::Other);
-
-        const QList<WritingProfileOverride> overrides{
-            {QStringLiteral("firefox"), WritingProfile::Personal, true},
-            {QStringLiteral("kate"), WritingProfile::Other, false},
-        };
-        QCOMPARE(resolveWritingProfile(classified(QStringLiteral("firefox")), overrides, WritingProfile::Other),
-                 WritingProfile::Personal);
-        QCOMPARE(resolveWritingProfile(classified(QStringLiteral("kate")), overrides, WritingProfile::Other),
-                 WritingProfile::Work);
-
-        const QList<AppRecognitionRule> recognitionRules{
-            {QStringLiteral("com.acme.shell"), AppCategory::Terminal, WritingProfile::Work},
-        };
-        Target customTerminal;
-        customTerminal.applicationId = QStringLiteral("com.acme.shell-nightly");
-        customTerminal.category = classifyTarget(customTerminal, recognitionRules);
-        QCOMPARE(customTerminal.category, AppCategory::Terminal);
-        QCOMPARE(resolveWritingProfile(customTerminal,
-                                       {},
-                                       recognitionRules,
-                                       WritingProfile::Other),
-                 WritingProfile::Work);
-        QCOMPARE(writingProfileFromName(QStringLiteral("technical")), WritingProfile::Work);
-        QCOMPARE(writingProfileFromName(QStringLiteral("ai_coding")), WritingProfile::AiCoding);
-        QCOMPARE(writingProfileFromName(QStringLiteral("general")), WritingProfile::Other);
-        QCOMPARE(appCategoryFromName(QStringLiteral("ai_coding")), AppCategory::AiCoding);
-        QCOMPARE(appCategoryName(AppCategory::AiCoding), QStringLiteral("ai_coding"));
     }
 
     void aiCodingRefinementProducesAgentPromptsInsteadOfAnsweringThem()
@@ -1311,8 +1144,8 @@ fi
         target.applicationId = QStringLiteral("editor");
         const DeliveryContent content = makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText);
 
-        delivery.deliver(settings, content, target);
-        delivery.deliver(settings, content, target);
+        delivery.deliver(settings, content, target, std::nullopt);
+        delivery.deliver(settings, content, target, std::nullopt);
         QTRY_COMPARE(answers.size(), 2);
         QVERIFY(!answers.at(0).ok);
         QCOMPARE(answers.at(0).message, QStringLiteral("Delivery did not finish in time"));
@@ -1356,7 +1189,7 @@ fi
         settings.ydotoolEnabled = true;
         Target target;
         target.applicationId = QStringLiteral("editor");
-        delivery->deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+        delivery->deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target, std::nullopt);
         QTRY_VERIFY(waiting);
 
         delivery.reset();
@@ -1431,7 +1264,7 @@ fi
         Target target;
         target.applicationId = QStringLiteral("editor");
 
-        delivery.deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+        delivery.deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target, std::nullopt);
         QTRY_COMPARE(answers.size(), 1);
         QCOMPARE(answers.first().message, QStringLiteral("Delivery did not finish in time"));
         QVERIFY(targetProvider.held);
@@ -1491,7 +1324,7 @@ fi
         connect(&delivery, &TextDeliveryAdapter::delivered, this,
                 [&answers](const DeliveryResult &result) { answers << result.message; });
 
-        delivery.deliver(settings, makeDeliveryContent(QStringLiteral("dictation"), OutputFormat::PlainText), target);
+        delivery.deliver(settings, makeDeliveryContent(QStringLiteral("dictation"), OutputFormat::PlainText), target, std::nullopt);
         QTRY_COMPARE(answers.size(), 1);
         QCOMPARE(answers.first(), QStringLiteral("Delivery did not finish in time"));
         QVERIFY(targetProvider.held);
@@ -1575,7 +1408,7 @@ fi
         Target target;
         target.applicationId = QStringLiteral("editor");
 
-        delivery->deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+        delivery->deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target, std::nullopt);
         QTRY_VERIFY(!delivery);
         QTest::qWait(100);
         QCOMPARE(answers, goesMidCheck ? 0 : 1);
@@ -1866,9 +1699,9 @@ fi
         Target editor;
         editor.applicationId = QStringLiteral("editor");
         const DeliveryContent content = makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText);
-        provider.duringVerification = [&] { delivery.deliver(settings, content, editor); };
+        provider.duringVerification = [&] { delivery.deliver(settings, content, editor, std::nullopt); };
 
-        delivery.deliver(settings, content, editor);
+        delivery.deliver(settings, content, editor, std::nullopt);
         QVERIFY(receipts.isEmpty());
         QTRY_COMPARE(receipts.size(), 2);
         QCOMPARE(receipts, (QList<DeliveryReceipt>{DeliveryReceipt::AcceptedByTarget, DeliveryReceipt::VerifiedInTarget}));
@@ -2075,7 +1908,6 @@ fi
 
         OutputSettings settings;
         settings.ydotoolEnabled = true;
-        settings.pasteRules = {};
 
         const DeliveryResult result = deliverAndWait(
             delivery, settings,
@@ -2156,18 +1988,15 @@ fi
         OutputSettings settings;
         settings.ydotoolEnabled = true;
         settings.steps = {.insert = false, .press = false, .keep = true};
-        settings.pasteRules = {
-            {PasteRuleScope::Application, QStringLiteral("org.kde.kate"), PasteMethod::DirectInsert, true},
-            {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true},
-        };
         Target kate;
         kate.applicationId = QStringLiteral("org.kde.kate");
         Target konsole;
         konsole.applicationId = QStringLiteral("org.kde.konsole");
-        konsole.category = AppCategory::Terminal;
-        for (const Target &target : {kate, konsole}) {
+        for (const auto &[target, pasting] : {std::pair{kate, PasteMethod::DirectInsert},
+                                              std::pair{konsole, PasteMethod::TerminalPaste}}) {
             const DeliveryResult result = deliverAndWait(
-                delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+                delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target,
+                pasting);
             QCOMPARE(result.receipt, DeliveryReceipt::Copied);
         }
         QCOMPARE(targetProvider.insertCalls, 0);
@@ -2208,16 +2037,16 @@ fi
             stored.setValue(QStringLiteral("output/method"), method);
         }
         stored.setValue(QStringLiteral("output/restoreClipboardAfterTyping"), restore);
-        QList<PasteRule> rules{
-            {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true},
-            {PasteRuleScope::Application, QStringLiteral("org.kde.kate"), PasteMethod::TerminalPaste, true},
+        QList<LegacyPasteRule> rules{
+            {Scope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true},
+            {Scope::Application, QStringLiteral("org.kde.kate"), PasteMethod::TerminalPaste, true},
         };
         if (!globalRule.isEmpty()) {
-            rules.append({PasteRuleScope::Global, QString(),
+            rules.append({Scope::Global, QString(),
                           pasteMethodFromName(globalRule == u"off" ? QStringLiteral("standard_paste") : globalRule),
                           globalRule != u"off"});
         }
-        stored.setValue(QStringLiteral("output/pasteRules"), pasteRulesToJson(rules));
+        storeLegacyPasteRules(stored, rules);
 
         migrateDeliverySteps(stored);
 
@@ -2229,10 +2058,10 @@ fi
         QVERIFY(!stored.contains(QStringLiteral("output/restoreClipboardAfterTyping")));
         // The global rule goes; on macOS, where terminals paste with ⌘V too,
         // Terminal paste becomes Standard paste.
-        const QList<PasteRule> migrated = pasteRulesFromJson(stored.value(QStringLiteral("output/pasteRules")).toByteArray());
-        const QList<PasteRule> expected = terminalKeysDiffer
+        const QList<LegacyPasteRule> migrated = legacyPasteRules(stored);
+        const QList<LegacyPasteRule> expected = terminalKeysDiffer
             ? rules.mid(0, 2)
-            : QList<PasteRule>{{PasteRuleScope::Application, QStringLiteral("org.kde.kate"), PasteMethod::StandardPaste, true}};
+            : QList<LegacyPasteRule>{{Scope::Application, QStringLiteral("org.kde.kate"), PasteMethod::StandardPaste, true}};
         QCOMPARE(migrated, expected);
 
         // Once migrated, it leaves the steps alone.
@@ -2248,15 +2077,14 @@ fi
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
         QSettings stored(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
-        stored.setValue(QStringLiteral("output/pasteRules"),
-                        pasteRulesToJson({{PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly, true}}));
+        storeLegacyPasteRules(stored, {{Scope::Global, QString(), PasteMethod::ClipboardOnly, true}});
 
         migrateDeliverySteps(stored);
 
         QVERIFY(!stored.value(QStringLiteral("output/insertThroughAccessibility")).toBool());
         QVERIFY(!stored.value(QStringLiteral("output/pressPasteKeys")).toBool());
         QVERIFY(stored.value(QStringLiteral("output/keepOnClipboard")).toBool());
-        QVERIFY(pasteRulesFromJson(stored.value(QStringLiteral("output/pasteRules")).toByteArray()).isEmpty());
+        QVERIFY(legacyPasteRules(stored).isEmpty());
     }
 
     // A global Terminal paste rule becomes one for every app type that had
@@ -2268,11 +2096,11 @@ fi
         QVERIFY(dir.isValid());
         QSettings stored(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
         stored.setValue(QStringLiteral("output/restoreClipboardAfterTyping"), false);
-        stored.setValue(QStringLiteral("output/pasteRules"), pasteRulesToJson({
-            {PasteRuleScope::Category, QStringLiteral("browser"), PasteMethod::ClipboardOnly, true},
-            {PasteRuleScope::Category, QStringLiteral("email"), PasteMethod::DirectInsert, false},
-            {PasteRuleScope::Global, QString(), PasteMethod::TerminalPaste, true},
-        }));
+        storeLegacyPasteRules(stored, {
+            {Scope::Category, QStringLiteral("browser"), PasteMethod::ClipboardOnly, true},
+            {Scope::Category, QStringLiteral("email"), PasteMethod::DirectInsert, false},
+            {Scope::Global, QString(), PasteMethod::TerminalPaste, true},
+        });
 
         migrateDeliverySteps(stored);
 
@@ -2280,18 +2108,16 @@ fi
                                   stored.value(QStringLiteral("output/pressPasteKeys")).toBool(),
                                   stored.value(QStringLiteral("output/keepOnClipboard")).toBool()};
         QCOMPARE(steps, DeliverySteps{});
-        const QList<PasteRule> rules = pasteRulesFromJson(stored.value(QStringLiteral("output/pasteRules")).toByteArray());
-        Target target;
-        target.applicationId = QStringLiteral("org.kde.kwrite");
+        // As the App Types' Pasting choices once Apps migrate them.
+        migrateApps(stored);
+        const AppsSettings apps = AppsSettingsCodec::load(stored);
         for (const AppCategory category : {AppCategory::General, AppCategory::Email, AppCategory::Office,
                                            AppCategory::CodeEditor, AppCategory::AiCoding}) {
-            target.category = category;
-            QCOMPARE(resolvePasteRule(rules, target).method,
-                     terminalKeysDiffer ? PasteMethod::TerminalPaste : PasteMethod::StandardPaste);
+            QCOMPARE(appTypeSettings(apps, category).pasting,
+                     terminalKeysDiffer ? std::optional(PasteMethod::TerminalPaste) : std::nullopt);
         }
         // The browsers' own rule stays.
-        target.category = AppCategory::Browser;
-        QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::ClipboardOnly);
+        QCOMPARE(appTypeSettings(apps, AppCategory::Browser).pasting, PasteMethod::ClipboardOnly);
     }
 
     // Without anything from an older Speecher there is nothing to migrate,
@@ -2466,10 +2292,6 @@ fi
 
         OutputSettings settings;
         settings.ydotoolEnabled = true;
-        settings.pasteRules = {
-            {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true},
-            {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true},
-        };
         Target target;
         target.applicationId = QStringLiteral("com.mitchellh.ghostty");
         target.category = AppCategory::Terminal;
@@ -2479,7 +2301,7 @@ fi
         const DeliveryResult result = deliverAndWait(
             delivery, settings,
             makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
-            target);
+            target, PasteMethod::TerminalPaste);
 
         QVERIFY(attempts.isEmpty());
         QCOMPARE(result.receipt, DeliveryReceipt::Copied);
@@ -2503,20 +2325,13 @@ fi
         }, &targetProvider);
 
         OutputSettings settings;
-        settings.pasteRules = {
-            {PasteRuleScope::Application,
-             QStringLiteral("org.kde.kate"),
-             PasteMethod::DirectInsert,
-             true},
-            {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true},
-        };
         Target target;
         target.applicationId = QStringLiteral("org.kde.kate");
         target.category = AppCategory::CodeEditor;
         const DeliveryResult result = deliverAndWait(
             delivery, settings,
             makeDeliveryContent(QStringLiteral("insert me"), OutputFormat::PlainText),
-            target);
+            target, PasteMethod::DirectInsert);
 
         QCOMPARE(result.receipt, DeliveryReceipt::VerifiedInTarget);
         QCOMPARE(result.message, QStringLiteral("Pasted"));
@@ -2541,19 +2356,12 @@ fi
         }, &targetProvider);
 
         OutputSettings settings;
-        settings.pasteRules = {
-            {PasteRuleScope::Application,
-             QStringLiteral("org.kde.kate"),
-             PasteMethod::DirectInsert,
-             true},
-            {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true},
-        };
         Target target;
         target.applicationId = QStringLiteral("org.kde.kate");
         const DeliveryResult result = deliverAndWait(
             delivery, settings,
             makeDeliveryContent(QStringLiteral("keep copied"), OutputFormat::PlainText),
-            target);
+            target, PasteMethod::DirectInsert);
 
         QCOMPARE(result.receipt, DeliveryReceipt::Copied);
         QCOMPARE(targetProvider.insertCalls, 1);
@@ -2625,12 +2433,6 @@ fi
         // Keep leaves the words on the clipboard, since insertion can't be
         // confirmed and no keys follow it.
         OutputSettings settings;
-        settings.pasteRules = {
-            {PasteRuleScope::Application,
-             QStringLiteral("org.kde.kate"),
-             PasteMethod::DirectInsert,
-             true},
-        };
         Target target;
         target.applicationId = QStringLiteral("org.kde.kate");
 

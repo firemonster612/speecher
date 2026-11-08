@@ -4,11 +4,12 @@
 // animation stays inside its bar.
 #include "common/test_quick_windows.h"
 #include "common/test_suites.h"
+#include "common/apps_fixtures.h"
 
 #include "app/AppFrontEnd.h"
 #include "app/ApplicationController.h"
 #include "app/TrayIcon.h"
-#include "core/PasteRules.h"
+#include "core/PasteMethod.h"
 #include "core/SettingsStore.h"
 #include "core/Target.h"
 #include "core/settings/SpokenLanguages.h"
@@ -1181,7 +1182,7 @@ private slots:
     {
         ApplicationController controller(true);
         controller.settings()->edit([](AppSettings &draft) {
-            draft.appRecognitionRules = {{.match = QStringLiteral("org.kde.konsole"), .category = AppCategory::Terminal}};
+            draft.apps.apps = {test::textApp(QStringLiteral("org.kde.konsole"), AppCategory::Terminal)};
             return true;
         });
         TrayIcon tray(&controller);
@@ -1340,9 +1341,9 @@ private slots:
                                           {QStringLiteral("enabled"), true}}});
         const auto appRules = [&controller] {
             QStringList apps;
-            for (const PasteRule &rule : controller.settings()->snapshot().output.pasteRules) {
-                if (rule.scope == PasteRuleScope::Application) {
-                    apps.append(rule.match);
+            for (const AppEntry &app : controller.settings()->snapshot().apps.apps) {
+                if (app.pasting) {
+                    apps.append(app.matches.first().value);
                 }
             }
             return apps;

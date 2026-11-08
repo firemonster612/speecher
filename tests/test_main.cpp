@@ -151,6 +151,7 @@ int main(int argc, char **argv)
     };
     if (selected("transcript_state")) result |= runTranscriptStateTests(argc, argv);
     if (selected("bindings")) result |= runBindingsTests(argc, argv);
+    if (selected("apps")) result |= runAppsTests(argc, argv);
     if (selected("settings")) result |= runSettingsTests(argc, argv);
     if (selected("provider_registry")) result |= runProviderRegistryTests(argc, argv);
     if (selected("platform_composition")) result |= runPlatformCompositionTests(argc, argv);

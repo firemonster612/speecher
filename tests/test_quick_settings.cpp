@@ -3,7 +3,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
-#include "core/PasteRules.h"
+#include "core/Apps.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickNavigation.h"
@@ -322,51 +322,35 @@ private slots:
         QVERIFY(schemaRow(engine, "speechModels")->property("enabled").toBool());
     }
 
-    // Paste rules are one list in core: each row edits its own rule and
-    // keeps the others, and a row with no rule of its own inherits.
-    void pasteRulesSaveByScope()
+    // The Exceptions rows edit the App Types' Pasting choices and the Apps
+    // matched by id; a row with no choice of its own inherits.
+    void pasteExceptionsSaveToApps()
     {
         ApplicationController controller(true);
-        // The page's app matches are Library's.
         const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
-        // A copy, since the list it was found in goes with the lambda.
-        const auto rule = [](PasteRuleScope scope, const char *match) -> std::optional<PasteRule> {
-            const QList<PasteRule> rules = SettingsStore().dictationSnapshot().output.pasteRules;
-            const PasteRule *found = findPasteRule(rules, scope, QLatin1String(match));
-            return found ? std::optional(*found) : std::nullopt;
-        };
+        const auto apps = [] { return SettingsStore().dictationSnapshot().apps; };
         const auto value = [&settings](const char *id) { return settings.values().value(QLatin1String(id)); };
 
         QCOMPARE(value("categoryPasteRule_terminal").toString(),
                  terminalKeysDiffer ? QStringLiteral("terminal_paste") : QStringLiteral("inherit"));
-        QCOMPARE(value("categoryPasteRule_browser").toString(), QStringLiteral("inherit"));
         settings.set(QStringLiteral("categoryPasteRule_browser"), QStringLiteral("direct_insert"));
         settings.set(QStringLiteral("categoryPasteRule_terminal"), QStringLiteral("inherit"));
-        QCOMPARE(rule(PasteRuleScope::Category, "browser")->method, PasteMethod::DirectInsert);
-        QVERIFY(!rule(PasteRuleScope::Category, "terminal"));
-        QCOMPARE(value("categoryPasteRule_terminal").toString(), QStringLiteral("inherit"));
-        QCOMPARE(value("categoryPasteRule_browser").toString(), QStringLiteral("direct_insert"));
+        QCOMPARE(appTypeSettings(apps(), AppCategory::Browser).pasting, PasteMethod::DirectInsert);
+        QCOMPARE(appTypeSettings(apps(), AppCategory::Terminal).pasting, std::nullopt);
 
-        const QVariantList apps{
-            QVariantMap{{QStringLiteral("app"), QStringLiteral("org.kde.konsole")},
-                        {QStringLiteral("method"), QStringLiteral("standard_paste")},
-                        {QStringLiteral("enabled"), false}},
-        };
-        settings.set(QStringLiteral("applicationPasteRules"), apps);
-        QCOMPARE(*rule(PasteRuleScope::Application, "org.kde.konsole"),
-                 (PasteRule{PasteRuleScope::Application, QStringLiteral("org.kde.konsole"), PasteMethod::StandardPaste, false}));
-        QCOMPARE(rule(PasteRuleScope::Category, "browser")->method, PasteMethod::DirectInsert);
-        QCOMPARE(value("applicationPasteRules").toList(), apps);
-        QVERIFY(!settings.errors().contains(QStringLiteral("applicationPasteRules")));
+        const QVariantList rules{QVariantMap{{QStringLiteral("app"), QStringLiteral("org.kde.konsole")},
+                                             {QStringLiteral("method"), QStringLiteral("standard_paste")},
+                                             {QStringLiteral("enabled"), true}}};
+        settings.set(QStringLiteral("applicationPasteRules"), rules);
+        QCOMPARE(apps().apps.size(), 1);
+        QCOMPARE(apps().apps.first().pasting, PasteMethod::StandardPaste);
+        QCOMPARE(value("applicationPasteRules").toList(), rules);
 
-        // Two rules for one app are refused with core's reason, and nothing is saved.
-        settings.set(QStringLiteral("applicationPasteRules"), apps + apps);
+        settings.set(QStringLiteral("applicationPasteRules"), rules + rules);
         QVERIFY(!settings.errors().value(QStringLiteral("applicationPasteRules")).toString().isEmpty());
-        QCOMPARE(SettingsStore().dictationSnapshot().output.pasteRules.size(), 2);
         settings.set(QStringLiteral("applicationPasteRules"), QVariantList{});
-        QVERIFY(!rule(PasteRuleScope::Application, "org.kde.konsole"));
-        QVERIFY(!settings.errors().contains(QStringLiteral("applicationPasteRules")));
+        QCOMPARE(apps().apps.first().pasting, std::nullopt);
     }
 
     // Each save is a whole snapshot through the store, so a drag saves once,

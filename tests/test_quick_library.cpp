@@ -1,4 +1,5 @@
 #include "common/test_suites.h"
+#include "common/apps_fixtures.h"
 #include "common/test_system_singletons.h"
 
 #include "app/ApplicationController.h"
@@ -154,7 +155,7 @@ private slots:
         QCOMPARE(library.remove(QStringLiteral("profiles"), QStringLiteral("work")), -1);
         QCOMPARE(SettingsStore().dictationSnapshot().refinement.writingProfiles.size(), 6);
         QCOMPARE(SettingsStore().dictationSnapshot().bindings.size(), 1);
-        QVERIFY(SettingsStore().dictationSnapshot().appRecognitionRules.isEmpty());
+        QVERIFY(SettingsStore().dictationSnapshot().apps.apps.isEmpty());
     }
 
     void removingAToneMovesItsProfilesUntilUndone()
@@ -247,15 +248,16 @@ private slots:
         const QString id = library.newId(QStringLiteral("custom_profile"));
         QCOMPARE(library.add(QStringLiteral("profiles"), profileItem(id, QStringLiteral("Notes"))), saved);
         settings.set(QStringLiteral("defaultWritingProfile"), id);
-        QCOMPARE(library.add(QStringLiteral("recognitionRules"),
-                             {{QStringLiteral("match"), QStringLiteral("obsidian")}, {QStringLiteral("profile"), id}}),
-                 saved);
-        QCOMPARE(SettingsStore().dictationSnapshot().refinement.defaultWritingProfile, id);
+        controller.settings()->edit([&id](AppSettings &draft) {
+            draft.apps.apps = {test::textApp(QStringLiteral("obsidian"), std::nullopt, id)};
+            return true;
+        });
+        QCOMPARE(fallbackWritingProfile(SettingsStore().dictationSnapshot().apps), id);
 
         library.removeProfile(id);
-        QCOMPARE(SettingsStore().dictationSnapshot().refinement.defaultWritingProfile, WritingProfile::Other);
+        QCOMPARE(fallbackWritingProfile(SettingsStore().dictationSnapshot().apps), WritingProfile::Other);
         QCOMPARE(settings.values().value(QStringLiteral("defaultWritingProfile")).toString(), WritingProfile::Other);
-        QVERIFY(SettingsStore().dictationSnapshot().appRecognitionRules.isEmpty());
+        QCOMPARE(SettingsStore().dictationSnapshot().apps.apps.first().writingProfile, std::nullopt);
         QCOMPARE(library.profiles().size(), 5);
     }
 
@@ -411,57 +413,6 @@ private slots:
         QCOMPARE(SettingsStore().dictationSnapshot().vocabulary.first().term, QStringLiteral("Kafka"));
     }
 
-    void appMatchesTakeOverTheOldPerAppOverrides()
-    {
-        SettingsStore().edit([](AppSettings &draft) {
-            draft.refinement.writingProfileOverrides = {{QStringLiteral("org.kde.kate"), WritingProfile::Email, true}};
-            return true;
-        });
-        ApplicationController controller(true);
-        QuickLibrary library(&controller);
-        QCOMPARE(library.recognitionRules().size(), 1);
-        QCOMPARE(library.recognitionRules().first().toMap().value(QStringLiteral("profile")).toString(), WritingProfile::Email);
-        QVERIFY(!library.builtInRecognitionRules().isEmpty());
-
-        QCOMPARE(library.add(QStringLiteral("recognitionRules"),
-                             {{QStringLiteral("match"), QStringLiteral("konsole")}, {QStringLiteral("category"), QStringLiteral("terminal")}}),
-                 saved);
-        SettingsStore another;
-        QVERIFY(another.dictationSnapshot().refinement.writingProfileOverrides.isEmpty());
-        QCOMPARE(another.dictationSnapshot().appRecognitionRules.size(), 2);
-        QCOMPARE(another.dictationSnapshot().appRecognitionRules.last().category, AppCategory::Terminal);
-
-        QCOMPARE(library.add(QStringLiteral("recognitionRules"), {{QStringLiteral("match"), QStringLiteral("Konsole")},
-                                                                   {QStringLiteral("profile"), WritingProfile::Work}}),
-                 QStringLiteral("taken"));
-        QCOMPARE(library.update(QStringLiteral("recognitionRules"), QStringLiteral("konsole"), {{QStringLiteral("category"), QString()}}),
-                 QStringLiteral("incomplete"));
-    }
-
-    // Renaming a match keeps its place and what it sets.
-    void anAppMatchCanBeRenamedInPlace()
-    {
-        SettingsStore().edit([](AppSettings &draft) {
-            draft.appRecognitionRules = {{QStringLiteral("obsidian"), AppCategory::Office, WritingProfile::Personal},
-                                                    {QStringLiteral("neochat"), std::nullopt, WritingProfile::Personal}};
-            return true;
-        });
-        ApplicationController controller(true);
-        QuickLibrary library(&controller);
-
-        QCOMPARE(library.update(QStringLiteral("recognitionRules"), QStringLiteral("Obsidian"),
-                                {{QStringLiteral("match"), QStringLiteral(" md.obsidian ")}}),
-                 saved);
-        const QList<AppRecognitionRule> rules = SettingsStore().dictationSnapshot().appRecognitionRules;
-        QCOMPARE(rules.size(), 2);
-        QCOMPARE(rules.first().match, QStringLiteral("md.obsidian"));
-        QCOMPARE(rules.first().category, AppCategory::Office);
-        QCOMPARE(rules.first().writingProfile, WritingProfile::Personal);
-        QCOMPARE(library.update(QStringLiteral("recognitionRules"), QStringLiteral("md.obsidian"),
-                                {{QStringLiteral("match"), QStringLiteral("NeoChat")}}),
-                 QStringLiteral("taken"));
-    }
-
     // CSV terms merge into the list as the old editor merged them: a term
     // listed already keeps its own settings, takes a context it lacked and
     // the higher use count.
@@ -566,7 +517,7 @@ private slots:
     void anAppMatchRowSaysWhyAChoiceWasRefused()
     {
         SettingsStore().edit([](AppSettings &draft) {
-            draft.appRecognitionRules = {{QStringLiteral("obsidian"), AppCategory::Office, std::nullopt}};
+            draft.apps.apps = {test::textApp(QStringLiteral("obsidian"), AppCategory::Office)};
             return true;
         });
         ApplicationController controller(true);
@@ -601,7 +552,7 @@ private slots:
         QCOMPARE(posted.count(), 1);
         QCOMPARE(posted.first().first().toMap().value(QStringLiteral("text")).toString(),
                  QStringLiteral("Choose an app type, a profile or both."));
-        QCOMPARE(SettingsStore().dictationSnapshot().appRecognitionRules.first().category, std::optional(AppCategory::Office));
+        QCOMPARE(SettingsStore().dictationSnapshot().apps.apps.first().type, std::optional(AppCategory::Office));
     }
 
     // The app's Library is Library.qml over this type: its wording reads the

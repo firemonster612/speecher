@@ -29,6 +29,7 @@ void migrateRefinementModels(QSettings &settings);
 // rules become Standard paste. Runs once, as its marker records, and only
 // changes a file that stored one of the three; it removes them.
 void migrateDeliverySteps(QSettings &settings);
+// migrateApps (AppsMigration.h) runs after it.
 // Brings the settings an older Speecher saved up to date, before anything
 // reads them: the migrations above, in order, on the running instance's
 // store. Startup runs it once.

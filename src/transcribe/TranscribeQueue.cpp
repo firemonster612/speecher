@@ -408,7 +408,7 @@ void TranscribeQueue::seedOptions()
     const QString folder = m_options.folder;
     m_options = {};
     m_options.folder = folder;
-    chooseProfile(settings.refinement.defaultWritingProfile);
+    chooseProfile(fallbackWritingProfile(settings.apps));
     m_optionsChosen = false;
 }
 

@@ -63,7 +63,7 @@ TranscribeOptions resolveOptions(const HeadlessTranscribeOptions &options,
                                  const ProviderRegistry &providers)
 {
     TranscribeOptions resolved;
-    resolved.writingProfile = options.writingProfile.value_or(settings.refinement.defaultWritingProfile);
+    resolved.writingProfile = options.writingProfile.value_or(fallbackWritingProfile(settings.apps));
     const WritingProfileSettings profile = writingProfileSettingsFor(
         settings.refinement.writingProfiles, writingProfileFromName(resolved.writingProfile));
     if (options.spokenLanguage) {

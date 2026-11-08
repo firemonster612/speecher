@@ -313,7 +313,7 @@ public:
     void start()
     {
         Frame frame(*this);
-        m_choice = choosePlan(m_request.settings, m_request.target);
+        m_choice = choosePlan(m_request.settings, m_request.pasting, m_request.target);
         if (!m_targetProvider) {
             focusChecked(TargetProvider::FocusMatch::Different);
             return;
@@ -660,15 +660,15 @@ private:
     int m_frames = 0;
 };
 
-TextDelivery::PlanChoice TextDelivery::choosePlan(const OutputSettings &settings, const Target &target)
+TextDelivery::PlanChoice TextDelivery::choosePlan(const OutputSettings &settings,
+                                                  std::optional<PasteMethod> pasting,
+                                                  const Target &target)
 {
-    const PasteRule pasteRule = resolvePasteRule(settings.pasteRules, target);
-    PlanChoice choice{deliveryPlan(settings.steps, pasteRule.method)};
+    PlanChoice choice{deliveryPlan(settings.steps, pasting.value_or(PasteMethod::StandardPaste))};
     const bool trackableTarget = target.hasIdentity() || target.accessible;
     // Pasting blindly into whatever has focus is what the steps alone ask
-    // for; an app or category rule needs its app known.
-    choice.currentFocusFallback = !trackableTarget && pasteRule.scope == PasteRuleScope::Global
-        && choice.plan.steps.press;
+    // for; an app's or app type's choice needs its app known.
+    choice.currentFocusFallback = !trackableTarget && !pasting && choice.plan.steps.press;
     if (target.secure || (!trackableTarget && !choice.currentFocusFallback)) {
         choice.plan.steps.insert = false;
         choice.plan.steps.press = false;
@@ -696,9 +696,10 @@ void TextDelivery::setAnswerDeadlineMs(int ms)
 
 void TextDelivery::deliver(const OutputSettings &settings,
                            const DeliveryContent &content,
-                           const Target &target)
+                           const Target &target,
+                           std::optional<PasteMethod> pasting)
 {
-    m_requests.append({settings, content, target});
+    m_requests.append({settings, content, target, pasting});
     // Never inside this call: with a provider and backends that answer at
     // once, the run would otherwise answer before deliver() returns.
     QMetaObject::invokeMethod(this, &TextDelivery::startNext, Qt::QueuedConnection);

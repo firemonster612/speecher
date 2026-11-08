@@ -612,9 +612,11 @@ public:
     // holdsAnswer is set; answers counts the answers given.
     void deliver(const OutputSettings &settings,
                  const DeliveryContent &content,
-                 const Target &target) override
+                 const Target &target,
+                 std::optional<PasteMethod> pasting) override
     {
         ++calls;
+        lastPasting = pasting;
         lastSettings = settings;
         lastContent = content;
         lastTarget = target;
@@ -640,6 +642,7 @@ public:
     OutputSettings lastSettings;
     DeliveryContent lastContent;
     Target lastTarget;
+    std::optional<PasteMethod> lastPasting;
     QString lastText;
 };
 

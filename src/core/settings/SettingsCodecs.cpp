@@ -9,6 +9,7 @@
 #include "core/Vocabulary.h"
 #include "core/VocabularyLimit.h"
 #include "core/settings/CorrectionSettingsCodec.h"
+#include "core/settings/AppsSettingsCodec.h"
 #include "core/settings/VocabularySettingsCodec.h"
 
 #include <QDateTime>
@@ -567,67 +568,32 @@ void SettingsCodecs::setAudioCaptureSettings(const AudioCaptureSettings &value)
     m_settings.setValue(SettingsKeys::AudioVadThresholdPercent, settings.vadThresholdPercent);
 }
 
-// A rule pointing at a deleted profile loses the profile, here where settings
-// are read and written; the callers then drop a rule left with nothing to set.
-static AppRecognitionRule withoutDeletedProfile(AppRecognitionRule rule,
-                                                const QList<WritingProfileSettings> &profiles)
+// What names a deleted profile loses it, here where settings are read and
+// written: the app or type then follows the wider place instead.
+static AppsSettings withoutDeletedProfiles(AppsSettings apps, const QList<WritingProfileSettings> &profiles)
 {
-    if (rule.writingProfile && offeredWritingProfile(*rule.writingProfile, profiles, QString()).isEmpty()) {
-        rule.writingProfile.reset();
+    const auto drop = [&profiles](std::optional<QString> &profile) {
+        if (profile && offeredWritingProfile(*profile, profiles, QString()).isEmpty()) {
+            profile.reset();
+        }
+    };
+    for (AppEntry &entry : apps.apps) {
+        drop(entry.writingProfile);
     }
-    return rule;
+    for (AppTypeSettings &type : apps.types) {
+        drop(type.writingProfile);
+    }
+    return apps;
 }
 
-QList<AppRecognitionRule> SettingsCodecs::appRecognitionRules() const
+AppsSettings SettingsCodecs::apps() const
 {
-    const QList<WritingProfileSettings> profiles = writingProfileSettings();
-    const QJsonDocument document = QJsonDocument::fromJson(
-        value(SettingsKeys::AppRecognitionRules, QByteArray()).toByteArray());
-    QList<AppRecognitionRule> rules;
-    for (const QJsonValue &value : document.array()) {
-        const QJsonObject object = value.toObject();
-        AppRecognitionRule rule;
-        rule.match = object.value(QStringLiteral("match")).toString().trimmed();
-        const QString category = object.value(QStringLiteral("category")).toString();
-        if (!category.isEmpty()) {
-            const AppCategory parsed = appCategoryFromName(category);
-            if (parsed != AppCategory::Unknown) {
-                rule.category = parsed;
-            }
-        }
-        const QString profile = object.value(QStringLiteral("writingProfile")).toString();
-        if (!profile.isEmpty()) {
-            rule.writingProfile = writingProfileFromName(profile);
-        }
-        rule = withoutDeletedProfile(rule, profiles);
-        if (!rule.match.isEmpty() && (rule.category || rule.writingProfile)) {
-            rules.append(rule);
-        }
-    }
-    return rules;
+    return withoutDeletedProfiles(AppsSettingsCodec::load(m_settings), writingProfileSettings());
 }
 
-void SettingsCodecs::setAppRecognitionRules(const QList<AppRecognitionRule> &rules)
+void SettingsCodecs::setApps(const AppsSettings &value)
 {
-    const QList<WritingProfileSettings> profiles = writingProfileSettings();
-    QJsonArray array;
-    for (const AppRecognitionRule &stored : rules) {
-        const AppRecognitionRule rule = withoutDeletedProfile(stored, profiles);
-        const QString match = rule.match.trimmed();
-        if (match.isEmpty() || (!rule.category && !rule.writingProfile)) {
-            continue;
-        }
-        QJsonObject object{{QStringLiteral("match"), match}};
-        if (rule.category) {
-            object.insert(QStringLiteral("category"), appCategoryName(*rule.category));
-        }
-        if (rule.writingProfile) {
-            object.insert(QStringLiteral("writingProfile"), *rule.writingProfile);
-        }
-        array.append(object);
-    }
-    m_settings.setValue(SettingsKeys::AppRecognitionRules,
-                        QJsonDocument(array).toJson(QJsonDocument::Compact));
+    AppsSettingsCodec::store(m_settings, withoutDeletedProfiles(value, writingProfileSettings()));
 }
 
 QList<BindingRule> SettingsCodecs::bindingRules() const
@@ -757,18 +723,6 @@ QString SettingsCodecs::refinementStyle() const
     return QStringLiteral("balanced");
 }
 
-QString SettingsCodecs::defaultWritingProfile() const
-{
-    const QString profile = value(SettingsKeys::DefaultWritingProfile, WritingProfile::Other).toString();
-    return offeredWritingProfile(writingProfileFromName(profile), writingProfileSettings());
-}
-
-void SettingsCodecs::setDefaultWritingProfile(const QString &value)
-{
-    m_settings.setValue(SettingsKeys::DefaultWritingProfile,
-                        offeredWritingProfile(writingProfileFromName(value), writingProfileSettings()));
-}
-
 // The id when it is built in or one of the custom choices, otherwise fallback.
 template<typename Custom>
 static QString offeredChoice(const QString &value, const QStringList &builtIn, const QList<Custom> &custom,
@@ -892,43 +846,6 @@ void SettingsCodecs::setWritingProfileSettings(const QList<WritingProfileSetting
     // A deleted profile leaves the stored terms it limited now, not only
     // when they are next read.
     setVocabularyEntries(vocabularyEntries());
-}
-
-QList<WritingProfileOverride> SettingsCodecs::writingProfileOverrides() const
-{
-    const QJsonDocument document = QJsonDocument::fromJson(
-        value(SettingsKeys::WritingProfileOverrides, QByteArray()).toByteArray());
-    QList<WritingProfileOverride> overrides;
-    for (const QJsonValue &item : document.array()) {
-        const QJsonObject object = item.toObject();
-        const QString applicationId = object.value(QStringLiteral("applicationId")).toString().trimmed();
-        if (!applicationId.isEmpty()) {
-            overrides.append({
-                applicationId,
-                writingProfileFromName(object.value(QStringLiteral("profile")).toString()),
-                object.value(QStringLiteral("enabled")).toBool(true),
-            });
-        }
-    }
-    return overrides;
-}
-
-void SettingsCodecs::setWritingProfileOverrides(const QList<WritingProfileOverride> &value)
-{
-    QJsonArray array;
-    for (const WritingProfileOverride &override : value) {
-        const QString applicationId = override.applicationId.trimmed();
-        if (applicationId.isEmpty()) {
-            continue;
-        }
-        array.append(QJsonObject{
-            {QStringLiteral("applicationId"), applicationId},
-            {QStringLiteral("profile"), override.profile},
-            {QStringLiteral("enabled"), override.enabled},
-        });
-    }
-    m_settings.setValue(SettingsKeys::WritingProfileOverrides,
-                        QJsonDocument(array).toJson(QJsonDocument::Compact));
 }
 
 bool SettingsCodecs::useTargetContext() const
@@ -1214,57 +1131,6 @@ int SettingsCodecs::completionStatusDurationMs() const
 void SettingsCodecs::setCompletionStatusDurationMs(int value)
 {
     m_settings.setValue(SettingsKeys::CompletionStatusDurationMs, std::clamp(value, 0, 5000));
-}
-
-QList<PasteRule> pasteRulesFromJson(const QByteArray &encoded)
-{
-    if (encoded.isEmpty()) {
-        return defaultPasteRules();
-    }
-    const QJsonDocument document = QJsonDocument::fromJson(encoded);
-    if (!document.isArray()) {
-        return defaultPasteRules();
-    }
-
-    QList<PasteRule> rules;
-    for (const QJsonValue &value : document.array()) {
-        const QJsonObject object = value.toObject();
-        PasteRule rule;
-        rule.scope = pasteRuleScopeFromName(object.value(QStringLiteral("scope")).toString());
-        rule.match = object.value(QStringLiteral("match")).toString().trimmed();
-        rule.method = pasteMethodFromName(object.value(QStringLiteral("method")).toString());
-        rule.enabled = object.value(QStringLiteral("enabled")).toBool(true);
-        rules.append(rule);
-    }
-    return rules;
-}
-
-QByteArray pasteRulesToJson(const QList<PasteRule> &rules)
-{
-    QJsonArray array;
-    for (const PasteRule &rule : rules) {
-        array.append(QJsonObject{
-            {QStringLiteral("scope"), pasteRuleScopeName(rule.scope)},
-            {QStringLiteral("match"), rule.match.trimmed()},
-            {QStringLiteral("method"), pasteMethodName(rule.method)},
-            {QStringLiteral("enabled"), rule.enabled},
-        });
-    }
-    return QJsonDocument(array).toJson(QJsonDocument::Compact);
-}
-
-QList<PasteRule> SettingsCodecs::pasteRules() const
-{
-    QList<PasteRule> rules = pasteRulesFromJson(value(SettingsKeys::PasteRules, QByteArray()).toByteArray());
-    // The delivery steps are the global rule now; migrateDeliverySteps read
-    // any that was stored.
-    rules.removeIf([](const PasteRule &rule) { return rule.scope == PasteRuleScope::Global; });
-    return rules;
-}
-
-void SettingsCodecs::setPasteRules(const QList<PasteRule> &rules)
-{
-    m_settings.setValue(SettingsKeys::PasteRules, pasteRulesToJson(rules));
 }
 
 ShortcutActivationMode SettingsCodecs::shortcutActivationMode() const

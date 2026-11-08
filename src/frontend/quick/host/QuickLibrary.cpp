@@ -1,6 +1,7 @@
 #include "frontend/quick/host/QuickLibrary.h"
 
 #include "app/ApplicationController.h"
+#include "core/AppEdits.h"
 #include "core/BindingProcessor.h"
 #include "core/SettingsStore.h"
 #include "core/Vocabulary.h"
@@ -134,20 +135,55 @@ void setReplacementFields(BindingRule &rule, const QVariantMap &fields)
     }
 }
 
-// An empty category or profile sets none.
-void setRuleFields(AppRecognitionRule &rule, const QVariantMap &fields)
+// The text an App matched by name goes by, or empty for one matched by id.
+QString nameMatch(const AppEntry &app)
 {
+    for (const AppMatch &match : app.matches) {
+        if (match.kind == AppMatchKind::Id) {
+            return {};
+        }
+    }
+    for (const AppMatch &match : app.matches) {
+        if (match.kind == AppMatchKind::Name) {
+            return match.value;
+        }
+    }
+    return {};
+}
+
+// An App matched by name, as App recognition edits it: {match, category,
+// profile}, where an empty category or profile sets none, and one with a
+// profile also matches window titles. A match neither sets is refused.
+EditRefusal setRuleFields(AppEntry &app, const QVariantMap &fields)
+{
+    QString match = nameMatch(app);
     if (fields.contains(QStringLiteral("match"))) {
-        rule.match = fields.value(QStringLiteral("match")).toString();
+        match = fields.value(QStringLiteral("match")).toString().trimmed();
+        app.name = match;
     }
     if (fields.contains(QStringLiteral("category"))) {
         const QString category = fields.value(QStringLiteral("category")).toString();
-        rule.category = category.isEmpty() ? std::nullopt : std::optional(appCategoryFromName(category));
+        app.type = category.isEmpty() ? std::nullopt : std::optional(appCategoryFromName(category));
     }
     if (fields.contains(QStringLiteral("profile"))) {
         const QString profile = fields.value(QStringLiteral("profile")).toString();
-        rule.writingProfile = profile.isEmpty() ? std::nullopt : std::optional(profile);
+        app.writingProfile = profile.isEmpty() ? std::nullopt : std::optional(profile);
     }
+    app.matches = {{AppMatchKind::Name, match}};
+    if (app.writingProfile) {
+        app.matches.append({AppMatchKind::WindowTitle, match});
+    }
+    return match.isEmpty() || app.type || app.writingProfile ? EditRefusal::None : EditRefusal::Incomplete;
+}
+
+QString appByNameMatch(const AppSettings &s, const QString &match)
+{
+    for (const AppEntry &app : s.apps.apps) {
+        if (!nameMatch(app).isEmpty() && nameMatch(app).compare(match.trimmed(), Qt::CaseInsensitive) == 0) {
+            return app.id;
+        }
+    }
+    return {};
 }
 
 // One list the UI edits: the fields its records take, adding to it, changing
@@ -235,14 +271,16 @@ const EditedList editedLists[] = {
     {"recognitionRules",
      {QStringLiteral("match"), QStringLiteral("category"), QStringLiteral("profile")},
      [](AppSettings &s, const QVariantMap &item, const QStringList &) {
-         AppRecognitionRule rule;
-         setRuleFields(rule, item);
-         return addAppRecognitionRule(s, rule);
+         AppEntry app;
+         const EditRefusal refusal = setRuleFields(app, item);
+         return refusal == EditRefusal::None ? addApp(s, app) : refusal;
      },
      [](AppSettings &s, const QString &match, const QVariantMap &patch, const QStringList &) {
-         return editAppRecognitionRule(s, match, [&patch](AppRecognitionRule &rule) { setRuleFields(rule, patch); });
+         EditRefusal refusal = EditRefusal::None;
+         const EditRefusal edit = editApp(s, appByNameMatch(s, match), [&](AppEntry &app) { refusal = setRuleFields(app, patch); });
+         return refusal == EditRefusal::None ? edit : refusal;
      },
-     removeAppRecognitionRule},
+     [](AppSettings &s, const QString &match) { return removeApp(s, appByNameMatch(s, match)); }},
 };
 
 const EditedList *findList(const QString &name)
@@ -268,11 +306,11 @@ bool convertible(const EditedList &list, QVariantMap record)
     });
 }
 
-QVariantMap ruleRecord(const AppRecognitionRule &rule)
+QVariantMap ruleRecord(const QString &match, const std::optional<AppCategory> &type, const QString &profile)
 {
-    return {{QStringLiteral("match"), rule.match},
-            {QStringLiteral("category"), rule.category ? appCategoryName(*rule.category) : QString()},
-            {QStringLiteral("profile"), rule.writingProfile.value_or(QString())}};
+    return {{QStringLiteral("match"), match},
+            {QStringLiteral("category"), type ? appCategoryName(*type) : QString()},
+            {QStringLiteral("profile"), profile}};
 }
 
 // The file chosen for an import, read whole, or nothing with why.
@@ -324,8 +362,10 @@ QuickLibrary::ControllerScope::~ControllerScope()
 QVariantList QuickLibrary::builtInRecognitionRules() const
 {
     QVariantList rules;
-    for (const AppRecognitionRule &rule : builtInAppRecognitionRules()) {
-        rules.append(ruleRecord(rule));
+    for (const BuiltInApp &app : builtInApps()) {
+        const QString profile = app.type ? appTypeSettings({}, *app.type).writingProfile.value_or(QString())
+                                         : app.writingProfile;
+        rules.append(ruleRecord(app.word, app.type, profile));
     }
     return rules;
 }
@@ -553,9 +593,10 @@ void QuickLibrary::refresh()
                                         {QStringLiteral("replacement"), rule.replacement}});
     }
     QVariantList rules;
-    for (const AppRecognitionRule &rule :
-         recognitionRulesWithMigratedProfileOverrides(settings.appRecognitionRules, refinement.writingProfileOverrides)) {
-        rules.append(ruleRecord(rule));
+    for (const AppEntry &app : settings.apps.apps) {
+        if (!nameMatch(app).isEmpty()) {
+            rules.append(ruleRecord(nameMatch(app), app.type, app.writingProfile.value_or(QString())));
+        }
     }
     const QString &speech = settings.speech.providerId;
     const bool takesKeyTerms = VocabularyLimit::takesKeyterms(speech);

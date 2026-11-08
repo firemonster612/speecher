@@ -1,9 +1,11 @@
 #include "core/SettingsStore.h"
 #include "core/EndpointSettings.h"
 #include "core/EndpointUrl.h"
+#include "core/Apps.h"
 #include "core/DeliverySteps.h"
 #include "core/ProviderTable.h"
 #include "core/SecretStore.h"
+#include "core/settings/AppsMigration.h"
 #include "core/settings/CorrectionSettingsCodec.h"
 #include "core/settings/SettingsKeys.h"
 
@@ -12,6 +14,7 @@
 #include <QFile>
 #include <QFileInfo>
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -141,13 +144,14 @@ void migrateDeliverySteps(QSettings &settings)
         return;
     }
     settings.setValue(SettingsKeys::DeliveryStepsMigrationVersion, currentMigrationVersion);
-    QList<PasteRule> rules = pasteRulesFromJson(settings.value(SettingsKeys::PasteRules).toByteArray());
+    using Scope = LegacyPasteRule::Scope;
+    QList<LegacyPasteRule> rules = legacyPasteRules(settings);
     // The global rule as delivery read it: the first one turned on, and
     // Clipboard only where none was.
     std::optional<PasteMethod> globalMethod;
     bool storedGlobal = false;
-    for (const PasteRule &rule : rules) {
-        if (rule.scope == PasteRuleScope::Global) {
+    for (const LegacyPasteRule &rule : rules) {
+        if (rule.scope == Scope::Global) {
             storedGlobal = true;
             if (rule.enabled && !globalMethod) {
                 globalMethod = rule.method;
@@ -171,33 +175,36 @@ void migrateDeliverySteps(QSettings &settings)
     // Restoring meant nothing where nothing was pasted, so the words stayed.
     steps.keep = !settings.value(SettingsKeys::RestoreClipboardAfterTyping).toBool() || (!steps.insert && !steps.press);
 
-    rules.removeIf([](const PasteRule &rule) { return rule.scope == PasteRuleScope::Global; });
+    rules.removeIf([](const LegacyPasteRule &rule) { return rule.scope == Scope::Global; });
     if constexpr (terminalKeysDiffer) {
         // There is no global rule to choose now, so every app type that
         // followed it keeps its keys with a rule of its own.
         if (global == PasteMethod::TerminalPaste) {
-            for (const AppCategory category : {AppCategory::Terminal, AppCategory::Browser, AppCategory::Email,
-                                               AppCategory::Office, AppCategory::CodeEditor, AppCategory::AiCoding,
-                                               AppCategory::General}) {
-                const PasteRule *own = findPasteRule(rules, PasteRuleScope::Category, appCategoryName(category));
-                if (!own || !own->enabled) {
-                    setPasteRule(rules, PasteRuleScope::Category, appCategoryName(category), PasteMethod::TerminalPaste);
+            for (const AppCategory category : appTypes()) {
+                const QString name = appCategoryName(category);
+                const auto own = std::find_if(rules.begin(), rules.end(), [&name](const LegacyPasteRule &rule) {
+                    return rule.scope == Scope::Category && rule.match.toLower() == name;
+                });
+                if (own == rules.end()) {
+                    rules.append({Scope::Category, name, PasteMethod::TerminalPaste, true});
+                } else if (!own->enabled) {
+                    *own = {Scope::Category, name, PasteMethod::TerminalPaste, true};
                 }
             }
         }
     } else {
         // A category with Standard paste is no rule of its own.
-        rules.removeIf([](const PasteRule &rule) {
-            return rule.scope == PasteRuleScope::Category && rule.method == PasteMethod::TerminalPaste;
+        rules.removeIf([](const LegacyPasteRule &rule) {
+            return rule.scope == Scope::Category && rule.method == PasteMethod::TerminalPaste;
         });
-        for (PasteRule &rule : rules) {
+        for (LegacyPasteRule &rule : rules) {
             if (rule.method == PasteMethod::TerminalPaste) {
                 rule.method = PasteMethod::StandardPaste;
             }
         }
     }
     if (settings.contains(SettingsKeys::PasteRules)) {
-        settings.setValue(SettingsKeys::PasteRules, pasteRulesToJson(rules));
+        storeLegacyPasteRules(settings, rules);
     }
     settings.setValue(SettingsKeys::InsertThroughAccessibility, steps.insert);
     settings.setValue(SettingsKeys::PressPasteKeys, steps.press);
@@ -228,6 +235,7 @@ void migrateSavedSettings()
     }
     migrateRefinementModels(newSettings);
     migrateDeliverySteps(newSettings);
+    migrateApps(newSettings);
 }
 
 SettingsStore::SettingsStore(QObject *parent)

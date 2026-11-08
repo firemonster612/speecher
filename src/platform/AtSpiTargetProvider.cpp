@@ -1,5 +1,7 @@
 #include "platform/AtSpiTargetProvider.h"
 
+#include "core/Apps.h"
+
 #include "platform/InsertionBaseline.h"
 #include "platform/KWinActiveWindow.h"
 #include "platform/atspi/AtSpiAccess.h"
