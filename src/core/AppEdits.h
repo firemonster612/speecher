@@ -20,7 +20,8 @@ EditRefusal addApp(AppSettings &settings, AppEntry app);
 // has that id.
 EditRefusal editApp(AppSettings &settings, const QString &id, const EntryChange<AppEntry> &change);
 // Removes App id; the edit it returns puts it back where it was, unless an
-// App with its id or one of its matches was added since. Empty when no App
+// App with its id or one of its matches was added since. Vocabulary Entries
+// limited to it keep the limit by its ids (keepVocabularyLimitsOf). Empty when no App
 // has that id.
 SettingsEdit removeApp(AppSettings &settings, const QString &id);
 // Changes what App Type `type` sets. Missing for a type that isn't one of

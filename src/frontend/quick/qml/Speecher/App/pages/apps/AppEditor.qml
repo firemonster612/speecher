@@ -8,7 +8,8 @@ import Speecher.App
 
 // One App's or one App Type's settings, as rows on a wash under its row:
 // for an App what it is recognized by, its type, writing profile and
-// Pasting, each starting "Same as …" until changed, and Remove app; for an
+// Pasting, each starting "Same as …" until changed, the vocabulary limited
+// to it, and Remove app; for an
 // App Type its writing profile and Pasting. Every change saves at once
 // through Apps; a refusal shows under the rows.
 Item {
@@ -41,6 +42,9 @@ Item {
              : inherited.pastingFrom === "type" ? t.sameAs(appType.label, Schema.apps.pastingLabel(inherited.pasting))
              : t.sameAs(appType.label, t.theSteps)
     }
+    // The Vocabulary Entries limited to the App, corrections learned in it
+    // included.
+    readonly property int vocabularyCount: isType ? 0 : Library.vocabulary.filter(e => Library.limitedToApp(e, entry)).length
     function save(patch) {
         refusal = Schema.apps.refusals[isType ? Apps.updateType(entry.id, patch) : Apps.update(entry.id, patch)] || ""
     }
@@ -111,6 +115,17 @@ Item {
                     .concat(Schema.apps.pastingChoices.slice(1))
                 currentId: editor.entry.pasting || ""
                 onChosen: id => editor.save({ pasting: id })
+            }
+        }
+        SettingRow {
+            shown: !editor.isType
+            title: Schema.page("vocabulary").title
+            help: Schema.vocabulary.limitedHere(editor.vocabularyCount, "app")
+            Button {
+                objectName: "appVocabulary"
+                text: Schema.vocabulary.showThem
+                size: "small"
+                onClicked: Navigation.follow("vocabulary", "vocabularyFor:app/" + editor.entry.id)
             }
         }
         Reveal {

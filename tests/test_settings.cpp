@@ -1,5 +1,6 @@
 #include "common/test_prelude.h"
 #include "common/apps_fixtures.h"
+#include "common/vocabulary_entries.h"
 #include "core/EndpointSettings.h"
 #include "core/ProviderChain.h"
 #include "core/ProviderReadiness.h"
@@ -498,7 +499,6 @@ private slots:
         QCOMPARE(settings.dictationSnapshot().launchAtLogin, false);
 #endif
         QVERIFY(settings.dictationSnapshot().vocabulary.isEmpty());
-        QCOMPARE(settings.dictationSnapshot().bindings.size(), 0);
         QCOMPARE(settings.dictationSnapshot().refinement.services.main(), QStringLiteral("openai"));
         QCOMPARE(settings.dictationSnapshot().refinement.style, QStringLiteral("balanced"));
         QCOMPARE(fallbackWritingProfile(settings.dictationSnapshot().apps), QStringLiteral("other"));
@@ -1257,36 +1257,44 @@ private slots:
         settings.raw().clear();
     }
 
-    void settingsBindingRulesRoundTrip()
+    void vocabularyEntriesRoundTripEveryKind()
     {
         SettingsStore().raw().clear();
         SettingsCodecs settings;
 
-        const QList<BindingRule> rules{
-            {QStringLiteral("my email"), QStringLiteral("efox@example.com")},
-            {QStringLiteral("signature"), QStringLiteral("Line 1\nLine 2")},
-        };
-        QString error;
-        QVERIFY(settings.setBindingRules(rules, &error));
-        QVERIFY(error.isEmpty());
+        VocabularyEntry limited = test::replacementEntry(QStringLiteral("sig"), QStringLiteral("Best,\nEnzo"));
+        limited.profiles = {WritingProfile::Email};
+        limited.apps = {QStringLiteral("org.mozilla.thunderbird")};
+        limited.enabled = false;
+        VocabularyEntry learned = test::learnedEntry(QStringLiteral("cute"), QStringLiteral("Qt"),
+                                                     QStringLiteral("org.kde.kate"), QStringLiteral("c1"));
+        learned.createdAtMs = 1000;
+        learned.lastObservedAtMs = 2000;
+        settings.setVocabularyEntries({
+            {QStringLiteral("Kubernetes")},
+            test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com")),
+            limited,
+            learned,
+            // The matcher can't apply a phrase with no letter or number.
+            test::replacementEntry(QStringLiteral("..."), QStringLiteral("dots")),
+        });
 
-        const QList<BindingRule> loaded = settings.bindingRules();
-        QCOMPARE(loaded.size(), 2);
-        QCOMPARE(loaded.at(0).phrase, QStringLiteral("my email"));
-        QCOMPARE(loaded.at(0).replacement, QStringLiteral("efox@example.com"));
-        QCOMPARE(loaded.at(1).phrase, QStringLiteral("signature"));
-        QCOMPARE(loaded.at(1).replacement, QStringLiteral("Line 1\nLine 2"));
-
-        const AppSettings snapshot = settings.snapshot();
-        QCOMPARE(snapshot.bindings.size(), 2);
-        QCOMPARE(snapshot.bindings.at(1).replacement, QStringLiteral("Line 1\nLine 2"));
-
-        QVERIFY(!settings.setBindingRules({
-            {QStringLiteral("my,email"), QStringLiteral("one")},
-            {QStringLiteral("MY email"), QStringLiteral("two")},
-        }, &error));
-        QVERIFY(error.contains(QStringLiteral("duplicates")));
-        QCOMPARE(settings.bindingRules().size(), 2);
+        const QList<VocabularyEntry> loaded = settings.vocabularyEntries();
+        QCOMPARE(loaded.size(), 4);
+        QCOMPARE(loaded.at(0).term, QStringLiteral("Kubernetes"));
+        QVERIFY(!loaded.at(0).isReplacement());
+        QCOMPARE(loaded.at(1).replacement, QStringLiteral("efox@example.com"));
+        QCOMPARE(loaded.at(2).replacement, QStringLiteral("Best,\nEnzo"));
+        QCOMPARE(loaded.at(2).profiles, QStringList{WritingProfile::Email});
+        QCOMPARE(loaded.at(2).apps, QStringList{QStringLiteral("org.mozilla.thunderbird")});
+        QVERIFY(!loaded.at(2).enabled);
+        learned.id = QStringLiteral("c1");
+        QCOMPARE(loaded.at(3), learned);
+        for (const VocabularyEntry &entry : loaded) {
+            QVERIFY(!entry.id.isEmpty());
+        }
+        // Ids stay put from one read to the next.
+        QCOMPARE(settings.vocabularyEntries(), loaded);
     }
 
     void correctionEvidenceActivatesByConfidenceWithoutExposingPendingEvidence()
@@ -1297,37 +1305,37 @@ private slots:
 
         const CorrectionEvidence medium{QStringLiteral("cute"), QStringLiteral("Qt"), 0.75};
         QVERIFY(!settings.recordCorrectionEvidence(medium, QStringLiteral("org.kde.kate")));
-        QVERIFY(settings.dictationSnapshot().learnedCorrections.isEmpty());
-        QVERIFY(settings.snapshot().learnedCorrections.isEmpty());
+        QVERIFY(settings.dictationSnapshot().vocabulary.isEmpty());
+        QVERIFY(settings.snapshot().vocabulary.isEmpty());
 
         QVERIFY(settings.recordCorrectionEvidence(medium, QStringLiteral("org.kde.kate")));
 
-        QList<LearnedCorrection> corrections = settings.dictationSnapshot().learnedCorrections;
+        QList<VocabularyEntry> corrections = test::learnedEntries(settings.dictationSnapshot().vocabulary);
         QCOMPARE(corrections.size(), 1);
-        QCOMPARE(corrections.first().original, QStringLiteral("cute"));
-        QCOMPARE(corrections.first().corrected, QStringLiteral("Qt"));
-        QCOMPARE(corrections.first().applicationId, QStringLiteral("org.kde.kate"));
+        QCOMPARE(corrections.first().term, QStringLiteral("cute"));
+        QCOMPARE(corrections.first().replacement, QStringLiteral("Qt"));
+        QCOMPARE(corrections.first().apps, QStringList{QStringLiteral("org.kde.kate")});
         QCOMPARE(corrections.first().confidence, 0.75);
         QCOMPARE(corrections.first().evidenceCount, 2);
         QVERIFY(corrections.first().enabled);
 
         AppSettings snapshot = settings.snapshot();
         QVERIFY(snapshot.speech.vocabulary.contains(QStringLiteral("Qt")));
-        QVERIFY(!snapshot.bindings.contains(BindingRule{QStringLiteral("cute"), QStringLiteral("Qt")}));
+        QVERIFY(test::replacementEntries(snapshot.vocabulary).isEmpty());
 
-        settings.edit([](AppSettings &draft) { draft.learnedCorrections.first().enabled = false; return true; });
+        settings.edit([](AppSettings &draft) { draft.vocabulary.first().enabled = false; return true; });
         snapshot = settings.snapshot();
         QVERIFY(!snapshot.speech.vocabulary.contains(QStringLiteral("Qt")));
 
-        settings.edit([](AppSettings &draft) { draft.learnedCorrections.first().enabled = true; return true; });
+        settings.edit([](AppSettings &draft) { draft.vocabulary.first().enabled = true; return true; });
         QVERIFY(settings.recordCorrectionEvidence(medium, QStringLiteral("org.kde.kate")));
-        corrections = settings.dictationSnapshot().learnedCorrections;
+        corrections = test::learnedEntries(settings.dictationSnapshot().vocabulary);
         QCOMPARE(corrections.size(), 1);
-        QCOMPARE(corrections.first().corrected, QStringLiteral("Qt"));
+        QCOMPARE(corrections.first().replacement, QStringLiteral("Qt"));
         QCOMPARE(corrections.first().evidenceCount, 3);
 
-        settings.edit([](AppSettings &draft) { draft.learnedCorrections.clear(); return true; });
-        QVERIFY(settings.dictationSnapshot().learnedCorrections.isEmpty());
+        settings.edit([](AppSettings &draft) { draft.vocabulary.clear(); return true; });
+        QVERIFY(settings.dictationSnapshot().vocabulary.isEmpty());
     }
 
     void correctionLearningSettingChangesAreObservableWithoutRestart()
@@ -1360,9 +1368,9 @@ private slots:
             {QStringLiteral("open ai"), QStringLiteral("Open API"), 0.98},
             QStringLiteral("org.kde.kate")));
 
-        const QList<LearnedCorrection> corrections = settings.dictationSnapshot().learnedCorrections;
+        const QList<VocabularyEntry> corrections = test::learnedEntries(settings.dictationSnapshot().vocabulary);
         QCOMPARE(corrections.size(), 1);
-        QCOMPARE(corrections.first().corrected, QStringLiteral("OpenAI"));
+        QCOMPARE(corrections.first().replacement, QStringLiteral("OpenAI"));
         QCOMPARE(corrections.first().evidenceCount, 1);
     }
 
@@ -1375,15 +1383,15 @@ private slots:
 
         settings.edit([](AppSettings &draft) { draft.correctionLearningEnabled = false; return true; });
         QVERIFY(!settings.recordCorrectionEvidence(evidence, QStringLiteral("org.kde.kate")));
-        QVERIFY(settings.dictationSnapshot().learnedCorrections.isEmpty());
+        QVERIFY(settings.dictationSnapshot().vocabulary.isEmpty());
 
         settings.edit([](AppSettings &draft) { draft.correctionLearningEnabled = true; return true; });
         QVERIFY(settings.recordCorrectionEvidence(evidence, QStringLiteral("org.kde.kate")));
         QVERIFY(settings.recordCorrectionEvidence(evidence, QStringLiteral("org.mozilla.firefox")));
 
-        const QList<LearnedCorrection> corrections = settings.dictationSnapshot().learnedCorrections;
+        const QList<VocabularyEntry> corrections = test::learnedEntries(settings.dictationSnapshot().vocabulary);
         QCOMPARE(corrections.size(), 1);
-        QVERIFY(corrections.first().applicationId.isEmpty());
+        QVERIFY(corrections.first().apps.isEmpty());
         QCOMPARE(corrections.first().evidenceCount, 2);
         QVERIFY(corrections.first().lastObservedAtMs >= corrections.first().createdAtMs);
 
@@ -1392,8 +1400,8 @@ private slots:
             QStringLiteral("cute"), QStringLiteral("Qt"), 0.75};
         QVERIFY(!settings.recordCorrectionEvidence(medium, QStringLiteral("org.kde.kate")));
         QVERIFY(settings.recordCorrectionEvidence(medium, QStringLiteral("org.mozilla.firefox")));
-        QCOMPARE(settings.dictationSnapshot().learnedCorrections.size(), 1);
-        QVERIFY(settings.dictationSnapshot().learnedCorrections.first().applicationId.isEmpty());
+        QCOMPARE(test::learnedEntries(settings.dictationSnapshot().vocabulary).size(), 1);
+        QVERIFY(settings.dictationSnapshot().vocabulary.first().apps.isEmpty());
     }
 
     void lowConfidenceEvidenceIsDiscarded()
@@ -1404,7 +1412,7 @@ private slots:
         QVERIFY(!settings.recordCorrectionEvidence(
             {QStringLiteral("cute"), QStringLiteral("Qt"), 0.4},
             QStringLiteral("org.kde.kate")));
-        QVERIFY(settings.dictationSnapshot().learnedCorrections.isEmpty());
+        QVERIFY(settings.dictationSnapshot().vocabulary.isEmpty());
         QVERIFY(!settings.raw().contains(QStringLiteral("vocabulary/correctionEvidence")));
         QVERIFY(!settings.recordCorrectionEvidence(
             {QStringLiteral("open ai"), QStringLiteral("OpenAI"), 0.98}, {}));
@@ -1562,20 +1570,22 @@ private slots:
                          .autoInstall = true,
                          .checkIntervalMinutes = 480,
                          .checkIntervalUnit = QStringLiteral("hours")};
+            VocabularyEntry learned = test::learnedEntry(QStringLiteral("teh"), QStringLiteral("the"), {},
+                                                         QStringLiteral("c1"));
+            learned.createdAtMs = 1000;
+            learned.evidenceCount = 3;
+            learned.lastObservedAtMs = 2000;
+            VocabularyEntry replacement = test::replacementEntry(QStringLiteral("my email"),
+                                                                 QStringLiteral("efox@example.com"));
+            replacement.id = QStringLiteral("r1");
             s.vocabulary = {{.term = QStringLiteral("Speecher"),
                              .source = QStringLiteral("manual"),
-                             .context = QStringLiteral("The app.")}};
-            s.learnedCorrections = {{.id = QStringLiteral("c1"),
-                                     .original = QStringLiteral("teh"),
-                                     .corrected = QStringLiteral("the"),
-                                     .createdAtMs = 1000,
-                                     .confidence = 0.95,
-                                     .enabled = true,
-                                     .evidenceCount = 3,
-                                     .lastObservedAtMs = 2000}};
+                             .context = QStringLiteral("The app."),
+                             .id = QStringLiteral("t1")},
+                            replacement,
+                            learned};
             s.correctionLearningEnabled = false;
             s.insightsEnabled = false;
-            s.bindings = {{.phrase = QStringLiteral("my email"), .replacement = QStringLiteral("efox@example.com")}};
             edited = s;
             return true;
         }));
@@ -1595,9 +1605,7 @@ private slots:
         QCOMPARE(saved.output, edited.output);
         QCOMPARE(saved.updates, edited.updates);
         QCOMPARE(saved.shortcutActivationMode, edited.shortcutActivationMode);
-        QCOMPARE(saved.bindings, edited.bindings);
         QCOMPARE(saved.vocabulary, edited.vocabulary);
-        QCOMPARE(saved.learnedCorrections, edited.learnedCorrections);
         QCOMPARE(saved.correctionLearningEnabled, edited.correctionLearningEnabled);
         QCOMPARE(saved.insightsEnabled, edited.insightsEnabled);
         settings.raw().clear();
@@ -1639,13 +1647,10 @@ private slots:
             return true;
         });
         settings.edit([](AppSettings &draft) {
-            draft.vocabulary = {{QStringLiteral("Deepgram Nova 3")}, {QStringLiteral("Speecher")}};
+            draft.vocabulary = {{QStringLiteral("Deepgram Nova 3")}, {QStringLiteral("Speecher")},
+                                test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com"))};
             return true;
         });
-        QVERIFY(settings.edit([](AppSettings &draft) {
-            draft.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
-            return true;
-        }));
         settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         settings.raw().setValue(SettingsKeys::RefinementStyle, QStringLiteral("strong_polish"));
         settings.edit([](AppSettings &draft) {
@@ -1701,8 +1706,8 @@ private slots:
         });
         QCOMPARE(settings.snapshot().audio.readinessTimeoutMs, 500);
         QCOMPARE(snapshot.audio.vadThresholdPercent, 4);
-        QCOMPARE(snapshot.bindings.size(), 1);
-        QCOMPARE(snapshot.bindings.at(0).replacement, QStringLiteral("efox@example.com"));
+        QCOMPARE(test::replacementEntries(snapshot.vocabulary).size(), 1);
+        QCOMPARE(test::replacementEntries(snapshot.vocabulary).at(0).replacement, QStringLiteral("efox@example.com"));
         QCOMPARE(snapshot.refinement.services.main(), QStringLiteral("openai"));
         QCOMPARE(snapshot.refinement.style, QStringLiteral("strong_polish"));
         QCOMPARE(writingProfileSettingsFor(snapshot.refinement.writingProfiles, WritingProfile::Work).tone,

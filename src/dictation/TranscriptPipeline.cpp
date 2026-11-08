@@ -1,10 +1,8 @@
 #include "dictation/TranscriptPipeline.h"
 
-#include "core/Vocabulary.h"
-#include "core/VocabularyLimit.h"
+#include "core/VocabularyScope.h"
 
 #include <QDateTime>
-#include <QLocale>
 #include <QRegularExpression>
 #include <QSet>
 
@@ -31,20 +29,6 @@ QList<BindingRule> withoutNoBindPhrases(const QList<BindingRule> &rules,
     return filtered;
 }
 
-// A Snippet's {date} and {time} become today's date and the current time in
-// the locale's short format. Any other text in braces stays as written.
-QList<BindingRule> withVariablesFilled(QList<BindingRule> rules)
-{
-    const QDateTime now = QDateTime::currentDateTime();
-    const QString date = QLocale().toString(now.date(), QLocale::ShortFormat);
-    const QString time = QLocale().toString(now.time(), QLocale::ShortFormat);
-    for (BindingRule &rule : rules) {
-        rule.replacement.replace(QStringLiteral("{date}"), date)
-            .replace(QStringLiteral("{time}"), time);
-    }
-    return rules;
-}
-
 QString writingProfileFor(const AppSettings &settings, const RunChoices &choices, const Target &target)
 {
     if (!choices.writingProfile.isEmpty()) {
@@ -53,88 +37,9 @@ QString writingProfileFor(const AppSettings &settings, const RunChoices &choices
     return resolveApp(target, settings.apps).writingProfile;
 }
 
-// The run's own terms in their order, then every stored term for the Writing
-// Profile in priority order, not the speech request's capped list: the speech
-// service takes a hundred hints, while refinement reads the list as prompt
-// text and can use the rest. The terms' contexts go into `context`.
-QStringList refinementVocabulary(const AppSettings &settings,
-                                 const QStringList &runVocabulary,
-                                 const QString &writingProfile,
-                                 QHash<QString, QString> &context)
+VocabularyScope vocabularyScope(const AppSettings &settings, const RunChoices &choices, const Target &target)
 {
-    // The spelling kept for each term, by its case-folded form, so a context
-    // follows its term onto whichever spelling won.
-    QHash<QString, QString> kept;
-    QStringList deduplicated;
-    const auto append = [&kept, &deduplicated](const QString &term) {
-        const QString cleaned = term.simplified();
-        const QString key = cleaned.toCaseFolded();
-        if (cleaned.isEmpty() || kept.contains(key)) {
-            return kept.value(key);
-        }
-        if (deduplicated.size() >= VocabularyLimit::maxRefinementTerms) {
-            return QString();
-        }
-        kept.insert(key, cleaned);
-        deduplicated.append(cleaned);
-        return cleaned;
-    };
-    const QList<VocabularyEntry> entries = normalizeVocabularyEntries(settings.vocabulary);
-    // Learned corrections first: there are few of them, each came from a
-    // real edit, and neither a long run's terms nor a full saved list may push
-    // them out. One whose text is a term limited to other profiles stays out
-    // with it.
-    for (const LearnedCorrection &correction : settings.learnedCorrections) {
-        if (correction.enabled && !vocabularyTermExcluded(entries, correction.corrected, writingProfile)) {
-            append(correction.corrected);
-        }
-    }
-    // Then the run's own terms, in their order, ahead of the saved ones.
-    for (const QString &term : runVocabulary) {
-        append(term);
-    }
-    for (const VocabularyEntry &entry : entries) {
-        if (vocabularyEntryApplies(entry, writingProfile)) {
-            const QString spelling = append(entry.term);
-            if (!spelling.isEmpty() && !entry.context.isEmpty()) {
-                context.insert(spelling, entry.context);
-            }
-        }
-    }
-    return deduplicated;
-}
-
-QList<BindingRule> activeBindings(const AppSettings &settings, const Target &target, const QString &writingProfile)
-{
-    // Only the user's own rules: a Learned Correction's text is what the user
-    // typed, braces and all. prepare reads these rules once, so the expansion
-    // before refinement, the one after it and the placeholder restore all
-    // insert the same date and time.
-    QList<BindingRule> rules = withVariablesFilled(settings.bindings);
-    // A correction that writes a term limited to other profiles stays out
-    // with it, as in the vocabulary.
-    const QList<VocabularyEntry> entries = normalizeVocabularyEntries(settings.vocabulary);
-    QSet<QString> claimedPhrases;
-    for (const BindingRule &rule : settings.bindings) {
-        claimedPhrases.insert(BindingProcessor::normalizedPhrase(rule.phrase));
-    }
-
-    const auto appendCorrections = [&](bool exactApplication) {
-        for (const LearnedCorrection &correction : settings.learnedCorrections) {
-            const bool exact = !correction.applicationId.isEmpty()
-                && correction.applicationId.compare(target.applicationId, Qt::CaseInsensitive) == 0;
-            const bool applies = exactApplication ? exact : correction.applicationId.isEmpty();
-            const QString phrase = BindingProcessor::normalizedPhrase(correction.original);
-            if (correction.enabled && applies && !phrase.isEmpty() && !claimedPhrases.contains(phrase)
-                && !vocabularyTermExcluded(entries, correction.corrected, writingProfile)) {
-                rules.append({correction.original, correction.corrected});
-                claimedPhrases.insert(phrase);
-            }
-        }
-    };
-    appendCorrections(true);
-    appendCorrections(false);
-    return rules;
+    return {writingProfileFor(settings, choices, target), target, settings.apps};
 }
 
 // The user's instructions, the profile's output language and the custom
@@ -183,9 +88,7 @@ void TranscriptPipeline::resolveCustomChoices(TranscriptPipelineResult &pipeline
 QStringList TranscriptPipeline::speechVocabulary(const AppSettings &settings, const RunChoices &choices,
                                                  const Target &target)
 {
-    return speecher::speechVocabulary(settings.vocabulary,
-                                      settings.learnedCorrections,
-                                      writingProfileFor(settings, choices, target),
+    return speecher::speechVocabulary(settings.vocabulary, vocabularyScope(settings, choices, target),
                                       choices.vocabulary);
 }
 
@@ -215,8 +118,11 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
                                                      const QString &spokenLanguage)
 {
     TranscriptPipelineResult result;
-    const QString writingProfile = writingProfileFor(settings, choices, target);
-    const QList<BindingRule> bindings = activeBindings(settings, target, writingProfile);
+    const VocabularyScope scope = vocabularyScope(settings, choices, target);
+    const QString writingProfile = scope.writingProfile;
+    // Read once, so the expansion before refinement, the one after it and
+    // the placeholder restore all insert the same date and time.
+    const QList<BindingRule> bindings = replacementRules(settings.vocabulary, scope, QDateTime::currentDateTime());
     const bool hasNoBindDirective = BindingProcessor::hasExplicitNoBindDirective(rawTranscript);
     result.noBindPhrases = BindingProcessor::explicitNoBindPhrases(rawTranscript, bindings);
     result.allowPostRefinementBindings = !hasNoBindDirective || !result.noBindPhrases.isEmpty();
@@ -239,9 +145,7 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
     result.refinementContext.writingProfile = writingProfile;
     result.refinementContext.writingProfileName =
         writingProfileLabel(writingProfile, result.refinementSettings.writingProfiles);
-    result.refinementVocabulary = refinementVocabulary(settings,
-                                                       choices.vocabulary,
-                                                       result.refinementContext.writingProfile,
+    result.refinementVocabulary = refinementVocabulary(settings.vocabulary, scope, choices.vocabulary,
                                                        result.refinementContext.vocabularyContext);
     const WritingProfileSettings profile = writingProfileSettingsFor(result.refinementSettings.writingProfiles,
                                                                      result.refinementContext.writingProfile);

@@ -12,8 +12,7 @@ namespace speecher {
 class ApplicationController;
 
 // The UI's LibraryLists: the Writing Profiles with the user's tones and
-// cleanup levels, the vocabulary terms, Learned Corrections and
-// replacements, as plain values read from and written through the
+// cleanup levels, and the Vocabulary, as plain values read from and written through the
 // daemon's SettingsStore. The Library singleton (Library.qml) builds on it
 // and words it. Edits name a list by its property and an entry by its key
 // there (see update). Core's WritingProfileEdits and VocabularyEdits make
@@ -31,15 +30,15 @@ class QuickLibrary : public QObject {
     // { id, name, base, instructions }; base is light_cleanup, balanced,
     // strong_polish or custom_only.
     Q_PROPERTY(QVariantList customCleanupLevels READ customCleanupLevels NOTIFY listsChanged)
-    // { term, keyTerm, context, profiles, source, uses }, in the order the
-    // speech service is sent them. source is manual, csv or learned; an
-    // empty profiles is every profile.
-    Q_PROPERTY(QVariantList terms READ terms NOTIFY listsChanged)
-    // { id, heard, corrected, app, confidence, enabled }, newest first. app is
-    // the application id it was learned in, empty for one learned in several.
-    Q_PROPERTY(QVariantList corrections READ corrections NOTIFY listsChanged)
-    // { phrase, replacement }
-    Q_PROPERTY(QVariantList replacements READ replacements NOTIFY listsChanged)
+    // The Vocabulary, spellings in the order the speech service is sent
+    // them, then replacements in the order saved: { id, kind
+    // (spelling or replacement), term (a spelling's term, a replacement's
+    // phrase), replacement, keyTerm, context, profiles, apps, source (manual,
+    // csv, legacy, import or learned), learned, enabled, uses, and what a
+    // Learned Correction was learned from: confidence, evidence (how many
+    // edits), learnedAtMs }. Empty profiles or apps are every one; an app is
+    // an App's id ("app:…") or the application id a correction was learned in.
+    Q_PROPERTY(QVariantList vocabulary READ vocabulary NOTIFY listsChanged)
     // How many key terms a speech service takes at most, and how many terms
     // refinement reads.
     Q_PROPERTY(int keyTermLimit READ keyTermLimit CONSTANT)
@@ -68,9 +67,7 @@ public:
     QVariantList profiles() const { return m_profiles; }
     QVariantList customTones() const { return m_customTones; }
     QVariantList customCleanupLevels() const { return m_customCleanupLevels; }
-    QVariantList terms() const { return m_terms; }
-    QVariantList corrections() const { return m_corrections; }
-    QVariantList replacements() const { return m_replacements; }
+    QVariantList vocabulary() const { return m_vocabulary; }
     int keyTermLimit() const;
     int refinementTermLimit() const;
     bool speechTakesKeyTerms() const { return m_speechTakesKeyTerms; }
@@ -80,7 +77,7 @@ public:
     // prefix (custom_profile, custom_tone, custom_level).
     Q_INVOKABLE QString newId(const QString &prefix) const;
     // Adds item to the list named (profiles, customTones, customCleanupLevels,
-    // terms, replacements), with the fields its records
+    // vocabulary), with the fields its records
     // show; one of the first three carries its newId. A tone or level takes
     // builtInNames, the names the page shows the built-in ones by, which it
     // can't be called. Returns why it was refused, as EditRefusal says: blank,
@@ -88,12 +85,11 @@ public:
     // records lack. Empty when saved.
     Q_INVOKABLE QString add(const QString &list, const QVariantMap &item, const QStringList &builtInNames = {});
     // Changes the fields patch names on the entry `key` names in the list
-    // named: a profile's, tone's, level's or correction's id, a term, a
-    // replacement's phrase. What the record does not show
+    // named: its id. What the record does not show
     // stays. Returns as add does; missing once the entry is gone.
     Q_INVOKABLE QString update(const QString &list, const QString &key, const QVariantMap &patch,
                                const QStringList &builtInNames = {});
-    // Removes the entry key names from terms, corrections or replacements.
+    // Removes the vocabulary entry key names.
     // Returns the token undo takes to put it back, or -1
     // when nothing was removed.
     Q_INVOKABLE int remove(const QString &list, const QString &key);
@@ -111,11 +107,11 @@ public:
     // its name was added since. Only the newest removal's token works, once:
     // the window's one toast offers only its Undo.
     Q_INVOKABLE void undo(int token);
-    // Merge the terms of a CSV file, or add the snippets of a JSON file that
-    // the list does not hold yet. Returns { added, error }: how many are new,
-    // and why the file could not be read or parsed, empty when it could.
-    Q_INVOKABLE QVariantMap importTerms(const QUrl &file);
-    Q_INVOKABLE QVariantMap importReplacements(const QUrl &file);
+    // Merges the terms of a CSV file, or adds the snippets of a JSON file
+    // (by its .json name) the list would take. Returns { added, error }: how
+    // many are new, and why the file could not be read or parsed, empty when
+    // it could.
+    Q_INVOKABLE QVariantMap importVocabulary(const QUrl &file);
 
 signals:
     void listsChanged();
@@ -135,9 +131,7 @@ private:
     QVariantList m_profiles;
     QVariantList m_customTones;
     QVariantList m_customCleanupLevels;
-    QVariantList m_terms;
-    QVariantList m_corrections;
-    QVariantList m_replacements;
+    QVariantList m_vocabulary;
     bool m_speechTakesKeyTerms = false;
     int m_keyTermsSent = 0;
 };

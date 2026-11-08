@@ -21,12 +21,18 @@ FocusScope {
     property real cornerRadius
     property bool shown: false
     property alias query: input.text
-    readonly property var results: query.trim().length ? Schema.search(query, 40, need => System[need], _apps) : _suggestions
+    readonly property var results: query.trim().length ? Schema.search(query, 40, need => System[need], _apps.concat(_vocabulary)) : _suggestions
     // The person's Apps, found by name or what they are recognized by, and
     // landing on their row on Apps (AppRow's appentry:<id>).
     readonly property var _apps: Apps.entries.map(e => ({
         type: "app", id: "appentry:" + e.id, page: "apps", section: Schema.apps.t.yourApps,
         label: e.name, keywords: e.ids.join(" ") + " app"
+    }))
+    // The Vocabulary's entries, found by what they spell, replace or write,
+    // and landing on their row, which opens them (VocabularyRow's vocab:<id>).
+    readonly property var _vocabulary: Library.vocabulary.map(e => ({
+        type: "vocabulary", id: "vocab:" + e.id, page: "vocabulary", section: Schema.vocabulary.t.yourVocabulary,
+        label: e.term, keywords: [e.replacement, e.context].join(" ")
     }))
     // The suggested rows this computer has, as search offers only those.
     readonly property var _suggestions: Schema.suggestions

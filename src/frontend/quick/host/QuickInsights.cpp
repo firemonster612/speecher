@@ -384,14 +384,16 @@ void QuickInsights::refresh()
 void QuickInsights::refreshCorrections()
 {
     const AppSettings settings = m_controller->settings()->dictationSnapshot();
-    QList<LearnedCorrection> learned = settings.learnedCorrections;
-    std::stable_sort(learned.begin(), learned.end(), [](const LearnedCorrection &a, const LearnedCorrection &b) {
+    QList<VocabularyEntry> learned;
+    std::copy_if(settings.vocabulary.cbegin(), settings.vocabulary.cend(), std::back_inserter(learned),
+                 [](const VocabularyEntry &entry) { return entry.isLearned(); });
+    std::stable_sort(learned.begin(), learned.end(), [](const VocabularyEntry &a, const VocabularyEntry &b) {
         return a.createdAtMs > b.createdAtMs;
     });
     QVariantList recent;
-    for (const LearnedCorrection &correction : learned.mid(0, 3)) {
-        recent.append(QVariantMap{{QStringLiteral("heard"), correction.original},
-                                  {QStringLiteral("fixed"), correction.corrected}});
+    for (const VocabularyEntry &correction : learned.mid(0, 3)) {
+        recent.append(QVariantMap{{QStringLiteral("heard"), correction.term},
+                                  {QStringLiteral("fixed"), correction.replacement}});
     }
     const QVariantMap corrections = {
         {QStringLiteral("count"), int(learned.size())},

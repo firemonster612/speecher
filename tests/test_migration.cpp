@@ -13,6 +13,7 @@
 // that build's history format, also by hand.
 
 #include "common/test_secrets.h"
+#include "common/vocabulary_entries.h"
 #include "common/test_suites.h"
 
 #include "app/ApplicationController.h"
@@ -407,8 +408,10 @@ private:
         QCOMPARE(settings.audio.readinessTimeoutMs, 1200);
         QCOMPARE(settings.audio.vadThresholdPercent, 5);
 
-        // Every term is kept, past what a request carries.
-        QCOMPARE(settings.vocabulary.size(), 262);
+        // Every term is kept, past what a request carries, beside the
+        // replacement and the Learned Correction.
+        QCOMPARE(settings.vocabulary.size(), 264);
+        QCOMPARE(test::spellingEntries(settings.vocabulary).size(), 262);
         QCOMPARE(settings.vocabulary[0].term, QStringLiteral("Speecher"));
         QVERIFY(settings.vocabulary[0].starred);
         QCOMPARE(settings.vocabulary[0].frequency, 7);
@@ -435,15 +438,17 @@ private:
                            std::nullopt, QStringLiteral("email"), std::nullopt}));
         // The default profile is Other apps'.
         QCOMPARE(fallbackWritingProfile(settings.apps), QStringLiteral("work"));
-        QCOMPARE(settings.bindings.size(), 1);
-        QCOMPARE(settings.bindings[0].phrase, QStringLiteral("smiley face"));
-        QCOMPARE(settings.bindings[0].replacement, QStringLiteral(":)"));
+        const QList<VocabularyEntry> replacements = test::replacementEntries(settings.vocabulary);
+        QCOMPARE(replacements.size(), 1);
+        QCOMPARE(replacements[0].term, QStringLiteral("smiley face"));
+        QCOMPARE(replacements[0].replacement, QStringLiteral(":)"));
         QCOMPARE(settings.shortcutActivationMode, ShortcutActivationMode::Toggle);
         QVERIFY(!settings.correctionLearningEnabled);
-        QCOMPARE(settings.learnedCorrections.size(), 1);
-        QCOMPARE(settings.learnedCorrections[0].corrected, QStringLiteral("Speecher"));
-        QCOMPARE(settings.learnedCorrections[0].evidenceCount, 3);
-        QCOMPARE(settings.learnedCorrections[0].lastObservedAtMs, 1757100000000);
+        const QList<VocabularyEntry> learned = test::learnedEntries(settings.vocabulary);
+        QCOMPARE(learned.size(), 1);
+        QCOMPARE(learned[0].replacement, QStringLiteral("Speecher"));
+        QCOMPARE(learned[0].evidenceCount, 3);
+        QCOMPARE(learned[0].lastObservedAtMs, 1757100000000);
 
         QCOMPARE(settings.refinement.services.main(), QStringLiteral("anthropic"));
         QCOMPARE(profile(settings, QStringLiteral("work")).cleanupStrength, QStringLiteral("light_cleanup"));
@@ -542,7 +547,7 @@ private:
         QCOMPARE(settings.speech.services.choice(QStringLiteral("endpoint")).model, QStringLiteral("whisper-fixture"));
         QCOMPARE(store.secrets()->secret(SecretStore::Secret::SpeechEndpointKey), QStringLiteral("fixture-speech-key"));
 
-        QCOMPARE(settings.vocabulary.size(), 262);
+        QCOMPARE(test::spellingEntries(settings.vocabulary).size(), 262);
         QCOMPARE(settings.vocabulary[0].context, QStringLiteral("The app this fixture tests."));
         QCOMPARE(settings.vocabulary[0].profiles, QStringList{customProfile});
         QVERIFY(!settings.vocabulary[1].keyTerm);

@@ -41,17 +41,15 @@ public:
     LocalRunnerSettings localRunnerSettings() const; void setLocalRunnerSettings(const LocalRunnerSettings &value);
     QList<VocabularyEntry> vocabularyEntries() const; void setVocabularyEntries(const QList<VocabularyEntry> &entries);
     bool recordVocabularyUsage(const QString &text);
-    // Saves each term the list does not hold yet, ignoring case, as a manual
-    // key term, and writes the settings out. Returns the ones it held already,
+    // Saves each term the list holds no spelling of yet, ignoring case, as a
+    // manual key term, and writes the settings out. Returns the ones it held already,
     // or nothing when the settings could not be written.
     static std::optional<QStringList> addVocabularyTerms(const QStringList &terms);
     AudioCaptureSettings audioCaptureSettings() const; void setAudioCaptureSettings(const AudioCaptureSettings &value);
     // An app or type naming a deleted profile reads and saves without it.
     AppsSettings apps() const; void setApps(const AppsSettings &value);
-    QList<BindingRule> bindingRules() const; bool setBindingRules(const QList<BindingRule> &rules, QString *error = nullptr);
     bool correctionLearningEnabled() const; void setCorrectionLearningEnabled(bool value);
     bool insightsEnabled() const; void setInsightsEnabled(bool value);
-    QList<LearnedCorrection> learnedCorrections() const; void setLearnedCorrections(const QList<LearnedCorrection> &corrections);
     bool refinementEnabled() const; void setRefinementEnabled(bool value);
     // Until one is saved, the order starts with ChatGPT where the Codex app
     // is installed, else Claude where Claude Code is, else ChatGPT.

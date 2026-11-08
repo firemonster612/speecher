@@ -5,7 +5,7 @@
 #include "core/settings/SettingsCodecs.h"
 
 #include "core/ProviderChain.h"
-#include "core/Vocabulary.h"
+#include "core/VocabularyScope.h"
 #include "core/settings/SettingsKeys.h"
 
 #include <QDebug>
@@ -195,24 +195,14 @@ const std::vector<SettingsCodecs::Field> &SettingsCodecs::fields()
                &C::updateCheckIntervalUnit, &C::setUpdateCheckIntervalUnit),
 
         stored("vocabulary", member(&A::vocabulary), &C::vocabularyEntries, &C::setVocabularyEntries),
-        stored("learnedCorrections", member(&A::learnedCorrections), &C::learnedCorrections, &C::setLearnedCorrections),
         // A dictation narrows this to its Writing Profile once it knows the target.
         readOnly("speech.vocabulary", member(&A::speech, &SpeechSettings::vocabulary),
                  [](const C &, const A &settings) {
-                     return speechVocabulary(settings.vocabulary, settings.learnedCorrections, QString());
+                     return speechVocabulary(settings.vocabulary, VocabularyScope{});
                  }),
         stored("correctionLearningEnabled", member(&A::correctionLearningEnabled), &C::correctionLearningEnabled,
                &C::setCorrectionLearningEnabled),
         stored("insightsEnabled", member(&A::insightsEnabled), &C::insightsEnabled, &C::setInsightsEnabled),
-        // The settings surface refuses invalid replacements before it saves,
-        // so a rejection here is a bug rather than something a person typed.
-        stored("bindings", member(&A::bindings), &C::bindingRules,
-               [](C &codecs, const QList<BindingRule> &rules) {
-                   QString error;
-                   if (!codecs.setBindingRules(rules, &error)) {
-                       qWarning("dropped invalid replacement rules: %s", qPrintable(error));
-                   }
-               }),
     };
     return table;
 }

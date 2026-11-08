@@ -10,6 +10,15 @@
 
 namespace speecher {
 
+// One replacement as a dictation applies it: the spoken phrase and the text
+// written in its place. Built from the Vocabulary Entries that apply.
+struct BindingRule {
+    QString phrase;
+    QString replacement;
+
+    bool operator==(const BindingRule &other) const = default;
+};
+
 struct BindingValidationIssue {
     enum class Type {
         EmptyPhrase,

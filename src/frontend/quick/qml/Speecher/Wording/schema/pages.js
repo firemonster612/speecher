@@ -36,9 +36,10 @@ var pages = [
     { id: "profiles", parent: "refinement", title: "Writing profiles", icon: "pen-line", file: "ProfilesPage.qml",
       subtitle: "Speecher picks a profile from the app you're dictating into, then cleans up your words to match it.",
       keywords: "tone style app per-app cleanup level instructions translate" },
-    { id: "vocabulary", parent: "refinement", title: "Vocabulary", icon: "book-a", file: "VocabularyPage.qml",
-      subtitle: "Words Speecher spells your way, corrections it learned from your edits, and phrases that become exact text.",
-      keywords: "words names spelling corrections replacements snippets terms" },
+
+    { id: "vocabulary", title: "Vocabulary", icon: "book-a", file: "VocabularyPage.qml",
+      subtitle: "Words Speecher spells your way, phrases that become exact text, and corrections it learned from your edits. Each can be limited to some writing profiles or apps.",
+      keywords: "words names spelling corrections replacements snippets terms dictionary learned" },
 
     { id: "apps", title: "Apps", icon: "app-window", file: "AppsPage.qml",
       subtitle: "Set how Speecher writes and pastes in each app.",

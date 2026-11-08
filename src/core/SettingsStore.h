@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/ProviderChain.h"
+#include "core/LearnedCorrection.h"
 #include "core/settings/SettingsCodecs.h"
 
 #include <QObject>

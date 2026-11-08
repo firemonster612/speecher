@@ -11,7 +11,7 @@ import Speecher.Theme
 // gives its entry back, even while the row is fading out.
 //   RowList {
 //       id: terms
-//       values: Library.terms
+//       values: Library.vocabulary
 //       keyOf: t => t.term
 //       delegate: ListRow {
 //           required property string key

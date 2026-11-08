@@ -61,15 +61,11 @@ How an App or App Type narrows the Delivery Steps: the steps as they are, Termin
 _Avoid_: Paste Rule, exception, output route
 
 **Vocabulary Entry**:
-A word or phrase Speecher should recognize, preserve, or replace during dictation. It may carry a context, which tells refinement what it means and when it applies, and may be limited to some Writing Profiles; under any other profile neither the speech service nor refinement gets it.
-_Avoid_: Dictionary word
-
-**Snippet**:
-A short spoken trigger that expands to longer user-written text.
-_Avoid_: Macro, template
+One entry of the Vocabulary, Speecher's one list of what it should spell or replace. A spelling is a word or phrase Speecher keeps spelled the person's way: as a key term the speech service takes it as a hint, and refinement reads every spelling, with a context that says what it means and when it applies. A replacement is a spoken phrase and the exact text written in its place, several lines included, where {date} and {time} become today's date and the time. Any entry may be limited to some Writing Profiles and some Apps; anywhere else neither the speech service nor refinement gets it, and no replacement is made. Of two replacements for one phrase, the person's own wins over a Learned Correction, and the narrower one, limited to an App, then to a profile, wins over the wider.
+_Avoid_: Word, dictionary word, term (for the entry), binding, snippet (as a kind of its own)
 
 **Learned Correction**:
-A local Vocabulary Entry inferred from a user's edit shortly after insertion.
+A replacement Speecher added to the Vocabulary itself, after the person fixed the same words the same way shortly after pasting. It is limited to the app it was learned in until the same fix is seen in another, keeps how many edits showed it and how sure Speecher is, and can be turned off, edited or widened like any other entry.
 _Avoid_: Training sample, correction history
 
 **Global Shortcut**:

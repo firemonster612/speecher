@@ -6,6 +6,7 @@
 #include "core/ProviderTable.h"
 #include "core/SecretStore.h"
 #include "core/settings/AppsMigration.h"
+#include "core/settings/VocabularyMigration.h"
 #include "core/settings/CorrectionSettingsCodec.h"
 #include "core/settings/SettingsKeys.h"
 
@@ -236,6 +237,7 @@ void migrateSavedSettings()
     migrateRefinementModels(newSettings);
     migrateDeliverySteps(newSettings);
     migrateApps(newSettings);
+    migrateVocabulary(newSettings);
     // After the model renames, which it carries into the orders.
     SettingsCodecs().migrateServiceOrder();
 }

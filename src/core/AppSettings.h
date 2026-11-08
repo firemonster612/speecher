@@ -3,7 +3,6 @@
 #include "core/DeliverySteps.h"
 #include "core/OutputFormat.h"
 #include "core/Apps.h"
-#include "core/LearnedCorrection.h"
 #include "core/ProviderTable.h"
 #include "core/ServiceOrder.h"
 #include "core/Target.h"
@@ -131,15 +130,18 @@ inline AnthropicAuthMode anthropicAuthModeFromName(const QString &name)
                                               : AnthropicAuthMode::Oauth;
 }
 
-struct BindingRule {
-    QString phrase;
-    QString replacement;
-
-    bool operator==(const BindingRule &other) const = default;
-};
-
+// One Vocabulary Entry. A spelling (no replacement) is a term Speecher keeps
+// spelled its way: the speech service may hear it as a hint, and refinement
+// reads it. A replacement is a spoken phrase and the exact text written in
+// its place, snippets included. A Learned Correction is a replacement
+// Speecher added itself from the person's edits, source "learned", and keeps
+// what it was learned from. Any entry may be limited to some Writing
+// Profiles and some Apps; vocabularyEntryApplies is the one test.
 struct VocabularyEntry {
+    // A spelling's term, or a replacement's spoken phrase.
     QString term;
+    // Where it came from: manual, csv (a terms file), legacy (stored before
+    // entries were records), import (a snippets file) or learned.
     QString source = QStringLiteral("manual");
     // First in line for the speech service among key terms. No longer shown
     // or edited; a term starred before keeps its place.
@@ -148,10 +150,31 @@ struct VocabularyEntry {
     qint64 lastUsedMs = 0;
     // What the term means and when it applies, for refinement. Empty for none.
     QString context;
-    // The Writing Profiles the term is limited to, by id. Empty for every one.
+    // The Writing Profiles it is limited to, by id. Empty for every one.
     QStringList profiles;
-    // Sent to the speech service as a hint. Refinement uses every term.
+    // A spelling sent to the speech service as a hint. Refinement uses every
+    // spelling either way.
     bool keyTerm = true;
+    // The text written in place of the phrase. Empty for a spelling.
+    QString replacement;
+    // The apps it is limited to: an App's id ("app:…"), or the application id
+    // a Learned Correction was learned in. Empty for every app.
+    QStringList apps;
+    // Stable across edits, so the list can find an entry whose text changed.
+    QString id;
+    // Off, it applies nowhere and stays listed.
+    bool enabled = true;
+    // What a Learned Correction was learned from: how sure the edit made
+    // Speecher, how many edits showed it, and when.
+    double confidence = 0.0;
+    int evidenceCount = 0;
+    qint64 createdAtMs = 0;
+    qint64 lastObservedAtMs = 0;
+
+    bool isReplacement() const { return !replacement.isEmpty(); }
+    // A Learned Correction. A spelling an older release learned keeps its
+    // source and is a spelling like any other.
+    bool isLearned() const { return isReplacement() && source == QStringLiteral("learned"); }
 
     bool operator==(const VocabularyEntry &other) const = default;
 };
@@ -455,9 +478,7 @@ struct AppSettings {
     OutputSettings output;
     UpdateSettings updates;
     ShortcutActivationMode shortcutActivationMode = ShortcutActivationMode::Hybrid;
-    QList<BindingRule> bindings;
     QList<VocabularyEntry> vocabulary;
-    QList<LearnedCorrection> learnedCorrections;
     bool correctionLearningEnabled = true;
     bool insightsEnabled = true;
 };

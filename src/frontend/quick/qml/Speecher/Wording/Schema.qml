@@ -49,6 +49,9 @@ QtObject {
     // The Apps page's wording beyond its rows: the App Types, the Pasting
     // choices and the editor's and picker's words (schema/apps.js).
     readonly property var apps: Apps
+    // The Vocabulary page's wording beyond its rows: its filters, editor and
+    // import (schema/vocabulary.js).
+    readonly property var vocabulary: Vocabulary
     // Delivery's wording beyond its rows: the paste keys, what a Pasting
     // choice leaves of the steps, and a step's needs (schema/pasting.js).
     readonly property var pasting: Pasting
@@ -72,12 +75,12 @@ QtObject {
     function page(id) { return _pagesById[id] || { id: id, title: id, icon: "circle" } }
     // The pages under a page, in sidebar order.
     function subpages(id) { return pages.filter(p => p.parent === id) }
-    // The pages a page sits under, outermost first: [Refinement] for Vocabulary.
+    // The pages a page sits under, outermost first: [Refinement] for Writing profiles.
     function ancestors(id) {
         const p = page(id)
         return p.parent ? ancestors(p.parent).concat([page(p.parent)]) : []
     }
-    // Where a page is, as words: "Refinement › Vocabulary", or its title.
+    // Where a page is, as words: "Refinement › Writing profiles", or its title.
     function trail(id) { return ancestors(id).concat([page(id)]).map(p => p.title).join(" › ") }
     // Where a row is: its page's trail and its section, if it has one.
     function rowTrail(spec) { return trail(spec.page) + (spec.section ? ", " + spec.section : "") }

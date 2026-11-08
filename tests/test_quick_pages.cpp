@@ -6,6 +6,7 @@
 #include "common/test_quick_windows.h"
 #include "common/test_suites.h"
 #include "common/apps_fixtures.h"
+#include "common/vocabulary_entries.h"
 
 #include "app/AppFrontEnd.h"
 #include "app/ApplicationController.h"
@@ -263,6 +264,25 @@ private slots:
                                gmail};
             draft.apps.apps.first().name = QStringLiteral("Kate");
             draft.apps.types[1].writingProfile = WritingProfile::Work;
+            // Vocabulary shows each kind: a key term with a context, one
+            // limited to a profile, a snippet over several lines, one
+            // limited to an App, and a Learned Correction with its evidence.
+            VocabularyEntry kubernetes{QStringLiteral("Kubernetes")};
+            kubernetes.context = QStringLiteral("The container platform");
+            kubernetes.frequency = 12;
+            VocabularyEntry lucia{QStringLiteral("Lúcia")};
+            lucia.profiles = {WritingProfile::Personal};
+            lucia.keyTerm = false;
+            VocabularyEntry signature = test::replacementEntry(QStringLiteral("sign off"),
+                                                               QStringLiteral("Best,\nEnzo\nSent {date}"));
+            signature.profiles = {WritingProfile::Email};
+            VocabularyEntry inKate = test::replacementEntry(QStringLiteral("todo"), QStringLiteral("// TODO(enzo):"));
+            inKate.id = QStringLiteral("snippet-kate");
+            inKate.apps = {draft.apps.apps.first().id};
+            VocabularyEntry learned = test::learnedEntry(QStringLiteral("cute"), QStringLiteral("Qt"),
+                                                         QStringLiteral("org.kde.kate"), QStringLiteral("learned-qt"));
+            learned.evidenceCount = 3;
+            draft.vocabulary = {kubernetes, lucia, signature, inKate, learned};
             return true;
         });
         DictationRecord seen{QDateTime::currentDateTime(), 1000, 3, QStringLiteral("Slack")};
@@ -316,11 +336,17 @@ private slots:
                           QMetaObject::invokeMethod(search, "open");
                           const auto parent = searchResults(search, QStringLiteral("refinement"));
                           QVERIFY(parent.contains(std::pair{QStringLiteral("profiles"), QStringLiteral("Refinement › Writing profiles")}));
-                          QVERIFY(parent.contains(std::pair{QStringLiteral("vocabulary"), QStringLiteral("Refinement › Vocabulary")}));
                           const auto child = searchResults(search, QStringLiteral("spelling"));
                           QVERIFY(std::any_of(child.cbegin(), child.cend(), [](const auto &result) {
-                              return result.second == QStringLiteral("Refinement › Vocabulary, Terms");
+                              return result.second == QStringLiteral("Vocabulary, Your vocabulary");
                           }));
+                          // Vocabulary is a page of its own, and its entries
+                          // are found by what they write.
+                          QVERIFY(searchResults(search, QStringLiteral("vocabulary"))
+                                      .contains(std::pair{QStringLiteral("vocabulary"), QString()}));
+                          QVERIFY(searchResults(search, QStringLiteral("TODO(enzo)"))
+                                      .contains(std::pair{QStringLiteral("vocab:snippet-kate"),
+                                                          QStringLiteral("Vocabulary, Your vocabulary")}));
                           QVERIFY(searchResults(search, QStringLiteral("keybinding"))
                                       .contains(std::pair{QStringLiteral("startCommand"), QStringLiteral("Dictation, How shortcuts reach Speecher")}));
                           // Services is a page of its own, with no path.
@@ -347,6 +373,13 @@ private slots:
                           }});
             steps.append({QStringLiteral("apps with the picker open"), [navigation] {
                               navigation->goToRow(QStringLiteral("apps"), QStringLiteral("addApp"));
+                          }});
+            steps.append({QStringLiteral("vocabulary with an entry open"), [navigation, main] {
+                              navigation->goToRow(QStringLiteral("vocabulary"), QStringLiteral("vocab:learned-qt"));
+                              QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("vocab:learned-qt")));
+                          }});
+            steps.append({QStringLiteral("vocabulary limited to Kate"), [navigation] {
+                              navigation->goToRow(QStringLiteral("vocabulary"), QStringLiteral("vocabularyFor:app/app:org.kde.kate"));
                           }});
         }
         runSteps(steps, main);
@@ -1262,6 +1295,90 @@ private slots:
     }
 
     void everySetupStepLoads_data() { themes(); }
+    // Writing profiles and an App's editor link to the vocabulary limited to
+    // them, and Vocabulary then lists only that, a correction learned in
+    // the App included, with the way back.
+    void profilesAndAppsShowTheVocabularyLimitedToThem()
+    {
+        ApplicationController controller(true);
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.apps.apps = {test::idApp(QStringLiteral("org.kde.kate"))};
+            VocabularyEntry anywhere{QStringLiteral("Kubernetes")};
+            anywhere.id = QStringLiteral("anywhere");
+            VocabularyEntry forWork = test::replacementEntry(QStringLiteral("sig"), QStringLiteral("Regards"));
+            forWork.id = QStringLiteral("for-work");
+            forWork.profiles = {WritingProfile::Work};
+            draft.vocabulary = {anywhere, forWork,
+                                test::learnedEntry(QStringLiteral("cute"), QStringLiteral("Qt"), QStringLiteral("ORG.KDE.KATE"),
+                                                   QStringLiteral("learned-kate"))};
+            return true;
+        });
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+
+        navigation->go(QStringLiteral("profiles"));
+        QQuickItem *link = nullptr;
+        QTRY_VERIFY((link = findItem(main->contentItem(), QStringLiteral("profileVocabulary"))));
+        QVERIFY(link->property("plainText").toString().startsWith(QLatin1String("1 vocabulary entry is limited to this profile.")));
+        QMetaObject::invokeMethod(link, "activated");
+        QTRY_COMPARE(navigation->current(), QStringLiteral("vocabulary"));
+        QCOMPARE(navigation->returnTo(), QStringLiteral("profiles"));
+        QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("vocab:for-work")));
+        QVERIFY(!findItem(main->contentItem(), QStringLiteral("vocab:anywhere")));
+        QVERIFY(!findItem(main->contentItem(), QStringLiteral("vocab:learned-kate")));
+        QCOMPARE(findItem(main->contentItem(), QStringLiteral("vocabularyLimitFilter"))->property("currentId").toString(),
+                 QStringLiteral("profile/work"));
+
+        navigation->goToRow(QStringLiteral("apps"), QStringLiteral("appentry:app:org.kde.kate"));
+        QQuickItem *show = nullptr;
+        QTRY_VERIFY((show = findItem(main->contentItem(), QStringLiteral("appVocabulary"))));
+        QMetaObject::invokeMethod(show, "clicked");
+        QTRY_COMPARE(navigation->current(), QStringLiteral("vocabulary"));
+        QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("vocab:learned-kate")));
+        QVERIFY(!findItem(main->contentItem(), QStringLiteral("vocab:for-work")));
+        QVERIFY(!findItem(main->contentItem(), QStringLiteral("vocab:anywhere")));
+    }
+
+    // One editor takes every kind: an entry a link opens shows in it, and
+    // giving a spelling something to write turns it into a replacement.
+    void theEditorTurnsASpellingIntoAReplacement()
+    {
+        ApplicationController controller(true);
+        controller.settings()->edit([](AppSettings &draft) {
+            VocabularyEntry entry{QStringLiteral("kay eight s")};
+            entry.id = QStringLiteral("k8s");
+            draft.vocabulary = {entry};
+            return true;
+        });
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+
+        navigation->goToRow(QStringLiteral("vocabulary"), QStringLiteral("vocab:k8s"));
+        QQuickItem *editor = nullptr;
+        QTRY_VERIFY((editor = findItem(main->contentItem(), QStringLiteral("vocabularyEditor"))));
+        QTRY_VERIFY(editor->property("open").toBool());
+        QCOMPARE(findItem(editor, QStringLiteral("vocabularySay"))->property("text").toString(), QStringLiteral("kay eight s"));
+        findItem(editor, QStringLiteral("vocabularyWrite"))->setProperty("text", QStringLiteral("K8s"));
+        QMetaObject::invokeMethod(editor, "saved");
+        QTRY_VERIFY(!editor->property("open").toBool());
+        const QList<VocabularyEntry> saved = controller.settings()->snapshot().vocabulary;
+        QCOMPARE(saved.size(), 1);
+        QCOMPARE(saved.first().id, QStringLiteral("k8s"));
+        QCOMPARE(saved.first().replacement, QStringLiteral("K8s"));
+    }
+
     void everySetupStepLoads()
     {
         QFETCH(QString, theme);

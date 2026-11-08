@@ -81,10 +81,13 @@ void setLevelFields(CustomCleanupLevel &level, const QVariantMap &fields)
     }
 }
 
-void setTermFields(VocabularyEntry &entry, const QVariantMap &fields)
+void setVocabularyFields(VocabularyEntry &entry, const QVariantMap &fields)
 {
     if (fields.contains(QStringLiteral("term"))) {
         entry.term = fields.value(QStringLiteral("term")).toString();
+    }
+    if (fields.contains(QStringLiteral("replacement"))) {
+        entry.replacement = fields.value(QStringLiteral("replacement")).toString();
     }
     if (fields.contains(QStringLiteral("keyTerm"))) {
         entry.keyTerm = fields.value(QStringLiteral("keyTerm")).toBool();
@@ -95,28 +98,11 @@ void setTermFields(VocabularyEntry &entry, const QVariantMap &fields)
     if (fields.contains(QStringLiteral("profiles"))) {
         entry.profiles = fields.value(QStringLiteral("profiles")).toStringList();
     }
-}
-
-void setCorrectionFields(LearnedCorrection &correction, const QVariantMap &fields)
-{
-    if (fields.contains(QStringLiteral("heard"))) {
-        correction.original = fields.value(QStringLiteral("heard")).toString();
-    }
-    if (fields.contains(QStringLiteral("corrected"))) {
-        correction.corrected = fields.value(QStringLiteral("corrected")).toString();
+    if (fields.contains(QStringLiteral("apps"))) {
+        entry.apps = fields.value(QStringLiteral("apps")).toStringList();
     }
     if (fields.contains(QStringLiteral("enabled"))) {
-        correction.enabled = fields.value(QStringLiteral("enabled")).toBool();
-    }
-}
-
-void setReplacementFields(BindingRule &rule, const QVariantMap &fields)
-{
-    if (fields.contains(QStringLiteral("phrase"))) {
-        rule.phrase = fields.value(QStringLiteral("phrase")).toString();
-    }
-    if (fields.contains(QStringLiteral("replacement"))) {
-        rule.replacement = fields.value(QStringLiteral("replacement")).toString();
+        entry.enabled = fields.value(QStringLiteral("enabled")).toBool();
     }
 }
 
@@ -173,35 +159,18 @@ const EditedList editedLists[] = {
              s, id, [&patch](CustomCleanupLevel &level) { setLevelFields(level, patch); }, builtInNames);
      },
      nullptr},
-    {"terms",
-     {QStringLiteral("term"), QStringLiteral("keyTerm"), QStringLiteral("context"), QStringLiteral("profiles")},
+    {"vocabulary",
+     {QStringLiteral("term"), QStringLiteral("replacement"), QStringLiteral("keyTerm"), QStringLiteral("context"),
+      QStringLiteral("profiles"), QStringLiteral("apps"), QStringLiteral("enabled")},
      [](AppSettings &s, const QVariantMap &item, const QStringList &) {
          VocabularyEntry entry;
-         setTermFields(entry, item);
+         setVocabularyFields(entry, item);
          return addVocabularyEntry(s, entry);
      },
-     [](AppSettings &s, const QString &term, const QVariantMap &patch, const QStringList &) {
-         return editVocabularyEntry(s, term, [&patch](VocabularyEntry &entry) { setTermFields(entry, patch); });
+     [](AppSettings &s, const QString &id, const QVariantMap &patch, const QStringList &) {
+         return editVocabularyEntry(s, id, [&patch](VocabularyEntry &entry) { setVocabularyFields(entry, patch); });
      },
      removeVocabularyEntry},
-    {"corrections",
-     {QStringLiteral("heard"), QStringLiteral("corrected"), QStringLiteral("enabled")},
-     nullptr,
-     [](AppSettings &s, const QString &id, const QVariantMap &patch, const QStringList &) {
-         return editLearnedCorrection(s, id, [&patch](LearnedCorrection &correction) { setCorrectionFields(correction, patch); });
-     },
-     removeLearnedCorrection},
-    {"replacements",
-     {QStringLiteral("phrase"), QStringLiteral("replacement")},
-     [](AppSettings &s, const QVariantMap &item, const QStringList &) {
-         BindingRule rule;
-         setReplacementFields(rule, item);
-         return addBindingRule(s, rule);
-     },
-     [](AppSettings &s, const QString &phrase, const QVariantMap &patch, const QStringList &) {
-         return editBindingRule(s, phrase, [&patch](BindingRule &rule) { setReplacementFields(rule, patch); });
-     },
-     removeBindingRule},
 };
 
 const EditedList *findList(const QString &name)
@@ -356,7 +325,13 @@ int QuickLibrary::undoLastCorrection()
 {
     SettingsEdit undo;
     save([&](AppSettings &s) {
-        return !s.learnedCorrections.isEmpty() && bool(undo = removeLearnedCorrection(s, s.learnedCorrections.first().id));
+        const VocabularyEntry *newest = nullptr;
+        for (const VocabularyEntry &entry : s.vocabulary) {
+            if (entry.isLearned() && (!newest || entry.createdAtMs > newest->createdAtMs)) {
+                newest = &entry;
+            }
+        }
+        return newest && bool(undo = removeVocabularyEntry(s, QString(newest->id)));
     });
     return keepUndo(undo);
 }
@@ -373,14 +348,23 @@ void QuickLibrary::undo(int token)
     });
 }
 
-QVariantMap QuickLibrary::importTerms(const QUrl &file)
+QVariantMap QuickLibrary::importVocabulary(const QUrl &file)
 {
     QString error;
-    const std::optional<QByteArray> csv = readImport(file, &error);
-    if (!csv) {
+    const std::optional<QByteArray> contents = readImport(file, &error);
+    if (!contents) {
         return importResult(0, error);
     }
-    const QList<VocabularyEntry> incoming = parseVocabularyCsv(*csv, &error);
+    QList<VocabularyEntry> incoming;
+    if (file.toLocalFile().endsWith(QStringLiteral(".json"), Qt::CaseInsensitive)) {
+        for (const BindingRule &rule : BindingProcessor::parseJsonImport(*contents, &error)) {
+            VocabularyEntry entry{rule.phrase, QStringLiteral("import")};
+            entry.replacement = rule.replacement;
+            incoming.append(entry);
+        }
+    } else {
+        incoming = parseVocabularyCsv(*contents, &error);
+    }
     if (!error.isEmpty()) {
         return importResult(0, error);
     }
@@ -388,26 +372,10 @@ QVariantMap QuickLibrary::importTerms(const QUrl &file)
     save([&](AppSettings &s) {
         const QList<VocabularyEntry> before = s.vocabulary;
         added = importVocabularyEntries(s, incoming);
-        // A term listed already can take a context it lacked, so a file that
-        // adds none may still change the list.
+        // A spelling listed already can take a context it lacked, so a file
+        // that adds none may still change the list.
         return s.vocabulary != before;
     });
-    return importResult(added, {});
-}
-
-QVariantMap QuickLibrary::importReplacements(const QUrl &file)
-{
-    QString error;
-    const std::optional<QByteArray> json = readImport(file, &error);
-    if (!json) {
-        return importResult(0, error);
-    }
-    const QList<BindingRule> incoming = BindingProcessor::parseJsonImport(*json, &error);
-    if (!error.isEmpty()) {
-        return importResult(0, error);
-    }
-    int added = 0;
-    save([&](AppSettings &s) { return (added = importBindingRules(s, incoming)) > 0; });
     return importResult(added, {});
 }
 
@@ -466,48 +434,41 @@ void QuickLibrary::refresh()
                                   {QStringLiteral("base"), level.base},
                                   {QStringLiteral("instructions"), level.instructions}});
     }
-    QVariantList terms;
+    QVariantList vocabulary;
     QStringList keyTerms;
     for (const VocabularyEntry &entry : normalizeVocabularyEntries(settings.vocabulary)) {
-        terms.append(QVariantMap{{QStringLiteral("term"), entry.term},
-                                 {QStringLiteral("keyTerm"), entry.keyTerm},
-                                 {QStringLiteral("context"), entry.context},
-                                 {QStringLiteral("profiles"), entry.profiles},
-                                 {QStringLiteral("source"), entry.source},
-                                 {QStringLiteral("uses"), qMax(0, entry.frequency)}});
-        if (entry.keyTerm) {
+        vocabulary.append(QVariantMap{{QStringLiteral("id"), entry.id},
+                                      {QStringLiteral("kind"), entry.isReplacement() ? QStringLiteral("replacement")
+                                                                                      : QStringLiteral("spelling")},
+                                      {QStringLiteral("term"), entry.term},
+                                      {QStringLiteral("replacement"), entry.replacement},
+                                      {QStringLiteral("keyTerm"), entry.keyTerm},
+                                      {QStringLiteral("context"), entry.context},
+                                      {QStringLiteral("profiles"), entry.profiles},
+                                      {QStringLiteral("apps"), entry.apps},
+                                      {QStringLiteral("source"), entry.source},
+                                      {QStringLiteral("learned"), entry.isLearned()},
+                                      {QStringLiteral("enabled"), entry.enabled},
+                                      {QStringLiteral("uses"), qMax(0, entry.frequency)},
+                                      {QStringLiteral("confidence"), entry.confidence},
+                                      {QStringLiteral("evidence"), entry.evidenceCount},
+                                      {QStringLiteral("learnedAtMs"), double(entry.createdAtMs)}});
+        if (!entry.isReplacement() && entry.keyTerm && entry.enabled) {
             keyTerms.append(entry.term);
         }
-    }
-    QVariantList corrections;
-    for (const LearnedCorrection &correction : settings.learnedCorrections) {
-        corrections.append(QVariantMap{{QStringLiteral("id"), correction.id},
-                                       {QStringLiteral("heard"), correction.original},
-                                       {QStringLiteral("corrected"), correction.corrected},
-                                       {QStringLiteral("app"), correction.applicationId},
-                                       {QStringLiteral("confidence"), correction.confidence},
-                                       {QStringLiteral("enabled"), correction.enabled}});
-    }
-    QVariantList replacements;
-    for (const BindingRule &rule : settings.bindings) {
-        replacements.append(QVariantMap{{QStringLiteral("phrase"), rule.phrase},
-                                        {QStringLiteral("replacement"), rule.replacement}});
     }
     const QString speech = settings.speech.services.main();
     const bool takesKeyTerms = VocabularyLimit::takesKeyterms(speech);
     const int keyTermsSent = int(VocabularyLimit::speechKeyterms(keyTerms, speech).size());
 
-    if (profiles == m_profiles && tones == m_customTones && levels == m_customCleanupLevels && terms == m_terms
-        && corrections == m_corrections && replacements == m_replacements
-        && takesKeyTerms == m_speechTakesKeyTerms && keyTermsSent == m_keyTermsSent) {
+    if (profiles == m_profiles && tones == m_customTones && levels == m_customCleanupLevels
+        && vocabulary == m_vocabulary && takesKeyTerms == m_speechTakesKeyTerms && keyTermsSent == m_keyTermsSent) {
         return;
     }
     m_profiles = profiles;
     m_customTones = tones;
     m_customCleanupLevels = levels;
-    m_terms = terms;
-    m_corrections = corrections;
-    m_replacements = replacements;
+    m_vocabulary = vocabulary;
     m_speechTakesKeyTerms = takesKeyTerms;
     m_keyTermsSent = keyTermsSent;
     emit listsChanged();

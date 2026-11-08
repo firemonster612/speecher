@@ -60,6 +60,8 @@ inline const QString LocalDevice = QStringLiteral("local/device");
 inline const QString LocalIdleUnloadMinutes = QStringLiteral("local/idleUnloadMinutes");
 // A group: one key per localSpeedTestKey, holding the measured seconds for the clip.
 inline const QString LocalSpeedTest = QStringLiteral("local/speedTest");
+// Retired: migrateVocabulary moved them, BindingRules and LearnedCorrections
+// into Vocabulary, and leaves them for a downgrade to read.
 inline const QString VocabularyEntries = QStringLiteral("stt/vocabularyEntries");
 inline const QString LegacyVocabulary = QStringLiteral("stt/customVocabulary");
 inline const QString AudioDeviceId = QStringLiteral("audio/deviceId");
@@ -72,6 +74,7 @@ inline const QString AudioVadThresholdPercent = QStringLiteral("audio/vadThresho
 // Retired: migrateApps moved them into AppsEntries, and leaves them for a
 // downgrade to read.
 inline const QString AppRecognitionRules = QStringLiteral("target/appRecognitionRules");
+// Retired, as VocabularyEntries.
 inline const QString BindingRules = QStringLiteral("bindings/rules");
 // Only platforms without a desktop-wide shortcut registry of their own store the
 // dictation binding here; KGlobalAccel owns it on KDE.
@@ -81,7 +84,10 @@ inline const QString CancelShortcut = QStringLiteral("shortcuts/cancelDictation"
 inline const QString PauseShortcut = QStringLiteral("shortcuts/pauseDictation");
 inline const QString ShortcutActivationMode = QStringLiteral("shortcuts/activationMode");
 inline const QString CorrectionLearningEnabled = QStringLiteral("vocabulary/correctionLearningEnabled");
+// Retired, as VocabularyEntries.
 inline const QString LearnedCorrections = QStringLiteral("vocabulary/learnedCorrections");
+// Every Vocabulary Entry, as JSON.
+inline const QString Vocabulary = QStringLiteral("vocabulary/entries");
 inline const QString CorrectionEvidence = QStringLiteral("vocabulary/correctionEvidence");
 inline const QString InsightsEnabled = QStringLiteral("insights/enabled");
 // The refinement Service Order, as JSON, and Clean up my words.
@@ -169,6 +175,7 @@ inline const QString RefinementModelMigrationVersion = QStringLiteral("migration
 inline const QString DeliveryStepsMigrationVersion = QStringLiteral("migration/deliveryStepsVersion");
 inline const QString AppsMigrationVersion = QStringLiteral("migration/appsVersion");
 inline const QString ServiceOrderMigrationVersion = QStringLiteral("migration/serviceOrderVersion");
+inline const QString VocabularyMigrationVersion = QStringLiteral("migration/vocabularyVersion");
 inline const QString ClaudeCredentialsPath = QStringLiteral("claude/credentialsPath");
 inline const QString ClaudeEndpointBase = QStringLiteral("claude/endpointBase");
 inline const QString ClaudeVoicePath = QStringLiteral("claude/voicePath");

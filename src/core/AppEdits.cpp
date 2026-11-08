@@ -1,5 +1,7 @@
 #include "core/AppEdits.h"
 
+#include "core/VocabularyEdits.h"
+
 #include <algorithm>
 
 namespace speecher {
@@ -99,6 +101,7 @@ SettingsEdit removeApp(AppSettings &settings, const QString &id)
     if (index < 0) {
         return {};
     }
+    keepVocabularyLimitsOf(settings, apps.at(index));
     const auto putBack = takeEntry(apps, index, [](const AppEntry &entry, const AppEntry &removed) {
         return entry.id == removed.id || sharesMatch(entry, removed);
     });

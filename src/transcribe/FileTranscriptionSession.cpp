@@ -332,8 +332,6 @@ void FileTranscriptionSession::beginBatch(const QStringList &paths, const Transc
     m_runChoices = {writingProfileFromName(options.writingProfile), options.addedVocabulary};
     if (!options.applyVocabulary) {
         m_batchSettings.vocabulary.clear();
-        m_batchSettings.learnedCorrections.clear();
-        m_batchSettings.bindings.clear();
     }
     m_batchSettings.speech.vocabulary = TranscriptPipeline::speechVocabulary(m_batchSettings, m_runChoices, Target{});
     m_results.clear();

@@ -50,8 +50,8 @@ void QuickPhone::start()
     // A new transfer before the old one goes, so the old code stops working.
     const AppSettings settings = m_controller->settings()->dictationSnapshot();
     m_transfer = std::make_unique<PhoneTransfer>(settings);
-    m_bundle = {{QStringLiteral("terms"), settings.vocabulary.size()},
-                {QStringLiteral("replacements"), settings.bindings.size()},
+    m_bundle = {{QStringLiteral("terms"), phoneTerms(settings).size()},
+                {QStringLiteral("replacements"), phoneReplacements(settings).size()},
                 {QStringLiteral("profiles"), settings.refinement.writingProfiles.size()}};
     connect(m_transfer.get(), &PhoneTransfer::stateChanged, this, &QuickPhone::changed);
     emit changed();

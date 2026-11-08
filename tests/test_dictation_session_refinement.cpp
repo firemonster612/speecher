@@ -1,4 +1,5 @@
 #include "common/test_prelude.h"
+#include "common/vocabulary_entries.h"
 #include "common/test_doubles.h"
 #include "common/apps_fixtures.h"
 
@@ -180,7 +181,7 @@ private slots:
         settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         setCleanupLevel(settings, QStringLiteral("light_cleanup"));
         QVERIFY(settings.edit([](AppSettings &draft) {
-            draft.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
+            draft.vocabulary.append(test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com")));
             return true;
         }));
 
@@ -974,7 +975,7 @@ private slots:
         settings.raw().clear();
         settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
         QVERIFY(settings.edit([](AppSettings &draft) {
-            draft.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
+            draft.vocabulary.append(test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com")));
             return true;
         }));
 
@@ -1001,9 +1002,9 @@ private slots:
         settings.raw().clear();
         settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         QVERIFY(settings.edit([](AppSettings &draft) {
-            draft.bindings = {
-                {QStringLiteral("my email"), QStringLiteral("efox@example.com")},
-                {QStringLiteral("my phone"), QStringLiteral("+1 555 0100")},
+            draft.vocabulary += {
+                test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com")),
+                test::replacementEntry(QStringLiteral("my phone"), QStringLiteral("+1 555 0100")),
             };
             return true;
         }));
@@ -1036,7 +1037,7 @@ private slots:
         settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         settings.edit([](AppSettings &draft) { draft.vocabulary = {{QStringLiteral("Qt")}}; return true; });
         QVERIFY(settings.edit([](AppSettings &draft) {
-            draft.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
+            draft.vocabulary.append(test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com")));
             return true;
         }));
 
@@ -1074,7 +1075,7 @@ private slots:
         settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         settings.edit([](AppSettings &draft) { draft.vocabulary = {{QStringLiteral("Qt")}}; return true; });
         QVERIFY(settings.edit([](AppSettings &draft) {
-            draft.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
+            draft.vocabulary.append(test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com")));
             return true;
         }));
 
@@ -1111,9 +1112,9 @@ private slots:
         settings.raw().clear();
         settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         QVERIFY(settings.edit([](AppSettings &draft) {
-            draft.bindings = {
-                {QStringLiteral("my email"), QStringLiteral("efox@example.com")},
-                {QStringLiteral("speecher binding"), QStringLiteral("bad replacement")},
+            draft.vocabulary += {
+                test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com")),
+                test::replacementEntry(QStringLiteral("speecher binding"), QStringLiteral("bad replacement")),
             };
             return true;
         }));
@@ -1150,7 +1151,7 @@ private slots:
         settings.raw().clear();
         settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         QVERIFY(settings.edit([](AppSettings &draft) {
-            draft.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
+            draft.vocabulary.append(test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com")));
             return true;
         }));
 
@@ -1185,7 +1186,7 @@ private slots:
         settings.raw().clear();
         settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         QVERIFY(settings.edit([](AppSettings &draft) {
-            draft.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
+            draft.vocabulary.append(test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com")));
             return true;
         }));
 
@@ -1220,7 +1221,7 @@ private slots:
         settings.raw().clear();
         settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         QVERIFY(settings.edit([](AppSettings &draft) {
-            draft.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
+            draft.vocabulary.append(test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com")));
             return true;
         }));
 
@@ -1281,7 +1282,7 @@ private slots:
         settings.raw().clear();
         settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         QVERIFY(settings.edit([](AppSettings &draft) {
-            draft.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
+            draft.vocabulary.append(test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com")));
             return true;
         }));
 

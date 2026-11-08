@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/AppSettings.h"
+#include "core/BindingProcessor.h"
 
 #include <QString>
 #include <QStringList>
