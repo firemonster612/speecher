@@ -104,14 +104,9 @@ Page {
         })))
         title: Schema.row("appsPasteDifferently").label
         caption: Schema.row("appsPasteDifferently").help
-        actions: [ Button { text: "Change in Apps"; size: "small"; onClicked: Navigation.follow("apps", "appTypes") } ]
+        actions: [ Button { objectName: "changeInApps"; text: "Change in Apps"; size: "small"; onClicked: Navigation.follow("apps", "appTypes") } ]
         SearchLanding { rowIds: ["appsPasteDifferently"]; target: differently }
 
-        // Insert's row above turns accessibility on, so this only says why.
-        AccessibilityNotice {
-            shown: differently.entries.length > 0
-            offersFix: false
-        }
         RowList {
             id: differentList
             values: differently.entries
@@ -145,11 +140,9 @@ Page {
                     Txt {
                         objectName: "differentlyResult"
                         width: parent.width
-                        // What it sets, then what that does here.
-                        text: [Schema.apps.pastingSummary(differentRow.entry.own).join(", "),
-                               Schema.pasting.pastingResult(System.stepsPlan(differentRow.entry.effective.steps),
-                                                            differentRow.entry.effective.keys, differentRow.entry.terminalWins)]
-                            .join(": ")
+                        // What its steps and keys do here; Apps lists what it sets.
+                        text: Schema.pasting.pastingResult(System.stepsPlan(differentRow.entry.effective.steps),
+                                                           differentRow.entry.effective.keys, differentRow.entry.terminalWins)
                         variant: "small"
                         tone: "secondary"
                         wrapMode: Text.WordWrap

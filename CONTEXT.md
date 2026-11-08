@@ -141,7 +141,7 @@ One OAuth login (claude or codex) stored as a JSON file in CLI Proxy API's auth 
 _Avoid_: Proxy token, cliproxy key
 
 **Service**:
-Something that turns speech into text or cleans text up: ChatGPT, Claude, This computer (a Local Model for speech, a Local Runner for refinement), or one of Your servers. Each is signed in to or connected once, on the Services page.
+Something that turns speech into text or cleans text up: ChatGPT, Claude, This computer (a Local Model for speech, a Local Runner for refinement), or one of Your servers. Each is signed in to or connected once, on the Services page (This computer on its subpage).
 _Avoid_: Provider (in the UI), backend, engine
 
 **Service Order**:
@@ -161,7 +161,7 @@ Where a setting's value comes from, widest first: the setting's own page (Defaul
 _Avoid_: Inheritance chain, overrides (for saved settings)
 
 **Local Model**:
-A speech-to-text model file Speecher downloads and runs on the user's own machine through transcribe.cpp, managed on the Local models page under Services.
+A speech-to-text model file Speecher downloads and runs on the user's own machine through transcribe.cpp, managed on the This computer page under Services, beside the Local Runner.
 _Avoid_: Offline model, on-device model, embedded model
 
 **Local Runner**:

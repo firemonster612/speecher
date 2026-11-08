@@ -81,8 +81,9 @@ function stepsText(steps) {
 // as Apps' editor and Pasting's list say it: the steps that can run on this
 // computer, in order ("Insert, else press Ctrl+V, keep a copy"), then those
 // that can't yet; "No delivery here yet" where none can. keys is the paste
-// keys' id. terminalWins marks an App Type whose apps in a terminal take
-// Terminals' Pasting instead.
+// keys' id, named on a Press that can't run when they're a terminal's.
+// terminalWins marks an App Type whose apps in a terminal take Terminals'
+// Pasting instead.
 function pastingResult(plan, keys, terminalWins) {
     const route = plan.route || [];
     const usable = plan.usable || [];
@@ -91,7 +92,10 @@ function pastingResult(plan, keys, terminalWins) {
     if (usable.includes("press")) parts.push((parts.length ? "else press " : "Press ") + keysLabel(keys));
     if (usable.includes("keep")) parts.push(parts.length ? "keep a copy" : "Clipboard only");
     else if (usable.includes("press")) parts.push("then put your clipboard back");
-    const waiting = route.filter(id => !usable.includes(id)).map(id => stepShort[id]);
+    // A Press that can't run still names keys of its own, which may be why
+    // the app is listed: "Press (Ctrl+Shift+V)".
+    const waiting = route.filter(id => !usable.includes(id))
+        .map(id => stepShort[id] + (id === "press" && keys === "terminal" && !mac ? " (" + terminalKeys + ")" : ""));
     if (!usable.length)
         return ["No delivery here yet: " + waiting.join(" and ") + " can't run",
                 terminalWins ? "Apps in a terminal paste like Terminals" : ""].filter(s => s).join(". ");
@@ -100,8 +104,8 @@ function pastingResult(plan, keys, terminalWins) {
             terminalWins ? "Apps in a terminal paste like Terminals" : ""].filter(s => s).join(". ");
 }
 
-// The one sentence every page says while accessibility is off, with what it
-// would turn on. identifiesApps: Speecher can tell apps apart without it
+// What desktop accessibility turns on, while it is off, as Home's readiness
+// row for it says. identifiesApps: Speecher can tell apps apart without it
 // (System.identifiesAppsWithoutAccessibility).
 function accessibilityNotice(identifiesApps) {
     const lost = (mac ? ["press the paste keys"] : ["insert your words"])
@@ -109,6 +113,21 @@ function accessibilityNotice(identifiesApps) {
         .concat(["read the text around the cursor", "learn your corrections"]);
     return (mac ? "Accessibility isn't granted" : "Desktop accessibility is off") + ", so Speecher can't "
         + lost.slice(0, -1).join(", ") + " or " + lost[lost.length - 1] + ".";
+}
+
+// The line a card shows while accessibility is off (reason "off") or this
+// build has none ("unsupported"): what of the card needs it, then the link
+// to Home's row for it, where it can be turned on (linkAbove on Home).
+var accessibilityLink = "Turn it on from Home";
+var accessibilityLinkAbove = "Turn it on above";
+// What each card needs it for, by what the card does.
+var accessibilityUses = { learning: "Learning your corrections", context: "Reading the text around the cursor",
+                          apps: "Telling which app you're in", inserting: "Inserting your words",
+                          profiles: "Picking a profile by app" };
+function accessibilityLine(what, reason, link) {
+    const state = reason === "unsupported" ? "which this build of Speecher doesn't include."
+                : mac ? "which isn't granted. " + link : "which is off. " + link;
+    return what + " needs " + needs.accessibility.label + ", " + state;
 }
 
 // The step rows are custom: the Pasting page draws each one's switch with

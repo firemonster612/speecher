@@ -100,6 +100,10 @@ QtObject {
     readonly property string checkAll: "Check all"
     readonly property string signInAgain: "Sign in again"
     readonly property string openServices: "Open Services"
+    // When a record editor's changes save, said the same way in each: one
+    // that saves each change at once, and a form that saves on its button.
+    readonly property string savesAsYouGo: "Changes save as you make them."
+    function savesOnPress(button) { return "Saves when you press " + button + "." }
     // What each service on Services is used for, by its id.
     readonly property var serviceUses: ({
         openai: "Speech to text and Refinement.",

@@ -5,14 +5,16 @@ import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
+import "../text"
 
 // One App's or one App Type's settings, as rows on a wash under its row:
 // for an App what it is recognized by (with Edit), its type, writing
 // profile, Pasting, paste keys and History, each starting "Same as …" until
 // changed, the vocabulary limited to it, and Remove app; for an App Type its
 // writing profile, Pasting, paste keys and History. Pasting is "Same as …"
-// or steps of its own, the Pasting page's three switches. Every change saves
-// at once through Apps; a refusal shows under the rows.
+// or its own steps, the Pasting page's step rows with their help, needs and
+// fixes, the paste keys on Press paste keys. Every change saves at once
+// through Apps, as the editor says; a refusal shows under the rows.
 Item {
     id: editor
 
@@ -41,13 +43,13 @@ Item {
         return from === "terminal" ? Schema.apps.type("terminal").label : appType.label
     }
     // "Same as …" for each of an App's own values, by where the value would
-    // come from without it; an App Type's profile is Other apps'.
+    // come from without it; an App Type's profile is Other apps' profile.
     function inheritedProfile() {
-        if (isType) return Words.sameAs(Schema.apps.type("general").label, Library.profileName(otherProfile))
+        if (isType) return Words.sameAs(Schema.apps.otherAppsProfile, Library.profileName(otherProfile))
         const inherited = entry.inherited || {}
         const name = Library.profileName(inherited.profile || "")
         return inherited.profileFrom === "type" ? Words.sameAs(appType.label, name)
-             : inherited.profileFrom === "fallback" ? Words.sameAs(Schema.apps.type("general").label, name)
+             : inherited.profileFrom === "fallback" ? Words.sameAs(Schema.apps.otherAppsProfile, name)
              : t.automatic(name)
     }
     function inheritedSteps() {
@@ -144,6 +146,7 @@ Item {
             title: editor.t.editMatching
             saveText: Words.save
             cancelText: Words.cancel
+            note: Words.savesOnPress(saveText)
             canSave: editor.draftMatches.some(m => m.value.trim().length > 0)
             onCancelled: editor.editing = false
             onSaved: {
@@ -247,26 +250,31 @@ Item {
                 width: parent.width
                 Repeater {
                     model: Schema.pasting.stepIds
-                    SettingRow {
+                    DeliveryStepRow {
                         id: stepRow
                         required property string modelData
-                        readonly property bool on: !!(editor.entry.steps || {})[modelData]
-                        readonly property bool last: on && Schema.pasting.stepIds.filter(id => (editor.entry.steps || {})[id]).length === 1
-                        title: Schema.pasting.stepLabels[modelData]
-                        help: last ? editor.t.lastStepOn : ""
-                        iconName: Schema.row(Schema.pasting.rowOf[modelData]).icon
-                        Switch {
-                            objectName: "appStep_" + stepRow.modelData
-                            checked: stepRow.on
-                            enabled: !stepRow.last
-                            onToggled: editor.setStep(stepRow.modelData, checked)
+                        rowId: Schema.pasting.rowOf[modelData]
+                        ownSteps: editor.entry.steps || {}
+                        keys: editor.effective.keys
+                        onStepToggled: on => editor.setStep(modelData, on)
+                        InheritSelect {
+                            visible: stepRow.modelData === "press" && Schema.pasting.keyChoices.length > 0
+                            // Narrower than a settings row's, beside the
+                            // step's needs and switch.
+                            width: 170
+                            inheritedText: editor.inheritedKeys()
+                            choices: Schema.pasting.keyChoices
+                            currentId: editor.entry.keys || ""
+                            anchors.verticalCenter: parent.verticalCenter
+                            onChosen: id => editor.save({ keys: id })
                         }
                     }
                 }
             }
         }
+        // Following another place's steps, the keys have a row of their own.
         SettingRow {
-            shown: Schema.pasting.keyChoices.length > 0 && !!editor.effective.steps.press
+            shown: Schema.pasting.keyChoices.length > 0 && !editor.entry.steps && !!editor.effective.steps.press
             title: editor.t.pasteKeys
             help: editor.t.pasteKeysHelp
             InheritSelect {
@@ -302,6 +310,15 @@ Item {
         Reveal {
             open: editor.refusal.length > 0
             Txt { x: Theme.rowInset; width: parent.width - Theme.rowInset * 2; text: editor.refusal; variant: "small"; tone: "negative"; wrapMode: Text.WordWrap }
+        }
+        Txt {
+            x: Theme.rowInset
+            width: parent.width - Theme.rowInset * 2
+            topPadding: Theme.space2
+            bottomPadding: Theme.space2
+            text: Words.savesAsYouGo
+            variant: "small"
+            tone: "tertiary"
         }
         SettingRow {
             shown: !editor.isType

@@ -49,6 +49,6 @@ var text = {
     stepNames: { insert: "Insert", press: "Paste keys", keep: "Clipboard" },
     commandOnly: "The speecher command",
     // Ready, where the desktop gives no shortcut.
-    startWithCommand: "Run this from a terminal or your own keybinding to dictate.",
+    startWithCommand: "Bind these to keys or run them from a terminal: the first starts a dictation, toggle starts or finishes it, stop finishes and pastes it, and cancel throws it away.",
     takesOver: label => label + " takes over"
 };

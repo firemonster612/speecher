@@ -17,6 +17,7 @@ AccessibilityMenu 1.0 AccessibilityMenu.qml
 StartCommandRow 1.0 StartCommandRow.qml
 ShortcutRecorder 1.0 ShortcutRecorder.qml
 CommandChip 1.0 CommandChip.qml
+CommandsRow 1.0 CommandsRow.qml
 ErrorDetails 1.0 ErrorDetails.qml
 ServiceOrderList 1.0 ServiceOrderList.qml
 ServiceOrderSection 1.0 ServiceOrderSection.qml

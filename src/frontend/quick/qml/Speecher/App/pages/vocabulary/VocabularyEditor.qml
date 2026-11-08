@@ -45,6 +45,7 @@ InlineForm {
     title: entry ? t.editEntry : t.newEntry
     saveText: entry ? Words.save : t.add
     cancelText: Words.cancel
+    note: Words.savesOnPress(saveText)
     canSave: say.text.trim().length > 0
     onCancelled: open = false
     onSaved: {
@@ -102,7 +103,7 @@ InlineForm {
     }
     FormField {
         label: Schema.row("vocabularyProfiles").label
-        help: Schema.row("vocabularyProfiles").help
+        help: Schema.row("vocabularyProfiles").help + " " + form.t.addAppSaves
         Column {
             width: parent.width
             spacing: Theme.space2

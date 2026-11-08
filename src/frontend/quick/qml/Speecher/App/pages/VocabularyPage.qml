@@ -165,7 +165,7 @@ Page {
                 }
             }
         ]
-        AccessibilityNotice {}
+        AccessibilityNotice { what: Schema.pasting.accessibilityUses.learning }
         SchemaRow { rowId: "correctionLearningControl" }
     }
 }

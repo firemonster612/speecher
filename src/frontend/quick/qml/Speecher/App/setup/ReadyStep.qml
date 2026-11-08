@@ -27,6 +27,7 @@ StepPage {
     readonly property bool _command: Health.noShortcuts(System.checks)
 
     Column {
+        width: parent.width
         spacing: Theme.space3
         // Finishing setup is a rare moment, so its check springs in.
         Reveal {
@@ -52,13 +53,23 @@ StepPage {
                 Txt { text: Schema.valueHelp(Schema.row("shortcutBehavior"), Settings.values.shortcutBehavior); tone: "secondary"; anchors.verticalCenter: parent.verticalCenter }
             }
         }
-        // The command that starts dictation where the desktop gives no shortcut.
+        // The commands that start, finish and cancel dictation where the
+        // desktop gives no shortcut.
         Reveal {
             open: page._command
             Column {
+                width: parent.width
                 spacing: Theme.space2
-                Txt { text: Setup.text.startWithCommand; tone: "secondary" }
-                CommandChip { objectName: "readyCommand"; command: Schema.row("startCommand").command }
+                Txt { width: parent.width; text: Setup.text.startWithCommand; tone: "secondary"; wrapMode: Text.WordWrap }
+                Flow {
+                    width: parent.width
+                    spacing: Theme.space2
+                    CommandChip { objectName: "readyCommand"; command: Schema.row("startCommand").command }
+                    Repeater {
+                        model: Schema.row("controlCommands").commands
+                        CommandChip { required property string modelData; command: modelData }
+                    }
+                }
             }
         }
     }

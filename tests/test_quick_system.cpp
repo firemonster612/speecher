@@ -809,10 +809,11 @@ private slots:
         QCOMPARE(standIn.system.pastingOutcome(), QStringLiteral("nothing"));
     }
 
-    // Home shows pasting as one row, with what is missing by name: the
-    // virtual keyboard never has its own. Nothing that can deliver keeps
-    // dictation from being ready; the clipboard holding the words doesn't.
-    void homeShowsPastingAsOneRow()
+    // Home shows each permission pasting relies on as a row of its own,
+    // with its fix, rather than one Pasting row for both. Nothing that can
+    // deliver makes them what dictation needs; the clipboard holding the
+    // words doesn't.
+    void homeShowsEachPastingPermissionOnItsOwnRow()
     {
         ApplicationController controller(true);
         QVERIFY(!controller.accessibility()->enabled());
@@ -837,15 +838,20 @@ private slots:
         QVERIFY(session);
         auto *readiness = session->findChild<QObject *>(QStringLiteral("readiness"));
         QVERIFY(readiness);
-        const auto pasting = [readiness] { return plain(readiness->property("pastingItem")).toMap(); };
-
-        QCOMPARE(pasting().value(QStringLiteral("status")).toString(), QStringLiteral("Your words stay on the clipboard"));
-        QCOMPARE(pasting().value(QStringLiteral("help")).toString(),
-                 QStringLiteral("Needs Desktop accessibility and Virtual keyboard."));
+        const auto ids = [readiness](const char *group) { return readiness->property(group).toStringList(); };
+        const QStringList permissions{QStringLiteral("desktopAccessibility"), QStringLiteral("virtualKeyboardHealth")};
+        for (const QString &id : permissions) {
+            QVERIFY2(ids("optionalChecks").contains(id), qPrintable(id));
+            QVERIFY(!ids("neededChecks").contains(id));
+        }
+        QVERIFY(plain(readiness->property("optionalItems")).toList().isEmpty());
         QVERIFY(!readiness->property("pastingNeeded").toBool());
 
         settings.set(QStringLiteral("keepOnClipboard"), false);
-        QCOMPARE(pasting().value(QStringLiteral("status")).toString(), QStringLiteral("Nothing can deliver your words"));
+        for (const QString &id : permissions) {
+            QVERIFY2(ids("neededChecks").contains(id), qPrintable(id));
+        }
+        QVERIFY(plain(readiness->property("neededItems")).toList().size() == 2);
         QVERIFY(readiness->property("pastingNeeded").toBool());
         QVERIFY(readiness->property("blocked").toBool());
         QVERIFY(session->property("caption").toString().contains(QStringLiteral("a way to deliver your words")));
@@ -957,9 +963,10 @@ private slots:
             return shown;
         };
         // Home lists the checks while one fails, as the missing microphone
-        // does here, but the virtual keyboard only as part of Pasting.
+        // does here: the virtual keyboard where Press relies on it, which a
+        // computer without one doesn't have.
         const QHash<QString, bool> home = rowsShown("HomePage");
-        QVERIFY(!home.value(QStringLiteral("virtualKeyboardHealth")));
+        QCOMPARE(home.value(QStringLiteral("virtualKeyboardHealth")), onLinux);
         // Microphone access is part of the Microphone row.
         QVERIFY(!home.value(QStringLiteral("microphoneAccess")));
         const QHash<QString, bool> general = rowsShown("GeneralPage");
@@ -1064,6 +1071,9 @@ private slots:
         // Without accessibility only the copy it keeps can run here.
         QCOMPARE(result(true, false, true), QStringLiteral("Clipboard only. Insert can't run here yet"));
         QCOMPARE(result(false, true, false), QStringLiteral("No delivery here yet: Press can't run"));
+        // A Press that can't run still names a terminal's keys.
+        QCOMPARE(result(false, true, true, "terminal"),
+                 QStringLiteral("Clipboard only. Press (Ctrl+Shift+V) can't run here yet"));
 #endif
         QCOMPARE(result(false, false, true, "standard", true),
                  QStringLiteral("Clipboard only. Apps in a terminal paste like Terminals"));

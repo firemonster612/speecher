@@ -46,7 +46,7 @@ Page {
         // the list.
         SearchLanding { rowIds: ["apps", "appHistory"]; target: yours }
         SearchLanding { rowIds: ["addApp"]; target: yours; onLanded: picker.start() }
-        AccessibilityNotice {}
+        AccessibilityNotice { what: Schema.pasting.accessibilityUses[System.identifiesAppsWithoutAccessibility ? "inserting" : "apps"] }
 
         AppTest {
             id: tester

@@ -58,9 +58,9 @@ var pages = [
     { id: "services", title: "Services", icon: "key-round", file: "ServicesPage.qml",
       subtitle: "The services Speecher can use, and how it signs in to each. Keys are kept in your system keychain.",
       keywords: "accounts sign in login openai anthropic chatgpt claude api key cli proxy this computer local server endpoint" },
-    { id: "models", parent: "services", title: "Local models", icon: "cpu", file: "ModelsPage.qml",
-      subtitle: "Speech models that run on this computer, offline once downloaded.",
-      keywords: "offline download whisper gpu acceleration runner ollama lm studio" },
+    { id: "models", parent: "services", title: "This computer", icon: "cpu", file: "ModelsPage.qml",
+      subtitle: "Speech models and the cleanup runner on this computer, with no account and no network once set up.",
+      keywords: "local models offline download whisper gpu acceleration runner ollama lm studio llama-server" },
 
     { id: "general", title: "General", icon: "settings-2", file: "GeneralPage.qml",
       subtitle: "How Speecher starts, moving it to your phone or off this computer, and the setup assistant.",

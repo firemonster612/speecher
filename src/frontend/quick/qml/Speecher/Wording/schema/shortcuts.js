@@ -56,5 +56,10 @@ var rows = [
       label: "Finish, cancel or paste again",
       help: "Bind these too: speecher stop finishes the dictation and pastes it, speecher cancel throws it away, and speecher toggle starts or finishes it with one key. The popup's buttons pause and cancel. To paste a dictation again, open it in History.",
       commands: ["speecher toggle", "speecher stop", "speecher cancel"], historyLabel: "Open History",
-      keywords: "command line cli stop cancel toggle finish paste again keybinding" }
+      keywords: "command line cli stop cancel toggle finish paste again keybinding" },
+    { id: "recordCommands", page: "dictation", section: "How shortcuts reach Speecher", kind: "custom",
+      label: "Record a call",
+      help: "Bind these too: the first starts a recording with your choices on Recordings, and the second stops it and saves the transcript.",
+      commands: ["speecher record start", "speecher record stop"],
+      keywords: "command line cli record call meeting recording start stop keybinding", needs: "!hasGlobalShortcuts" }
 ];

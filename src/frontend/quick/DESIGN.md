@@ -72,9 +72,12 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   (`insertThroughAccessibility`, `pressPasteKeys`, `keepOnClipboard`), and
   core keeps one on. An App or App Type may have steps of its own, the same
   three switches, and its own paste keys; Pasting lists those that do,
-  read-only, each opening in Apps. Every step row shows each need it has
-  here, one status line apiece, and every page that needs accessibility
-  says the same one sentence (`AccessibilityNotice`).
+  read-only, by what their steps do here, each opening in Apps, whose
+  editor shows its own steps as the same `DeliveryStepRow`s (`ownSteps`,
+  read through `stepsPlan(steps).steps`) with the keys on Press paste keys.
+  Every step row shows each need it has here, one status line apiece, and
+  every other page that needs accessibility says what of it needs it in
+  one line linking to Home's row (`AccessibilityNotice`).
 - `Models` is what core knows about the providers and running models here,
   as data: speech services and refinement providers with a `state` and
   core's `problem` sentence, their ratings as `{ measure, value }` bars, the
@@ -568,8 +571,8 @@ Layout:
   replacements all read it. A
   page sits under another (`parent` in `schema/pages.js`) when it is a part
   of that page a person looks for on its own: History under Home,
-  Microphone and Popup & sounds under Dictation, Local models under
-  Services, Writing profiles under Refinement, and Privacy & data,
+  Microphone and Popup & sounds under Dictation, This computer (the
+  speech models and the cleanup runner) under Services, Writing profiles under Refinement, and Privacy & data,
   Appearance and Updates under General. Every page has settings of its own; none only lists its
   subpages.
   Top-level entries have icons; subpages have none, set in past a guide
@@ -600,14 +603,14 @@ Layout:
   what dictation needs (a check marked
   `needed`, a microphone, a working speech service, a way to deliver the
   words) and what it works without, each row opening its page: a speech
-  service that can't run opens its Services card and has a Fix that opens
-  that card in a `FixSheet`, and accessibility, listed only while no
-  delivery step that is on relies on it, opens Apps, which it tells apart.
-  Delivery is
-  one Pasting row naming what is missing, with the first fix; the virtual
-  keyboard never has a row of its own, and accessibility has one only
-  while no delivery step that is on relies on it. While all pass the card
-  is one line; Run setup again shows either way.
+  service that can't run opens its card (on Services, or This computer)
+  and has a Fix that opens that card in a `FixSheet`. Each permission the
+  delivery steps rely on is a row of its own, saying what it turns on, with
+  its own fix: accessibility always, the virtual keyboard while a step that
+  is on relies on it, both among what dictation needs while nothing else
+  delivers. Pasting is a row only for a missing tool, which has no check,
+  or for words that stay on the clipboard by choice. While all pass the
+  card is one line; Run setup again shows either way.
 - Setup is the pages, in order. After Welcome, each step shows the page's
   own sections and writes the same settings: Speech to text's Spoken
   language and Service Order, Microphone's test and Input card, Pasting's
@@ -717,7 +720,7 @@ Layout and rows:
 - `Reveal { open; sideways }`: content that opens and closes in place. Rows inside draw their divider unless the Reveal starts its card, so no `first: false` is needed.
 - `Switcher { currentIndex }`: one of several views, sliding between them. `width: implicitWidth` sizes it to the current view, for buttons that swap in a row.
 - `FormField { label; help }`: a label and help around one input in a form.
-- `InlineForm { open; title; saveText; canSave; error }`: an add or edit form in place, instead of a dialog; `error` says why a save was refused.
+- `InlineForm { open; title; saveText; canSave; error; note }`: an add or edit form in place, instead of a dialog; `error` says why a save was refused, and `note` when its changes save (`Words.savesOnPress(saveText)`). An editor that saves each change at once says `Words.savesAsYouGo` instead.
 - `InlineConfirm { open; text; detail; confirmText; variant; leading }`: the question before an action that can't be undone: always a question and what it costs; leading (a check box) goes under them.
 - `EmptyState { iconName; title; text; compact }`: what an empty list says. compact on a card, centred elsewhere.
 
@@ -775,17 +778,18 @@ In Speecher.App, besides SchemaRow:
 
 - `SubpageRows { pageId; lines }`: a card of rows leading to a page's subpages, with their titles and subtitles, or a line of `lines` by subpage id, such as how it is set now, in place of the subtitle.
 - `SearchLanding { rowIds; target; landed() }`: where a search for schema rows lands when no SchemaRow stands for them (a custom row, a Disclosure, a card or a section). It scrolls to target and emits landed so the target can flash or open. It opens nothing that hides target: a section folded away until a choice makes it apply opens for a search only where its page says so, as Refinement's Advanced group does when a search lands in it.
-- `AccessibilityNotice { text }`: the note at the top of a card whose rows need desktop accessibility.
+- `AccessibilityNotice { what; shown }`: one line at the top of a card whose rows need desktop accessibility, while it is off, saying what of the card needs it and linking to Home's row for it.
 - `HealthRow { rowId; checkId }`: a schema row showing one of `System.checks` with its fix; items inside follow the fix button. `AccessibilityMenu` is the desktopAccessibility row's menu that stops keeping it on. `StateText { stateId }` words a sign-in or check state, and `States` (states.js) maps states to tones: a state to sign in to, turn on or set up is `warning`, one that failed or can't be used `negative`.
 - `ServiceOrderList { role }`: a job's Service Order, speech or refinement, on an `OrderedList`: each service with its status and a Fix while it can't run, its `ServiceChoiceRow` under it, saving as it changes. `ServiceChoiceRow` is one entry's choices: its model (picked where the service lets you, else named), a later speech service's Spoken language with "Same as Spoken language" first, and ChatGPT's and Claude's thinking and speed.
 - `ServiceOrderSection { role }`: a ServiceOrderList under the order row's label and help, as Speech to text, Refinement and their setup steps show it.
 - `ServiceStatus { role; serviceId }`: under Run with (Transcribe files and Recordings), what a service the batch runs with still needs and how to sign in, with Check again and Fix; folded away while it is ready and before the first check answers.
-- `FixSheet { openFor(role, serviceId) }`: the Services card that fixes one service (ChatGPT's or Claude's sign-in, This computer's part for the job, or the job's server) in a modal sheet over the page, with Open Services, which leads back to setup when opened from there.
+- `FixSheet { openFor(role, serviceId) }`: the Services card that fixes one service (ChatGPT's or Claude's sign-in, This computer's part for the job, or the job's server) in a modal sheet over the page, with Open Services (Open This computer for its part), which leads back to setup when opened from there.
 - `ErrorDetails { text }`: a failure's own words behind a Details link, under its plain sentence.
 - `ShortcutRecorder { rowId }`: a shortcut setting's ShortcutField wired to Settings, for the shortcut rows and Dictation's hero, which is where the dictation shortcut is set.
 - `Usable.usable(spec)`: whether a row can be used now, by its schema `usableWhen` (blur, accessibility, automaticDownloads, screenshotReader). SchemaRow and search both read it; a page doesn't disable a row by its own logic.
 - `CommandChip { command }`: a command in code type with a copy button.
 - `StartCommandRow`: the `startCommand` row, the command that starts one dictation with a copy button, wherever the desktop gives no shortcut.
+- `CommandsRow { rowId }`: a schema row's `commands`, each with a copy button: the commands that finish, cancel and toggle a dictation and those that record a call, beside the start command on Dictation and setup's Shortcut step.
 - `Sheet { side }`: the page a window shows beside its side column, framed or split as `Theme.split` says.
 - `Brand { title; detail; detailTip }`: the mark and the window's name in the title strip, for the main window and setup.
 - `LanguageList { show(at, codes) }`: a LanguagePopover that only shows the languages a service or model listens for, named and worded.

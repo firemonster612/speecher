@@ -6,7 +6,11 @@ import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
 import "speech"
+import "services"
 
+// This computer, under Services: the speech models it can download and
+// run, the Local Runner cleanup runs on, and how the speech models use its
+// memory, graphics card and disk.
 Page {
     id: page
     title: Schema.page("models").title
@@ -34,6 +38,7 @@ Page {
     // instead of offering downloads, and where to get a build that has it.
     Section {
         visible: !ModelText.localSpeech
+        title: page.library.label
         EmptyState {
             iconName: "cpu"
             title: page.library.notInBuild
@@ -49,7 +54,7 @@ Page {
         // What the ratings, speeds and fits are measured against.
         caption: ModelText.computer ? ModelText.ratedFor.arg(ModelText.computer) : ModelText.ratedOnceChecked
         plain: true
-        SearchLanding { rowIds: ["localModelBrowser"]; target: librarySection }
+        SearchLanding { rowIds: ["localModelBrowser", "speechLocalModel"]; target: librarySection }
         actions: [
             SegmentedControl {
                 id: filter
@@ -87,6 +92,12 @@ Page {
             tone: "tertiary"
             wrapMode: Text.WordWrap
         }
+    }
+
+    Section {
+        objectName: "localCleanup"
+        title: Schema.row("localRunner").section
+        LocalRunnerRows {}
     }
 
     Section {

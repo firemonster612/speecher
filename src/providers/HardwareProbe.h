@@ -5,7 +5,7 @@
 
 namespace speecher {
 
-// What the Local models page summarises and the Hardware Tier is computed
+// What the This computer page summarises and the Hardware Tier is computed
 // from.
 struct HardwareSummary {
     HardwareProfile profile;

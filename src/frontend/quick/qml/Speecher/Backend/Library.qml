@@ -87,7 +87,7 @@ LibraryLists {
         return [levelLabel(p.cleanup) + " cleanup", p.tone === "none" ? "" : toneLabel(p.tone), p.language].filter(s => s).join(", ")
     }
     // The Apps and App Types that write with a profile, for its "Used in":
-    // App Types whose own profile it is (Other apps' always counts), then
+    // App Types whose own profile it is (Other apps' profile always counts), then
     // Apps that write with it now. Each lands on its row in Apps.
     function profileUsers(id) {
         const types = Apps.types.filter(o => o.profile === id).map(o => ({
@@ -99,7 +99,7 @@ LibraryLists {
     // The question before deleting a profile, and what deleting it changes.
     function profileDeleteQuestion(name) { return "Delete " + name + "?" }
     function profileDeleteDetail(users) {
-        return users.length ? users.map(u => u.name).join(", ") + " will follow their type's profile, or Other apps'."
+        return users.length ? users.map(u => u.name).join(", ") + " will follow their type's profile, or " + Schema.apps.otherAppsProfile + "."
                             : "No app or app type uses it."
     }
 
@@ -133,7 +133,6 @@ LibraryLists {
         languageHelp: "Writes in this language, whatever you speak. Pick one or type any language, regional varieties too.",
         noRefiner: "Clean up my words is off on Refinement, so this profile's cleanup and output language have no effect.",
         everyProfile: "As for every profile.",
-        savesAsYouGo: "Changes save as you make them.",
         // The services disclosure's trailing text: what it changes, or what
         // it is the same as.
         change: "change",
@@ -227,12 +226,14 @@ LibraryLists {
                                                      : { id: also, label: appName(also.slice(4)), icon: "app-window" })
         return choices
     }
-    // "Work and Email only, in Slack": the entry's limits, or nothing for one
-    // that applies everywhere.
+    // "Only with Work and Email", "Only in Slack", "Only with Work, in
+    // Slack": the entry's limits, profiles and apps in one form, or nothing
+    // for one that applies everywhere.
     function limitText(entry) {
-        const profiles = entry.profiles.length ? Words.list(entry.profiles.map(profileName)) + " only" : ""
+        const profiles = entry.profiles.length ? "with " + Words.list(entry.profiles.map(profileName)) : ""
         const apps = entry.apps.length ? "in " + Words.list(entry.apps.map(appName)) : ""
-        return [profiles, apps].filter(s => s).join(", ")
+        const limits = [profiles, apps].filter(s => s).join(", ")
+        return limits ? "Only " + limits : ""
     }
     // A spelling's context, then where it came from: "Our dashboards.
     // Imported.", with nothing said for one you added.

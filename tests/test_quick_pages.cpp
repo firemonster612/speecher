@@ -893,9 +893,46 @@ private slots:
         }
     }
 
-    // A link to another page, such as Open Local models under This
-    // computer, offers the way back above the page it opens, until the
-    // person goes anywhere else.
+    // This computer is configured in one place, Services' subpage: Services
+    // keeps a row saying how it stands, and the subpage holds the cleanup
+    // runner beside the speech models.
+    void thisComputerIsOnePage()
+    {
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+
+        navigation->go(QStringLiteral("services"));
+        QQuickItem *summary = nullptr;
+        QTRY_VERIFY((summary = findItem(main->contentItem(), QStringLiteral("thisComputer"))));
+        const auto saysModels = [summary] {
+            QList<QQuickItem *> items{summary};
+            while (!items.isEmpty()) {
+                QQuickItem *item = items.takeLast();
+                items += item->childItems();
+                if (item->property("title").toString() == QStringLiteral("This computer")
+                    && item->property("help").toString().contains(QStringLiteral("speech model"))) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        QTRY_VERIFY(saysModels());
+        QVERIFY(!schemaRow(main, QStringLiteral("localRunner")));
+
+        navigation->go(QStringLiteral("models"));
+        QTRY_VERIFY(schemaRow(main, QStringLiteral("localRunner")));
+        QVERIFY(schemaRow(main, QStringLiteral("localRunnerDetect")));
+    }
+
+    // A link to another page, such as Pasting's Change in Apps, offers the
+    // way back above the page it opens, until the person goes anywhere else.
     void aLinkOffersTheWayBack()
     {
         ApplicationController controller(true);
@@ -907,24 +944,24 @@ private slots:
         QVERIFY(QTest::qWaitForWindowExposed(main));
         auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         QVERIFY(navigation);
-        navigation->go(QStringLiteral("services"));
-        QQuickItem *openModels = nullptr;
-        QTRY_VERIFY((openModels = findItem(main->contentItem(), QStringLiteral("openLocalModels"))));
-        QMetaObject::invokeMethod(openModels, "clicked");
-        QCOMPARE(navigation->current(), QStringLiteral("models"));
-        QCOMPARE(navigation->returnTo(), QStringLiteral("services"));
+        navigation->go(QStringLiteral("pasting"));
+        QQuickItem *changeInApps = nullptr;
+        QTRY_VERIFY((changeInApps = findItem(main->contentItem(), QStringLiteral("changeInApps"))));
+        QMetaObject::invokeMethod(changeInApps, "clicked");
+        QCOMPARE(navigation->current(), QStringLiteral("apps"));
+        QCOMPARE(navigation->returnTo(), QStringLiteral("pasting"));
         const auto backLink = [main] {
             QQuickItem *link = findItem(main->contentItem(), QStringLiteral("backLink"));
-            return link && link->isVisible() && link->property("text") == QStringLiteral("Back to Services") ? link : nullptr;
+            return link && link->isVisible() && link->property("text") == QStringLiteral("Back to Pasting") ? link : nullptr;
         };
         QTRY_VERIFY(backLink());
         QMetaObject::invokeMethod(backLink(), "activated");
-        QCOMPARE(navigation->current(), QStringLiteral("services"));
+        QCOMPARE(navigation->current(), QStringLiteral("pasting"));
         QCOMPARE(navigation->returnTo(), QString());
 
         // Going anywhere else forgets it, and a search jump is not a link.
         navigation->follow(QStringLiteral("models"));
-        QCOMPARE(navigation->returnTo(), QStringLiteral("services"));
+        QCOMPARE(navigation->returnTo(), QStringLiteral("pasting"));
         navigation->goToRow(QStringLiteral("refinement"), QStringLiteral("refinementServices"));
         QCOMPARE(navigation->returnTo(), QString());
         navigation->follow(QStringLiteral("services"));
@@ -1481,7 +1518,7 @@ private slots:
         QVERIFY(!findItem(main->contentItem(), QStringLiteral("differently_appentry:app:org.example.Steps")));
         QQuickItem *result = findItem(app, QStringLiteral("differentlyResult"));
         QVERIFY(result);
-        QCOMPARE(result->property("text").toString(), QStringLiteral("Own steps (Keep): Clipboard only"));
+        QCOMPARE(result->property("text").toString(), QStringLiteral("Clipboard only"));
 
         QMetaObject::invokeMethod(app, "clicked");
         QTRY_COMPARE(navigation->current(), QStringLiteral("apps"));
@@ -1638,13 +1675,17 @@ private slots:
         QCOMPARE(controller.settings()->snapshot().apps.apps.first().pasting.steps, DeliverySteps{});
         for (const char *step : {"insert", "press"}) {
             QQuickItem *toggle = nullptr;
-            QTRY_VERIFY((toggle = findItem(row->parentItem(), QStringLiteral("appStep_") + QLatin1String(step))));
+            QTRY_VERIFY((toggle = findItem(row->parentItem(), QStringLiteral("stepSwitch_") + QLatin1String(step))));
             toggle->setProperty("checked", false);
             QMetaObject::invokeMethod(toggle, "toggled");
         }
         QCOMPARE(controller.settings()->snapshot().apps.apps.first().pasting.steps,
                  (DeliverySteps{.insert = false, .press = false, .keep = true}));
-        QTRY_VERIFY(!findItem(row->parentItem(), QStringLiteral("appStep_keep"))->property("enabled").toBool());
+        QTRY_VERIFY(!findItem(row->parentItem(), QStringLiteral("stepSwitch_keep"))->property("enabled").toBool());
+        // Each of its own steps explains itself as Pasting's does.
+        QQuickItem *press = schemaRow(row->parentItem(), QStringLiteral("pressPasteKeys"));
+        QVERIFY(press);
+        QVERIFY(press->property("help").toString().contains(QStringLiteral("Puts your words on the clipboard")));
         QMetaObject::invokeMethod(pasting, "chosen", Q_ARG(QString, QString()));
         QCOMPARE(controller.settings()->snapshot().apps.apps.first().pasting, PastingChoice{});
         // Name and recognition can change in place, keeping the App.
@@ -2283,7 +2324,8 @@ private slots:
     void everySetupStepLoads_data() { themes(); }
     // Writing profiles and an App's editor link to the vocabulary limited to
     // them, and Vocabulary then lists only that, a correction learned in
-    // the App included, with the way back.
+    // the App included, with the way back. A limit reads the same way for a
+    // profile and an App.
     void profilesAndAppsShowTheVocabularyLimitedToThem()
     {
         ApplicationController controller(true);
@@ -2320,6 +2362,9 @@ private slots:
         QVERIFY(!findItem(main->contentItem(), QStringLiteral("vocab:learned-kate")));
         QCOMPARE(findItem(main->contentItem(), QStringLiteral("vocabularyLimitFilter"))->property("currentId").toString(),
                  QStringLiteral("profile/work"));
+        QCOMPARE(findItem(findItem(main->contentItem(), QStringLiteral("vocab:for-work")), QStringLiteral("vocabularyLimits"))
+                     ->property("text").toString(),
+                 QStringLiteral("Only with Work"));
 
         navigation->goToRow(QStringLiteral("apps"), QStringLiteral("appentry:app:org.kde.kate"));
         QQuickItem *show = nullptr;
@@ -2329,6 +2374,9 @@ private slots:
         QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("vocab:learned-kate")));
         QVERIFY(!findItem(main->contentItem(), QStringLiteral("vocab:for-work")));
         QVERIFY(!findItem(main->contentItem(), QStringLiteral("vocab:anywhere")));
+        QCOMPARE(findItem(findItem(main->contentItem(), QStringLiteral("vocab:learned-kate")), QStringLiteral("vocabularyLimits"))
+                     ->property("text").toString(),
+                 QStringLiteral("Only in org.kde.kate"));
     }
 
     // One editor takes every kind: an entry a link opens shows in it, and

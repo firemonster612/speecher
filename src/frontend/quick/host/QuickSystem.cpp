@@ -384,14 +384,15 @@ QVariantMap QuickSystem::stepsPlan(const QVariantMap &steps) const
                              steps.value(QStringLiteral("keep")).toBool()};
     const QStringList route = DeliveryPlan{plan}.route();
     QStringList usable;
-    for (const QVariant &entry : stepEntries(plan)) {
+    const QVariantList entries = stepEntries(plan);
+    for (const QVariant &entry : entries) {
         const QVariantMap step = entry.toMap();
         const QString id = step.value(QStringLiteral("id")).toString();
         if (route.contains(id) && step.value(QStringLiteral("ready")).toBool()) {
             usable << id;
         }
     }
-    return {{QStringLiteral("route"), route}, {QStringLiteral("usable"), usable}};
+    return {{QStringLiteral("route"), route}, {QStringLiteral("usable"), usable}, {QStringLiteral("steps"), entries}};
 }
 
 bool QuickSystem::copiesFormatted() const
