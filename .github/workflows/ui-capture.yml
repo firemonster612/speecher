@@ -100,9 +100,6 @@ jobs:
 
   windows:
     runs-on: windows-2025
-    env:
-      CMAKE_C_COMPILER_LAUNCHER: sccache
-      CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
       - uses: actions/checkout@v7
         with:
@@ -131,6 +128,14 @@ jobs:
           key: windows-2025-release
           save: false
 
+      - name: Use sccache where it installed
+        shell: pwsh
+        run: |
+          if (Get-Command sccache -ErrorAction SilentlyContinue) {
+            Add-Content $env:GITHUB_ENV "CMAKE_C_COMPILER_LAUNCHER=sccache"
+            Add-Content $env:GITHUB_ENV "CMAKE_CXX_COMPILER_LAUNCHER=sccache"
+          }
+
       - name: Install Vulkan SDK
         uses: humbletim/install-vulkan-sdk@30ba978f977e81b72d091fc8888feb1fb26f9aff # v1.2
         with:
@@ -156,12 +161,7 @@ jobs:
 
       - name: Configure
         shell: pwsh
-        run: |
-          # Without sccache (the cache step failed), build without it.
-          if (-not (Get-Command sccache -ErrorAction SilentlyContinue)) {
-            Remove-Item Env:CMAKE_C_COMPILER_LAUNCHER, Env:CMAKE_CXX_COMPILER_LAUNCHER
-          }
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_WITH_LOCAL_SPEECH=ON -DSPEECHER_LOCAL_SPEECH_ALL_CPUS=ON -DSPEECHER_LOCAL_SPEECH_VULKAN=ON
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_WITH_LOCAL_SPEECH=ON -DSPEECHER_LOCAL_SPEECH_ALL_CPUS=ON -DSPEECHER_LOCAL_SPEECH_VULKAN=ON
 
       - name: Build
         shell: pwsh
