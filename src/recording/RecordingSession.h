@@ -53,7 +53,7 @@ private:
 // timings, so the two streams' lines can arrive slightly out of order. The
 // recording ends an utterance itself at a pause or once it runs long, and
 // again at a stop, so a provider that finalizes only when asked (Codex) or
-// uploads each utterance on its own (the Custom Endpoint) still writes lines
+// uploads each utterance on its own (the speech server) still writes lines
 // while it runs. It starts once the microphone's stream connects and system
 // audio's connects or fails; a stream that drops after that reconnects until
 // the recording stops, and one that stops leaves the other recording.

@@ -177,7 +177,7 @@ private slots:
         setup.acceptSetupFallbackOffer(ProviderRole::Refinement, QStringLiteral("openai"));
         QVERIFY(settings.dictationSnapshot().refinement.enabled);
         QCOMPARE(settings.dictationSnapshot().refinement.services.order,
-                 (QStringList{QStringLiteral("openai"), anthropic, QStringLiteral("local")}));
+                 (QStringList{QStringLiteral("openai"), QStringLiteral("local")}));
     }
 
     void endpointChecksDiscardSupersededResults_data()

@@ -18,7 +18,7 @@ Page {
     id: page
     // Whether the speech chain's services are signed in, for whether
     // Speecher is ready.
-    Component.onCompleted: ModelText.checkUnknownSignIns([Settings.values.speechProvider].concat(Settings.values.speechFallbackList || []))
+    Component.onCompleted: ModelText.checkUnknownSignIns(ModelText.order("speech"))
 
     readonly property var t: T.text
     readonly property var summary: Insights.summary

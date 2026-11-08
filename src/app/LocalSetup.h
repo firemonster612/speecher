@@ -71,7 +71,7 @@ QList<LocalGpu> localGraphicsCardChoices(const QList<LocalGpu> &gpus, const Loca
 LocalRunsOn localRunsOnFor(const QList<LocalGpu> &gpus, const QString &backend);
 
 // Everything a front end shows about running models on this computer beyond
-// the files themselves: the hardware, Local Runners, the Custom Endpoints'
+// the files themselves: the hardware, Local Runners, the servers'
 // connection tests, Speed Tests and cleanup models pulled through Ollama.
 // ApplicationController owns one, so a download, a test or a pull outlives the
 // window that started it. Slow work runs off the GUI thread; every change of
@@ -167,9 +167,9 @@ public:
     // once the hardware is known to fit it and it listens for the Spoken
     // Language, or a running Local Runner with a cleanup model it serves.
     std::optional<SetupFallbackOffer> setupFallbackOffer(ProviderRole role, const AppSettings &settings) const;
-    // Whether accepting that offer behind primary would add it: not when
-    // there is none, the order behind primary is full, or the offer is
-    // already in it.
+    // Whether accepting that offer behind primary, in the first service's
+    // place, would add it: not when there is none, the order behind primary
+    // is full, or the offer is already in it.
     bool setupFallbackOfferJoins(ProviderRole role, const QString &primary, const AppSettings &settings) const;
     // Adds that service last in the order, behind primary, setup's choice
     // for the role, which is saved first with it. A Local Model is chosen

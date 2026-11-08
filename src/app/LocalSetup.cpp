@@ -650,8 +650,9 @@ std::optional<QStringList> LocalSetup::orderWithSetupOffer(ProviderRole role, co
     if (!offer) {
         return std::nullopt;
     }
+    // Setup's choice takes the first service's place, as setup saves it.
     const ServiceOrder &services = role == ProviderRole::Speech ? settings.speech.services : settings.refinement.services;
-    const QStringList kept = normalizedServiceOrder(role, services.withMain(primary)).order;
+    const QStringList kept = serviceChain(role, QStringList{primary} + services.order.mid(1)).mid(0, kMaxServices);
     // A full order, or the offer already in it, would drop it.
     if (kept.size() >= kMaxServices || kept.contains(offer->providerId)) {
         return std::nullopt;

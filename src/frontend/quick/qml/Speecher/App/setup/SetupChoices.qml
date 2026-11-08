@@ -6,7 +6,7 @@ import Speecher.App
 // What the setup steps choose, shared by every step, and where each step
 // stands. The drafts follow Settings until a step changes them; finish()
 // writes them back. A step is done when its check passes: speech once the
-// chosen service or one of its fallbacks works, the microphone once it
+// chosen service or one after it in the order works, the microphone once it
 // hears you, Pasting once a step that is on gets words into the app (the
 // outcome Home and the Pasting page show, from the drafts), Refinement with
 // None or a provider that works. Speech, the microphone and Pasting with
@@ -17,15 +17,17 @@ import Speecher.App
 //
 // The shortcut step has no draft: its rows write Settings as you record, as
 // the existing assistant binds shortcuts live, so the shortcut can be tried
-// before setup ends. The Local Model, the Custom Endpoints' and Local
-// Runner's rows, the fallback offers and the microphone are written live the
+// before setup ends. The Local Model, the servers' and the Local Runner's
+// rows, the fallback offers and the microphone are written live the
 // same way, so a connection check tests the server typed and the microphone
 // test listens to the one picked.
 QtObject {
     id: choices
 
-    property string speech: Settings.values.speechProvider || ""
-    property string cleanup: Settings.values.refinementProvider || "none"
+    // The first speech service, and the first refinement service or none,
+    // which finish() puts first in each order.
+    property string speech: ModelText.mainSpeech
+    property string cleanup: ModelText.mainRefiner
     // The delivery steps, by step id (DeliveryStep).
     property bool insert: Settings.values.insertThroughAccessibility ?? true
     property bool press: Settings.values.pressPasteKeys ?? true
@@ -53,8 +55,8 @@ QtObject {
             // doesn't, until it answers; one that couldn't reach the service
             // says why.
             const downloading = speech === "local" && Models.downloads[Models.localModelChoice] !== undefined
-            // A fallback that works carries dictation while the service can't.
-            const fallback = (Settings.values.speechFallbackList || []).filter(id => id !== speech)
+            // A later service that works carries dictation while the first can't.
+            const fallback = ModelText.order("speech").filter(id => id !== speech)
                 .map(id => ModelText.service(id)).find(s => s.state === "ready")
             const ready = !!service && (service.state === "ready" || downloading)
             const done = ready || (!!service && !!fallback)
@@ -104,8 +106,9 @@ QtObject {
     }
 
     function finish() {
-        Settings.set("speechProvider", speech)
-        Settings.set("refinementProvider", cleanup)
+        Settings.set("speechServices", ModelText.withFirst("speech", speech))
+        if (cleanup !== "none") Settings.set("refinementServices", ModelText.withFirst("refinement", cleanup))
+        Settings.set("refinementEnabled", cleanup !== "none")
         // Steps turned on first, so the last one on never goes off.
         const drafts = { insertThroughAccessibility: insert, pressPasteKeys: press, keepOnClipboard: keep }
         for (const id in drafts) if (drafts[id]) Settings.set(id, true)

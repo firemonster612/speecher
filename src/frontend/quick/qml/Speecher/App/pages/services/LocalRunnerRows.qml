@@ -6,8 +6,8 @@ import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
 
-// The Local Runner's rows, on the Refinement page and setup's Refinement
-// step: the runners running here, the one chosen and its cleanup model, and
+// The Local Runner's rows, under This computer on Services, in its Fix
+// sheet and on setup's Refinement step: the runners running here, the one chosen and its cleanup model, and
 // the cleanup model Ollama can download, with its download while it runs.
 // They look for runners when they load, and each row saves as it changes.
 Column {

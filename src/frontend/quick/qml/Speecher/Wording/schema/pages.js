@@ -27,14 +27,11 @@ var pages = [
       keywords: "overlay preview live text sounds media pause review" },
 
     { id: "speech", title: "Speech to text", icon: "audio-lines", file: "SpeechPage.qml",
-      subtitle: "The service that turns your voice into text, and what Speecher uses when it is unavailable.",
-      keywords: "transcription service provider language fallback endpoint whisper" },
-    { id: "models", parent: "speech", title: "Local models", icon: "cpu", file: "ModelsPage.qml",
-      subtitle: "Speech models that run on this computer, offline once downloaded.",
-      keywords: "offline download whisper gpu acceleration runner ollama lm studio" },
+      subtitle: "The services that turn your voice into text, in the order Speecher tries them.",
+      keywords: "transcription service provider language fallback order server whisper" },
 
     { id: "refinement", title: "Refinement", icon: "spell-check", file: "RefinementPage.qml",
-      subtitle: "Turns what you said into clean text before it's pasted. Your writing profile decides how much it changes.",
+      subtitle: "Turns what you said into clean text before it's pasted, with the services you put in order. Your writing profile decides how much it changes.",
       keywords: "cleanup llm model ai punctuation filler prompt context screenshot" },
     { id: "profiles", parent: "refinement", title: "Writing profiles", icon: "pen-line", file: "ProfilesPage.qml",
       subtitle: "Speecher picks a profile from the app you're dictating into, then cleans up your words to match it.",
@@ -50,9 +47,12 @@ var pages = [
       subtitle: "How Speecher tells which app you're in. Paste rules and writing profiles both go by it.",
       keywords: "recognize identify match app type category writing profile built-in" },
 
-    { id: "accounts", title: "Accounts", icon: "key-round", file: "AccountsPage.qml",
-      subtitle: "The sign-ins Speecher uses for dictation and cleanup. Keys are kept in your system keychain.",
-      keywords: "sign in login openai anthropic chatgpt claude api key cli proxy" },
+    { id: "services", title: "Services", icon: "key-round", file: "ServicesPage.qml",
+      subtitle: "The services Speecher can use, and how it signs in to each. Keys are kept in your system keychain.",
+      keywords: "accounts sign in login openai anthropic chatgpt claude api key cli proxy this computer local server endpoint" },
+    { id: "models", parent: "services", title: "Local models", icon: "cpu", file: "ModelsPage.qml",
+      subtitle: "Speech models that run on this computer, offline once downloaded.",
+      keywords: "offline download whisper gpu acceleration runner ollama lm studio" },
 
     { id: "general", title: "General", icon: "settings-2", file: "GeneralPage.qml",
       subtitle: "How Speecher starts, what it keeps, moving it to your phone or off this computer, and the setup assistant.",

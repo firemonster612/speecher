@@ -4,12 +4,12 @@ import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
-import "../pages/speech"
+import "../pages/services"
 
 // The speech services and where each stands, the language you speak, and
 // under them what the chosen one still needs: the Local Model to run and
-// its download, which keeps going while setup carries on, the custom
-// endpoint's server, or a sign-in to check again. It checks the sign-ins
+// its download, which keeps going while setup carries on, the speech
+// server, or a sign-in to fix. It checks the sign-ins
 // when it opens.
 StepPage {
     id: page
@@ -87,7 +87,7 @@ StepPage {
         Reveal {
             id: endpoint
             open: page.choices.speech === "endpoint"
-            SpeechEndpointRows {}
+            SpeechServerRows {}
         }
         // The Local Model this computer can run, offered as a fallback.
         Reveal {
@@ -103,7 +103,7 @@ StepPage {
                 }
             }
         }
-        SignInRow { serviceId: page.choices.speech }
+        ServiceStatus { role: "speech"; serviceId: page.choices.speech }
         // The language you'll dictate in, from those the chosen service
         // hears; one it can't hear shows no choice until you pick another.
         // Saved as you pick, like the rows above.

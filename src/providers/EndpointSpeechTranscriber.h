@@ -27,7 +27,7 @@ SpeechEndpointUpload speechEndpointUpload(const ServerSettings &server,
                                           const QString &prompt,
                                           const QString &spokenLanguage);
 
-// Transcription through the speech Custom Endpoint: an OpenAI-style
+// Transcription through the speech server: an OpenAI-style
 // POST {base}{path} with the whole attempt's audio once input finishes.
 // Sends the audio once; a failure fails the attempt (rule A7).
 //

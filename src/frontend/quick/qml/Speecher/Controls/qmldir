@@ -17,7 +17,7 @@ Ease 1.0 Ease.qml
 EaseColor 1.0 EaseColor.qml
 EditableList 1.0 EditableList.qml
 EmptyState 1.0 EmptyState.qml
-FallbackList 1.0 FallbackList.qml
+OrderedList 1.0 OrderedList.qml
 Flag 1.0 Flag.qml
 FocusRing 1.0 FocusRing.qml
 FormField 1.0 FormField.qml

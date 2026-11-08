@@ -9,7 +9,7 @@ import "schema/refinement.js" as Refinement
 import "schema/profiles.js" as Profiles
 import "schema/vocabulary.js" as Vocabulary
 import "schema/pasting.js" as Pasting
-import "schema/accounts.js" as Accounts
+import "schema/services.js" as Services
 import "schema/models.js" as Models
 import "schema/general.js" as General
 import "schema/updates.js" as Updates
@@ -44,7 +44,7 @@ QtObject {
     readonly property var suggestions: ["globalShortcut", "shortcutBehavior", "showLiveText", "pauseMedia"]
     readonly property var rows: [].concat(Shortcuts.rows, Microphone.rows, Speech.rows, Feedback.rows,
                                           Refinement.rows, Profiles.rows, Vocabulary.rows, Pasting.rows,
-                                          Accounts.rows, Models.rows, General.rows, Updates.rows)
+                                          Services.rows, Models.rows, General.rows, Updates.rows)
     // The app types Speecher sorts apps into, for paste rules and recognition.
     readonly property var appCategories: Pasting.categories
     // Delivery's wording beyond its rows: the paste keys, rule options,

@@ -28,7 +28,7 @@ ProviderFailure replyFailure(const QNetworkReply &reply, const QString &message)
 // invalid or missing part of the request is Other.
 ProviderFailureKind streamedErrorKind(const QJsonObject &error);
 
-// A failure from a Local Runner or a Custom Endpoint. A 404 there means the
+// A failure from a Local Runner or a server. A 404 there means the
 // model or the path is gone, so the provider is Unavailable; a cloud
 // provider's 404 stays Other.
 ProviderFailure selfHostedFailure(ProviderFailure failure);

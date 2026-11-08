@@ -17,24 +17,13 @@ Column {
     readonly property bool refines: options.refiner !== "none"
     readonly property var service: ModelText.service(options.service)
     readonly property var refiner: ModelText.provider(options.refiner)
-    // Where a service or provider these files can't use yet is set up, by
-    // id. Sign-ins have their own rows.
-    readonly property var serviceFixes: ({
-        local: () => Navigation.follow("models"),
-        endpoint: () => Navigation.follow("speech", "speechEndpointUrl")
-    })
-    readonly property var refinerFixes: ({
-        local: () => Navigation.follow("refinement", "localRunner"),
-        endpoint: () => Navigation.follow("refinement", "refinementEndpointUrl")
-    })
     // What the model fields suggest, as Speech to text and Refinement do:
     // each provider's known models, the Local Runner's and the endpoints'
     // as they were listed.
     readonly property var refinerModels: {
         const named = names => names.map(m => ({ id: m, label: m }))
         const runner = Models.runners.find(r => r.id === Settings.values.localRunner)
-        return options.refiner === "openai" ? Models.openAiModels
-             : options.refiner === "anthropic" ? Models.anthropicModels
+        return options.refiner === "openai" || options.refiner === "anthropic" ? ModelText.suggestedModels(options.refiner)
              : options.refiner === "local" ? named(runner ? runner.models : [])
              : options.refiner === "endpoint" ? named(Models.refinementEndpoint.models) : []
     }
@@ -112,18 +101,12 @@ Column {
                 onHelpLinkActivated: (id, at) => serviceLanguages.show(at, ModelText.service(id).languages)
             }
         }
-        // How to sign in to the chosen service, as on Speech to text.
-        SignInRow { serviceId: view.options.service }
-        // A service set up elsewhere that isn't yet: what it lacks, and the
-        // way there. These files wait here meanwhile.
-        SettingRow {
-            id: serviceFix
-            readonly property var fix: view.serviceFixes[view.options.service]
-            // A downloaded Local Model is picked for these files below.
-            shown: !!fix && view.service.state !== "ready" && view.service.state !== "unknown"
-                   && !(view.options.service === "local" && ModelText.downloadedModels.length > 0)
-            title: ModelText.status(view.service)
-            Button { text: TranscribeWords.setUp; size: "small"; onClicked: serviceFix.fix() }
+        // What the chosen service still needs, with its Fix; these files
+        // wait here meanwhile. A downloaded Local Model is picked for these
+        // files below, so Local Model needs nothing more.
+        ServiceStatus {
+            role: "speech"
+            serviceId: view.options.service === "local" && ModelText.downloadedModels.length > 0 ? "" : view.options.service
         }
         LanguageList { id: serviceLanguages }
         // The model, for these files, of a service that has one to choose.
@@ -218,15 +201,8 @@ Column {
                 onActivated: id => Transcription.setOption("refiner", id)
             }
         }
-        // How to sign in to the chosen provider, as on Refinement.
-        RefinerSignInRow { providerId: view.options.refiner }
-        SettingRow {
-            id: refinerFix
-            readonly property var fix: view.refinerFixes[view.options.refiner]
-            shown: !!fix && view.refiner.state !== "ready" && view.refiner.state !== "unknown"
-            title: ModelText.status(view.refiner)
-            Button { text: TranscribeWords.setUp; size: "small"; onClicked: refinerFix.fix() }
-        }
+        // What the chosen service still needs, with its Fix.
+        ServiceStatus { role: "refinement"; serviceId: view.options.refiner }
         // The refiner's model, for these files.
         SettingRow {
             enabled: view.refines

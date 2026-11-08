@@ -151,7 +151,7 @@ private slots:
                                {speechIssue(QStringLiteral("codex"), Stage::Prepare,
                                             ProviderFailureKind::Authentication)}}
             << false << QString() << QStringLiteral("Pasted • Used Local Model. Your ChatGPT sign-in has expired.")
-            << fallback << QStringLiteral("accounts");
+            << fallback << QStringLiteral("services");
         QTest::newRow("refinement fallback")
             << ProviderHistory{{QStringLiteral("codex")}, {QStringLiteral("openai"), QStringLiteral("local")},
                                {refinementIssue(QStringLiteral("openai"), ProviderFailureKind::Network)}}
@@ -1483,7 +1483,7 @@ private slots:
                  QStringLiteral("Sent to the app • Used Local Model. Your ChatGPT sign-in has expired."));
         const PopupErrorAction fix = outcome.first().at(2).value<PopupErrorAction>();
         QCOMPARE(fix.fix, ErrorFix::SettingsPage);
-        QCOMPARE(fix.pageId, QStringLiteral("accounts"));
+        QCOMPARE(fix.pageId, QStringLiteral("services"));
         QTest::qWait(400);
         QCOMPARE(rig.session->state(), DictationState::Delivering);
     }

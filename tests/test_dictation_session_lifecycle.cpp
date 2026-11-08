@@ -2776,7 +2776,7 @@ private slots:
         QCOMPARE(message.count(), 1);
         QCOMPARE(message.first().first().toString(),
                  QStringLiteral("Claude login cannot be refreshed"));
-        QCOMPARE(message.first().at(1).value<PopupErrorAction>().pageId, QStringLiteral("accounts"));
+        QCOMPARE(message.first().at(1).value<PopupErrorAction>().pageId, QStringLiteral("services"));
         QTest::qWait(1900);
         QCOMPARE(int(session.state()), int(DictationState::Error));
         QCOMPARE(hidden.count(), 0);

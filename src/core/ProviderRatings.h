@@ -55,7 +55,7 @@ struct ProviderRating {
 // service is the model the settings hold; a Local Model is the chosen one, or
 // the suggested one for the Spoken Language until one is chosen, with its
 // Speed Test result where it has one; a Local Runner is the cleanup model
-// suggested for this computer. Empty for Custom Endpoint, "none", an unknown
+// suggested for this computer. Empty for a server, "none", an unknown
 // provider, a refinement service model the benchmark did not measure, a Local
 // Runner where no cleanup model is suggested, and both local providers while
 // the hardware is unknown (no memory reading, as LocalSetup's profile has

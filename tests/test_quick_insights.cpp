@@ -1,3 +1,4 @@
+#include "common/service_order_rows.h"
 #include "common/test_suites.h"
 #include "common/test_system_singletons.h"
 
@@ -512,7 +513,7 @@ private slots:
         failOnUnexpectedWarnings();
         ApplicationController controller(true);
         QuickSettings settings(&controller);
-        settings.set(QStringLiteral("speechProvider"), QStringLiteral("endpoint"));
+        settings.set(QStringLiteral("speechServices"), test::serviceOrder({QStringLiteral("endpoint")}));
         settings.set(QStringLiteral("speechEndpointUrl"), QStringLiteral("http://127.0.0.1:9/v1"));
         QuickDictation dictation(&controller);
         QuickNavigation navigation(nullptr);

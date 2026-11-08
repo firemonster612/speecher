@@ -281,7 +281,7 @@ private slots:
         QuickModels models(&controller);
         QuickAccounts accounts(&controller);
         QQmlEngine engine;
-        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/app/ServiceCard.qml")));
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/services/ServiceCard.qml")));
         const std::unique_ptr<QObject> card(
             component.createWithInitialProperties({{QStringLiteral("serviceId"), QStringLiteral("openai")}}));
         QVERIFY2(card, qPrintable(component.errorString()));
@@ -303,7 +303,7 @@ private slots:
         QuickModels models(&controller);
         QuickAccounts accounts(&controller);
         QQmlEngine engine;
-        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/app/ServiceCard.qml")));
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/services/ServiceCard.qml")));
         const std::unique_ptr<QObject> card(
             component.createWithInitialProperties({{QStringLiteral("serviceId"), QStringLiteral("openai")}}));
         QVERIFY2(card, qPrintable(component.errorString()));
@@ -333,7 +333,7 @@ private slots:
         QuickModels models(&controller);
         QuickAccounts accounts(&controller);
         QQmlEngine engine;
-        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/app/ServiceCard.qml")));
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/services/ServiceCard.qml")));
         const std::unique_ptr<QObject> card(
             component.createWithInitialProperties({{QStringLiteral("serviceId"), QStringLiteral("anthropic")}}));
         QVERIFY2(card, qPrintable(component.errorString()));
@@ -379,9 +379,9 @@ private slots:
         QVERIFY(inUse());
     }
 
-    // Refinement's sign-in row waits for Accounts' first answer, then says
-    // how to sign in.
-    void aRefinerSignInRowWaitsForTheCheck()
+    // A refinement service's status waits for Accounts' first answer, then
+    // says how to sign in.
+    void aRefinementStatusWaitsForTheCheck()
     {
         ApplicationController controller(true);
         QuickSettings settings(&controller);
@@ -390,19 +390,18 @@ private slots:
         QuickModels models(&controller);
         QuickAccounts accounts(&controller);
         QQmlEngine engine;
-        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/RefinerSignInRow.qml")));
-        const std::unique_ptr<QObject> row(
-            component.createWithInitialProperties({{QStringLiteral("providerId"), QStringLiteral("openai")}}));
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/ServiceStatus.qml")));
+        const std::unique_ptr<QObject> row(component.createWithInitialProperties(
+            {{QStringLiteral("role"), QStringLiteral("refinement")}, {QStringLiteral("serviceId"), QStringLiteral("openai")}}));
         QVERIFY2(row, qPrintable(component.errorString()));
 
         QVERIFY(!row->property("open").toBool());
         QTRY_VERIFY(row->property("open").toBool());
-        QVERIFY(!row->property("unknown").toBool());
     }
 
-    // An expired sign-in, which core leaves unknown, still gets the row, and
+    // An expired sign-in, which core leaves unknown, still gets the status, and
     // Check again keeps it up while Accounts checks.
-    void aRefinerSignInRowShowsAnExpiredSignIn()
+    void aRefinementStatusShowsAnExpiredSignIn()
     {
         ApplicationController controller(true);
         QTemporaryDir dir;
@@ -412,9 +411,9 @@ private slots:
         QuickModels models(&controller);
         QuickAccounts accounts(&controller);
         QQmlEngine engine;
-        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/RefinerSignInRow.qml")));
-        const std::unique_ptr<QObject> row(
-            component.createWithInitialProperties({{QStringLiteral("providerId"), QStringLiteral("openai")}}));
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/ServiceStatus.qml")));
+        const std::unique_ptr<QObject> row(component.createWithInitialProperties(
+            {{QStringLiteral("role"), QStringLiteral("refinement")}, {QStringLiteral("serviceId"), QStringLiteral("openai")}}));
         QVERIFY2(row, qPrintable(component.errorString()));
 
         QTRY_VERIFY(row->property("open").toBool());

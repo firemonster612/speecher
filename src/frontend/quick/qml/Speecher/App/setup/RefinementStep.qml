@@ -4,12 +4,12 @@ import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
-import "../pages/text"
+import "../pages/services"
 
 // A spoken sentence marked up the way refinement edits it, like a proof:
 // removed words struck through, added ones in blue pencil. Then the
 // providers to do it, or none, which shows the sentence as it was said, and
-// under them what a Local Runner or a Custom Endpoint needs.
+// under them what a Local Runner or your server needs.
 StepPage {
     id: page
 
@@ -33,8 +33,8 @@ StepPage {
             unratedText: ModelText.unrated
             onActivated: id => page.choices.cleanup = id
         }
-        // How to sign in to the chosen provider, as on Refinement.
-        RefinerSignInRow { providerId: page.choices.cleanup }
+        // What the chosen service still needs, with its Fix.
+        ServiceStatus { role: "refinement"; serviceId: page.choices.cleanup }
         // A provider that can't clean up yet says what that means; setup
         // goes on with it chosen.
         SettingRow {
@@ -51,7 +51,7 @@ StepPage {
         Reveal {
             id: endpoint
             open: page.choices.cleanup === "endpoint"
-            RefinementEndpointRows {}
+            RefinementServerRows {}
         }
         // A runner on this computer, offered as a fallback.
         Reveal {
@@ -70,7 +70,7 @@ StepPage {
         }
     }
 
-    // Refinement providers' sign-ins come from Accounts' checks, which
+    // Refinement services' sign-ins come from Accounts' checks, which
     // start the first time anything asks for Accounts.
     Component.onCompleted: { Models.checkComputer(); ModelText.checkUnknownSignIns(); Accounts.services }
 }

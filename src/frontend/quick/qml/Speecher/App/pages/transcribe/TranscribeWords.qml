@@ -19,8 +19,6 @@ QtObject {
     readonly property string allFiles: "All files"
     readonly property string service: "Service"
     readonly property string serviceHelp: "The speech-to-text service that hears the files."
-    // A service these files can't use yet opens where it is set up.
-    readonly property string setUp: "Set up"
     readonly property string language: "Spoken language"
     readonly property string languageHelp: "The language the files are spoken in."
     readonly property string vocabulary: "Apply vocabulary"

@@ -2,6 +2,7 @@
 // and dark: every page of Main and a few searches, every setup step and every
 // popup state load and draw without a QML warning, and the popup's level
 // animation stays inside its bar.
+#include "common/service_order_rows.h"
 #include "common/test_quick_windows.h"
 #include "common/test_suites.h"
 
@@ -160,9 +161,9 @@ QList<std::pair<QString, QString>> searchResults(QObject *search, const QString 
 }
 
 // The SchemaRow for rowId in window, or null.
-QQuickItem *schemaRow(QQuickWindow *window, const QString &rowId)
+QQuickItem *schemaRow(QQuickItem *root, const QString &rowId)
 {
-    QList<QQuickItem *> items{window->contentItem()};
+    QList<QQuickItem *> items{root};
     while (!items.isEmpty()) {
         QQuickItem *item = items.takeLast();
         items += item->childItems();
@@ -171,6 +172,11 @@ QQuickItem *schemaRow(QQuickWindow *window, const QString &rowId)
         }
     }
     return nullptr;
+}
+
+QQuickItem *schemaRow(QQuickWindow *window, const QString &rowId)
+{
+    return schemaRow(window->contentItem(), rowId);
 }
 
 // The caption of the Section item sits in.
@@ -236,7 +242,14 @@ private slots:
     {
         QFETCH(QString, theme);
         ApplicationController controller(true);
-        QuickSettings(&controller).set(QStringLiteral("themeControl"), theme);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("themeControl"), theme);
+        // Orders whose rows show every kind of choice: a named model, a
+        // server's, a later service's language, thinking and speed.
+        settings.set(QStringLiteral("speechServices"),
+                     test::serviceOrder({QStringLiteral("claude"), QStringLiteral("codex"), QStringLiteral("endpoint")}));
+        settings.set(QStringLiteral("refinementServices"),
+                     test::serviceOrder({QStringLiteral("openai"), QStringLiteral("anthropic"), QStringLiteral("local")}));
         TrayIcon tray(&controller);
         QuickFrontEnd ui(&controller, &tray);
         ui.showMainWindow();
@@ -264,6 +277,7 @@ private slots:
         for (const auto &[row, page] : {std::pair{QStringLiteral("themeControl"), QStringLiteral("appearance")},
                                         std::pair{QStringLiteral("microphoneAccess"), QStringLiteral("microphone")},
                                         std::pair{QStringLiteral("appRecognitionRules"), QStringLiteral("appRecognition")},
+                                        std::pair{QStringLiteral("speechEndpointUrl"), QStringLiteral("services")},
                                         std::pair{QStringLiteral("pressPasteKeys"), QStringLiteral("pasting")}}) {
             steps.append({QStringLiteral("row ") + row, [navigation, row, page] {
                               navigation->goToRow(page, row);
@@ -290,13 +304,24 @@ private slots:
                           }));
                           QVERIFY(searchResults(search, QStringLiteral("keybinding"))
                                       .contains(std::pair{QStringLiteral("startCommand"), QStringLiteral("Dictation, How shortcuts reach Speecher")}));
-                          // Accounts is a page of its own, with no path.
-                          QVERIFY(searchResults(search, QStringLiteral("accounts"))
-                                      .contains(std::pair{QStringLiteral("accounts"), QString()}));
+                          // Services is a page of its own, with no path.
+                          QVERIFY(searchResults(search, QStringLiteral("services"))
+                                      .contains(std::pair{QStringLiteral("services"), QString()}));
                       }});
         steps.append({QStringLiteral("close search"), [search] { QMetaObject::invokeMethod(search, "close"); }});
-        // For review, App recognition with what folds away open.
+        // For review, App recognition with what folds away open, and a
+        // speech service's Fix sheet over Speech to text.
         if (!captureDir().isEmpty()) {
+            steps.append({QStringLiteral("speech fix sheet"), [navigation, main] {
+                              navigation->go(QStringLiteral("speech"));
+                              QQuickItem *fix = nullptr;
+                              QTRY_VERIFY((fix = findItem(main->contentItem(), QStringLiteral("fix_endpoint"))));
+                              QMetaObject::invokeMethod(fix, "clicked");
+                          }});
+            steps.append({QStringLiteral("close fix sheet"), [main] {
+                              QObject *sheet = main->findChild<QObject *>(QStringLiteral("fixSheet"));
+                              if (sheet) QMetaObject::invokeMethod(sheet, "close");
+                          }});
             steps.append({QStringLiteral("app recognition with built-in matches open"), [navigation, main] {
                               navigation->go(QStringLiteral("appRecognition"));
                               QQuickItem *builtIns = nullptr;
@@ -307,17 +332,18 @@ private slots:
         runSteps(steps, main);
     }
 
-    // A fallback's picker offers "Same as main language" first and checks it
-    // while the fallback has no language chosen, its button showing the
-    // language the fallback listens for; choosing it drops the choice.
-    void aFallbackLanguageCanFollowTheMainOneAgain()
+    // A later service's picker offers "Same as Spoken language" first and
+    // checks it while the service has no language chosen, its button
+    // showing the language it listens for; choosing it drops the choice.
+    void aLaterServiceLanguageCanFollowTheSpokenOneAgain()
     {
         ApplicationController controller(true);
         QuickSettings settings(&controller);
-        settings.set(QStringLiteral("speechProvider"), QStringLiteral("codex"));
         settings.set(QStringLiteral("spokenLanguage"), QStringLiteral("de"));
-        settings.set(QStringLiteral("speechFallbackList"), QStringList{QStringLiteral("claude")});
-        settings.set(QStringLiteral("speechFallbackLanguages"), QVariantMap{{QStringLiteral("claude"), QStringLiteral("fr")}});
+        settings.set(QStringLiteral("speechServices"),
+                     QVariantList{QVariantMap{{QStringLiteral("service"), QStringLiteral("codex")}},
+                                  QVariantMap{{QStringLiteral("service"), QStringLiteral("claude")},
+                                              {QStringLiteral("language"), QStringLiteral("fr")}}});
         TrayIcon tray(&controller);
         QuickFrontEnd ui(&controller, &tray);
         ui.showMainWindow();
@@ -328,11 +354,11 @@ private slots:
         QVERIFY(navigation);
         navigation->go(QStringLiteral("speech"));
         QQuickItem *picker = nullptr;
-        QTRY_VERIFY((picker = findItem(main->contentItem(), QStringLiteral("fallbackLanguage_claude"))));
+        QTRY_VERIFY((picker = findItem(main->contentItem(), QStringLiteral("serviceLanguage_claude"))));
         const QVariantMap first =
             picker->property("options").value<QJSValue>().toVariant().toList().value(0).toMap();
         QCOMPARE(first.value(QStringLiteral("id")).toString(), QString());
-        QCOMPARE(first.value(QStringLiteral("label")).toString(), QStringLiteral("Same as main language"));
+        QCOMPARE(first.value(QStringLiteral("label")).toString(), QStringLiteral("Same as Spoken language"));
         QCOMPARE(picker->property("currentId").toString(), QStringLiteral("fr"));
         QCOMPARE(picker->property("shownId").toString(), QStringLiteral("fr"));
 
@@ -353,6 +379,8 @@ private slots:
         QFETCH(QString, theme);
         ApplicationController controller(true);
         QuickSettings(&controller).set(QStringLiteral("themeControl"), theme);
+        QuickSettings(&controller).set(QStringLiteral("speechServices"),
+                                       test::serviceOrder({QStringLiteral("claude"), QStringLiteral("codex")}));
         TrayIcon tray(&controller);
         QuickFrontEnd ui(&controller, &tray);
         ui.showMainWindow();
@@ -362,7 +390,6 @@ private slots:
         auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         QVERIFY(navigation);
         const auto language = [&controller] { return controller.settings()->snapshot().speech.language; };
-        const auto service = [&controller] { return controller.settings()->snapshot().speech.services.main(); };
         QCOMPARE(language(), QStringLiteral("en"));
 
         QObject *picker = nullptr;
@@ -384,7 +411,6 @@ private slots:
                 QTest::keyClick(main, *key);
             }
         };
-        QPointer<QQuickItem> codexHelp;
         int hovered = -1;
         QObject *serviceLanguages = nullptr;
 
@@ -428,45 +454,27 @@ private slots:
                  QTest::keyClick(main, Qt::Key_Down);
                  QTest::keyClick(main, Qt::Key_Return);
              }},
-            {QStringLiteral("click ChatGPT's count of languages"), [&] {
+            {QStringLiteral("follow ChatGPT's count of languages"), [&] {
                  QTRY_VERIFY(!popover->property("opened").toBool());
                  QCOMPARE(language(), QStringLiteral("fo"));
                  QCOMPARE(picker->property("currentId").toString(), QStringLiteral("fo"));
 
-                 codexHelp = findItem(main->contentItem(), QStringLiteral("help_codex"));
+                 QQuickItem *codexLanguages = findItem(main->contentItem(), QStringLiteral("languages_codex"));
                  serviceLanguages = main->findChild<QObject *>(QStringLiteral("serviceLanguages"));
-                 QVERIFY(codexHelp);
+                 QVERIFY(codexLanguages);
                  QVERIFY(serviceLanguages);
-                 // Where along its first line the link is.
-                 const qreal y = codexHelp->height() / 4;
-                 qreal x = 0;
-                 for (; x < codexHelp->width(); x += 2) {
-                     QString link;
-                     QMetaObject::invokeMethod(codexHelp, "linkAt", Q_RETURN_ARG(QString, link), Q_ARG(qreal, x), Q_ARG(qreal, y));
-                     if (!link.isEmpty()) break;
-                 }
-                 QVERIFY(x < codexHelp->width());
-                 QVERIFY(service() != QStringLiteral("codex"));
-                 QTest::mouseClick(main, Qt::LeftButton, Qt::NoModifier, codexHelp->mapToScene(QPointF(x + 4, y)).toPoint());
+                 QCOMPARE(codexLanguages->property("link").toString(), QStringLiteral("67 languages"));
+                 QVERIFY(QMetaObject::invokeMethod(codexLanguages, "activated"));
              }},
-            {QStringLiteral("make the cards again"), [&] {
+            {QStringLiteral("only ChatGPT's languages"), [&] {
                  QTRY_VERIFY(serviceLanguages->property("opened").toBool());
-                 QVERIFY(service() != QStringLiteral("codex"));
                  auto *codexRows = serviceLanguages->findChild<QObject *>(QStringLiteral("languageRows"));
                  QVERIFY(codexRows);
                  QCOMPARE(codexRows->property("count").toInt(), 67);
-                 // Claude listens for English but not Faroese, so its state
-                 // changes and Models' change makes the cards again.
-                 QuickSettings(&controller).set(QStringLiteral("spokenLanguage"), QStringLiteral("en"));
-             }},
-            {QStringLiteral("press another card"), [&] {
-                 QTRY_VERIFY(!codexHelp);
-                 QVERIFY(serviceLanguages->property("opened").toBool());
-                 QQuickItem *claudeHelp = findItem(main->contentItem(), QStringLiteral("help_claude"));
-                 QVERIFY(claudeHelp);
-                 QQuickItem *claudeCard = claudeHelp->parentItem()->parentItem();
-                 QTest::mouseClick(main, Qt::LeftButton, Qt::NoModifier,
-                                   claudeCard->mapToScene(QPointF(claudeCard->width() - 12, claudeCard->height() - 12)).toPoint());
+                 // Following it chooses nothing.
+                 QCOMPARE(controller.settings()->snapshot().speech.services.order,
+                          (QStringList{QStringLiteral("claude"), QStringLiteral("codex")}));
+                 QTest::keyClick(main, Qt::Key_Escape);
              }},
             {QStringLiteral("rest the pointer on a row of the picker"), [&] {
                  QTRY_VERIFY(!serviceLanguages->property("opened").toBool());
@@ -599,12 +607,12 @@ private slots:
         auto *search = main->findChild<QObject *>(QStringLiteral("searchPalette"));
         QVERIFY(search);
         QMetaObject::invokeMethod(search, "open");
-        const auto results = searchResults(search, QStringLiteral("accounts"));
+        const auto results = searchResults(search, QStringLiteral("services"));
         const auto accounts = std::find_if(results.cbegin(), results.cend(),
-                                           [](const auto &result) { return result.first == QStringLiteral("accounts"); });
+                                           [](const auto &result) { return result.first == QStringLiteral("services"); });
         QVERIFY(accounts != results.cend());
         QMetaObject::invokeMethod(search, "activate", Q_ARG(QVariant, int(accounts - results.cbegin())));
-        QCOMPARE(navigation->current(), QStringLiteral("accounts"));
+        QCOMPARE(navigation->current(), QStringLiteral("services"));
         QVERIFY(!refinement->property("open").toBool());
         QVERIFY(!profiles->hasActiveFocus());
         QVERIFY(refinement->hasActiveFocus());
@@ -622,7 +630,7 @@ private slots:
         QVERIFY(main);
         auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         QVERIFY(navigation);
-        navigation->go(QStringLiteral("accounts"));
+        navigation->go(QStringLiteral("services"));
         QQuickItem *row = nullptr;
         QTRY_VERIFY((row = findItem(main->contentItem(), QStringLiteral("openAiApiKeyRow"))));
         QVERIFY(!row->property("shown").toBool());
@@ -632,10 +640,9 @@ private slots:
         QTRY_VERIFY(!row->property("shown").toBool());
     }
 
-    // CLI Proxy API nothing signs in through is one folded line, its server
-    // inside, with no sign-in state to read as a problem; once a sign-in
-    // uses it, its card shows its state and its server opens.
-    void cliProxyFoldsToOneLineUntilUsed()
+    // CLI Proxy API is a way to sign in to ChatGPT or Claude: its account,
+    // directory and server show in the card that signs in through it.
+    void cliProxyRowsShowInTheCardThatSignsInThroughIt()
     {
         ApplicationController controller(true);
         TrayIcon tray(&controller);
@@ -645,31 +652,68 @@ private slots:
         QVERIFY(main);
         auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         QVERIFY(navigation);
-        navigation->go(QStringLiteral("accounts"));
-        QQuickItem *server = nullptr;
-        QTRY_VERIFY((server = findItem(main->contentItem(), QStringLiteral("cliproxyServer"))));
-        QQuickItem *card = server;
-        while (card && card->property("serviceId").toString() != QLatin1String("cliproxy")) {
-            card = card->parentItem();
-        }
-        QVERIFY(card);
-        QCOMPARE(server->property("title").toString(), QStringLiteral("CLI Proxy API"));
-        QVERIFY(!server->property("open").toBool());
-        QVERIFY(!card->property("headShown").toBool());
+        navigation->go(QStringLiteral("services"));
+        QQuickItem *card = nullptr;
+        QTRY_VERIFY((card = findItem(main->contentItem(), QStringLiteral("chatgptCard"))));
+        QQuickItem *directory = schemaRow(card, QStringLiteral("cliproxyOauthDir"));
+        QVERIFY(directory);
+        QVERIFY(!directory->property("shown").toBool());
 
         QuickSettings(&controller).set(QStringLiteral("openAiAuthMode"), QStringLiteral("cliproxy"));
-        QTRY_VERIFY(card->property("headShown").toBool());
-        QCOMPARE(server->property("title").toString(), QStringLiteral("Server"));
-        QVERIFY(server->property("open").toBool());
+        QTRY_VERIFY(directory->property("shown").toBool());
+        QVERIFY(schemaRow(card, QStringLiteral("cliproxyBaseUrl"))->property("shown").toBool());
+        QQuickItem *claude = findItem(main->contentItem(), QStringLiteral("claudeCard"));
+        QVERIFY(claude);
+        QVERIFY(!schemaRow(claude, QStringLiteral("cliproxyOauthDir"))->property("shown").toBool());
     }
 
-    // A link to another page, such as Open Accounts under a sign-in, offers
-    // the way back above the page it opens, until the person goes anywhere
-    // else.
+    // A link to another page, such as Open Local models under This
+    // computer, offers the way back above the page it opens, until the
+    // person goes anywhere else.
     void aLinkOffersTheWayBack()
     {
         ApplicationController controller(true);
-        QuickSettings(&controller).set(QStringLiteral("speechProvider"), QStringLiteral("claude"));
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        QVERIFY(navigation);
+        navigation->go(QStringLiteral("services"));
+        QQuickItem *openModels = nullptr;
+        QTRY_VERIFY((openModels = findItem(main->contentItem(), QStringLiteral("openLocalModels"))));
+        QMetaObject::invokeMethod(openModels, "clicked");
+        QCOMPARE(navigation->current(), QStringLiteral("models"));
+        QCOMPARE(navigation->returnTo(), QStringLiteral("services"));
+        const auto backLink = [main] {
+            QQuickItem *link = findItem(main->contentItem(), QStringLiteral("backLink"));
+            return link && link->isVisible() && link->property("text") == QStringLiteral("Back to Services") ? link : nullptr;
+        };
+        QTRY_VERIFY(backLink());
+        QMetaObject::invokeMethod(backLink(), "activated");
+        QCOMPARE(navigation->current(), QStringLiteral("services"));
+        QCOMPARE(navigation->returnTo(), QString());
+
+        // Going anywhere else forgets it, and a search jump is not a link.
+        navigation->follow(QStringLiteral("models"));
+        QCOMPARE(navigation->returnTo(), QStringLiteral("services"));
+        navigation->goToRow(QStringLiteral("refinement"), QStringLiteral("refinementServices"));
+        QCOMPARE(navigation->returnTo(), QString());
+        navigation->follow(QStringLiteral("services"));
+        QCOMPARE(navigation->returnTo(), QStringLiteral("refinement"));
+        navigation->go(QStringLiteral("home"));
+        QCOMPARE(navigation->returnTo(), QString());
+    }
+
+    // A speech service in the order that can't run offers Fix, which opens
+    // its Services card in a sheet over the page; Open Services in the sheet
+    // follows to the whole page, from setup too, whose way back is to setup.
+    void aFixSheetOpensTheServicesCard()
+    {
+        ApplicationController controller(true);
+        QuickSettings(&controller).set(QStringLiteral("speechServices"), test::serviceOrder({QStringLiteral("endpoint")}));
         TrayIcon tray(&controller);
         QuickFrontEnd ui(&controller, &tray);
         ui.showMainWindow();
@@ -679,38 +723,30 @@ private slots:
         auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         QVERIFY(navigation);
         navigation->go(QStringLiteral("speech"));
-        QQuickItem *openAccounts = nullptr;
-        QTRY_VERIFY((openAccounts = findItem(main->contentItem(), QStringLiteral("openAccounts"))));
-        QMetaObject::invokeMethod(openAccounts, "activated");
-        QCOMPARE(navigation->current(), QStringLiteral("accounts"));
-        QCOMPARE(navigation->pendingRow(), QStringLiteral("anthropicAuthMode"));
-        QCOMPARE(navigation->returnTo(), QStringLiteral("speech"));
-        const auto backLink = [main] {
-            QQuickItem *link = findItem(main->contentItem(), QStringLiteral("backLink"));
-            return link && link->isVisible() && link->property("text") == QStringLiteral("Back to Speech to text") ? link : nullptr;
-        };
-        QTRY_VERIFY(backLink());
-        QMetaObject::invokeMethod(backLink(), "activated");
+        QQuickItem *fix = nullptr;
+        // No server URL is set, which Services fixes.
+        QTRY_VERIFY((fix = findItem(main->contentItem(), QStringLiteral("fix_endpoint"))) && fix->isVisible());
+        QMetaObject::invokeMethod(fix, "clicked");
+        QObject *sheet = nullptr;
+        QTRY_VERIFY((sheet = main->findChild<QObject *>(QStringLiteral("fixSheet"))) && sheet->property("opened").toBool());
+        QCOMPARE(sheet->property("card").toString(), QStringLiteral("servers"));
+        QTRY_VERIFY(schemaRow(main->contentItem(), QStringLiteral("speechEndpointUrl")));
         QCOMPARE(navigation->current(), QStringLiteral("speech"));
-        QCOMPARE(navigation->returnTo(), QString());
 
-        // Going anywhere else forgets it, and a search jump is not a link.
-        navigation->follow(QStringLiteral("accounts"), QStringLiteral("openAiAuthMode"));
+        QQuickItem *openServices = nullptr;
+        QTRY_VERIFY((openServices = findItem(main->contentItem(), QStringLiteral("openServices"))));
+        QMetaObject::invokeMethod(openServices, "activated");
+        QCOMPARE(navigation->current(), QStringLiteral("services"));
         QCOMPARE(navigation->returnTo(), QStringLiteral("speech"));
-        navigation->goToRow(QStringLiteral("refinement"), QStringLiteral("refinementProvider"));
-        QCOMPARE(navigation->returnTo(), QString());
-        navigation->follow(QStringLiteral("accounts"));
-        QCOMPARE(navigation->returnTo(), QStringLiteral("refinement"));
-        navigation->go(QStringLiteral("home"));
-        QCOMPARE(navigation->returnTo(), QString());
+        QTRY_VERIFY(!sheet->property("visible").toBool());
     }
 
-    // Open Accounts in the setup assistant opens Main on Accounts, whose way
-    // back is to setup; once setup closes there is nothing to go back to.
-    void setupsAccountsLinkReturnsToSetup()
+    // Open Services in setup opens Main on Services, whose way back is to
+    // setup; once setup closes there is nothing to go back to.
+    void setupsServicesLinkReturnsToSetup()
     {
         ApplicationController controller(true);
-        QuickSettings(&controller).set(QStringLiteral("speechProvider"), QStringLiteral("claude"));
+        QuickSettings(&controller).set(QStringLiteral("speechServices"), test::serviceOrder({QStringLiteral("endpoint")}));
         TrayIcon tray(&controller);
         QuickFrontEnd ui(&controller, &tray);
         ui.showSetupAssistant(SetupAssistantPage::All);
@@ -724,71 +760,34 @@ private slots:
                 setup->setProperty("step", i);
             }
         }
-        QQuickItem *openAccounts = nullptr;
-        QTRY_VERIFY((openAccounts = findItem(setup->contentItem(), QStringLiteral("openAccounts"))));
-        QMetaObject::invokeMethod(openAccounts, "activated");
+        QQuickItem *fix = nullptr;
+        QTRY_VERIFY((fix = findItem(setup->contentItem(), QStringLiteral("fixService"))));
+        QMetaObject::invokeMethod(fix, "clicked");
+        QQuickItem *openServices = nullptr;
+        QTRY_VERIFY((openServices = findItem(setup->contentItem(), QStringLiteral("openServices"))));
+        QMetaObject::invokeMethod(openServices, "activated");
         QQuickWindow *main = nullptr;
         QTRY_VERIFY((main = openWindow("Main")));
         auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         QVERIFY(navigation);
-        QCOMPARE(navigation->current(), QStringLiteral("accounts"));
+        QCOMPARE(navigation->current(), QStringLiteral("services"));
         QCOMPARE(navigation->returnTo(), QStringLiteral("setup"));
         QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("backLink"))
                     && findItem(main->contentItem(), QStringLiteral("backLink"))->property("text") == QStringLiteral("Back to setup"));
         navigation->goBack();
-        QCOMPARE(navigation->current(), QStringLiteral("accounts"));
+        QCOMPARE(navigation->current(), QStringLiteral("services"));
         QCOMPARE(navigation->returnTo(), QString());
         QVERIFY(setup->isVisible());
 
-        navigation->follow(QStringLiteral("accounts"), QStringLiteral("anthropicAuthMode"), QStringLiteral("setup"));
+        navigation->follow(QStringLiteral("services"), QStringLiteral("anthropicAuthMode"), QStringLiteral("setup"));
         QCOMPARE(navigation->returnTo(), QStringLiteral("setup"));
         setup->close();
         QTRY_COMPARE(navigation->returnTo(), QString());
     }
 
-    // The sign-in row under the speech services has the sign-in source
-    // Accounts has, so a sign-in is changed in place. Codex dictation offers
-    // only the sources it signs in with, and choosing the one it shows keeps
-    // the saved source, which cleanup shares.
-    void signInRowChoosesTheSignInSource()
-    {
-        ApplicationController controller(true);
-        QuickSettings settings(&controller);
-        settings.set(QStringLiteral("speechProvider"), QStringLiteral("codex"));
-        settings.set(QStringLiteral("openAiAuthMode"), QStringLiteral("auto"));
-        TrayIcon tray(&controller);
-        QuickFrontEnd ui(&controller, &tray);
-        ui.showMainWindow();
-        QQuickWindow *main = openWindow("Main");
-        QVERIFY(main);
-        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
-        QVERIFY(navigation);
-        navigation->go(QStringLiteral("speech"));
-        QQuickItem *source = nullptr;
-        QTRY_VERIFY((source = findItem(main->contentItem(), QStringLiteral("signInSource"))));
-        const auto optionIds = [source] {
-            QStringList ids;
-            for (const QVariant &option : source->property("options").value<QJSValue>().toVariant().toList()) {
-                ids.append(option.toMap().value(QStringLiteral("id")).toString());
-            }
-            return ids;
-        };
-        QCOMPARE(optionIds(), (QStringList{QStringLiteral("codex_oauth"), QStringLiteral("cliproxy")}));
-        QCOMPARE(source->property("currentId").toString(), QStringLiteral("codex_oauth"));
-        QMetaObject::invokeMethod(source, "chosen", Q_ARG(QString, QStringLiteral("codex_oauth")));
-        QCOMPARE(settings.values().value(QStringLiteral("openAiAuthMode")).toString(), QStringLiteral("auto"));
-        QMetaObject::invokeMethod(source, "chosen", Q_ARG(QString, QStringLiteral("cliproxy")));
-        QCOMPARE(settings.values().value(QStringLiteral("openAiAuthMode")).toString(), QStringLiteral("cliproxy"));
-        QTRY_COMPARE(source->property("currentId").toString(), QStringLiteral("cliproxy"));
-
-        // Claude's row offers every source Accounts does.
-        settings.set(QStringLiteral("speechProvider"), QStringLiteral("claude"));
-        QTRY_COMPARE(optionIds(), (QStringList{QStringLiteral("oauth"), QStringLiteral("cliproxy")}));
-    }
-
-    // While the select stays on Automatic, the sign-in row under the cards
-    // says which source Automatic's check found, as Accounts does.
-    void signInRowNamesWhatAutomaticFound()
+    // While ChatGPT's Sign in with stays on Automatic, its row says which
+    // source Automatic's check found.
+    void signInNamesWhatAutomaticFound()
     {
         // No Codex sign-in, so Automatic finds the environment's key.
         QTemporaryDir codexHome;
@@ -804,7 +803,6 @@ private slots:
 
         ApplicationController controller(true);
         QuickSettings settings(&controller);
-        settings.set(QStringLiteral("refinementProvider"), QStringLiteral("openai"));
         settings.set(QStringLiteral("openAiAuthMode"), QStringLiteral("auto"));
         TrayIcon tray(&controller);
         QuickFrontEnd ui(&controller, &tray);
@@ -813,24 +811,24 @@ private slots:
         QVERIFY(main);
         auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         QVERIFY(navigation);
-        navigation->go(QStringLiteral("refinement"));
-        QQuickItem *found = nullptr;
-        QTRY_VERIFY((found = findItem(main->contentItem(), QStringLiteral("signInFound"))));
-        QTRY_COMPARE(found->property("text").toString(), QStringLiteral("Using API key from the environment."));
-        QCOMPARE(findItem(main->contentItem(), QStringLiteral("signInSource"))->property("currentId").toString(), QStringLiteral("auto"));
+        navigation->go(QStringLiteral("services"));
+        QQuickItem *card = nullptr;
+        QTRY_VERIFY((card = findItem(main->contentItem(), QStringLiteral("chatgptCard"))));
+        QQuickItem *mode = schemaRow(card, QStringLiteral("openAiAuthMode"));
+        QVERIFY(mode);
+        QTRY_VERIFY(mode->property("note").toString().startsWith(QStringLiteral("Using API key from the environment.")));
 
         // A source chosen by hand needs no line.
         settings.set(QStringLiteral("openAiAuthMode"), QStringLiteral("env"));
-        QTRY_COMPARE(found->property("text").toString(), QString());
+        QTRY_VERIFY(!mode->property("note").toString().startsWith(QStringLiteral("Using")));
     }
 
-    // A search result for a row in a section folded away, such as the
-    // Custom Endpoint's while Codex is chosen, opens the section and lands
-    // on the row; keypad Enter picks a result as Return does.
-    void searchOpensTheSectionItLandsIn()
+    // A search result for a row on another page, such as the speech
+    // server's URL among Your servers, lands on the row; keypad Enter picks
+    // a result as Return does.
+    void searchLandsOnARowOfAnotherPage()
     {
         ApplicationController controller(true);
-        QuickSettings(&controller).set(QStringLiteral("speechProvider"), QStringLiteral("codex"));
         TrayIcon tray(&controller);
         QuickFrontEnd ui(&controller, &tray);
         ui.showMainWindow();
@@ -842,7 +840,7 @@ private slots:
         QVERIFY(navigation && search);
 
         QMetaObject::invokeMethod(search, "open");
-        const auto results = searchResults(search, QStringLiteral("endpoint url"));
+        const auto results = searchResults(search, QStringLiteral("server url whisper"));
         const auto at = std::find_if(results.cbegin(), results.cend(),
                                      [](const auto &result) { return result.first == QStringLiteral("speechEndpointUrl"); });
         QVERIFY(at != results.cend());
@@ -851,25 +849,20 @@ private slots:
         }
         QTest::keyClick(main, Qt::Key_Enter, Qt::KeypadModifier);
 
-        QTRY_COMPARE(navigation->current(), QStringLiteral("speech"));
+        QTRY_COMPARE(navigation->current(), QStringLiteral("services"));
         QQuickItem *row = nullptr;
         QTRY_VERIFY((row = schemaRow(main, QStringLiteral("speechEndpointUrl"))));
         QTRY_VERIFY(row->isVisible() && row->height() > 0);
         // Landed, which clears the pending row, then scrolled into the window.
         QTRY_COMPARE(navigation->pendingRow(), QString());
         QTRY_VERIFY(row->mapToScene(QPointF(0, 0)).y() >= 0 && row->mapToScene(QPointF(0, row->height())).y() <= main->height());
-        // Nothing uses the endpoint, so its section claims no role.
-        QCOMPARE(sectionCaption(row), QString());
     }
 
-    // A search for a fallback refinement provider's row, such as Claude's
-    // model while ChatGPT refines, shows that provider's settings.
-    void searchShowsTheProviderSettingsItLandsIn()
+    // A search for a refinement service's thinking lands on Refinement's
+    // order, where each service shows its own.
+    void searchLandsOnTheServiceOrder()
     {
         ApplicationController controller(true);
-        QuickSettings settings(&controller);
-        settings.set(QStringLiteral("refinementProvider"), QStringLiteral("openai"));
-        settings.set(QStringLiteral("refinementFallbacks"), QVariantList{QStringLiteral("anthropic")});
         TrayIcon tray(&controller);
         QuickFrontEnd ui(&controller, &tray);
         ui.showMainWindow();
@@ -877,15 +870,18 @@ private slots:
         QVERIFY(main);
         QVERIFY(QTest::qWaitForWindowExposed(main));
         auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
-        QVERIFY(navigation);
-        navigation->goToRow(QStringLiteral("refinement"), QStringLiteral("anthropicModel"));
+        auto *search = main->findChild<QObject *>(QStringLiteral("searchPalette"));
+        QVERIFY(navigation && search);
+        QMetaObject::invokeMethod(search, "open");
+        const auto results = searchResults(search, QStringLiteral("thinking"));
+        QVERIFY(std::any_of(results.cbegin(), results.cend(),
+                            [](const auto &result) { return result.first == QStringLiteral("refinementServices"); }));
+        QMetaObject::invokeMethod(search, "close");
 
-        QQuickItem *tabs = nullptr;
-        QTRY_VERIFY((tabs = findItem(main->contentItem(), QStringLiteral("providerTabs"))));
-        QTRY_COMPARE(tabs->property("currentId").toString(), QStringLiteral("anthropic"));
-        QQuickItem *row = schemaRow(main, QStringLiteral("anthropicModel"));
-        QVERIFY(row);
-        QTRY_VERIFY(row->isVisible() && row->height() > 0);
+        navigation->goToRow(QStringLiteral("refinement"), QStringLiteral("refinementServices"));
+        QQuickItem *list = nullptr;
+        QTRY_VERIFY((list = findItem(main->contentItem(), QStringLiteral("refinementServiceOrder"))));
+        QTRY_VERIFY(list->isVisible() && list->height() > 0);
         QTRY_COMPARE(navigation->pendingRow(), QString());
     }
 
@@ -934,8 +930,8 @@ private slots:
         QFETCH(QString, pageId);
         QFETCH(QString, rowId);
         ApplicationController controller(true);
-        // Refinement shows its service's settings while a service refines.
-        QuickSettings(&controller).set(QStringLiteral("refinementProvider"), QStringLiteral("openai"));
+        // Refinement shows the prompt while a service refines.
+        QuickSettings(&controller).set(QStringLiteral("refinementServices"), test::serviceOrder({QStringLiteral("openai")}));
         TrayIcon tray(&controller);
         QuickFrontEnd ui(&controller, &tray);
         ui.showMainWindow();
@@ -953,34 +949,6 @@ private slots:
         navigation->goToRow(pageId, rowId);
         QTRY_VERIFY(row->isVisible() && row->height() > 0);
         QTRY_COMPARE(navigation->pendingRow(), QString());
-    }
-
-    // A service a Writing Profile chooses for itself shows its settings on
-    // Speech to text, as the chosen one and its fallbacks do.
-    void speechShowsTheSettingsOfAServiceAProfileChooses()
-    {
-        ApplicationController controller(true);
-        QuickSettings(&controller).set(QStringLiteral("speechProvider"), QStringLiteral("codex"));
-        controller.settings()->edit([](AppSettings &draft) {
-            for (WritingProfileSettings &profile : draft.refinement.writingProfiles) {
-                if (profile.profile == QLatin1String("email")) {
-                    profile.speechFirst = ServiceChoice{QStringLiteral("endpoint")};
-                }
-            }
-            return true;
-        });
-        TrayIcon tray(&controller);
-        QuickFrontEnd ui(&controller, &tray);
-        ui.showMainWindow();
-        QQuickWindow *main = openWindow("Main");
-        QVERIFY(main);
-        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
-        QVERIFY(navigation);
-        navigation->go(QStringLiteral("speech"));
-        QQuickItem *row = nullptr;
-        QTRY_VERIFY((row = schemaRow(main, QStringLiteral("speechEndpointUrl"))));
-        QTRY_VERIFY(row->isVisible() && row->height() > 0);
-        QCOMPARE(sectionCaption(row), QStringLiteral("Used by your Email profile."));
     }
 
     // A proof keeps the text's own spacing, and closes up only the gap a
@@ -1404,7 +1372,7 @@ private slots:
     {
         ApplicationController controller(true);
         QuickSettings settings(&controller);
-        settings.set(QStringLiteral("refinementProvider"), QStringLiteral("endpoint"));
+        settings.set(QStringLiteral("refinementServices"), test::serviceOrder({QStringLiteral("endpoint")}));
         settings.set(QStringLiteral("refinementEndpointUrl"), QString());
         TrayIcon tray(&controller);
         QuickFrontEnd ui(&controller, &tray);
@@ -1423,7 +1391,7 @@ private slots:
         QVERIFY(!refinement().property(QStringLiteral("done")).toBool());
         QVERIFY(refinement().property(QStringLiteral("verdict")).toString() != QLatin1String("Custom Endpoint"));
 
-        settings.set(QStringLiteral("refinementProvider"), QStringLiteral("none"));
+        settings.set(QStringLiteral("refinementEnabled"), false);
         QTRY_VERIFY(refinement().property(QStringLiteral("done")).toBool());
         QCOMPARE(refinement().property(QStringLiteral("verdict")).toString(), QStringLiteral("None"));
     }

@@ -10,6 +10,35 @@ import Speecher.Wording
 QtObject {
     id: text
 
+    // Service Orders --------------------------------------------------------------
+
+    // Each job's order as Settings holds it, [{ service, model, language,
+    // effort, speed }], the first service first, and its services by id.
+    function entries(role) { return (role === "speech" ? Settings.values.speechServices : Settings.values.refinementServices) || [] }
+    function order(role) { return entries(role).map(e => e.service) }
+    // The services a dictation tries for refinement: none while Clean up my
+    // words is off.
+    readonly property var refiners: Settings.values.refinementEnabled === false ? [] : order("refinement")
+    // The first speech service, and the first refinement service, or none.
+    readonly property string mainSpeech: order("speech")[0] || ""
+    readonly property string mainRefiner: refiners[0] || "none"
+    // A service's entry in its job's order, or one naming only it.
+    function entry(role, id) { return entries(role).find(e => e.service === id) || { service: id } }
+    // The order with id first, in place of the first service: what setup's
+    // and a page's choice of the main service saves.
+    function withFirst(role, id) {
+        const rest = entries(role).slice(1).filter(e => e.service !== id)
+        return [entry(role, id)].concat(rest)
+    }
+    // A service in either job, by role, with its wording.
+    function serviceOf(role, id) { return role === "speech" ? service(id) : provider(id) }
+    // The Services card that fixes a service: chatgpt, claude, computer or
+    // servers.
+    function cardOf(id) {
+        return ({ codex: "chatgpt", openai: "chatgpt", claude: "claude", anthropic: "claude", local: "computer",
+                  endpoint: "servers" })[id] || ""
+    }
+
     // Speech services ----------------------------------------------------------
 
     // What each service is good at, how to sign in to one that signs in,
@@ -81,27 +110,6 @@ QtObject {
         const unknown = s => s.signsIn && s.state === "unknown" && !s.signInChecking && (!ids || ids.includes(s.id))
         if (Models.speechServices.some(unknown)) Models.checkSignIns()
     }
-    // Where a speech service's or refinement provider's sign-in comes from,
-    // as Accounts' Sign-in row names it: { rowId, choice, found, options },
-    // or null for one that signs in elsewhere or not at all. choice is the
-    // option that row's select shows for this service, among options. Codex
-    // dictation takes only a ChatGPT sign-in, the Codex app's unless CLI
-    // Proxy API's, whatever refinement uses, so it offers those two. found
-    // is the label of the source Automatic's last check found, or "" while
-    // the choice is another or the check found none.
-    function signInSource(id) {
-        const openAi = id === "codex" || id === "openai"
-        if (!openAi && id !== "claude" && id !== "anthropic") return null
-        const rowId = openAi ? "openAiAuthMode" : "anthropicAuthMode"
-        const all = Schema.row(rowId).options
-        let mode = Settings.values[rowId] || ""
-        if (id === "codex" && mode !== "cliproxy") mode = "codex_oauth"
-        const choice = mode
-        if (mode === "auto") mode = (Accounts.services.find(s => s.id === "openai") || {}).source || mode
-        const option = all.find(o => o.id === mode)
-        return { rowId: rowId, choice: choice, found: choice === "auto" && mode !== "auto" && option ? option.label : "",
-                 options: id === "codex" ? all.filter(o => o.id === "codex_oauth" || o.id === "cliproxy") : all }
-    }
     readonly property string notChecked: "Not checked yet"
     // A sign-in no check has vouched for yet, as Accounts says Unknown.
     readonly property string signInUnknown: "Sign-in unknown"
@@ -123,13 +131,8 @@ QtObject {
         if (noteParts) choice.note = noteParts.filter(t => !!t).join(". ")
         return choice
     }
-    // Speech services as a choice for dictation, saying what each is good
-    // at, how its text arrives and what it was rated on; Transcribe files',
-    // whose text all arrives at the end, leave out how it arrives. Setup's
-    // say what each needs and what it was rated on.
-    function speechChoices(services) {
-        return services.map(s => _helpChoice(s.id, [textShows(s.id), ratedAsNote(Models.speechRatings[s.id])]))
-    }
+    // Speech services as a choice for Transcribe files and setup, saying
+    // what each is good at and what it was rated on.
     function fileSpeechChoices(services) {
         return services.map(s => _helpChoice(s.id, [ratedAsNote(Models.speechRatings[s.id])]))
     }
@@ -140,17 +143,16 @@ QtObject {
         return Object.assign(_choice(s, s.help, Models.speechRatings, noteParts), { helpLink: s.languageLink })
     }
 
-    // Where a speech service stands in the chain: 0 for the service itself,
-    // then its place among the fallbacks.
-    function roleText(place) { return place === 0 ? "Used as your service." : "Used as fallback " + place + "." }
-    // A service only Writing Profiles choose, by their names.
-    function profileRoleText(names) { return "Used by your " + Words.list(names) + (names.length > 1 ? " profiles." : " profile.") }
-    // What the fallback list says under each fallback: { text, state }.
-    function fallbackStatus(provider, index, primaryLabel) {
+    // What an order says under each service: { text, state }, its problem,
+    // or where it stands once nothing stands in its way.
+    function orderStatus(provider, index) {
         if (provider.state !== "ready" && provider.state !== "unknown") return { text: status(provider), state: provider.state }
-        return { text: index === 0 ? "Used when " + primaryLabel + " is unavailable." : "Used when the ones above are unavailable.",
-                 state: "ready" }
+        if (index === 0) return { text: status(provider), state: provider.state }
+        return { text: "Used when the ones above are unavailable.", state: "ready" }
     }
+    // Whether a service's problem is fixed on Services: a sign-in, a model, a
+    // runner or a server, rather than the Spoken Language above the list.
+    function fixable(provider) { return !["ready", "unknown", "language", "offline", ""].includes(provider.state) }
 
     // Ratings --------------------------------------------------------------------
 
@@ -242,7 +244,7 @@ QtObject {
     // The library's filter: every model, or only those on this computer.
     readonly property var libraryFilters: [{ id: "all", label: "All" }, { id: "downloaded", label: "Downloaded" }]
 
-    // Custom Endpoints -----------------------------------------------------------
+    // Your servers -----------------------------------------------------------
 
     // A connection check as StatusText shows it: { text, tone, busy, dot }.
     function endpointCheck(check) {
@@ -266,24 +268,23 @@ QtObject {
 
     readonly property var _refiners: ({
         openai: { icon: "openai", help: "Uses your ChatGPT or Codex sign-in.",
-                  signIn: "Sign in with the Codex app, or add an OpenAI API key on Accounts." },
+                  signIn: "Sign in with the Codex app, or add an OpenAI API key on Services." },
         anthropic: { icon: "claude", help: "Uses your Claude Code sign-in.",
                      signIn: "Sign in to Claude Code in its desktop app or with /login in the claude CLI." },
         local: { icon: "cpu", help: "A model server running on this computer." },
         endpoint: { icon: "server", help: "Your own OpenAI- or Anthropic-compatible server." },
         none: { icon: "circle-off", help: "Keeps your words as spoken." }
     })
-    // A refinement provider with its wording, or None.
-    // Every refinement provider a dictation may use: the chain's, in the
-    // order it tries them, then those Writing Profiles pick for themselves,
-    // which run even while Refinement says None. Each once. A function, so
+    // Every refinement service a dictation may use: the order's, in the
+    // order it tries them, then those Writing Profiles pick for themselves.
+    // None while Clean up my words is off. Each once. A function, so
     // ModelText reads Library only where something asks.
     function refinersInUse() {
-        const primary = Settings.values.refinementProvider || "none"
-        const chain = primary === "none" ? [] : [primary].concat(Settings.values.refinementFallbacks || [])
-        return chain.concat(Library.profiles.map(p => p.refinement))
-                    .filter((id, i, all) => id.length > 0 && all.indexOf(id) === i)
+        if (!refiners.length) return []
+        return refiners.concat(Library.profiles.map(p => p.refinement))
+                       .filter((id, i, all) => id.length > 0 && all.indexOf(id) === i)
     }
+    // A refinement service with its wording, or None.
     function provider(id) {
         if (id === "none") return { id: "none", label: "None", icon: _refiners.none.icon, help: _refiners.none.help, state: "", problem: "", refines: true }
         const known = Models.refinementProviders.find(p => p.id === id) || { id: id, label: id, state: "unknown", problem: "" }
@@ -295,14 +296,14 @@ QtObject {
                                           [ratedAsNote(Models.refinementRatings[p.id])]))
             .concat([_choice(provider("none"), _refiners.none.help)])
     }
-    // The model a provider refines with, as its settings name it.
+    // The models ChatGPT and Claude suggest, [{ id, label }]; none for
+    // another service, whose model is typed or the runner's or server's.
+    function suggestedModels(id) { return id === "openai" ? Models.openAiModels : id === "anthropic" ? Models.anthropicModels : [] }
+    // The model a refinement service refines with, by its name in the
+    // suggestions where it has one.
     function refinementModel(id) {
-        const v = Settings.values
-        const listed = (models, model) => (models.find(m => m.id === model) || { label: model || "" }).label
-        return id === "openai" ? listed(Models.openAiModels, v.openAiModel)
-             : id === "anthropic" ? listed(Models.anthropicModels, v.anthropicModel)
-             : id === "local" ? v.localRunnerModel || ""
-             : id === "endpoint" ? v.refinementEndpointModel || "" : ""
+        const model = entry("refinement", id).model || ""
+        return (suggestedModels(id).find(m => m.id === model) || { label: model }).label
     }
 
     // What the Local Runner row says: looking, what was found, or none.

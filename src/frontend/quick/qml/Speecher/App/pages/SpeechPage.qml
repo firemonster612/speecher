@@ -5,156 +5,25 @@ import Speecher.Controls
 import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
-import "speech"
 
+// The language you speak, then the speech services in the order Speecher
+// tries them, each with its model and, after the first, its own language.
+// How each signs in, the Local Model and the server are on Services; a
+// service that can't run offers Fix in its row.
 Page {
     id: page
     objectName: "speechPage"
     title: Schema.page("speech").title
     subtitle: Schema.page("speech").subtitle
 
-    readonly property string primary: Settings.values.speechProvider || ""
-    readonly property var fallbacks: Settings.values.speechFallbackList || []
-    readonly property var fallbackSpec: Schema.row("speechFallbackList")
-    readonly property var modelsSpec: Schema.row("speechModels")
-    readonly property string primaryLabel: ModelText.service(primary).label
+    readonly property var order: ModelText.order("speech")
+    readonly property var orderSpec: Schema.row("speechServices")
 
-    Component.onCompleted: { Models.checkComputer(); ModelText.checkUnknownSignIns(); _follow(Navigation.pendingRow) }
-
-    // The service whose section a search landed in, which opens while the
-    // page shows though nothing uses the service: the Local Model's or the
-    // Custom Endpoint's.
-    property string searched: ""
-    function _follow(rowId) {
-        const spec = Schema.row(rowId)
-        if (spec.page !== "speech") return
-        if (spec.section === Schema.row("speechLocalModel").section) searched = "local"
-        else if (spec.section === Schema.row("speechEndpointUrl").section) searched = "endpoint"
-    }
-    Connections {
-        target: Navigation
-        function onPendingRowChanged() { page._follow(Navigation.pendingRow) }
-    }
-
-    // Whether a service is the primary, one of its fallbacks or a Writing
-    // Profile's own, so its settings matter.
-    function uses(id) { return id === primary || fallbacks.indexOf(id) >= 0 || Library.profiles.some(p => p.speech === id) }
-    // Where a service stands in the chain, or the profiles that choose it,
-    // for its section's caption; empty for one nothing uses.
-    function role(id) {
-        if (id === primary) return ModelText.roleText(0)
-        const fallback = fallbacks.indexOf(id)
-        if (fallback >= 0) return ModelText.roleText(fallback + 1)
-        const profiles = Library.profiles.filter(p => p.speech === id).map(p => p.name)
-        return profiles.length ? ModelText.profileRoleText(profiles) : ""
-    }
-    // The row takes a new primary out of the fallback list, in one save.
-    function choose(id) { Settings.set("speechProvider", id) }
-    // The models behind the service; a Local Model lists the rated catalog,
-    // suggestion first.
-    readonly property var serviceModels: {
-        if (primary !== "local") return ModelText.service(primary).models
-        const rated = m => ({ name: m.name, note: m.id === Models.suggestedModel ? ModelText.suggested : "", bars: ModelText.bars(m) })
-        return Models.catalog.filter(m => m.id === Models.suggestedModel)
-            .concat(Models.catalog.filter(m => m.id !== Models.suggestedModel)).map(rated)
-    }
-
-    Section {
-        id: serviceSection
-        title: Schema.row("speechProvider").label
-        caption: Schema.row("speechProvider").help
-        SearchLanding { rowIds: ["speechProvider", "speechRating"]; target: serviceSection }
-        ServiceCards {
-            options: States.withTones(ModelText.speechChoices(Models.speechServices))
-            currentId: page.primary
-            unratedText: ModelText.unrated
-            onActivated: id => page.choose(id)
-            onHelpLinkActivated: (id, at) => serviceLanguages.show(at, ModelText.service(id).languages)
-        }
-        SignInRow { serviceId: page.primary }
-        // The models behind the chosen service, folded away.
-        Reveal {
-            open: page.serviceModels.length > 0
-            Disclosure {
-                id: models
-                title: page.modelsSpec.label
-                help: page.primary === "local" ? page.modelsSpec.localHelp : page.modelsSpec.help.arg(page.primaryLabel)
-                trailingText: Words.count(page.serviceModels.length, "model", "models")
-                SearchLanding {
-                    rowIds: ["speechModels"]
-                    target: models
-                    onLanded: { models.open = true; models.highlight() }
-                }
-                RowList {
-                    id: modelRows
-                    values: page.serviceModels
-                    keyOf: m => m.name
-                    delegate: ListRow {
-                        id: modelRow
-                        required property string key
-                        required property int index
-                        readonly property var entry: modelRows.entry(key)
-                        first: index === 0 && modelRows.first
-                        title: entry.name
-                        detail: entry.note || ""
-                        detailLines: 3
-                        trailing: RatingBars { bars: modelRow.entry.bars || [] }
-                    }
-                }
-                Item { width: 1; height: Theme.space2 }
-            }
-        }
-        LanguageList { id: serviceLanguages; objectName: "serviceLanguages" }
-    }
-
-    Section {
-        id: fallbackSection
-        title: page.fallbackSpec.headingText.arg(page.primaryLabel)
-        caption: page.fallbackSpec.help
-        SearchLanding { rowIds: ["speechFallbackList", "speechFallbackLanguages"]; target: fallbackSection }
-        FallbackList {
-            ids: page.fallbacks
-            options: Models.speechServices.filter(s => s.id !== page.primary).map(s => ({ id: s.id, label: s.label }))
-            statusOf: (id, index) => {
-                const s = ModelText.fallbackStatus(ModelText.service(id), index, page.primaryLabel)
-                return { text: s.text, tone: States.tone(s.state) }
-            }
-            maxCount: page.fallbackSpec.maxCount
-            emptyText: page.fallbackSpec.emptyText.arg(page.primaryLabel)
-            addLabel: page.fallbackSpec.addLabel
-            addHelp: page.fallbackSpec.addHelp
-            addPlaceholder: Words.choose
-            moveUpText: Words.moveUp
-            moveDownText: Words.moveDown
-            removeText: Words.remove
-            onEdited: ids => Settings.set("speechFallbackList", ids)
-            // Each fallback listens for its own Spoken Language, or, with none
-            // chosen ("Same as main language", id ""), the one core resolves.
-            rowControl: Component {
-                LanguageSelect {
-                    id: fallbackLanguage
-                    required property string modelData
-                    readonly property var service: ModelText.service(modelData)
-                    objectName: "fallbackLanguage_" + modelData
-                    placeholder: Words.choose; searchText: Words.searchLanguages; clearText: Words.clear; emptyText: Words.noLanguage
-                    options: [{ id: "", label: Schema.row("speechFallbackLanguages").sameAsMain, icon: "link" }]
-                             .concat(ModelText.spokenLanguageOptions(service))
-                    currentId: (Settings.values.speechFallbackLanguages || {})[modelData] || ""
-                    shownId: service.spokenLanguage || ""
-                    onChosen: id => {
-                        const languages = Object.assign({}, Settings.values.speechFallbackLanguages)
-                        if (id) languages[fallbackLanguage.modelData] = id
-                        else delete languages[fallbackLanguage.modelData]
-                        Settings.set("speechFallbackLanguages", languages)
-                    }
-                }
-            }
-        }
-    }
+    Component.onCompleted: { Models.checkComputer(); ModelText.checkUnknownSignIns() }
 
     Section {
         // "Language and accuracy" only while the accuracy row shows.
-        title: page.uses("codex") ? Schema.row("spokenLanguage").section : Schema.row("spokenLanguage").sectionAlone
+        title: page.order.includes("codex") ? Schema.row("spokenLanguage").section : Schema.row("spokenLanguage").sectionAlone
         SchemaRow { rowId: "spokenLanguage" }
         Reveal {
             id: languageProblem
@@ -162,63 +31,24 @@ Page {
             open: text.length > 0
             Notice { inset: Theme.rowInset; text: languageProblem.text }
         }
-        SchemaRow { rowId: "codexFinalRetranscribe"; shown: page.uses("codex") }
-        // Vocabulary lives under Refinement, but its key terms help the
-        // service hear names, so it is a click away from here.
+        SchemaRow { rowId: "codexFinalRetranscribe"; shown: page.order.includes("codex") }
+    }
+
+    Section {
+        id: servicesSection
+        title: page.orderSpec.label
+        caption: page.orderSpec.help
+        SearchLanding { rowIds: ["speechServices"]; target: servicesSection }
+        ServiceOrderList { role: "speech" }
+    }
+
+    // Vocabulary lives under Refinement, but its key terms help the
+    // service hear names, so it is a click away from here.
+    Section {
         SettingRow {
             title: Schema.page("vocabulary").title
             help: Library.speechVocabularyText
             Button { text: Library.openVocabulary; size: "small"; onClicked: Navigation.follow("vocabulary") }
         }
-    }
-
-    Reveal {
-        open: page.uses("local") || page.searched === "local"
-        Section {
-            title: Schema.row("speechLocalModel").section
-            caption: [page.role("local"), ModelText.ratedAsText(Models.speechRatings.local)].join("").trim()
-            SchemaRow {
-                id: localRow
-                readonly property bool none: Models.downloaded.length === 0
-                rowId: "speechLocalModel"
-                help: none ? localRow.spec.emptyHelp : localRow.spec.help
-                Switcher {
-                    width: Theme.selectWidth
-                    currentIndex: localRow.none ? 1 : 0
-                    Select {
-                        placeholder: Words.choose
-                        options: Models.downloaded.map(id => ModelText.catalogModel(id))
-                                                  .map(m => ({ id: m.id, label: m.name, help: m.bestFor }))
-                        currentId: Models.localModelChoice
-                        onChosen: id => Settings.set("speechLocalModel", id)
-                    }
-                    Item {
-                        implicitHeight: openModels.implicitHeight
-                        Button {
-                            id: openModels
-                            anchors.right: parent.right
-                            text: localRow.spec.actionLabel
-                            variant: "primary"
-                            onClicked: Navigation.go("models")
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Reveal {
-        open: page.uses("endpoint") || page.searched === "endpoint"
-        Section {
-            title: Schema.row("speechEndpointUrl").section
-            caption: page.role("endpoint")
-            SpeechEndpointRows {}
-        }
-    }
-
-    // Local models says when this build can't run them.
-    SubpageRows {
-        pageId: "speech"
-        lines: ModelText.localSpeech ? ({}) : ({ models: Schema.row("localModelBrowser").notInBuild + "." })
     }
 }

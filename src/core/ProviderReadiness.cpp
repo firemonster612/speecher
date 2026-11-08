@@ -46,7 +46,7 @@ QString serverUrl(ProviderRole role, const AppSettings &settings)
     return role == ProviderRole::Speech ? settings.speech.server.baseUrl : settings.refinement.server.baseUrl;
 }
 
-// A role's Custom Endpoint connection check, as LiveFacts holds it.
+// A role's server connection check, as LiveFacts holds it.
 struct EndpointCheckFacts {
     QString status;
     bool checking = false;

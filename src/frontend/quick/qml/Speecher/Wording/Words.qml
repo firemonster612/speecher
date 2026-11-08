@@ -33,6 +33,9 @@ QtObject {
     readonly property string suggestions: "Suggestions"
     readonly property string turnOn: "Turn on"
     readonly property string checkAgain: "Check again"
+    // A service that can't run, in an order: opens its Services card.
+    readonly property string fix: "Fix"
+    readonly property string use: "Use"
     // The language picker's search, and what it says when nothing matches.
     readonly property string searchLanguages: "Search languages"
     readonly property string noLanguage: "No language matches."
@@ -52,12 +55,12 @@ QtObject {
         const what = error.action === "clear" ? "Not cleared" : "Not saved"
         return error.reason ? what + ": " + error.reason : what
     }
-    // A sign-in's state, on Accounts and in setup.
+    // A sign-in's state, on Services and in setup.
     readonly property var signInStates: ({
         signedIn: "Signed in", expired: "Expired", missing: "Not signed in", unknown: "Unknown",
         disabled: "Disabled", unusable: "Unusable", checking: "Checking"
     })
-    // A service's line on Accounts: what to do when the keyring didn't
+    // A service's line on Services: what to do when the keyring didn't
     // answer or, signing in through the Codex app or Claude Code (oauth),
     // a sign-in is missing or expired; else core's own words, else where
     // its last check found the sign-in (Accounts.services).
@@ -88,25 +91,16 @@ QtObject {
                        || "Unlock your keyring (GNOME Keyring or KWallet)"
         return "Couldn't read " + key + " from the system keychain. " + unlock + ", then check again or choose another sign-in."
     }
-    // The last sign-in check couldn't reach the service, so it says nothing
-    // about the sign-in.
-    function signInUnreachable(name) { return "Couldn't reach " + name + " to check the sign-in." }
     // The link to a failure's own words, under its plain sentence.
     readonly property string details: "Details"
     readonly property string disabledInCliproxy: "Disabled in CLI Proxy API"
     readonly property string checkAll: "Check all"
     readonly property string signInAgain: "Sign in again"
-    readonly property string openAccounts: "Open Accounts"
-    // A working sign-in's row, where it comes from in its help.
-    readonly property string signIn: "Sign-in"
-    // A row that says how to sign in to a service: "Sign in to Claude".
-    function signInTo(name) { return "Sign in to " + name }
-    function signInUnknownFor(name) { return name + " sign-in unknown" }
-    // What each service on Accounts is used for, by its id.
+    readonly property string openServices: "Open Services"
+    // What each service on Services is used for, by its id.
     readonly property var serviceUses: ({
-        openai: "Used for dictation and cleanup.",
-        anthropic: "Used for dictation and cleanup.",
-        cliproxy: "Only needed when a service above signs in through it, or cleanup goes through its server."
+        openai: "Speech to text and Refinement.",
+        anthropic: "Speech to text and Refinement."
     })
 
     readonly property var shell: ({

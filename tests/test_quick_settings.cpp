@@ -461,11 +461,11 @@ private slots:
         engine.globalObject().setProperty(QStringLiteral("Settings"), engine.newQObject(&settings));
 
         const QJSValue result = engine.evaluate(QStringLiteral(R"(
-            Settings.set("speechFallbackList", ["codex"])
+            Settings.set("speechServices", [{ service: "claude" }, { service: "codex" }])
             Settings.set("preRollMs", 300)
             Settings.set("updateCheckInterval", "custom")
             Settings.set("updateCheckCustomInterval", { number: 2, unit: "hours" })
-            Settings.values.speechFallbackList
+            Settings.values.speechServices.map(e => e.service)
         )"));
         QVERIFY2(!result.isError(), qPrintable(result.toString()));
 
@@ -475,7 +475,7 @@ private slots:
         QCOMPARE(another.dictationSnapshot().audio.preRollMs, 300);
         QCOMPARE(another.dictationSnapshot().updates.checkIntervalMinutes, 120);
         QCOMPARE(another.dictationSnapshot().updates.checkIntervalUnit, QStringLiteral("hours"));
-        QCOMPARE(result.toVariant().toStringList(), QStringList{QStringLiteral("codex")});
+        QCOMPARE(result.toVariant().toStringList(), (QStringList{QStringLiteral("claude"), QStringLiteral("codex")}));
     }
 
     // A drag to either end holds the knob there, under the pointer, until it

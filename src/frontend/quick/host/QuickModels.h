@@ -16,7 +16,7 @@ class ApplicationController;
 // speech and refinement providers come from the registry with where each
 // stands (ProviderReadiness) and how each rates (ProviderRatings); the Local
 // Model catalog, downloads and Speed Tests, the hardware, the Local Runners,
-// the Ollama cleanup-model pull and both Custom Endpoints' connection checks
+// the Ollama cleanup-model pull and both servers' connection checks
 // come from the controller's LocalSetup, so they outlive the window. Data
 // only, as plain values; the UI words it (ModelText). Every list but
 // downloads changes through changed(), which fires only when something did.
@@ -91,7 +91,7 @@ class QuickModels final : public QObject, public HostSingleton<QuickModels> {
     // chosen model isn't downloaded.
     Q_PROPERTY(QString inUse READ inUse NOTIFY changed)
 
-    // Each Custom Endpoint's connection check, for the server the settings
+    // Each server's connection check, for the server the settings
     // name now: {checked, checking, ok, status, models}. status is core's
     // verdict; checked is false before the first check of that server.
     Q_PROPERTY(QVariantMap speechEndpoint READ speechEndpoint NOTIFY changed)
@@ -183,7 +183,7 @@ public:
     Q_INVOKABLE void testSpeed(const QString &id);
     Q_INVOKABLE void openModelFolder();
 
-    // Checks the Custom Endpoint the settings name now.
+    // Checks the server the settings name now.
     Q_INVOKABLE void testSpeechEndpoint();
     Q_INVOKABLE void testRefinementEndpoint();
     Q_INVOKABLE void detectRunners();

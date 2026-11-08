@@ -21,7 +21,7 @@ const QStringList codexLanguages = languageCodes(
     "af am ar az be bg bn bs ca cs cy da de el en es et fa fi fr gl gu he hi hr hu hy id is it ja ka kk kn "
     "ko lt lv mi mk ml mn mr ms my ne nl no pl pt ro ru sk sl so sr sv sw ta te th tl tr uk ur vi yue zh");
 
-// A Custom Endpoint's server is unknown; most speak Whisper's languages.
+// Your speech server's languages are unknown; most speak Whisper's.
 QStringList endpointLanguages()
 {
     return findLocalModel(QStringLiteral("whisper-turbo"))->languages;

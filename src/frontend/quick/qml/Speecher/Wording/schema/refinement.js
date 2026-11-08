@@ -1,87 +1,34 @@
 .pragma library
 
+// The refinement services, in order, are custom: their choices come from
+// Models, and their sign-ins, runner and server live on Services.
 var rows = [
-    { id: "refinementProvider", page: "refinement", section: "Service", kind: "custom",
-      label: "Service", help: "The service that cleans up your text.",
-      keywords: "provider service llm ai openai anthropic claude chatgpt local runner custom endpoint none off disable" },
-    { id: "refinementRating", page: "refinement", section: "Service", kind: "custom",
-      label: "Rating", help: "Out of 10.", keywords: "quality speed score benchmark" },
-    { id: "refinementFallbacks", page: "refinement", section: "Fallbacks", kind: "custom",
-      label: "Fallbacks", help: "Speecher tries these top to bottom and tells you when it used one.",
-      headingText: "If %1 is unavailable",
-      emptyText: "None. If %1 is unavailable, your words are pasted as spoken.", addLabel: "Add a fallback",
-      addHelp: "Used when everything above is unavailable.",
-      keywords: "backup failover retry order second provider" },
-
-    { id: "openAiModel", page: "refinement", section: "ChatGPT", kind: "custom",
-      label: "Model", help: "Defaults to gpt-6-luna. Pick one or type another model ID.",
-      keywords: "openai gpt model id luna sol astra" },
-    { id: "openAiEffort", page: "refinement", section: "ChatGPT", kind: "choice",
-      label: "Thinking", help: "More thinking follows instructions more closely but takes longer.",
-      keywords: "reasoning effort openai",
-      options: [
-          { id: "none", label: "None" }, { id: "low", label: "Low" }, { id: "medium", label: "Medium" },
-          { id: "high", label: "High" }, { id: "xhigh", label: "Extra high" }
-      ] },
-    { id: "openAiSpeed", page: "refinement", section: "ChatGPT", kind: "choice",
-      label: "Speed", help: "Fast answers sooner for slightly more usage.",
-      keywords: "fast ultrafast priority openai",
-      options: [
-          { id: "standard", label: "Standard" }, { id: "fast", label: "Fast" }, { id: "ultrafast", label: "Ultrafast" }
-      ] },
-
-    { id: "anthropicModel", page: "refinement", section: "Claude", kind: "custom",
-      label: "Model", help: "Defaults to Claude Opus 5.5. Pick one or type another model ID.",
-      keywords: "anthropic claude model opus sonnet haiku" },
-    { id: "anthropicEffort", page: "refinement", section: "Claude", kind: "choice",
-      label: "Thinking", help: "More thinking follows instructions more closely but takes longer.",
-      keywords: "reasoning effort anthropic claude",
-      options: [
-          { id: "low", label: "Low" }, { id: "medium", label: "Medium" }, { id: "high", label: "High" },
-          { id: "xhigh", label: "Extra high" }, { id: "max", label: "Max" }
-      ] },
-    { id: "anthropicFastMode", page: "refinement", section: "Claude", kind: "choice",
-      label: "Speed", help: "Fast answers sooner and spends usage credits. Only Opus models support it.",
-      keywords: "fast mode anthropic claude",
-      options: [ { id: "standard", label: "Standard" }, { id: "fast", label: "Fast" } ] },
-
-    { id: "localRunner", page: "refinement", section: "Local Runner", kind: "custom",
-      label: "Runner", help: "The app on this computer that runs the cleanup model.",
-      placeholder: "Not selected",
-      keywords: "ollama lm studio llama-server llama.cpp offline local" },
-    { id: "localRunnerModel", page: "refinement", section: "Local Runner", kind: "custom",
-      label: "Model", help: "A cleanup model the runner has downloaded.", placeholder: "qwen3:8b",
-      keywords: "local model ollama qwen llama gemma" },
-    { id: "localRunnerDetect", page: "refinement", section: "Local Runner", kind: "custom",
-      label: "Runners on this computer", help: "Checks which runners are running on this computer.",
-      keywords: "look for detect scan find runners again" },
-
-    { id: "refinementEndpointServer", page: "refinement", section: "Custom Endpoint", kind: "choice",
-      label: "Server", help: "Your own server, or the CLI Proxy API server set up on Accounts.",
-      // The row that names the CLI Proxy API server, which Accounts owns.
-      cliproxyLabel: "CLI Proxy API server", cliproxyUnset: "No server URL is set on Accounts yet.",
-      keywords: "endpoint cli proxy api self-hosted",
-      options: [ { id: "custom", label: "Custom" }, { id: "cliproxy", label: "CLI Proxy API" } ] },
-    { id: "refinementEndpointFormat", page: "refinement", section: "Custom Endpoint", kind: "choice", control: "select",
-      label: "Format", help: "The API the server speaks.",
-      keywords: "api compatible chat completions messages",
-      options: [
-          { id: "openai", label: "OpenAI-compatible", help: "Chat Completions" },
-          { id: "anthropic", label: "Anthropic-compatible", help: "Messages" }
-      ] },
-    { id: "refinementEndpointUrl", page: "refinement", section: "Custom Endpoint", kind: "text",
-      label: "Server URL", help: "The API base.", placeholder: "http://localhost:11434/v1",
-      keywords: "endpoint url base address host" },
-    { id: "refinementEndpointApiKey", page: "refinement", section: "Custom Endpoint", kind: "secret",
-      label: "Custom Endpoint API key", help: "Optional. Stored in the system keychain when there is one.",
-      placeholder: "sk-…", keywords: "token secret key endpoint" },
-    { id: "refinementEndpointModel", page: "refinement", section: "Custom Endpoint", kind: "custom",
-      label: "Model", help: "Test the connection to list the server's models, or type one.",
-      placeholder: "Type a model, or test to list them",
-      keywords: "endpoint model" },
-    { id: "refinementEndpointTest", page: "refinement", section: "Custom Endpoint", kind: "custom",
-      label: "Connection", help: "Checks the server answers, and lists its models.", actionLabel: "Test connection",
-      keywords: "test check verify endpoint" },
+    { id: "refinementEnabled", page: "refinement", section: "Clean up", kind: "toggle",
+      label: "Clean up my words", help: "A service tidies what you said before it's pasted. Off, your words are pasted as spoken.",
+      // What a Writing Profile says over its cleanup while this is off.
+      offNote: "Refinement is off.",
+      keywords: "refinement cleanup enable disable off none raw as spoken" },
+    { id: "refinementServices", page: "refinement", section: "Services, in order", kind: "custom",
+      label: "Services, in order",
+      help: "Speecher uses the first one that works. If none does, your words are pasted as spoken.",
+      addLabel: "Add a service", addHelp: "Used when the ones above are unavailable.",
+      maxCount: 3,
+      // Each entry's own controls: its model, and ChatGPT's and Claude's
+      // thinking and speed.
+      modelLabel: "Model", effortLabel: "Thinking", speedLabel: "Speed",
+      effortOptions: {
+          openai: [ { id: "none", label: "None" }, { id: "low", label: "Low" }, { id: "medium", label: "Medium" },
+                    { id: "high", label: "High" }, { id: "xhigh", label: "Extra high" } ],
+          anthropic: [ { id: "low", label: "Low" }, { id: "medium", label: "Medium" }, { id: "high", label: "High" },
+                       { id: "xhigh", label: "Extra high" }, { id: "max", label: "Max" } ]
+      },
+      speedOptions: {
+          openai: [ { id: "standard", label: "Standard" }, { id: "fast", label: "Fast" }, { id: "ultrafast", label: "Ultrafast" } ],
+          anthropic: [ { id: "standard", label: "Standard" }, { id: "fast", label: "Fast" } ]
+      },
+      ultrafastPlans: "Ultrafast only works on ChatGPT Pro $500 and eligible Enterprise and Edu plans. Other plans run it at Standard.",
+      ultrafastModels: "Ultrafast needs GPT-6 Astra or GPT-6.1 Sol. This model refines at Fast.",
+      keywords: "provider service llm ai openai anthropic claude chatgpt local runner server model thinking effort reasoning speed fast ultrafast fallback backup order" },
 
     { id: "targetContextControl", page: "refinement", section: "What refinement can see", kind: "toggle",
       label: "Text around your cursor", help: "Lets cleanup fit what you are writing.",

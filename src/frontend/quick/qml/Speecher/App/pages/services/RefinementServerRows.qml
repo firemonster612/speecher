@@ -5,24 +5,29 @@ import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
 
-// The refinement Custom Endpoint's rows, on the Refinement page and setup's
-// Refinement step: the server, its format, URL, key and model, and the
-// connection check, whose models the Model row suggests. Each row saves as
-// it changes.
+// The refinement server's rows, among Your servers on Services, in its Fix
+// sheet and on setup's Refinement step: its URL, format, key and model, and
+// the connection check, whose models the Model row suggests. The CLI Proxy
+// API server a sign-in names is offered as the URL. Each row saves as it
+// changes.
 Column {
     width: parent ? parent.width : implicitWidth
 
-    SchemaRow { id: serverRow; rowId: "refinementEndpointServer" }
-    // The CLI Proxy API preset uses the server Accounts sets, so it shows
-    // which and opens it there.
+    SchemaRow { id: urlRow; rowId: "refinementEndpointUrl" }
+    // Fills in the proxy's address once, which then sends the proxy's key.
     SettingRow {
-        shown: Settings.values.refinementEndpointServer === "cliproxy"
-        title: serverRow.spec.cliproxyLabel
-        help: Settings.values.cliproxyBaseUrl || serverRow.spec.cliproxyUnset
-        AccountsLink { rowId: "cliproxyBaseUrl" }
+        readonly property string proxy: Settings.values.cliproxyBaseUrl || ""
+        shown: proxy.length > 0 && !(Settings.values.refinementEndpointUrl || "").startsWith(proxy)
+        title: urlRow.spec.cliproxyLabel
+        help: urlRow.spec.cliproxyHelp.arg(proxy + "/v1")
+        Button {
+            objectName: "useCliproxyServer"
+            text: Words.use
+            size: "small"
+            onClicked: Settings.act("useCliproxyServer")
+        }
     }
     SchemaRow { rowId: "refinementEndpointFormat" }
-    SchemaRow { rowId: "refinementEndpointUrl" }
     SchemaRow { rowId: "refinementEndpointApiKey" }
     SchemaRow {
         id: endpointModelRow

@@ -151,33 +151,35 @@ LibraryLists {
         levelsEmpty: "Start from Light, Medium or High and add your own rules, such as keeping bullet points.",
         toneSkipped: "Cleanup None skips refinement, so tone has no effect.",
         languageHelp: "Writes in this language, whatever you speak. Pick one or type any language, regional varieties too.",
-        noRefiner: "Refinement's service is None, so this profile's cleanup and output language have no effect. Choose a service on Refinement, or one for this profile below.",
+        noRefiner: "Clean up my words is off on Refinement, so this profile's cleanup and output language have no effect.",
         everyProfile: "As for every profile.",
         custom: "Custom",
         default_: "Default",
         speech: "Speech",
-        ownSpeechHelp: "Falls back to the services under Speech to text.",
-        defaultSpeechHelp: "Set under Speech to text, with its fallbacks.",
+        ownSpeechHelp: "Tried first, then the services under Speech to text.",
+        defaultSpeechHelp: "The services under Speech to text, in their order.",
         speechModel: "Speech model",
         refinement: "Refinement",
         refinementSkipped: "Cleanup None skips refinement for this profile.",
-        defaultRefinementHelp: "Set under Refinement, with its fallbacks.",
+        defaultRefinementHelp: "The services under Refinement, in their order.",
         refinementModel: "Refinement model",
-        defaultModel: "Default model"
+        defaultModel: "Same as Refinement"
     })
     // Cleanup None with an output language still translates, which takes
     // Light cleanup from the profile's provider.
     function translatesAtLight(provider) { return "None still translates, at Light cleanup, with " + provider + "." }
-    // "Default (Claude)": a profile's choice that follows the app's.
-    function defaultChoice(label) { return "Default (" + label + ")" }
-    // A profile's own refinement provider, whose settings live on Refinement.
-    function ownRefinementHelp(provider) { return "Thinking and speed are " + provider + "'s settings under Refinement." }
+    // "Same as Speech to text (Claude)": a profile's choice that follows a
+    // page's order, by the page's title and the order's first service.
+    function sameAs(page, label) { return "Same as " + page + " (" + label + ")" }
+    // A profile's own refinement service, whose thinking and speed are its
+    // entry's in Refinement's order.
+    function ownRefinementHelp(provider) { return "Thinking and speed are " + provider + "'s, as Refinement's order sets them." }
 
     // Vocabulary ---------------------------------------------------------
 
     // "3 of 100 key terms go to Claude. Refinement uses all 7 terms."
     readonly property string keyTermsText: {
-        const service = Models.service(Settings.values.speechProvider).label
+        const service = Models.service(((Settings.values.speechServices || [])[0] || { service: "" }).service).label
         const speech = speechTakesKeyTerms ? keyTermsSent + " of " + keyTermLimit + " key terms go to " + service + "."
                                            : service + " takes no key terms."
         const refinement = terms.length > refinementTermLimit ? "Refinement uses the first " + Words.num(refinementTermLimit) + "."
