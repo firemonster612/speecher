@@ -102,7 +102,8 @@ DictationPlan planDictation(const AppSettings &saved,
     // listens for the run's language, then the run's.
     const SpeechSettings speechPage = settings.speech;
     QString speechFrom = kDefault;
-    if (const std::optional<ServiceOrder> led = ledBy(ProviderRole::Speech, speechPage.services, plan.profile.speechFirst)) {
+    if (const std::optional<ServiceOrder> led =
+            ledBy(ProviderRole::Speech, speechPage.services, plan.profile.speechFirst)) {
         SpeechSettings profiled = speechPage;
         profiled.services = *led;
         if (listensForSpokenLanguage(profiled) && (!offersSpeech || offersSpeech(led->main()))) {
@@ -124,7 +125,8 @@ DictationPlan planDictation(const AppSettings &saved,
     if (const std::optional<ServiceOrder> led =
             ledBy(ProviderRole::Refinement, refinementPage, plan.profile.refinementFirst)) {
         refinement.services = *led;
-        refinementFrom = fromProfile;
+        // With Clean up my words off the page's switch decides: nothing runs.
+        refinementFrom = refinement.enabled ? fromProfile : kDefault;
     }
     if (run.refinement) {
         refinement.enabled = run.refinement->service != kNoRefinementProvider;

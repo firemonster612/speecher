@@ -230,6 +230,13 @@ QList<Cell> layerTable()
              run.writingProfile = WritingProfile::Work;
          },
          QStringLiteral("refinement"), refinement, QStringLiteral("anthropic"), work},
+        {"refinement service: profile, with Clean up my words off",
+         [](AppSettings &settings, Target &, RunOverrides &run) {
+             settings.refinement.enabled = false;
+             profile(settings, WritingProfile::Work).refinementFirst = ServiceChoice{QStringLiteral("anthropic")};
+             run.writingProfile = WritingProfile::Work;
+         },
+         QStringLiteral("refinement"), refinement, kNoRefinementProvider, byDefault},
         {"refinement service: run, with Clean up my words off",
          [](AppSettings &settings, Target &, RunOverrides &run) {
              settings.refinement.enabled = false;

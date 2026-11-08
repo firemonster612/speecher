@@ -128,8 +128,6 @@ QuickTranscription::QuickTranscription(ApplicationController *controller, QObjec
     connect(&m_queue, &TranscribeQueue::optionsChanged, this, &QuickTranscription::optionsChanged);
     connect(&m_queue, &TranscribeQueue::resultsChanged, this, &QuickTranscription::resultsChanged);
     connect(&m_queue, &TranscribeQueue::problemChanged, this, &QuickTranscription::problemChanged);
-    // The refiner's model and the seeded language follow the settings.
-    connect(controller->settings(), &SettingsStore::snapshotApplied, this, &QuickTranscription::optionsChanged);
 }
 
 void QuickTranscription::addFiles(const QStringList &paths)
