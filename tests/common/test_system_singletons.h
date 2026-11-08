@@ -4,6 +4,7 @@
 #include "app/SpeecherRemoval.h"
 #include "app/VirtualKeyboardSetup.h"
 #include "frontend/quick/host/QuickPhone.h"
+#include "frontend/quick/host/QuickRecording.h"
 #include "frontend/quick/host/QuickRemoval.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickSystem.h"
@@ -14,8 +15,8 @@
 namespace speecher::test {
 
 // System, Removal and Phone over one virtual keyboard setup, with the
-// Settings System reads, as the host makes them, for tests whose pages read
-// them.
+// Settings System reads, as the host makes them, and Recording, which Home
+// reads, for tests whose pages read them.
 struct SystemSingletons {
     // This computer's virtual keyboard and removal steps, which run only
     // when a test asks.
@@ -32,6 +33,7 @@ struct SystemSingletons {
         , removal(&virtualKeyboard, std::move(removalSteps))
         , system(controller, &settings, &virtualKeyboard, &removal)
         , phone(controller)
+        , recording(controller)
     {
     }
 
@@ -40,6 +42,7 @@ struct SystemSingletons {
     QuickRemoval removal;
     QuickSystem system;
     QuickPhone phone;
+    QuickRecording recording;
 };
 
 } // namespace speecher::test

@@ -198,6 +198,14 @@ QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, TrayIcon *tray, 
             m_popup->show(0);
         }
     });
+    connect(&m_recording, &QuickRecording::pageRequested, this, [this](const QString &pageId, const QString &rowId) {
+        if (rowId.isEmpty()) {
+            showPage(pageId);
+            return;
+        }
+        m_navigation.goToRow(pageId, rowId);
+        showPage({});
+    });
     // The first recording ever, asked for from the tray or its shortcut,
     // waits for the consent notice on Recordings.
     connect(controller, &ApplicationController::recordingConsentNeeded, this,

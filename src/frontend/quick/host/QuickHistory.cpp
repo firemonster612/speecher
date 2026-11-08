@@ -164,6 +164,20 @@ void QuickHistory::fetchMore()
     emit resultsChanged();
 }
 
+QVariantList QuickHistory::recent(const QString &kind, int limit) const
+{
+    HistoryQuery query;
+    query.limit = limit;
+    if (const std::optional<HistoryKind> named = historyKindFromName(kind)) {
+        query.kinds = {*named};
+    }
+    QVariantList results;
+    for (const HistoryHit &hit : m_controller->history()->search(query)) {
+        results.append(resultOf(hit));
+    }
+    return results;
+}
+
 QVariantMap QuickHistory::resultOf(const HistoryHit &hit, const QStringList &terms) const
 {
     const HistoryEntry &entry = hit.entry;
@@ -171,11 +185,10 @@ QVariantMap QuickHistory::resultOf(const HistoryHit &hit, const QStringList &ter
     QVariantList lines;
     if (recording && !terms.isEmpty()) {
         for (const HistoryLine &line : m_controller->history()->lines(entry.id)) {
-            const QString highlighted = highlightHistoryMatches(line.text, terms);
-            if (lines.size() < 3 && highlighted != line.text) {
+            if (lines.size() < 3 && highlightHistoryMatches(line.text, terms) != line.text) {
                 lines.append(QVariantMap{{QStringLiteral("atMs"), line.atMs},
                                          {QStringLiteral("speaker"), line.speaker},
-                                         {QStringLiteral("html"), matchesHtml(highlighted)}});
+                                         {QStringLiteral("text"), line.text}});
             }
         }
     }

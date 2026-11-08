@@ -36,7 +36,7 @@ class QuickHistory final : public QObject, public HostSingleton<QuickHistory> {
     // complete, missed), hasAudio, hasRaw, title, transcriptPath, fileMissing,
     // live (a Recording still running, which has no finishedAt), lines (a
     // Recording's lines that match the search, at most three: { atMs,
-    // speaker, html }) }].
+    // speaker, text }) }].
     Q_PROPERTY(QVariantList results READ results NOTIFY resultsChanged)
     // How many the query finds on every page, and whether there are more to
     // fetch.
@@ -75,6 +75,10 @@ public:
 
     // The next page of the query's entries.
     Q_INVOKABLE void fetchMore();
+    // The newest entries of a kind (dictation, file, recording), as results
+    // hold them, whatever the query: Recordings' Recent recordings. Ask
+    // again on changed.
+    Q_INVOKABLE QVariantList recent(const QString &kind, int limit) const;
     // One entry in full: what a result holds, with raw (the Raw
     // Transcript), speech and refinement (the services that ran, by id),
     // sourcePath, and a Recording's lines ([{ atMs, speaker, text }]) and

@@ -162,8 +162,8 @@ private slots:
 
     // Clear asks how many first, and deletes the words; with the stats, the
     // entries too.
-    // A Recording lists its lines that match the search, bold and escaped;
-    // in full it has all of them. Export writes them as its file has them or
+    // A Recording lists its lines that match the search; in full it has all
+    // of them. Export writes them as its file has them or
     // as JSON, and a delete can take its files with it.
     void aRecordingShowsItsLinesExportsAndGoes()
     {
@@ -193,7 +193,7 @@ private slots:
         QVERIFY(!found.value(QStringLiteral("live")).toBool());
         const QVariantList lines = found.value(QStringLiteral("lines")).toList();
         QCOMPARE(lines.size(), 1);
-        QCOMPARE(lines.first().toMap().value(QStringLiteral("html")).toString(), QStringLiteral("It retries after a <b>403</b>"));
+        QCOMPARE(lines.first().toMap().value(QStringLiteral("text")).toString(), QStringLiteral("It retries after a 403"));
         QCOMPARE(history.entry(id).value(QStringLiteral("lines")).toList().size(), 2);
 
         const QUrl markdown = history.exportFile(id, QStringLiteral("txt"));

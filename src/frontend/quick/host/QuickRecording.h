@@ -93,6 +93,9 @@ signals:
     void consentNeededChanged();
     // { atMs, speaker, text }: a line the file just took.
     void lineAdded(const QVariantMap &line);
+    // Main on pageId, landing on rowId when it names one; the popup's pill
+    // asks for it, as it has no window of its own to open pages in.
+    void pageRequested(const QString &pageId, const QString &rowId);
 
 private:
     ApplicationController *m_controller;

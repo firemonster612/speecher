@@ -3,6 +3,7 @@
 // popup state load and draw without a QML warning, and the popup's level
 // animation stays inside its bar.
 #include "common/service_order_rows.h"
+#include "common/test_doubles.h"
 #include "common/test_quick_windows.h"
 #include "common/test_suites.h"
 #include "common/apps_fixtures.h"
@@ -10,6 +11,7 @@
 
 #include "app/AppFrontEnd.h"
 #include "app/ApplicationController.h"
+#include "app/PlatformComposition.h"
 #include "app/TrayIcon.h"
 #include "core/PasteMethod.h"
 #include "core/SettingsStore.h"
@@ -24,6 +26,8 @@
 #include "frontend/quick/host/QuickFrontEnd.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/ScatterRibbon.h"
+#include "providers/ProviderRegistry.h"
+#include "recording/RecordingSession.h"
 
 #include <QAccessible>
 #include <QDir>
@@ -211,6 +215,56 @@ QQuickItem *sidebarEntry(QQuickWindow *window, const QString &pageId)
     return nullptr;
 }
 
+// This platform, but a Recording's microphone and system audio are fakes
+// the test drives, so the Recordings page and the pill can be seen in each
+// state of a real recording.
+class RecordingPlatform final : public PlatformComposition {
+public:
+    QString ipcListenName() const override { return m_platform->ipcListenName(); }
+    QStringList ipcConnectCandidates() const override { return m_platform->ipcConnectCandidates(); }
+    QString detachedExecutablePath() const override { return m_platform->detachedExecutablePath(); }
+    QString outputSummary() const override { return m_platform->outputSummary(); }
+    QList<AudioInputDeviceInfo> availableAudioInputDevices() const override { return m_platform->availableAudioInputDevices(); }
+    AudioInput *createAudioInput(SettingsStore *settings, QObject *parent) const override
+    {
+        return m_platform->createAudioInput(settings, parent);
+    }
+    AudioInput *createRecordingAudioInput(SettingsStore *, QObject *parent) const override
+    {
+        return microphone = new test::FakeAudioInput(parent);
+    }
+    bool recordsSystemAudio() const override { return true; }
+    AudioInput *createSystemAudioInput(QObject *parent) const override { return systemAudio = new test::FakeAudioInput(parent); }
+    MediaController *createMediaController(QObject *parent) const override { return m_platform->createMediaController(parent); }
+    TargetProvider *createTargetProvider(QObject *parent) const override { return m_platform->createTargetProvider(parent); }
+    ScreenshotContextProvider *createScreenshotContextProvider(QObject *parent) const override
+    {
+        return m_platform->createScreenshotContextProvider(parent);
+    }
+    TextDeliveryAdapter *createTextDelivery(TargetProvider *targetProvider, QObject *parent) const override
+    {
+        return m_platform->createTextDelivery(targetProvider, parent);
+    }
+    PopupPositioner *createPopupPositioner(QObject *parent) const override { return m_platform->createPopupPositioner(parent); }
+    GlobalShortcutBinder *createGlobalShortcutBinder(GlobalShortcutRole role, SettingsStore *settings,
+                                                     QObject *parent) const override
+    {
+        return m_platform->createGlobalShortcutBinder(role, settings, parent);
+    }
+    AccessibilityState accessibilityState() const override { return m_platform->accessibilityState(); }
+    bool requestAccessibility(QString *error) const override { return m_platform->requestAccessibility(error); }
+    bool enableAccessibilityPermanently(QString *error) const override
+    {
+        return m_platform->enableAccessibilityPermanently(error);
+    }
+
+    mutable QPointer<test::FakeAudioInput> microphone;
+    mutable QPointer<test::FakeAudioInput> systemAudio;
+
+private:
+    std::shared_ptr<const PlatformComposition> m_platform = platformComposition();
+};
+
 } // namespace
 
 class QuickPagesTests : public QObject {
@@ -318,7 +372,9 @@ private slots:
                                         std::pair{QStringLiteral("otherAppsProfile"), QStringLiteral("apps")},
                                         std::pair{QStringLiteral("appsPasteDifferently"), QStringLiteral("pasting")},
                                         std::pair{QStringLiteral("speechEndpointUrl"), QStringLiteral("services")},
-                                        std::pair{QStringLiteral("pressPasteKeys"), QStringLiteral("pasting")}}) {
+                                        std::pair{QStringLiteral("pressPasteKeys"), QStringLiteral("pasting")},
+                                        std::pair{QStringLiteral("recordingFolder"), QStringLiteral("recordings")},
+                                        std::pair{QStringLiteral("recordingAutoStop"), QStringLiteral("recordings")}}) {
             steps.append({QStringLiteral("row ") + row, [navigation, row, page] {
                               navigation->goToRow(page, row);
                               QCOMPARE(navigation->current(), page);
@@ -350,6 +406,13 @@ private slots:
                                                           QStringLiteral("Vocabulary, Your vocabulary")}));
                           QVERIFY(searchResults(search, QStringLiteral("keybinding"))
                                       .contains(std::pair{QStringLiteral("startCommand"), QStringLiteral("Dictation, How shortcuts reach Speecher")}));
+                          // Recordings is a page of its own, and its settings
+                          // are found by what they do.
+                          QVERIFY(searchResults(search, QStringLiteral("recordings"))
+                                      .contains(std::pair{QStringLiteral("recordings"), QString()}));
+                          QVERIFY(searchResults(search, QStringLiteral("silence"))
+                                      .contains(std::pair{QStringLiteral("recordingAutoStop"),
+                                                          QStringLiteral("Recordings, Recording settings")}));
                           // Services is a page of its own, with no path.
                           QVERIFY(searchResults(search, QStringLiteral("services"))
                                       .contains(std::pair{QStringLiteral("services"), QString()}));
@@ -1383,6 +1446,195 @@ private slots:
                  QTRY_VERIFY(newest->property("selected").toBool());
              }},
             {QStringLiteral("home with history"), [navigation] { navigation->go(QStringLiteral("home")); }},
+        },
+                 main);
+    }
+
+    // Recordings in each state of a real recording, over fake inputs and a
+    // fake speech service: idle with a recent one, refused while no speech
+    // service can record, starting, recording with call audio reconnecting,
+    // and stopping; then the popup's pill while it records and once it is
+    // saved.
+    void recordingStatesLoad_data() { themes(); }
+    void recordingStatesLoad()
+    {
+        QFETCH(QString, theme);
+        const auto platform = std::make_shared<RecordingPlatform>();
+        ApplicationController controller(true, platform);
+        controller.history()->clear({}, {}, true);
+        // Clearing leaves recordings, and History's file outlives the test.
+        const auto forgetRecordings = [&controller] {
+            HistoryQuery recordings;
+            recordings.kinds = {HistoryKind::Recording};
+            recordings.limit = 1000;
+            for (const HistoryHit &hit : controller.history()->search(recordings)) {
+                controller.history()->remove(hit.entry.id);
+            }
+        };
+        forgetRecordings();
+        const auto forget = qScopeGuard(forgetRecordings);
+        QList<QPointer<test::FakeSpeechTranscriber>> streams;
+        bool connects = false;
+        controller.providerRegistry()->registerSpeechProvider(
+            {QStringLiteral("codex"), QStringLiteral("ChatGPT")}, [&streams, &connects](QObject *parent) {
+                auto *codex = new test::FakeSpeechTranscriber(parent);
+                codex->providerId = QStringLiteral("codex");
+                codex->streamsFinals = true;
+                codex->autoCompleteOnFinish = false;
+                codex->onStartAttempt = [codex, &connects] {
+                    if (connects) {
+                        codex->emitConnected();
+                    }
+                };
+                streams << codex;
+                return codex;
+            });
+        QTemporaryDir folder;
+        controller.settings()->edit([&folder](AppSettings &draft) {
+            draft.setupCompleted = true;
+            draft.speech.services.order = {QStringLiteral("local")};
+            draft.recording.folder = folder.path();
+            return true;
+        });
+        controller.settings()->setRecordingConsentNoticeShown(true);
+        // A recording from yesterday, for Recent recordings.
+        HistoryEntry past;
+        past.kind = HistoryKind::Recording;
+        past.startedAt = QDateTime::currentDateTime().addDays(-1);
+        past.title = QStringLiteral("Design review");
+        past.transcriptPath = folder.filePath(QStringLiteral("design-review.md"));
+        past.kept = HistoryKeep::Text;
+        past.outcome = HistoryOutcome::Complete;
+        const qint64 pastId = controller.history()->add(past);
+        controller.history()->appendLine(pastId, {4000, QStringLiteral("me"), QStringLiteral("Can everyone see the board?")});
+        controller.history()->finishRecording(pastId, past.startedAt.addSecs(18 * 60), 18 * 60 * 1000,
+                                              HistoryOutcome::Complete, {});
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("themeControl"), theme);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main && QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"),
+                                                                                QStringLiteral("Navigation"));
+        RecordingSession *recording = controller.recording();
+        const auto streamsRunning = [&streams] {
+            return std::count_if(streams.cbegin(), streams.cend(),
+                                 [](const QPointer<test::FakeSpeechTranscriber> &s) { return s && s->startCalls > 0; });
+        };
+        runSteps({
+            {QStringLiteral("recordings refused"), [navigation, main] {
+                 navigation->go(QStringLiteral("recordings"));
+                 QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("recordingRefusal")));
+             }},
+            {QStringLiteral("recordings idle"), [&controller, main] {
+                 controller.settings()->edit([](AppSettings &draft) {
+                     draft.speech.services.order = {QStringLiteral("codex"), QStringLiteral("local")};
+                     return true;
+                 });
+                 QQuickItem *record = findItem(main->contentItem(), QStringLiteral("recordButton"));
+                 QVERIFY(record);
+                 QTRY_VERIFY(record->isEnabled());
+             }},
+            {QStringLiteral("recordings starting"), [main, recording, &streamsRunning] {
+                 findItem(main->contentItem(), QStringLiteral("recordingName"))->setProperty("text", QStringLiteral("Weekly sync"));
+                 QMetaObject::invokeMethod(findItem(main->contentItem(), QStringLiteral("recordButton")), "clicked");
+                 QTRY_COMPARE(recording->phase(), RecordingSession::Phase::Starting);
+                 QTRY_COMPARE(streamsRunning(), 2);
+             }},
+            {QStringLiteral("recordings recording, call audio reconnecting"), [&] {
+                 for (const QPointer<test::FakeSpeechTranscriber> &stream : std::as_const(streams)) {
+                     if (stream && stream->startCalls > 0) {
+                         stream->emitConnected();
+                     }
+                 }
+                 QTRY_COMPARE(recording->phase(), RecordingSession::Phase::Recording);
+                 test::FakeSpeechTranscriber *me = streams.at(streams.size() - 2);
+                 test::FakeSpeechTranscriber *them = streams.last();
+                 me->emitFinalText(QStringLiteral("So the fix is on the branch already."));
+                 them->emitFinalText(QStringLiteral("Great, can you link it in the channel?"));
+                 me->emitFinalText(QStringLiteral("Sure, give me a second."));
+                 emit platform->microphone->levelChanged(0.6f);
+                 emit platform->systemAudio->levelChanged(0.3f);
+                 connects = false;
+                 them->emitFailure(QStringLiteral("Connection reset"), true);
+                 QTRY_COMPARE(recording->status().streams.last().state, RecordingStreamStatus::State::Reconnecting);
+                 QCOMPARE(recording->status().title, QStringLiteral("Weekly sync"));
+             }},
+            {QStringLiteral("home while recording"), [navigation, main] {
+                 navigation->go(QStringLiteral("home"));
+                 QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("homeRecording")));
+             }},
+            {QStringLiteral("recordings stopping"), [navigation, main, recording] {
+                 navigation->go(QStringLiteral("recordings"));
+                 QQuickItem *stop = nullptr;
+                 QTRY_VERIFY((stop = findItem(main->contentItem(), QStringLiteral("stopRecording"))));
+                 QMetaObject::invokeMethod(stop, "clicked");
+                 QTRY_COMPARE(recording->phase(), RecordingSession::Phase::Stopping);
+             }},
+        },
+                 main);
+        if (QTest::currentTestFailed()) {
+            return;
+        }
+
+        // The pill, over a fresh recording, then saved once it stops.
+        QQuickWindow *popup = openWindow("PopupWindow");
+        QVERIFY(popup);
+        const auto grabPopup = [popup, &theme](const QString &step) {
+            if (captureDir().isEmpty()) {
+                return;
+            }
+            QTest::qWait(kSettleMs);
+            QVERIFY(QDir().mkpath(captureDir()));
+            QVERIFY(popup->grabWindow().save(QDir(captureDir()).filePath(theme + QStringLiteral("-popup-") + step + QStringLiteral(".png"))));
+        };
+        for (const QPointer<test::FakeSpeechTranscriber> &stream : std::as_const(streams)) {
+            if (stream && stream->startCalls > 0) {
+                stream->emitCompletion();
+            }
+        }
+        QTRY_COMPARE(recording->phase(), RecordingSession::Phase::Off);
+        QQuickItem *pill = findItem(popup->contentItem(), QStringLiteral("recordingPill"));
+        QVERIFY(pill);
+        QTRY_VERIFY(popup->isVisible());
+        QTRY_COMPARE(findItem(popup->contentItem(), QStringLiteral("recordingPillText"))->property("text").toString(),
+                     QStringLiteral("Saved"));
+        grabPopup(QStringLiteral("saved"));
+        connects = true;
+        QuickRecording *quick = qmlEngine(main)->singletonInstance<QuickRecording *>(QStringLiteral("Speecher.Backend"),
+                                                                                     QStringLiteral("Recording"));
+        quick->start(QString());
+        QTRY_COMPARE(recording->phase(), RecordingSession::Phase::Recording);
+        QTRY_VERIFY(findItem(popup->contentItem(), QStringLiteral("recordingPillText"))
+                        ->property("text").toString().startsWith(QStringLiteral("Recording ")));
+        QVERIFY(pill->property("shown").toBool());
+        grabPopup(QStringLiteral("recording"));
+        // Recent recordings lists both, newest first, in History's rows.
+        QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("historyRow_") + QString::number(pastId)));
+        for (const QPointer<test::FakeSpeechTranscriber> &stream : std::as_const(streams)) {
+            if (stream) {
+                stream->autoCompleteOnFinish = true;
+            }
+        }
+        recording->stop();
+        QTRY_COMPARE(recording->phase(), RecordingSession::Phase::Off);
+
+        // In History, a recording is a row; a search lists its lines that
+        // match, and opening it reads it.
+        QQuickItem *search = nullptr;
+        runSteps({
+            {QStringLiteral("history with recordings"), [navigation, main, &search, pastId] {
+                 navigation->go(QStringLiteral("history"));
+                 QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("historyRow_") + QString::number(pastId)));
+                 QVERIFY((search = findItem(main->contentItem(), QStringLiteral("historySearch"))));
+                 search->setProperty("text", QStringLiteral("board"));
+             }},
+            {QStringLiteral("history recording reader"), [navigation, main, pastId] {
+                 navigation->goToRow(QStringLiteral("history"), QStringLiteral("recording:") + QString::number(pastId));
+                 QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("deleteRecording")));
+             }},
         },
                  main);
     }
