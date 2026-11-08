@@ -29,6 +29,10 @@
 #include <algorithm>
 #include <atomic>
 
+#ifdef Q_OS_LINUX
+#include <unistd.h>
+#endif
+
 using namespace speecher;
 
 namespace {
@@ -76,12 +80,18 @@ struct FakeModelCounts {
     std::atomic<int> sessions = 0;
 };
 
-// A 100 ms chunk the fake hears as the word "w<word>".
+// A 100 ms chunk the fake hears as the word "w<word>"; quiet() it hears as
+// nothing.
 QByteArray spoken(qint16 word)
 {
     QByteArray chunk(kSpeechChunkBytes, 0);
     qToLittleEndian<qint16>(word, chunk.data());
     return chunk;
+}
+
+QByteArray quiet()
+{
+    return QByteArray(kSpeechChunkBytes, 0);
 }
 
 QString fakeWords(const QByteArray &pcm)
@@ -181,6 +191,16 @@ QStringList texts(const QSignalSpy &spy)
     return result;
 }
 
+#ifdef Q_OS_LINUX
+qint64 residentBytes()
+{
+    QFile statm(QStringLiteral("/proc/self/statm"));
+    if (!statm.open(QIODevice::ReadOnly)) {
+        return -1;
+    }
+    return statm.readAll().split(' ').value(1).toLongLong() * sysconf(_SC_PAGESIZE);
+}
+#endif
 #endif
 
 } // namespace
@@ -1045,8 +1065,70 @@ private slots:
         QCOMPARE(finalStreamText(committed, revised), revised);
     }
 
-    // Two transcribers, such as dictation and another, load the model once,
-    // with a session each, and only one model at a time.
+    void recordingGetsOneFinalPerUtterance_data()
+    {
+        QTest::addColumn<bool>("streams");
+        QTest::newRow("streaming model") << true;
+        QTest::newRow("batch model") << false;
+    }
+
+    // Each utterance a recording marks is one final, the last one's at the
+    // end, and no whole-attempt transcript replaces them.
+    void recordingGetsOneFinalPerUtterance()
+    {
+        QFETCH(bool, streams);
+        QTemporaryDir dir;
+        LocalModelStore store(dir.path(), QUrl());
+        QVERIFY(fakeDownload(store, QStringLiteral("moonshine-small")));
+        FakeModelCounts counts;
+        LocalSpeechTranscriber transcriber(
+            store, std::make_shared<LocalSpeechWorker>(std::make_unique<FakeEngine>(counts, streams)));
+        QSignalSpy connected(&transcriber, &SpeechTranscriber::attemptConnected);
+        QSignalSpy finals(&transcriber, &SpeechTranscriber::finalTranscript);
+        QSignalSpy transcripts(&transcriber, &SpeechTranscriber::attemptTranscript);
+        QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
+        QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
+        SpeechSettings settings;
+        localModelId(settings) = QStringLiteral("moonshine-small");
+
+        transcriber.startAttempt(1, settings, {.cutIntoUtterances = true});
+        // A recording counts as started once the model is loaded.
+        QVERIFY(connected.wait(2000));
+        transcriber.sendAudio(1, quiet());
+        transcriber.beginUtterance(1);
+        transcriber.sendAudio(1, spoken(1));
+        transcriber.sendAudio(1, spoken(2));
+        transcriber.endUtterance(1);
+        transcriber.sendAudio(1, quiet());
+        QTRY_COMPARE(texts(finals), QStringList{QStringLiteral("w1 w2")});
+        transcriber.beginUtterance(1);
+        transcriber.sendAudio(1, spoken(3));
+        transcriber.finishInput(1);
+        QVERIFY(completed.wait(2000));
+        QCOMPARE(texts(finals), (QStringList{QStringLiteral("w1 w2"), QStringLiteral("w3")}));
+        QVERIFY(transcripts.isEmpty());
+        QVERIFY(failed.isEmpty());
+
+        // Dictation is as before: a streaming model's runs of words as they
+        // are committed, then the whole text in their place, and a batch
+        // model's text at the end.
+        finals.clear();
+        transcriber.startAttempt(2, settings, {});
+        transcriber.sendAudio(2, spoken(1));
+        transcriber.endUtterance(2);
+        transcriber.sendAudio(2, spoken(2));
+        transcriber.finishInput(2);
+        QVERIFY(completed.wait(2000));
+        QCOMPARE(texts(transcripts), QStringList{QStringLiteral("w1 w2")});
+        QCOMPARE(finals.isEmpty(), !streams);
+        if (streams) {
+            QCOMPARE(texts(finals).join(QLatin1Char(' ')).simplified(), QStringLiteral("w1 w2"));
+        }
+        QVERIFY(connected.size() == 1 && failed.isEmpty());
+    }
+
+    // A recording's two sides and dictation load the model once, with a
+    // session each, and only one model at a time.
     void transcribersShareOneLoadedModel()
     {
         QTemporaryDir dir;
@@ -1054,12 +1136,12 @@ private slots:
         QVERIFY(fakeDownload(store, QStringLiteral("moonshine-small")));
         QVERIFY(fakeDownload(store, QStringLiteral("moonshine-medium")));
         FakeModelCounts counts;
-        const auto worker = std::make_shared<LocalSpeechWorker>(std::make_unique<FakeEngine>(counts, false));
+        const auto worker = std::make_shared<LocalSpeechWorker>(std::make_unique<FakeEngine>(counts, true));
         LocalSpeechTranscriber me(store, worker);
         LocalSpeechTranscriber them(store, worker);
         LocalSpeechTranscriber dictation(store, worker);
-        QSignalSpy myTranscripts(&me, &SpeechTranscriber::attemptTranscript);
-        QSignalSpy theirTranscripts(&them, &SpeechTranscriber::attemptTranscript);
+        QSignalSpy myFinals(&me, &SpeechTranscriber::finalTranscript);
+        QSignalSpy theirFinals(&them, &SpeechTranscriber::finalTranscript);
         QSignalSpy dictationFailed(&dictation, &SpeechTranscriber::failed);
         QSignalSpy dictationDone(&dictation, &SpeechTranscriber::attemptCompleted);
         QSignalSpy speedTest(&dictation, &LocalSpeechTranscriber::speedTestFinished);
@@ -1067,23 +1149,29 @@ private slots:
         SpeechSettings settings;
         localModelId(settings) = QStringLiteral("moonshine-small");
 
-        me.startAttempt(1, settings, {});
-        them.startAttempt(1, settings, {});
+        me.startAttempt(1, settings, {.cutIntoUtterances = true});
+        them.startAttempt(1, settings, {.cutIntoUtterances = true});
+        me.beginUtterance(1);
+        them.beginUtterance(1);
         me.sendAudio(1, spoken(1));
         them.sendAudio(1, spoken(2));
         me.sendAudio(1, spoken(3));
-        QTRY_COMPARE(counts.sessions.load(), 2);
+        me.endUtterance(1);
+        them.endUtterance(1);
+        QTRY_COMPARE(texts(myFinals), QStringList{QStringLiteral("w1 w3")});
+        QTRY_COMPARE(texts(theirFinals), QStringList{QStringLiteral("w2")});
         QCOMPARE(counts.loads.load(), 1);
+        QCOMPARE(counts.sessions.load(), 2);
         // Every transcriber hears where the model runs, whoever loaded it.
-        QTRY_COMPARE(runsOn.size(), 1);
+        QCOMPARE(runsOn.size(), 1);
         QCOMPARE(runsOn.first().at(0).toString(), QStringLiteral("Fake (CPU)"));
 
-        // The Speed Test waits for the others.
+        // The Speed Test waits for the recording.
         dictation.runSpeedTest(QStringLiteral("moonshine-small"), {});
         QCOMPARE(speedTest.first().at(2).toString(),
                  QStringLiteral("Finish dictating or recording, then test the speed again."));
 
-        // Another model can't load in place of the one they hold.
+        // Another model can't load in place of the one the recording holds.
         SpeechSettings otherModel = settings;
         localModelId(otherModel) = QStringLiteral("moonshine-medium");
         dictation.startAttempt(1, otherModel, {});
@@ -1093,17 +1181,87 @@ private slots:
                                 "at a time."));
         QCOMPARE(counts.loads.load(), 1);
 
-        // Each has its own text, and once both are done the other can load.
+        // Once the recording ends, it can.
         me.finishInput(1);
         them.finishInput(1);
-        QTRY_COMPARE(texts(myTranscripts), QStringList{QStringLiteral("w1 w3")});
-        QTRY_COMPARE(texts(theirTranscripts), QStringList{QStringLiteral("w2")});
         QTRY_VERIFY(!worker->attemptRunning());
         dictation.startAttempt(2, otherModel, {});
         dictation.sendAudio(2, spoken(4));
         dictation.finishInput(2);
         QVERIFY(dictationDone.wait(2000));
         QCOMPARE(counts.loads.load(), 2);
+    }
+
+    // transcribe.cpp runs two streams on one loaded model, interleaved, each
+    // its own; and the second takes far less memory than the model. Runs a
+    // streaming model when SPEECHER_TEST_LOCAL_MODEL names one.
+    void twoStreamsShareARealModel()
+    {
+        const QString modelId = qEnvironmentVariable("SPEECHER_TEST_LOCAL_MODEL");
+        const QString modelDir = qEnvironmentVariable("SPEECHER_TEST_LOCAL_MODEL_DIR");
+        if (modelId.isEmpty() || modelDir.isEmpty()) {
+            QSKIP("Set SPEECHER_TEST_LOCAL_MODEL and SPEECHER_TEST_LOCAL_MODEL_DIR to run a real model.");
+        }
+        const LocalModel *model = findLocalModel(modelId);
+        QVERIFY(model);
+        LocalModelStore store(modelDir, QUrl());
+        const auto worker = std::make_shared<LocalSpeechWorker>();
+        LocalSpeechTranscriber me(store, worker);
+        LocalSpeechTranscriber them(store, worker);
+        QSignalSpy myFinals(&me, &SpeechTranscriber::finalTranscript);
+        QSignalSpy theirFinals(&them, &SpeechTranscriber::finalTranscript);
+        QSignalSpy myConnected(&me, &SpeechTranscriber::attemptConnected);
+        QSignalSpy theirConnected(&them, &SpeechTranscriber::attemptConnected);
+        QSignalSpy completed(&them, &SpeechTranscriber::attemptCompleted);
+        SpeechSettings settings;
+        localModelId(settings) = modelId;
+        settings.local.runsOn = {QStringLiteral("cpu"), {}};
+        QFile clip(QStringLiteral(":/speedtest/librispeech-6930-75918-0018.s16le"));
+        QVERIFY(clip.open(QIODevice::ReadOnly));
+        const QByteArray pcm = clip.readAll();
+
+#ifdef Q_OS_LINUX
+        const qint64 beforeLoad = residentBytes();
+#endif
+        me.startAttempt(1, settings, {.cutIntoUtterances = true});
+        QVERIFY(myConnected.wait(60000));
+#ifdef Q_OS_LINUX
+        const qint64 oneSession = residentBytes();
+#endif
+        them.startAttempt(1, settings, {.cutIntoUtterances = true});
+        QVERIFY(theirConnected.wait(60000));
+#ifdef Q_OS_LINUX
+        const qint64 twoSessions = residentBytes();
+#endif
+        me.beginUtterance(1);
+        them.beginUtterance(1);
+        // Both streams run at once: each side gets the whole clip, the two
+        // fed in turn.
+        for (qsizetype offset = 0; offset < pcm.size(); offset += kSpeechChunkBytes) {
+            me.sendAudio(1, pcm.mid(offset, kSpeechChunkBytes));
+            them.sendAudio(1, pcm.mid(offset, kSpeechChunkBytes));
+            QTest::qWait(10);
+        }
+        me.endUtterance(1);
+        them.endUtterance(1);
+        QTRY_COMPARE_WITH_TIMEOUT(myFinals.size(), 1, 60000);
+        QTRY_COMPARE_WITH_TIMEOUT(theirFinals.size(), 1, 60000);
+        me.finishInput(1);
+        them.finishInput(1);
+        QVERIFY(completed.wait(60000));
+        for (const QString &text : {texts(myFinals).first(), texts(theirFinals).first()}) {
+            qInfo().noquote() << "final:" << text;
+            QVERIFY2(text.contains(QStringLiteral("tempest"), Qt::CaseInsensitive), qPrintable(text));
+            QVERIFY2(text.contains(QStringLiteral("security everywhere"), Qt::CaseInsensitive), qPrintable(text));
+        }
+#ifdef Q_OS_LINUX
+        // Each stream's own working memory comes on top, as it runs.
+        qInfo() << "resident MB: before" << beforeLoad / 1000000 << "one session" << oneSession / 1000000
+                << "two sessions" << twoSessions / 1000000 << "both streamed" << residentBytes() / 1000000
+                << "model file" << model->sizeBytes / 1000000;
+        QVERIFY(oneSession - beforeLoad > model->sizeBytes / 2);
+        QVERIFY(twoSessions - oneSession < model->sizeBytes / 10);
+#endif
     }
 
     void missingModelFailsWithAnActionableMessage()

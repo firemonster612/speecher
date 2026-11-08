@@ -24,9 +24,6 @@ constexpr int sampleRateHz = 16000;
 // How much of the text before an utterance its prompt carries: about a
 // sentence, well inside the 224 tokens Whisper reads of a prompt.
 constexpr qsizetype promptTailChars = 200;
-// How much of the quiet before an utterance goes up with it, 300 ms, so a
-// first sound softer than what counts as voice is not cut.
-constexpr qsizetype leadInBytes = sampleRateHz * 2 * 3 / 10;
 // How long an utterance's upload may take, before the server's silence while
 // it transcribes.
 constexpr int uploadAllowanceMs = 5000;
@@ -204,8 +201,8 @@ void EndpointSpeechTranscriber::sendAudio(quint64 attemptId, const QByteArray &p
         return;
     }
     m_pcm += pcm;
-    if (m_cutIntoUtterances && !m_utteranceOpen && m_pcm.size() > leadInBytes) {
-        m_pcm.remove(0, m_pcm.size() - leadInBytes);
+    if (m_cutIntoUtterances && !m_utteranceOpen && m_pcm.size() > kUtteranceLeadInBytes) {
+        m_pcm.remove(0, m_pcm.size() - kUtteranceLeadInBytes);
     }
 }
 

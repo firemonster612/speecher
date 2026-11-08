@@ -28,8 +28,10 @@ StreamSplit splitStreamText(const LocalSpeechEngine::StreamText &text, qsizetype
 
 // Speech-to-text with a Local Model, on the worker every transcriber shares:
 // every call here only queues work there, and results come back as signals on
-// the caller's thread. A streaming model sends runs of words as they are
-// committed, then the whole text at the end in their place.
+// the caller's thread. A dictation streams runs of words as they are
+// committed, then the whole text at the end in their place. With
+// SpeechAttemptOptions::cutIntoUtterances each utterance is one final,
+// emitted at its endUtterance(), and nothing replaces them.
 class LocalSpeechTranscriber final : public SpeechTranscriber {
     Q_OBJECT
 
@@ -40,10 +42,14 @@ public:
 
     bool requiresRefresh(const SpeechSettings &settings, const AccountSettings &accounts) const override;
     std::optional<ProviderFailure> prepare(const SpeechSettings &settings, const AccountSettings &accounts) override;
+    int utteranceAnswerTimeoutMs() const override;
+    bool streamsFinalText(const SpeechSettings &settings) const override;
     void startAttempt(quint64 attemptId, const SpeechSettings &settings, const SpeechAttemptOptions &options) override;
     void sendAudio(quint64 attemptId, const QByteArray &pcm) override;
     void finishInput(quint64 attemptId) override;
     void cancelAttempt(quint64 attemptId) override;
+    void endUtterance(quint64 attemptId) override;
+    void beginUtterance(quint64 attemptId) override;
 
     // The Speed Test, on the worker and model dictation uses, so a large
     // model is never in memory twice. Refused while an attempt runs on any
