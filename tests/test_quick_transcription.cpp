@@ -2,6 +2,7 @@
 #include "common/test_suites.h"
 
 #include "app/ApplicationController.h"
+#include "core/ProviderTable.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
@@ -127,6 +128,28 @@ private slots:
 
         QCOMPARE(controller.settings()->snapshot().refinement.services.choice(QStringLiteral("endpoint")).model, saved.refinement.services.choice(QStringLiteral("endpoint")).model);
         QCOMPARE(controller.settings()->snapshot().speech.services.choice(QStringLiteral("endpoint")).model, saved.speech.services.choice(QStringLiteral("endpoint")).model);
+    }
+
+    // A model chosen while the batch follows the profile's service keeps
+    // that service for the batch; "Same as" hands both back.
+    void aModelKeepsTheServiceItIsFor()
+    {
+        ApplicationController controller(true);
+        QuickTranscription transcription(&controller);
+        const auto option = [&transcription](const char *id) { return transcription.options().value(QLatin1String(id)).toString(); };
+        const QString planned = transcription.plan().value(QStringLiteral("refiner")).toString();
+        QVERIFY(planned != kNoRefinementProvider);
+
+        transcription.setOption(QStringLiteral("refinerModel"), QStringLiteral("gpt-test"));
+        QCOMPARE(option("refiner"), planned);
+        QCOMPARE(option("refinerModel"), QStringLiteral("gpt-test"));
+        QCOMPARE(transcription.plan().value(QStringLiteral("refinerModel")).toString(), QStringLiteral("gpt-test"));
+
+        transcription.setOption(QStringLiteral("refiner"), QString());
+        QVERIFY(option("refiner").isEmpty());
+        QVERIFY(option("refinerModel").isEmpty());
+        QCOMPARE(transcription.plan().value(QStringLiteral("sources")).toMap().value(QStringLiteral("refinement")),
+                 QStringLiteral("default"));
     }
 
     // A picked suggestion fills the model field as typing would, so the field

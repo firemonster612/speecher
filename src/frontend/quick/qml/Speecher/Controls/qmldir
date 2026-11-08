@@ -24,6 +24,7 @@ FormField 1.0 FormField.qml
 Grow 1.0 Grow.qml
 Icon 1.0 Icon.qml
 IconButton 1.0 IconButton.qml
+InheritSelect 1.0 InheritSelect.qml
 InlineConfirm 1.0 InlineConfirm.qml
 InlineForm 1.0 InlineForm.qml
 InputFrame 1.0 InputFrame.qml

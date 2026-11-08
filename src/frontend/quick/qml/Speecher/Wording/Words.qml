@@ -14,6 +14,9 @@ QtObject {
     function percent(fraction) { return Math.round(fraction * 100) + "%" }
     // "Slack, Linear and Notion"
     function list(names) { return names.length < 2 ? names.join("") : names.slice(0, -1).join(", ") + " and " + names[names.length - 1] }
+    // The first option of every control a narrower place may change
+    // (InheritSelect): "Same as Email apps (Email)".
+    function sameAs(place, value) { return "Same as " + place + " (" + value + ")" }
 
     readonly property string cancel: "Cancel"
     readonly property string save: "Save"

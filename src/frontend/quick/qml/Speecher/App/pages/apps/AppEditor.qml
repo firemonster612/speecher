@@ -27,19 +27,20 @@ Item {
     readonly property var appType: Schema.apps.type(isType ? entry.id : (entry.effective || {}).type)
 
     // "Same as …" for each of an App's own values, by where the value would
-    // come from without it.
+    // come from without it; an App Type's profile is Other apps'.
     function inheritedProfile() {
+        if (isType) return Words.sameAs(Schema.apps.type("general").label, Library.profileName(otherProfile))
         const inherited = entry.inherited || {}
         const name = Library.profileName(inherited.profile || "")
-        return inherited.profileFrom === "type" ? t.sameAs(appType.label, name)
-             : inherited.profileFrom === "fallback" ? t.sameAs(Schema.apps.type("general").label, name)
+        return inherited.profileFrom === "type" ? Words.sameAs(appType.label, name)
+             : inherited.profileFrom === "fallback" ? Words.sameAs(Schema.apps.type("general").label, name)
              : t.automatic(name)
     }
     function inheritedPasting() {
         const inherited = entry.inherited || {}
-        return inherited.pastingFrom === "terminal" ? t.sameAs(Schema.apps.type("terminal").label, Schema.apps.pastingLabel(inherited.pasting))
-             : inherited.pastingFrom === "type" ? t.sameAs(appType.label, Schema.apps.pastingLabel(inherited.pasting))
-             : t.sameAs(appType.label, t.theSteps)
+        return inherited.pastingFrom === "terminal" ? Words.sameAs(Schema.apps.type("terminal").label, Schema.apps.pastingLabel(inherited.pasting))
+             : inherited.pastingFrom === "type" ? Words.sameAs(appType.label, Schema.apps.pastingLabel(inherited.pasting))
+             : Words.sameAs(appType.label, t.theSteps)
     }
     function save(patch) {
         refusal = Schema.apps.refusals[isType ? Apps.updateType(entry.id, patch) : Apps.update(entry.id, patch)] || ""
@@ -81,10 +82,10 @@ Item {
             shown: !editor.isType
             title: editor.t.type
             help: editor.entry.titleOnly ? editor.t.titleOnlyType : ""
-            Select {
+            InheritSelect {
                 visible: !editor.entry.titleOnly
-                options: [{ id: "", label: editor.t.automatic(Schema.apps.type((editor.entry.inherited || {}).type).one) }]
-                    .concat(Schema.apps.types.map(o => ({ id: o.id, label: o.label, icon: o.icon })))
+                inheritedText: editor.t.automatic(Schema.apps.type((editor.entry.inherited || {}).type).one)
+                choices: Schema.apps.types.map(o => ({ id: o.id, label: o.label, icon: o.icon }))
                 currentId: editor.entry.type || ""
                 onChosen: id => editor.save({ type: id })
             }
@@ -92,11 +93,10 @@ Item {
         SettingRow {
             title: editor.t.profile
             help: editor.isOther ? editor.t.otherProfileHelp : ""
-            Select {
+            InheritSelect {
                 objectName: "appProfile"
-                options: (editor.isOther ? [] : [{ id: "", label: editor.isType ? editor.t.sameAs(Schema.apps.type("general").label, Library.profileName(editor.otherProfile))
-                                                                                  : editor.inheritedProfile() }])
-                    .concat(editor.profiles)
+                inheritedText: editor.isOther ? "" : editor.inheritedProfile()
+                choices: editor.profiles
                 currentId: editor.entry.profile || ""
                 onChosen: id => editor.save({ profile: id })
             }
@@ -104,10 +104,13 @@ Item {
         SettingRow {
             title: editor.t.pasting
             help: editor.result + (editor.isType && editor.entry.id === "terminal" ? ". " + editor.t.terminalsNote : "")
-            Select {
+            // An App Type's widest choice is the steps themselves, stored
+            // as no choice at all.
+            InheritSelect {
                 objectName: "appPasting"
-                options: (editor.isType ? [{ id: "", label: Schema.apps.pastingChoices[0].label, icon: Schema.apps.pastingChoices[0].icon }]
-                                        : [{ id: "", label: editor.inheritedPasting() }].concat([Schema.apps.pastingChoices[0]]))
+                inheritedText: editor.isType ? "" : editor.inheritedPasting()
+                choices: (editor.isType ? [Object.assign({}, Schema.apps.pastingChoices[0], { id: "" })]
+                                        : [Schema.apps.pastingChoices[0]])
                     .concat(Schema.apps.pastingChoices.slice(1))
                 currentId: editor.entry.pasting || ""
                 onChosen: id => editor.save({ pasting: id })
