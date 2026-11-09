@@ -26,7 +26,7 @@
 #include "frontend/quick/host/QuickRecording.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickSystem.h"
-#include "frontend/quick/host/ScatterRibbon.h"
+#include "frontend/quick/host/ReflectedRange.h"
 #include "providers/ProviderRegistry.h"
 #include "recording/RecordingSession.h"
 
@@ -40,7 +40,6 @@
 #include <QImage>
 #include <QJSValue>
 #include <QSet>
-#include <QPainter>
 #include <QPointer>
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -2800,9 +2799,9 @@ private slots:
         });
     }
 
-    // Listening, the popup shows the scatter ribbon, or in Boring mode the
+    // Listening, the popup shows the reflected range, or in Boring mode the
     // level bars and the record dot, and switches as the setting changes.
-    // The bars show only where the ribbon would: listening and paused, not
+    // The bars show only where the range would: listening and paused, not
     // while starting, renewing a sign-in or transcribing.
     void boringModeShowsLevelBars()
     {
@@ -2817,18 +2816,18 @@ private slots:
         QVERIFY(QTest::qWaitForWindowExposed(popup));
         auto *settings = qmlEngine(popup)->singletonInstance<QuickSettings *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Settings"));
         QVERIFY(settings);
-        QQuickItem *ribbon = findItem(popup->contentItem(), QStringLiteral("ribbon"));
+        QQuickItem *range = findItem(popup->contentItem(), QStringLiteral("range"));
         QQuickItem *bars = findItem(popup->contentItem(), QStringLiteral("levelBars"));
         QQuickItem *orb = findItem(popup->contentItem(), QStringLiteral("orb"));
-        QVERIFY(ribbon && bars && orb);
-        const auto showsRibbon = [&] {
-            return ribbon->opacity() == 1 && !bars->isVisible() && orb->property("phase").toString().isEmpty();
+        QVERIFY(range && bars && orb);
+        const auto showsRange = [&] {
+            return range->opacity() == 1 && !bars->isVisible() && orb->property("phase").toString().isEmpty();
         };
         const auto showsBars = [&] {
-            return ribbon->opacity() == 0 && bars->opacity() == 1 && orb->property("phase").toString() == QLatin1String("listening");
+            return range->opacity() == 0 && bars->opacity() == 1 && orb->property("phase").toString() == QLatin1String("listening");
         };
 
-        QTRY_VERIFY(showsRibbon());
+        QTRY_VERIFY(showsRange());
         settings->set(QStringLiteral("boringMode"), true);
         QTRY_VERIFY(showsBars());
 
@@ -2847,7 +2846,7 @@ private slots:
             qInfo() << "phase:" << phase.phase;
             phase.enter();
             QTRY_COMPARE(bars->isVisible(), phase.barsShown);
-            QCOMPARE(ribbon->isVisible(), false);
+            QCOMPARE(range->isVisible(), false);
         }
 
         // Live words widen the capsule from 280 to 460; the bars are counted
@@ -2894,175 +2893,88 @@ private slots:
         QTRY_VERIFY(fillsTheStrip());
 
         settings->set(QStringLiteral("boringMode"), false);
-        QTRY_VERIFY(showsRibbon());
+        QTRY_VERIFY(showsRange());
     }
 
-    // The popup's ribbon keeps every point finite and inside its strip, the
-    // bar, through a loud voice, a pause, the capsule widening from 280 to
-    // 460 for live words and reduced motion.
-    void ribbonStaysInsideTheBar()
+    // The range shows while listening and paused and draws frames only
+    // while it changes: on through a pause until it has closed and stilled,
+    // and not at all once hidden.
+    void rangeShowsListeningAndPausedAndStopsHidden()
     {
-        RibbonFigure figure;
-        // The strip is 160 px wide in the 280 capsule and 340 in the 460.
-        const struct {
-            qreal seconds;
-            qreal width;
-            bool listening;
-            qreal movement;
-        } phases[] = {{3, 160, true, 1}, {1, 160, false, 1}, {2, 340, true, 1}, {1, 340, true, 0}};
-        qreal loosest = 0;
-        for (const auto &phase : phases) {
-            const QRectF strip(0, 0, phase.width, 44);
-            for (int frame = 0; frame < phase.seconds * 60; ++frame) {
-                // A level every 50 ms, a word starting every 100 ms.
-                if (frame % 3 == 0) {
-                    figure.hear(frame % 6 == 0 ? 0.95 : 0.05, phase.listening);
-                }
-                figure.step(1.0 / 60, strip.size(), phase.listening, phase.movement);
-                for (const RibbonFigure::Point &point : figure.points()) {
-                    QVERIFY2(strip.contains(point.at), qPrintable(QStringLiteral("%1, %2").arg(point.at.x()).arg(point.at.y())));
-                    loosest = std::max(loosest, point.looseness);
-                }
-            }
-        }
-        // The voice did scatter points, so the bounds were tested.
-        QVERIFY(loosest > 0.5);
+        ApplicationController controller(true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        DictationSession *session = controller.session();
+        emit session->stateChanged(DictationState::Listening);
+        emit session->popupShowRequested(1);
+        QQuickWindow *popup = openWindow("PopupWindow");
+        QVERIFY(popup);
+        QVERIFY(QTest::qWaitForWindowExposed(popup));
+        auto *range = qobject_cast<ReflectedRange *>(findItem(popup->contentItem(), QStringLiteral("range")));
+        QVERIFY(range);
+        // Its FrameAnimation, which calls advance each frame while it runs.
+        const QList<QObject *> children = range->children();
+        const auto found = std::ranges::find_if(children, [](QObject *child) { return child->inherits("QQuickFrameAnimation"); });
+        QVERIFY(found != children.end());
+        QObject *frames = *found;
+        const auto drawing = [frames] { return frames->property("running").toBool(); };
+
+        emit session->audioLevelChanged(0.8f);
+        QTRY_COMPARE(range->opacity(), 1.0);
+        QVERIFY(drawing());
+        QTRY_VERIFY(range->voice().history()[0] > 0.3f);
+
+        emit session->stateChanged(DictationState::Paused);
+        QTRY_VERIFY(!range->listening());
+        QCOMPARE(range->opacity(), 1.0);
+        QVERIFY(drawing());
+        QTRY_VERIFY_WITH_TIMEOUT(!drawing(), 5000);
+
+        emit session->stateChanged(DictationState::Listening);
+        QTRY_VERIFY(drawing());
+        emit session->stateChanged(DictationState::Stopping);
+        QTRY_VERIFY(!range->isVisible());
+        QVERIFY(!drawing());
     }
 
-    // The ribbon's loop keeps its size in the 280 capsule, about 145 px, as
-    // the capsule widens to 460: a second loop unfurls beside it rather than
-    // either stretching.
-    void ribbonLoopsKeepTheirSize()
+    // Listening, the voice opens the range and moves its clock; paused, the
+    // range closes and stills, and further frames change nothing. With
+    // reduced motion its clock never moves and every ridge holds one level.
+    void rangeFollowsTheVoice()
     {
-        RibbonFigure figure;
-        // Each loop's width, from the points that show; below 0 for a loop that doesn't.
-        const auto widths = [&figure] {
-            qreal low[2] = {1e9, 1e9}, high[2] = {-1e9, -1e9};
-            for (const RibbonFigure::Point &point : figure.points()) {
-                if (point.shown > 0) {
-                    low[point.second] = std::min(low[point.second], point.home.x());
-                    high[point.second] = std::max(high[point.second], point.home.x());
-                }
-            }
-            return std::pair{high[0] - low[0], high[1] - low[1]};
-        };
-        // The strip widens from 160 to 332 px over half a second, as the
-        // capsule does once the clock reads 10:00 and takes a digit's room.
-        for (int frame = 0; frame < 120; ++frame) {
-            figure.step(1.0 / 60, {160 + 172 * std::min(1.0, frame / 30.0), 44}, true, 1);
-            const auto [first, second] = widths();
-            QVERIFY2(first < 150 && second < 150, qPrintable(QStringLiteral("%1, %2").arg(first).arg(second)));
-        }
-        const auto [first, second] = widths();
-        QVERIFY2(std::abs(first - 145) < 5 && std::abs(second - 145) < 5,
-                 qPrintable(QStringLiteral("%1, %2").arg(first).arg(second)));
-    }
-
-    // Shown again while the voice holds one level, the ribbon still hears it
-    // and warms toward its accent, drawn here as white from black.
-    void reshownRibbonHearsTheLevel()
-    {
-        // An item shows again only under a parent.
-        QQuickItem bar;
-        ScatterRibbon ribbon;
-        ribbon.setParentItem(&bar);
-        ribbon.setSize({160, 44});
-        ribbon.setProperty("color", QColor(Qt::black));
-        ribbon.setProperty("freedColor", QColor(Qt::white));
-        ribbon.setListening(true);
-        ribbon.setLevel(0.9);
-        ribbon.setVisible(false);
-        ribbon.setVisible(true);
+        ReflectedRange range;
+        range.setListening(true);
+        range.setLevel(0.9);
         for (int frame = 0; frame < 60; ++frame) {
-            ribbon.advance(1.0 / 60);
+            range.advance(1.0 / 60);
         }
-        QImage image(160, 44, QImage::Format_ARGB32_Premultiplied);
-        image.fill(Qt::transparent);
-        QPainter painter(&image);
-        ribbon.paint(&painter);
-        painter.end();
-        int warm = 0;
-        for (int y = 0; y < image.height(); ++y) {
-            for (int x = 0; x < image.width(); ++x) {
-                const QColor pixel = QColor::fromRgba(qUnpremultiply(image.pixel(x, y)));
-                warm += pixel.alpha() > 64 && pixel.lightness() > 128;
-            }
-        }
-        QVERIFY(warm > 0);
-    }
+        QVERIFY(range.voice().history()[0] > 0.5f);
+        QVERIFY(range.voice().time() > 0.9);
 
-    // Paused after a loud voice, the ribbon goes on until it rests: further
-    // frames would draw it no stronger or fainter than where it stopped.
-    void pausedRibbonStopsAtRest()
-    {
-        ScatterRibbon ribbon;
-        ribbon.setSize({160, 44});
-        ribbon.setListening(true);
-        ribbon.setLevel(1);
-        for (int frame = 0; frame < 60; ++frame) {
-            ribbon.advance(1.0 / 60);
+        range.setListening(false);
+        int frames = 0;
+        while (range.moving() && frames < 600) {
+            range.advance(1.0 / 60);
+            ++frames;
         }
-        ribbon.setListening(false);
-        while (ribbon.moving()) {
-            ribbon.advance(1.0 / 60);
-        }
-        const auto drawn = [&ribbon] {
-            QImage image(160, 44, QImage::Format_ARGB32_Premultiplied);
-            image.fill(Qt::transparent);
-            QPainter painter(&image);
-            ribbon.paint(&painter);
-            return image;
-        };
-        // Its strength: the sum of its alpha.
-        const auto strength = [](const QImage &image) {
-            qint64 sum = 0;
-            for (int y = 0; y < image.height(); ++y) {
-                for (int x = 0; x < image.width(); ++x) {
-                    sum += qAlpha(image.pixel(x, y));
-                }
-            }
-            return sum;
-        };
-        const qint64 stopped = strength(drawn());
+        QVERIFY2(frames < 300, qPrintable(QString::number(frames)));
+        const qreal time = range.voice().time();
+        const auto history = range.voice().history();
+        range.advance(1.0 / 60);
+        QCOMPARE(range.voice().time(), time);
+        QVERIFY(range.voice().history() == history);
+
+        ReflectedRange calm;
+        calm.setProperty("movement", 0);
+        calm.setListening(true);
+        calm.setLevel(0.9);
         for (int frame = 0; frame < 120; ++frame) {
-            ribbon.advance(1.0 / 60);
+            calm.advance(1.0 / 60);
         }
-        QVERIFY2(std::abs(strength(drawn()) - stopped) < stopped / 50, qPrintable(QStringLiteral("%1 then %2").arg(stopped).arg(strength(drawn()))));
-    }
-
-    // Once paused and still, the ribbon draws no more frames, yet takes a
-    // new theme's colours.
-    void stillRibbonTakesNewColours()
-    {
-        ScatterRibbon ribbon;
-        ribbon.setSize({160, 44});
-        ribbon.setProperty("pausedColor", QColor(Qt::black));
-        while (ribbon.moving()) {
-            ribbon.advance(1.0 / 60);
-        }
-        const auto drawn = [&ribbon] {
-            QImage image(160, 44, QImage::Format_ARGB32_Premultiplied);
-            image.fill(Qt::transparent);
-            QPainter painter(&image);
-            ribbon.paint(&painter);
-            return image;
-        };
-        // Its strength: the sum of its alpha.
-        const auto strength = [](const QImage &image) {
-            qint64 sum = 0;
-            for (int y = 0; y < image.height(); ++y) {
-                for (int x = 0; x < image.width(); ++x) {
-                    sum += qAlpha(image.pixel(x, y));
-                }
-            }
-            return sum;
-        };
-        const QImage before = drawn();
-        ribbon.setProperty("pausedColor", QColor(Qt::white));
-        QVERIFY(drawn() != before);
-        // Back in the first colours it is as strong as it was.
-        ribbon.setProperty("pausedColor", QColor(Qt::black));
-        QVERIFY(std::abs(strength(drawn()) - strength(before)) < strength(before) / 20);
+        const auto &held = calm.voice().history();
+        QCOMPARE(calm.voice().time(), 0.0);
+        QVERIFY(held[0] > 0.2f);
+        QVERIFY(std::ranges::all_of(held, [&held](float sample) { return sample == held[0]; }));
     }
 
 private:

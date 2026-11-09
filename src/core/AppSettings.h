@@ -198,7 +198,7 @@ struct UiSettings {
     // The window draws its own corners rounded rather than square.
     bool roundedCorners = true;
     // The dictation popup shows the voice as level bars beside the record
-    // dot rather than as the scatter ribbon.
+    // dot rather than as the reflected range.
     bool boringMode = false;
     bool pauseMediaDuringTranscription = true;
     bool soundsEnabled = false;

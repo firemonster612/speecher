@@ -21,8 +21,8 @@ var rows = [
     // Core's boringMode: true shows the level bars.
     { id: "boringMode", page: "feedback", section: "Popup", kind: "custom",
       label: "Voice display", help: "How the popup shows your voice while you dictate.",
-      options: [ { id: "ribbon", label: "Ribbon" }, { id: "bars", label: "Level bars" } ],
-      keywords: "boring mode popup waveform level bars meter ribbon animation particles plain simple calm" },
+      options: [ { id: "ridges", label: "Ridges" }, { id: "bars", label: "Level bars" } ],
+      keywords: "boring mode popup waveform level bars meter ridges range wave light animation plain simple calm" },
     { id: "recordingPill", page: "feedback", section: "Popup", kind: "toggle",
       label: "Show a pill while recording a call",
       help: "A small pill with the time and Stop stays at the bottom of the screen while a recording runs. Screen shares show it too.",

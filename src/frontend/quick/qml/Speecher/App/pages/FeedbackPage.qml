@@ -89,7 +89,7 @@ Page {
             rowId: "boringMode"
             SegmentedControl {
                 options: voiceDisplay.spec.options
-                currentId: Settings.values.boringMode ? "bars" : "ribbon"
+                currentId: Settings.values.boringMode ? "bars" : "ridges"
                 onActivated: id => Settings.set("boringMode", id === "bars")
             }
         }

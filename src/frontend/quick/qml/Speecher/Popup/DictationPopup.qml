@@ -37,12 +37,12 @@ Item {
     // A sign-in renews before the dictation goes on; the bar says so in
     // place of the sound.
     readonly property bool renewing: recording && source.renewing
-    // The voice shows while listening and paused: as the scatter ribbon, or
+    // The voice shows while listening and paused: as the reflected range, or
     // with Voice display set to Level bars (boringMode) as level bars beside
     // the record dot.
     readonly property bool voiceShown: (phase === "listening" || phase === "paused") && !renewing
     readonly property bool boring: Settings.values.boringMode === true
-    readonly property bool ribbonShown: !boring && voiceShown
+    readonly property bool rangeShown: !boring && voiceShown
     // The last working phase, so its label holds while the bar fades out
     // and while the text is delivered.
     property string workPhase: "transcribing"
@@ -252,14 +252,14 @@ Item {
                     height: popup.barHeight
                     anchors.bottom: parent.bottom
 
-                    // The ribbon takes the orb's place, so the orb shows nothing then.
+                    // The range takes the orb's place, so the orb shows nothing then.
                     VoiceOrb {
                         id: orb
                         objectName: "orb"
                         x: popup.orbX
                         size: popup.orbSize
                         anchors.verticalCenter: parent.verticalCenter
-                        phase: popup.ribbonShown ? "" : popup.phase === "delivering" ? popup.workPhase : popup.phase
+                        phase: popup.rangeShown ? "" : popup.phase === "delivering" ? popup.workPhase : popup.phase
                         level: popup.source.level
                     }
 
@@ -286,27 +286,32 @@ Item {
                         Behavior on opacity { Ease {} }
                     }
 
-                    // From the orb's place to the clock. Its figure keeps
-                    // 6 px in from its ends, so it starts 14 px into the pill.
-                    ScatterRibbon {
-                        id: ribbon
-                        objectName: "ribbon"
-                        x: 8
-                        width: clock.x - 6 - x
+                    // From the orb's place to the clock, the bar's full
+                    // height: the range folds about the bar's centre line,
+                    // and its outer lines reach past its 28 px band. Its
+                    // light takes the accent's hue: white-hot on a dark
+                    // sheet, ink on a light one.
+                    ReflectedRange {
+                        id: range
+                        objectName: "range"
+                        readonly property real hue: Theme.accent.hslHue
+                        x: 14
+                        width: clock.x - 10 - x
                         height: parent.height
                         level: popup.source.level
                         listening: popup.phase === "listening"
                         movement: Theme.movement
                         dark: Theme.dark
-                        color: Theme.text
-                        freedColor: Theme.accent
+                        color: Theme.dark ? Qt.hsla(hue, 1, 0.97, 1) : Qt.hsla(hue, 0.7, 0.36, 1)
+                        farColor: Theme.dark ? Qt.hsla(hue, 0.67, 0.54, 1) : Qt.hsla(hue, 0.6, 0.66, 1)
+                        glowColor: Theme.dark ? Qt.hsla(hue, 0.85, 0.66, 1) : Qt.hsla(hue, 0.7, 0.8, 1)
                         pausedColor: Theme.textTertiary
-                        opacity: popup.ribbonShown ? 1 : 0
+                        opacity: popup.rangeShown ? 1 : 0
                         visible: opacity > 0
                         Behavior on opacity { Ease { duration: Theme.fast } }
                         FrameAnimation {
-                            running: ribbon.visible && ribbon.moving
-                            onTriggered: ribbon.advance(frameTime)
+                            running: range.visible && range.moving
+                            onTriggered: range.advance(frameTime)
                         }
                     }
 

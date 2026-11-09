@@ -46,6 +46,7 @@ RUN apt-get update \
         qt6-declarative-dev \
         qt6-gtk-platformtheme \
         qt6-multimedia-dev \
+        qt6-shadertools-dev \
         qt6-style-kvantum \
         qt6-svg-plugins \
         qt6-wayland \

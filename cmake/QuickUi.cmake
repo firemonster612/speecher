@@ -52,16 +52,27 @@ speecher_add_qml_module(speecher_quick_demo Speecher.Demo "${SPEECHER_QUICK_DIR}
 speecher_add_qml_module(speecher_quick_wording Speecher.Wording "${SPEECHER_QUICK_DIR}/qml/Speecher/Wording")
 speecher_add_qml_module(speecher_quick_controls Speecher.Controls "${SPEECHER_QUICK_DIR}/qml/Speecher/Controls")
 speecher_add_qml_module(speecher_quick_app Speecher.App "${SPEECHER_QUICK_DIR}/qml/Speecher/App")
-# The popup's level animation is C++, for its cost per frame, and so is the
-# base of its window, which the host follows.
+# The popup's voice animation is C++ and a shader, for its cost per frame,
+# and the base of its window is C++, which the host follows.
 speecher_add_qml_module(speecher_quick_popup Speecher.Popup "${SPEECHER_QUICK_DIR}/qml/Speecher/Popup"
   SOURCES
     "${SPEECHER_QUICK_DIR}/host/PopupWindowBase.h"
-    "${SPEECHER_QUICK_DIR}/host/ScatterRibbon.cpp"
-    "${SPEECHER_QUICK_DIR}/host/ScatterRibbon.h"
+    "${SPEECHER_QUICK_DIR}/host/ReflectedRange.cpp"
+    "${SPEECHER_QUICK_DIR}/host/ReflectedRange.h"
   LIBRARIES Qt6::Quick
 )
 target_include_directories(speecher_quick_popup PRIVATE "${SPEECHER_QUICK_DIR}/host")
+# Compiled to .qsb for OpenGL, Vulkan, Metal and Direct3D, at
+# :/speecher/shaders/. BATCHABLE adds the vertex shader variant the scene
+# graph's batch renderer needs.
+qt_add_shaders(speecher_quick_popup speecher_quick_popup_shaders
+  BATCHABLE
+  PREFIX /speecher
+  BASE "${SPEECHER_QUICK_DIR}"
+  FILES
+    "${SPEECHER_QUICK_DIR}/shaders/reflectedrange.frag"
+    "${SPEECHER_QUICK_DIR}/shaders/reflectedrange.vert"
+)
 # Every area is C++ over core, and Library.qml words LibraryLists.
 speecher_add_qml_module(speecher_quick_backend Speecher.Backend "${SPEECHER_QUICK_DIR}/qml/Speecher/Backend"
   SOURCES
