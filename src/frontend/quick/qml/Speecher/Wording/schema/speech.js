@@ -1,24 +1,17 @@
 .pragma library
 
-// Rows for the speech to text page. The service, its fallbacks, the local
-// model and the models list are custom: their choices come from Models.
+// Rows for the speech to text page. The services, in order, are custom:
+// their choices come from Models and their sign-ins live on Services.
 var rows = [
-    { id: "speechProvider", page: "speech", section: "Service", kind: "custom",
-      label: "Service", help: "The service that turns your voice into text.",
-      keywords: "provider transcription engine claude voice chatgpt codex local model custom endpoint rating accuracy speed" },
-    { id: "speechRating", page: "speech", section: "Service", kind: "custom",
-      label: "Rating", help: "Out of 10.", keywords: "accuracy speed score benchmark streaming" },
-    { id: "speechFallbackList", page: "speech", section: "Fallbacks", kind: "custom",
-      label: "Fallbacks", help: "Speecher tries these top to bottom and tells you when it used one.",
-      addLabel: "Add a fallback", addHelp: "Used when everything above is unavailable.",
-      maxCount: 2,
-      emptyText: "None. Dictation stops if %1 is unavailable.", headingText: "If %1 is unavailable",
-      keywords: "backup failover offline unavailable order chain second" },
-    { id: "speechFallbackLanguages", page: "speech", section: "Fallbacks", kind: "custom",
-      label: "Fallback languages", help: "The language each fallback listens for, chosen beside it.",
-      // The picker's first entry, which drops the fallback's own choice.
-      sameAsMain: "Same as main language",
-      keywords: "fallback backup spoken language english automatic detect" },
+    { id: "speechServices", page: "speech", section: "Services, in order", kind: "custom",
+      label: "Services, in order",
+      help: "Speecher uses the first one that works, and tells you when it used a later one. Each service's model is chosen here; a writing profile can pick its own.",
+      addLabel: "Add a service", addHelp: "Used when the ones above are unavailable.",
+      // Every service of the job is in the order: none left to add.
+      allAddedText: "Every service is in the list. Removing one keeps its sign-in and its choices here.",
+      // A later entry's language picker: its first entry drops its own choice.
+      sameAsMain: "Same as Spoken language", listensFor: "Listens for",
+      keywords: "provider service transcription engine claude voice chatgpt codex local model server fallback backup order chain rating accuracy local model parakeet whisper server model" },
 
     // Every language core knows (knownSpokenLanguages), named in English
     // with the language's own name, which the language picker searches too.
@@ -130,32 +123,7 @@ var rows = [
       ] },
     { id: "codexFinalRetranscribe", page: "speech", section: "Language and accuracy", kind: "toggle",
       label: "Transcribe again for accuracy",
-      help: "ChatGPT goes over the whole recording once more when you stop, fixing words the live pass misheard. Adds one to five seconds and one ChatGPT request; dictations over about a minute and a half keep the live text.",
+      help: "ChatGPT goes over the whole dictation once more when you stop, fixing words the live pass misheard. Adds one to five seconds and one ChatGPT request; dictations over about a minute and a half keep the live text.",
       keywords: "retranscribe second pass accuracy chatgpt codex final" },
 
-    { id: "speechLocalModel", page: "speech", section: "Local model", kind: "custom",
-      label: "Model", help: "Downloaded models. Get others on the Local models page.",
-      emptyHelp: "No model is downloaded yet. Download one to dictate on this computer.",
-      actionLabel: "Open Local models", keywords: "local model whisper parakeet offline choose" },
-
-    { id: "speechEndpointUrl", page: "speech", section: "Custom endpoint", kind: "text",
-      label: "Server URL", help: "Any server with an OpenAI-style audio transcriptions API.",
-      placeholder: "http://localhost:8080", keywords: "custom endpoint server url host whisper.cpp self-hosted" },
-    { id: "speechEndpointPath", page: "speech", section: "Custom endpoint", kind: "text",
-      label: "Path", help: "whisper.cpp uses /inference.",
-      keywords: "custom endpoint path route inference" },
-    { id: "speechEndpointApiKey", page: "speech", section: "Custom endpoint", kind: "secret",
-      label: "API key", help: "Optional. Stored in the system keychain when there is one.",
-      placeholder: "Optional", keywords: "custom endpoint token secret key bearer" },
-    { id: "speechEndpointModel", page: "speech", section: "Custom endpoint", kind: "custom",
-      label: "Model", help: "Test the connection to list the server's models, or type one.",
-      placeholder: "whisper-1", keywords: "custom endpoint model name" },
-    { id: "speechEndpointTest", page: "speech", section: "Custom endpoint", kind: "custom",
-      label: "Connection", help: "Not tested yet.", actionLabel: "Test connection", actionIcon: "plug-zap",
-      keywords: "custom endpoint test connection check reachable" },
-
-    { id: "speechModels", page: "speech", section: "Advanced", kind: "custom",
-      label: "Models", help: "The models %1 uses",
-      localHelp: "The models you can run on this computer",
-      keywords: "advanced models deepgram nova gpt transcribe whisper parakeet rating" }
 ];

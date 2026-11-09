@@ -36,26 +36,9 @@ enum class TranscriptDestination {
     None,
 };
 
-// One batch's choices. Seeded from the user's settings by the front end and
-// never written back to them.
+// Where a batch saves its transcripts. What it transcribes with is its
+// RunOverrides.
 struct TranscribeOptions {
-    QString speechProviderId;
-    bool applyVocabulary = true;
-    // Terms added to the custom vocabulary for this batch, even without
-    // applyVocabulary.
-    QStringList addedVocabulary;
-    QString refinementProviderId = kNoRefinementProvider;
-    QString cleanupStrength = QStringLiteral("none");
-    QString tone = QStringLiteral("none");
-    QString writingProfile = WritingProfile::Other;
-    // Replaces the Spoken Language setting for this batch.
-    std::optional<QString> spokenLanguage;
-    // Replace the models the settings or the profile give the chosen
-    // services, for this batch; empty keeps them. They apply to the services
-    // that have a model to choose: a Local Model's id or a Custom Endpoint's
-    // model for speech, and see setRefinementModel for refinement.
-    QString speechModel;
-    QString refinementModel;
     TranscriptDestination destination = TranscriptDestination::BesideInput;
     QString folder;
 };
@@ -105,11 +88,6 @@ QString saveTranscript(const QString &audioPath,
                        TranscriptFormat format,
                        QString *error);
 
-// settings as a batch with these options runs them: its spoken language,
-// and its speech and refinement providers, each with the profile's model and
-// chain where the batch kept the profile's provider, or the batch's own model.
-AppSettings withBatchChoices(AppSettings settings, const ProviderRegistry &providers, const TranscribeOptions &options);
-
 // Writes text to path, replacing what is there. Returns why it could not, or
 // empty.
 QString writeTranscript(const QString &path, const QString &text);
@@ -125,13 +103,16 @@ public:
     ~FileTranscriptionSession() override;
 
     bool isRunning() const;
-    // False when a batch is already running or there is nothing to do.
-    bool start(const QStringList &paths, const TranscribeOptions &options);
+    // Runs as planDictation plans a run into no app with overrides. False
+    // when a batch is already running or there is nothing to do.
+    bool start(const QStringList &paths, const RunOverrides &overrides, const TranscribeOptions &options = {});
     // Transcribes what input hears until finishListening(), as one file with
     // no path that is never saved. Audio heard while the providers prepare waits for them, and a
     // provider that fails before any reached it hands all of it to the next.
     // False when a batch is already running.
-    bool startListening(AudioInput *input, const TranscribeOptions &options);
+    bool startListening(AudioInput *input, const RunOverrides &overrides);
+    // What the running or last batch runs with.
+    const DictationPlan &plan() const;
     // Stops the microphone; what it heard is still transcribed and refined.
     void finishListening();
     // Stops the current file, skips the rest and still emits batchFinished.
@@ -154,7 +135,7 @@ private:
     enum class Microphone { Off, Starting, Listening, Stopping };
 
     void listenToNothing();
-    void beginBatch(const QStringList &paths, const TranscribeOptions &options);
+    void beginBatch(const QStringList &paths, const RunOverrides &overrides, const TranscribeOptions &options);
     void startFile();
     void measureFile();
     void streamFile();
@@ -187,9 +168,9 @@ private:
     RefinementChain *m_refinementChain;
     QStringList m_paths;
     TranscribeOptions m_options;
-    // The user's settings with this batch's choices applied.
-    AppSettings m_batchSettings;
-    RunChoices m_runChoices;
+    // What this batch runs with; its settings gain their keys as the chains
+    // read them.
+    DictationPlan m_plan;
     QList<TranscribeFileResult> m_results;
     TranscribeFileResult m_current;
     bool m_running = false;

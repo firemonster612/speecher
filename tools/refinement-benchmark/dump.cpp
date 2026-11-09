@@ -1,7 +1,7 @@
 // Writes the app's real refinement prompts for bench.py: the context-free
 // system, compact and user prompts, and a system and user prompt for each
 // sample in contexts.json, which bench.py sends in place of the defaults.
-#include "core/Target.h"
+#include "core/Apps.h"
 #include "providers/TranscriptRefinementPrompt.h"
 
 #include <QFile>
@@ -38,7 +38,7 @@ int main()
         context.target.applicationName = sample.value("application_name").toString();
         context.target.applicationId = sample.value("application_id").toString();
         context.target.category = appCategoryFromName(sample.value("category").toString());
-        context.writingProfile = inferWritingProfile(context.target);
+        context.writingProfile = resolveApp(context.target, {}).writingProfile;
         context.writingProfileName = writingProfileLabel(context.writingProfile, {});
         // A sample without text around the caret is one whose text could not be read.
         context.includeNearbyText = sample.contains("before");

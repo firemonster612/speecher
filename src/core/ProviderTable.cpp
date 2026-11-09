@@ -1,7 +1,5 @@
 #include "core/ProviderTable.h"
 
-#include "core/AppSettings.h"
-
 #include <algorithm>
 #include <iterator>
 
@@ -59,38 +57,13 @@ QString providerAccountName(ProviderId id)
     return QLatin1String(info(id).account);
 }
 
-QString *speechModelSetting(SpeechSettings &speech, const QString &providerKey)
+bool servicePicksModel(ProviderRole role, const QString &providerKey)
 {
     const std::optional<ProviderId> id = parseProviderId(providerKey);
-    if (id == ProviderId::Local) {
-        return &speech.local.modelId;
+    if (!id || !providerServes(*id, role)) {
+        return false;
     }
-    return id == ProviderId::Endpoint ? &speech.endpoint.model : nullptr;
-}
-
-const QString *speechModelSetting(const SpeechSettings &speech, const QString &providerKey)
-{
-    return speechModelSetting(const_cast<SpeechSettings &>(speech), providerKey);
-}
-
-QString *refinementModelSetting(RefinementSettings &refinement, const QString &providerKey)
-{
-    const std::optional<ProviderId> id = parseProviderId(providerKey);
-    if (id == ProviderId::OpenAi) {
-        return &refinement.openAiModel;
-    }
-    if (id == ProviderId::Anthropic) {
-        return &refinement.anthropicModel;
-    }
-    if (id == ProviderId::Local) {
-        return &refinement.localRunner.model;
-    }
-    return id == ProviderId::Endpoint ? &refinement.endpoint.model : nullptr;
-}
-
-const QString *refinementModelSetting(const RefinementSettings &refinement, const QString &providerKey)
-{
-    return refinementModelSetting(const_cast<RefinementSettings &>(refinement), providerKey);
+    return role == ProviderRole::Refinement || id == ProviderId::Local || id == ProviderId::Endpoint;
 }
 
 } // namespace speecher

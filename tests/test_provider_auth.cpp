@@ -1502,7 +1502,6 @@ private slots:
     {
         QTemporaryDir dir;
         AppSettings settings;
-        RefinementSettings &refinement = settings.refinement;
         AccountSettings &accounts = settings.accounts;
         accounts.cliproxyOauthDir = dir.path();
         accounts.anthropicAuthMode = AnthropicAuthMode::Cliproxy;
@@ -1540,12 +1539,12 @@ private slots:
         QCOMPARE(checkSignIn(SignInService::Anthropic, settings, nullptr).state, SignInState::SignedIn);
 
         // Through a server, its key is the whole sign-in.
-        refinement.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
+        accounts.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:8317");
         QCOMPARE(checkSignIn(SignInService::CliProxy, settings, nullptr).state, SignInState::Missing);
-        refinement.cliproxyApiKey = QStringLiteral("server-key");
+        accounts.cliproxyApiKey = QStringLiteral("server-key");
         cliproxy = checkSignIn(SignInService::CliProxy, settings, nullptr);
         QCOMPARE(cliproxy.state, SignInState::SignedIn);
-        QCOMPARE(cliproxy.server, refinement.cliproxyBaseUrl);
+        QCOMPARE(cliproxy.server, accounts.cliproxyBaseUrl);
         QVERIFY(!cliproxy.detail.contains(QStringLiteral("server-key")));
 
         // Claude Code's own sign-in.
@@ -1555,6 +1554,36 @@ private slots:
         QVERIFY(writeJsonCredentials(accounts.claudeCredentialsPath, QStringLiteral("secret-token"),
                                      QDateTime::currentDateTimeUtc().addSecs(-60)));
         QCOMPARE(checkSignIn(SignInService::Anthropic, settings, nullptr).state, SignInState::Expired);
+    }
+
+    // Automatic says which sign-in it found, so Accounts can name it; a mode
+    // that names its own source says none.
+    void automaticSignInSaysWhereItFoundOne()
+    {
+        QTemporaryDir dir;
+        const QByteArray oldKey = qgetenv("OPENAI_API_KEY");
+        const bool hadKey = qEnvironmentVariableIsSet("OPENAI_API_KEY");
+        qputenv("SPEECHER_TEST_CODEX_AUTH_PATH", QFile::encodeName(dir.filePath(QStringLiteral("missing.json"))));
+        qputenv("OPENAI_API_KEY", "sk-from-env");
+        const auto restore = qScopeGuard([hadKey, oldKey] {
+            qunsetenv("SPEECHER_TEST_CODEX_AUTH_PATH");
+            if (hadKey) {
+                qputenv("OPENAI_API_KEY", oldKey);
+            } else {
+                qunsetenv("OPENAI_API_KEY");
+            }
+        });
+
+        AppSettings settings;
+        settings.accounts.openAiAuthMode = OpenAiAuthMode::Auto;
+        SignInCheck check = checkSignIn(SignInService::OpenAi, settings, nullptr);
+        QCOMPARE(check.state, SignInState::SignedIn);
+        QCOMPARE(check.source, QStringLiteral("env"));
+
+        settings.accounts.openAiAuthMode = OpenAiAuthMode::Env;
+        check = checkSignIn(SignInService::OpenAi, settings, nullptr);
+        QCOMPARE(check.state, SignInState::SignedIn);
+        QVERIFY(check.source.isEmpty());
     }
 
     // "Sign in again" on CLI Proxy API renews the account OpenAI and

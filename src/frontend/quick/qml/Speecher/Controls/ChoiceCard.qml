@@ -1,9 +1,9 @@
 import QtQuick
 import Speecher.Theme
 
-// One card of a whole-card choice, the shell OptionCards and ServiceCards
-// share: the chosen card takes a pencil wash, outline and check, the others
-// lighten under the pointer, and every card gives a little when pressed.
+// One card of a whole-card choice, OptionCards' shell: the chosen card
+// takes a pencil wash, outline and check, the others lighten under the
+// pointer, and every card gives a little when pressed.
 // Content goes inside, laid out within padding; the check sits in the top
 // right corner, so leave room for it beside the first line.
 Rectangle {

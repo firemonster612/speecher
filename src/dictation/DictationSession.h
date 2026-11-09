@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/DictationRecord.h"
+#include "core/history/HistoryEntry.h"
 #include "core/ProviderReadiness.h"
 #include "dictation/DictationPorts.h"
 #include "dictation/DictationSpeech.h"
@@ -23,6 +24,7 @@ class QTimer;
 
 namespace speecher {
 
+class HistoryAudioWriter;
 class ProviderRegistry;
 class RefinementChain;
 class SettingsStore;
@@ -57,12 +59,15 @@ public:
     // A selection edit is under review, a follow-up to it dictated or not.
     bool reviewUp() const;
     SessionResponse response(bool ok = true, const QString &message = {}) const;
-    void toggleWith(const SessionOverrides &overrides);
-    void startListeningWith(const SessionOverrides &overrides);
+    void toggleWith(const RunOverrides &overrides);
+    void startListeningWith(const RunOverrides &overrides);
     void setScreenshotContextProvider(ScreenshotContextProvider *provider);
     // Whether the system says it can reach the internet. Only an outcome's
     // wording uses it: every provider in a chain is still tried.
     void setReachability(Reachability reachability);
+    // Where History keeps a dictation's audio while What Speecher Keeps is
+    // Text and audio; empty keeps none.
+    void setHistoryAudioFolder(const QString &folder);
     // The keys that keep and replace while a selection edit is reviewed, as
     // the review names them. The controller sets them whenever it takes or
     // lets go of keys; a review on screen is shown again with the new ones.
@@ -108,9 +113,14 @@ signals:
     void statusChanged(const QString &status);
     void previewChanged(const QString &transcript);
     void transcriptDelivered(const QString &text);
-    // A delivered Dictation Session while insights are on; the controller
-    // owns the log it goes into.
-    void dictationRecorded(const DictationRecord &record);
+    // A finished Dictation Session, delivered or not, with what History may
+    // keep of it: the least of What Speecher Keeps (as the session started
+    // and as it is now), the app's choice and a password field's Stats; its
+    // audio with Text and audio. Never for a cancelled session.
+    // intoPasswordField says the Target was one, whose words Paste Again
+    // never offers. Emitted while History keeps Nothing too, with nothing
+    // in it to keep.
+    void dictationFinished(const speecher::HistoryEntry &entry, bool intoPasswordField);
     void previewDisplayChanged(const QString &preview);
     void audioLevelChanged(float level);
     void popupShowRequested(quint64 generation);
@@ -209,6 +219,9 @@ private:
     // The receipt, the record and the popup's outcome, once the delivery
     // deliverFinal asked for says what became of the words.
     void finishDelivery(const DeliveryResult &result);
+    // What History may keep of the session finishing now; read before the
+    // session forgets its settings and Target.
+    HistoryKeep historyKeepNow() const;
     void discard();
     void forgetSession();
     void clearScreenshotContext();
@@ -216,8 +229,8 @@ private:
     bool selectTranscriptRefiner(const QString &providerId);
     void disconnectTranscriptRefiner();
     void connectTranscriptRefiner(TranscriptRefiner *refiner);
-    void toggleSession(const SessionOverrides &overrides);
-    void startSession(const SessionOverrides &overrides);
+    void toggleSession(const RunOverrides &overrides);
+    void startSession(const RunOverrides &overrides);
     SettingsStore *m_settings = nullptr;
     // The live UI settings, which apply the moment a save changes them,
     // mid-session too. Kept here so previews and streamed refinement never
@@ -254,9 +267,13 @@ private:
     // Bumped by every setState(), even to the same state.
     quint64 m_step = 0;
     quint64 m_continuedStartupGeneration = 0;
+    // The settings the session runs with: the saved ones until the Target is
+    // known, then its plan's, as the chains read their keys into them.
     std::optional<AppSettings> m_sessionSettings;
-    // What the session chose for itself: a forced Writing Profile.
-    RunChoices m_runChoices;
+    // What the session changes for itself, from the command line.
+    RunOverrides m_overrides;
+    // What it runs with, once the Target is known.
+    DictationPlan m_plan;
     Target m_target;
     QByteArray m_screenshotData;
     QString m_screenshotMediaType;
@@ -282,11 +299,21 @@ private:
         QString note;
         int words = 0;
         QString appName;
+        QString applicationId;
         QString profile;
         QString profileName;
         int completionStatusDurationMs = 0;
     };
     AwaitedDelivery m_awaitedDelivery;
+    // Offers History the delivery as an entry; raw is the Raw Transcript.
+    void recordHistory(const AwaitedDelivery &delivery, HistoryKeep keep, HistoryOutcome outcome, const QString &raw,
+                       bool intoPasswordField);
+    // The audio this session tees to History, from when its Target settles
+    // while it keeps audio; the writer deletes itself once done.
+    QPointer<HistoryAudioWriter> m_historyAudio;
+    QString m_historyAudioFolder;
+    void openHistoryAudio();
+    void discardHistoryAudio();
     // Deliveries asked for and not yet answered, a dropped one's included.
     int m_unansweredDeliveries = 0;
     // What the system last said about the internet.

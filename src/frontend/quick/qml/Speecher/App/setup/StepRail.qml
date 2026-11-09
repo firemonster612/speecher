@@ -12,8 +12,6 @@ Item {
 
     property var steps: []
     property int current: 0
-    // The last step that can be picked; the ones after it wait their turn.
-    property int limit: steps.length - 1
     signal picked(int index)
 
     readonly property int _rowHeight: 50
@@ -56,7 +54,7 @@ Item {
             title: modelData.title
             detail: past ? modelData.verdict : ""
             stage: warn ? "warning" : past ? "done" : index === rail.current ? "current" : "todo"
-            interactive: index <= rail.limit
+            interactive: true
             onActivated: rail.picked(index)
         }
     }

@@ -6,7 +6,11 @@ import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
 import "speech"
+import "services"
 
+// This computer, under Services: the speech models it can download and
+// run, the Local Runner cleanup runs on, and how the speech models use its
+// memory, graphics card and disk.
 Page {
     id: page
     title: Schema.page("models").title
@@ -30,13 +34,27 @@ Page {
                       .sort((a, b) => rank(a) - rank(b) || catalog.indexOf(a) - catalog.indexOf(b))
     }
 
+    // Without the Local Model service, nothing here could run: say so
+    // instead of offering downloads, and where to get a build that has it.
+    Section {
+        visible: !ModelText.localSpeech
+        title: page.library.label
+        EmptyState {
+            iconName: "cpu"
+            title: page.library.notInBuild
+            text: page.library.notInBuildHelp
+            Button { text: page.library.getBuild; trailingIcon: "external-link"; onClicked: Updates.openAllReleases() }
+        }
+    }
+
     Section {
         id: librarySection
+        visible: ModelText.localSpeech
         title: page.library.label
         // What the ratings, speeds and fits are measured against.
         caption: ModelText.computer ? ModelText.ratedFor.arg(ModelText.computer) : ModelText.ratedOnceChecked
         plain: true
-        SearchLanding { rowIds: ["localModelBrowser"]; target: librarySection }
+        SearchLanding { rowIds: ["localModelBrowser", "speechLocalModel"]; target: librarySection }
         actions: [
             SegmentedControl {
                 id: filter
@@ -77,6 +95,13 @@ Page {
     }
 
     Section {
+        objectName: "localCleanup"
+        title: Schema.row("localRunner").section
+        LocalRunnerRows {}
+    }
+
+    Section {
+        visible: ModelText.localSpeech
         title: Schema.row("localIdleUnload").section
         SchemaRow { rowId: "localIdleUnload" }
         SchemaRow {

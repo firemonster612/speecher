@@ -37,7 +37,8 @@ var rows = [
     { id: "autoInstallUpdates", page: "updates", section: "How Speecher updates", kind: "toggle",
       label: "Download and install updates automatically",
       help: "Updates install in the background and take effect after a restart.",
-      keywords: "auto install background appimage" }
+      disabledHelp: "This copy of Speecher can't install updates itself. Get new versions from the release page.",
+      usableWhen: "automaticDownloads", keywords: "auto install background appimage" }
 ];
 
 // Each settings row's Since Version, by row id, for What's New's new
@@ -53,9 +54,20 @@ var since = {
     cancelShortcut: "0.2.1",
     pauseShortcut: "0.2.1",
     updateCheckInterval: "0.2.1",
-    insightsEnabled: "0.2.1",
     reviewSelectionEdits: "0.2.1",
     spokenLanguage: "0.2.1",
     roundedCorners: "0.2.1",
-    boringMode: "0.2.1"
+    boringMode: "0.2.1",
+    // The settings redesign: Apps, Service Orders and History.
+    speechServices: "0.3.1",
+    refinementEnabled: "0.3.1",
+    refinementServices: "0.3.1",
+    apps: "0.3.1",
+    appTypes: "0.3.1",
+    appHistory: "0.3.1",
+    historyKeeps: "0.3.1",
+    historyTextDays: "0.3.1",
+    historyAudioDays: "0.3.1",
+    historyExcludedApps: "0.3.1",
+    pasteAgainShortcut: "0.3.1"
 };

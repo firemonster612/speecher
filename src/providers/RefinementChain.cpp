@@ -21,10 +21,10 @@ RefinementChain::RefinementChain(Acquire acquire, QObject *parent)
     connect(m_runner, &PreparationRunner::secretsResolved, this, &RefinementChain::useResolvedSecrets);
 }
 
-void RefinementChain::begin(const QString &primary, const QStringList &fallbacks)
+void RefinementChain::begin(const QStringList &chain)
 {
     cancel();
-    m_providerIds = providerChain(ProviderRole::Refinement, primary, fallbacks);
+    m_providerIds = serviceChain(ProviderRole::Refinement, chain);
     m_index = 0;
 }
 
@@ -41,9 +41,8 @@ QString RefinementChain::currentId() const
 RefinementSettings RefinementChain::currentSettings() const
 {
     RefinementSettings refinement = m_refinement;
-    refinement.providerId = currentId();
-    refinement.endpoint.apiKey = m_settings.refinement.endpoint.apiKey;
-    refinement.cliproxyApiKey = m_settings.refinement.cliproxyApiKey;
+    refinement.services = refinement.services.withMain(currentId());
+    refinement.server.apiKey = m_settings.refinement.server.apiKey;
     return refinement;
 }
 

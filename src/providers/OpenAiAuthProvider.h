@@ -26,6 +26,9 @@ struct OpenAiAuth {
     // a refresh said otherwise.
     ProviderFailureKind kind = ProviderFailureKind::Unavailable;
     int httpStatus = 0;
+    // The sign-in Automatic settled on; Auto (the first value) for any
+    // other mode, and when nothing was found.
+    OpenAiAuthMode source{};
 
     std::optional<ProviderFailure> failure() const
     {
@@ -37,6 +40,8 @@ struct OpenAiAuth {
 struct OpenAiAuthStatus {
     QString text;
     bool ready = false;
+    // As OpenAiAuth's: the sign-in Automatic settled on.
+    OpenAiAuthMode source{};
 };
 
 class OpenAiAuthProvider {
@@ -57,9 +62,7 @@ public:
     static OpenAiAuthProvider forSpeech(const AccountSettings &accounts);
     // The sign-in OpenAI refinement uses with these settings; secretStore
     // reads the saved API key.
-    static OpenAiAuthProvider forRefinement(SecretStore *secretStore,
-                                            const AccountSettings &accounts,
-                                            const RefinementSettings &refinement);
+    static OpenAiAuthProvider forRefinement(SecretStore *secretStore, const AccountSettings &accounts);
 
     OpenAiAuth resolve(bool refreshExpired = true) const;
     OpenAiAuthStatus status() const;

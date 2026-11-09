@@ -9,6 +9,7 @@ MenuPopup {
     id: menu
 
     property var items: []
+    onItemsChanged: measured = 0
     property string currentId
     property int maxHeight: 340
     signal picked(string id)
@@ -20,7 +21,9 @@ MenuPopup {
         picked(entry.id)
     }
 
-    width: 260
+    // Wide enough for its items, and at least minWidth.
+    property int minWidth: 200
+    width: fitWidth(items, minWidth)
     implicitHeight: Math.min(list.contentHeight + topPadding + bottomPadding, maxHeight)
     focus: true
     // A press on what opened the menu is left to its toggle; closing on it
@@ -55,6 +58,8 @@ MenuPopup {
             highlighted: ListView.isCurrentItem
             onHoveredChanged: if (hovered) list.currentIndex = index
             onClicked: menu._pick(index)
+            onImplicitWidthChanged: menu.measure(implicitWidth)
+            Component.onCompleted: menu.measure(implicitWidth)
         }
     }
 }

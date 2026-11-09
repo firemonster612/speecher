@@ -8,8 +8,8 @@
 
 namespace speecher {
 
-// What one finished Dictation Session leaves behind for the stats on Home.
-// Never the text or the audio.
+// What one finished Dictation Session leaves behind for the stats on Home:
+// a History Entry's stats, never its text or audio.
 struct DictationRecord {
     QDateTime finishedAt;
     int audioMs = 0;
@@ -23,6 +23,10 @@ struct DictationRecord {
     // when a fallback stood in. Empty in records from before they were kept.
     QStringList speechProviders;
     QStringList refinementProviders;
+    // The app's ID as an App's Id match compares it (Target::applicationId),
+    // for the Apps page's Recently dictated into (SeenApps). History keeps it
+    // only with the text.
+    QString applicationId;
 };
 
 // Words as a reader counts them: word-boundary segments that contain a letter

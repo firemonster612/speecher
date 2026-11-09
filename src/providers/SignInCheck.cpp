@@ -1,5 +1,7 @@
 #include "providers/SignInCheck.h"
 
+#include "core/ProviderChain.h"
+
 #include "core/AppSettings.h"
 #include "core/ProviderTable.h"
 #include "core/SecretStore.h"
@@ -26,12 +28,12 @@ const struct CliproxyAccountType {
 QString readServerKey(AppSettings &settings, SecretStore *secrets)
 {
     using Secret = SecretStore::Secret;
-    if (settings.refinement.cliproxyBaseUrl.isEmpty() || !secrets
+    if (settings.accounts.cliproxyBaseUrl.isEmpty() || !secrets
         || !settings.unreadSecretKeys.contains(SecretStore::settingsKey(Secret::CliproxyApiKey))) {
         return {};
     }
-    settings.refinement.cliproxyApiKey = secrets->secret(Secret::CliproxyApiKey);
-    return settings.refinement.cliproxyApiKey.isEmpty() ? secrets->readFailure(Secret::CliproxyApiKey) : QString();
+    settings.accounts.cliproxyApiKey = secrets->secret(Secret::CliproxyApiKey);
+    return settings.accounts.cliproxyApiKey.isEmpty() ? secrets->readFailure(Secret::CliproxyApiKey) : QString();
 }
 
 // Reads the secret the service's sign-in needs that the snapshot left
@@ -53,10 +55,11 @@ QString readSecrets(SignInService service, AppSettings &settings, SecretStore *s
 
 SignInCheck checkOpenAi(const AppSettings &settings, SecretStore *secrets)
 {
-    const OpenAiAuthProvider provider = OpenAiAuthProvider::forRefinement(secrets, settings.accounts, settings.refinement);
+    const OpenAiAuthProvider provider = OpenAiAuthProvider::forRefinement(secrets, settings.accounts);
     const OpenAiAuthStatus status = provider.status();
     if (status.ready) {
-        return {SignInState::SignedIn, status.text};
+        const bool automatic = settings.accounts.openAiAuthMode == OpenAiAuthMode::Auto;
+        return {SignInState::SignedIn, status.text, {}, {}, automatic ? openAiAuthModeName(status.source) : QString()};
     }
     // The saved API key is read as the mode needs it, so only now is it known
     // whether the keyring answered.
@@ -70,9 +73,9 @@ SignInCheck checkOpenAi(const AppSettings &settings, SecretStore *secrets)
 SignInCheck checkAnthropic(const AppSettings &settings)
 {
     const bool proxy = settings.accounts.anthropicAuthMode == AnthropicAuthMode::Cliproxy;
-    const QString server = proxy ? settings.refinement.cliproxyBaseUrl : QString();
+    const QString server = proxy ? settings.accounts.cliproxyBaseUrl : QString();
     const QString directory = proxy && server.isEmpty() ? settings.accounts.cliproxyOauthDir : QString();
-    const AnthropicAuthProvider signIn = AnthropicAuthProvider::forRefinement(settings.accounts, settings.refinement);
+    const AnthropicAuthProvider signIn = AnthropicAuthProvider::forRefinement(settings.accounts);
     const AnthropicAuth token = signIn.resolve(false);
     if (token.ok) {
         return {SignInState::SignedIn, {}, server, directory};
@@ -86,9 +89,9 @@ SignInCheck checkAnthropic(const AppSettings &settings)
 // file load() refuses says why when nothing else is found.
 SignInCheck checkCliproxy(const AppSettings &settings)
 {
-    const QString &server = settings.refinement.cliproxyBaseUrl;
+    const QString &server = settings.accounts.cliproxyBaseUrl;
     if (!server.isEmpty()) {
-        if (settings.refinement.cliproxyApiKey.isEmpty()) {
+        if (settings.accounts.cliproxyApiKey.isEmpty()) {
             return {SignInState::Missing, QStringLiteral("CLI Proxy API key is not set (cliproxy/apiKey)"), server};
         }
         return {SignInState::SignedIn, {}, server};
@@ -135,7 +138,7 @@ SignInCheck check(SignInService service, const AppSettings &settings, SecretStor
 // failed, or nothing.
 QString renewCliproxyAccounts(const AppSettings &settings)
 {
-    if (!settings.refinement.cliproxyBaseUrl.isEmpty()) {
+    if (!settings.accounts.cliproxyBaseUrl.isEmpty()) {
         return {}; // the server owns and refreshes its accounts
     }
     const AccountSettings &accounts = settings.accounts;
@@ -160,12 +163,12 @@ QString renew(SignInService service, const AppSettings &settings, SecretStore *s
     switch (service) {
     case SignInService::OpenAi: {
         const OpenAiAuth renewed =
-            OpenAiAuthProvider::forRefinement(secrets, settings.accounts, settings.refinement).resolve(true);
+            OpenAiAuthProvider::forRefinement(secrets, settings.accounts).resolve(true);
         return renewed.ok ? QString() : renewed.status;
     }
     case SignInService::Anthropic: {
         const AnthropicAuth renewed =
-            AnthropicAuthProvider::forRefinement(settings.accounts, settings.refinement).resolve(true);
+            AnthropicAuthProvider::forRefinement(settings.accounts).resolve(true);
         return renewed.ok ? QString() : renewed.error;
     }
     case SignInService::CliProxy:
@@ -204,13 +207,15 @@ bool signInInUse(SignInService service, const AppSettings &settings)
     if (service == SignInService::CliProxy) {
         return settings.accounts.openAiAuthMode == OpenAiAuthMode::Cliproxy
             || settings.accounts.anthropicAuthMode == AnthropicAuthMode::Cliproxy
-            || !refinement.cliproxyBaseUrl.isEmpty();
+            || !settings.accounts.cliproxyBaseUrl.isEmpty();
     }
-    QStringList speech = QStringList{settings.speech.providerId} + settings.speech.fallbackProviderIds;
-    QStringList refiners = QStringList{refinement.providerId} + refinement.fallbackProviderIds;
+    QStringList speech = serviceChain(settings.speech);
+    QStringList refiners = serviceChain(refinement);
     for (const WritingProfileSettings &profile : refinement.writingProfiles) {
-        speech << profile.speechProvider;
-        refiners << profile.refinementProvider;
+        speech << (profile.speechFirst ? profile.speechFirst->service : QString());
+        if (refinement.enabled && profile.refinementFirst) {
+            refiners << profile.refinementFirst->service;
+        }
     }
     if (service == SignInService::OpenAi) {
         return speech.contains(providerKey(ProviderId::Codex)) || refiners.contains(providerKey(ProviderId::OpenAi));

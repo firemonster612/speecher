@@ -21,6 +21,18 @@ Section {
     title: TranscribeWords.resultsTitle(Transcription.results)
     caption: TranscribeWords.batchSummary(Transcription.batch, Transcription.results)
     actions: [
+        // Where these transcripts stay once the batch is gone, while History
+        // keeps text.
+        Button {
+            objectName: "resultsInHistory"
+            readonly property bool kept: Schema.keepsText(Settings.values.historyKeeps)
+            text: TranscribeWords.inHistory
+            variant: "ghost"
+            enabled: kept && Transcription.results.some(r => !r.failed)
+            opacity: enabled ? 1 : 0
+            Behavior on opacity { Ease {} }
+            onClicked: Navigation.follow("history")
+        },
         SegmentedControl {
             objectName: "transcriptView"
             options: [{ id: "refined", label: TranscribeWords.refined, icon: "pencil-line" }, { id: "raw", label: TranscribeWords.raw, icon: "audio-lines" }]

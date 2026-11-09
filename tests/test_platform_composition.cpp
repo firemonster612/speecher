@@ -9,6 +9,7 @@
 #include "app/LinuxComposition.h"
 #endif
 #include "app/ApplicationController.h"
+#include "core/history/HistoryStore.h"
 #include "app/CommandLine.h"
 #include "app/CompositionSockets.h"
 #include "app/IpcCommandHandler.h"
@@ -32,6 +33,7 @@
 #include "app/LocalSetup.h"
 #include "providers/LocalModelStore.h"
 #include "providers/ProviderRegistry.h"
+#include "recording/RecordingSession.h"
 #include "platform/GlobalShortcutBinder.h"
 #include "platform/HotKeyShortcutBinder.h"
 #include "platform/RoutingShortcutBinder.h"
@@ -326,6 +328,16 @@ public:
         return audioInputs ? audioInputs(parent) : m_delegate->createAudioInput(settings, parent);
     }
 
+    bool recordsSystemAudio() const override
+    {
+        return bool(systemAudioInputs);
+    }
+
+    AudioInput *createSystemAudioInput(QObject *parent) const override
+    {
+        return systemAudioInputs ? systemAudioInputs(parent) : nullptr;
+    }
+
     void requestMicrophoneAccess(QObject *, std::function<void(bool)> completed) const override
     {
         microphoneAnswer = std::move(completed);
@@ -352,7 +364,7 @@ public:
 
     TextDeliveryAdapter *createTextDelivery(TargetProvider *targetProvider, QObject *parent) const override
     {
-        return m_delegate->createTextDelivery(targetProvider, parent);
+        return textDeliveries ? textDeliveries(parent) : m_delegate->createTextDelivery(targetProvider, parent);
     }
 
     PopupPositioner *createPopupPositioner(QObject *parent) const override
@@ -365,9 +377,11 @@ public:
                                                      QObject *parent) const override
     {
         auto *created = new FakeGlobalShortcutBinder(parent);
-        (role == GlobalShortcutRole::Cancel ? cancelBinder
-         : role == GlobalShortcutRole::Pause ? pauseBinder
-                                              : binder) = created;
+        (role == GlobalShortcutRole::Cancel       ? cancelBinder
+         : role == GlobalShortcutRole::Pause      ? pauseBinder
+         : role == GlobalShortcutRole::PasteAgain ? pasteAgainBinder
+         : role == GlobalShortcutRole::Recording  ? recordingBinder
+                                                  : binder) = created;
         return created;
     }
 
@@ -423,9 +437,16 @@ public:
     mutable std::function<void(bool)> microphoneAnswer;
     // Makes the microphones instead of the platform, when set.
     std::function<AudioInput *(QObject *parent)> audioInputs;
+    // Makes a Recording's system audio when set; unset, it records the
+    // microphone alone.
+    std::function<AudioInput *(QObject *parent)> systemAudioInputs;
+    // Makes the deliveries instead of the platform, when set.
+    std::function<TextDeliveryAdapter *(QObject *parent)> textDeliveries;
     mutable FakeGlobalShortcutBinder *binder = nullptr;
     mutable FakeGlobalShortcutBinder *cancelBinder = nullptr;
     mutable FakeGlobalShortcutBinder *pauseBinder = nullptr;
+    mutable FakeGlobalShortcutBinder *pasteAgainBinder = nullptr;
+    mutable FakeGlobalShortcutBinder *recordingBinder = nullptr;
     mutable AccessibilityState accessibility{true, true, false};
     mutable std::function<void()> accessibilityRefresh;
 
@@ -608,12 +629,14 @@ std::unique_ptr<QQuickWindow> schemaRowWindow(QQmlEngine &engine, const QString 
     return window;
 }
 
-// The item in window whose QML type is typeName, or null.
+// The item in window whose QML type is typeName or built on it, or null.
 QQuickItem *findItem(QQuickWindow *window, const char *typeName)
 {
     for (QQuickItem *item : window->findChildren<QQuickItem *>()) {
-        if (QByteArray(item->metaObject()->className()).startsWith(typeName)) {
-            return item;
+        for (const QMetaObject *type = item->metaObject(); type; type = type->superClass()) {
+            if (QByteArray(type->className()).startsWith(typeName)) {
+                return item;
+            }
         }
     }
     return nullptr;
@@ -690,6 +713,26 @@ private slots:
         controller.stopListening();
     }
 
+    // A start waiting for the microphone (macOS asks the first time) shows
+    // as starting and a second toggle cancels it: the grant that comes after
+    // starts nothing.
+    void recordingPermissionWaitCanBeCancelled()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        platform->audioInputs = [](QObject *parent) { return new test::FakeAudioInput(parent); };
+        ApplicationController controller(true, platform);
+        controller.settings()->setRecordingConsentNoticeShown(true);
+        controller.toggleRecording();
+        QVERIFY(platform->microphoneAnswer);
+        QVERIFY(controller.recordingStartPending());
+        QCOMPARE(controller.recording()->phase(), RecordingSession::Phase::Off);
+        controller.toggleRecording();
+        QVERIFY(!controller.recordingStartPending());
+        const auto lateGrant = platform->microphoneAnswer;
+        lateGrant(true);
+        QCOMPARE(controller.recording()->phase(), RecordingSession::Phase::Off);
+    }
+
     // Tests answer for the operating system's reachability, whatever the
     // machine's own network: test_main sets online unless the run chose.
     void testsChooseTheReachabilityTheControllerSees()
@@ -715,19 +758,19 @@ private slots:
         SettingsStore *settings = controller.settings();
         const bool setupCompleted = settings->dictationSnapshot().setupCompleted;
         const ShortcutActivationMode mode = settings->dictationSnapshot().shortcutActivationMode;
-        const QString refinementProvider = settings->dictationSnapshot().refinement.providerId;
+        const QString refinementProvider = settings->dictationSnapshot().refinement.services.main();
         const auto restore = qScopeGuard([&] {
             settings->edit([&](AppSettings &draft) {
                 draft.setupCompleted = setupCompleted;
                 draft.shortcutActivationMode = mode;
-                draft.refinement.providerId = refinementProvider;
+                draft.refinement.services.order = {refinementProvider};
                 return true;
             });
         });
         settings->edit([](AppSettings &draft) {
             draft.setupCompleted = true;
             draft.shortcutActivationMode = ShortcutActivationMode::PushToTalk;
-            draft.refinement.providerId = QStringLiteral("openai");
+            draft.refinement.services.order = {QStringLiteral("openai")};
             return true;
         });
         FakeSpeechTranscriber *speech = nullptr;
@@ -820,12 +863,13 @@ private slots:
         QTemporaryDir dir;
         const QString audio = dir.filePath(QStringLiteral("silence.wav"));
         QVERIFY(writeSilentWav(audio));
-        TranscribeOptions options;
-        options.speechProviderId = QStringLiteral("claude");
+        RunOverrides run;
+        run.speech = ServiceChoice{QStringLiteral("claude")};
+        run.refinement = ServiceChoice{kNoRefinementProvider};
         TranscribeQueue queue(controller.settings(), controller.providerRegistry(), controller.fileTranscription(),
                               [&controller] { return controller.fileTranscriptionRefusal(); });
         queue.addFiles({audio});
-        queue.setOptions(options);
+        queue.setOverrides(run);
 
         // A batch in flight turns the dictation shortcut away.
         QVERIFY(queue.start());
@@ -876,7 +920,7 @@ private slots:
         });
         controller.settings()->edit([](AppSettings &draft) {
             draft.setupCompleted = true;
-            draft.speech.providerId = QStringLiteral("codex");
+            draft.speech.services.order = {QStringLiteral("codex")};
             return true;
         });
         // A speech provider that prepares, so the session asks the
@@ -1246,7 +1290,7 @@ private slots:
         // The step's check is System's.
         test::SystemSingletons system(&controller);
         // Setup's choices read Models, as the host always has one.
-        QuickModels models(&controller);
+        QuickModels models(&controller, &system.settings);
         // Setup reads Accounts, which the host always makes. Its keyring
         // reads fail at once, so none is left waiting on this thread when it
         // goes.
@@ -1294,6 +1338,8 @@ private slots:
         ApplicationController controller(true, platform);
         platform->binder->desktopChooser = true;
         QuickSettings settings(&controller);
+        // The shortcut row reads System for whether the desktop gives shortcuts.
+        test::SystemSingletons system(&controller);
         QVERIFY(controller.setGlobalShortcut(QKeySequence(Qt::CTRL | Qt::Key_K)));
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
@@ -1319,6 +1365,8 @@ private slots:
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
         QuickSettings settings(&controller);
+        // The shortcut row reads System for whether the desktop gives shortcuts.
+        test::SystemSingletons system(&controller);
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         std::unique_ptr<QQuickWindow> window = schemaRowWindow(engine, QStringLiteral("globalShortcut"));
@@ -1367,6 +1415,8 @@ private slots:
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
         QuickSettings settings(&controller);
+        // The shortcut row reads System for whether the desktop gives shortcuts.
+        test::SystemSingletons system(&controller);
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         const std::unique_ptr<QQuickWindow> window = schemaRowWindow(engine, QStringLiteral("globalShortcut"));
@@ -1402,6 +1452,8 @@ private slots:
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
         QuickSettings settings(&controller);
+        // The shortcut row reads System for whether the desktop gives shortcuts.
+        test::SystemSingletons system(&controller);
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         const std::unique_ptr<QQuickWindow> window = schemaRowWindow(engine, QStringLiteral("globalShortcut"));
@@ -1453,6 +1505,8 @@ private slots:
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
         QuickSettings settings(&controller);
+        // The shortcut row reads System for whether the desktop gives shortcuts.
+        test::SystemSingletons system(&controller);
         const ShortcutBinding saved(QKeySequence(Qt::CTRL | Qt::Key_K));
         QVERIFY(controller.setGlobalShortcut(saved));
         QuickNavigation navigation(nullptr);
@@ -1763,13 +1817,13 @@ private slots:
                                                     QStringLiteral("--no-vocabulary"), QStringLiteral("--json")});
         QCOMPARE(decision.mode, LaunchMode::TranscribeHeadless);
         QCOMPARE(decision.transcribeFiles, QStringList{audio});
-        QCOMPARE(decision.headless.cleanupStrength, std::optional(QStringLiteral("light_cleanup")));
-        QCOMPARE(decision.headless.writingProfile, std::optional(QStringLiteral("ai_coding")));
-        QCOMPARE(decision.headless.tone, std::optional(QStringLiteral("very_casual")));
-        QCOMPARE(decision.headless.refinementProviderId, std::optional(QStringLiteral("none")));
+        QCOMPARE(decision.overrides.cleanupLevel, std::optional(QStringLiteral("light_cleanup")));
+        QCOMPARE(decision.overrides.writingProfile, std::optional(QStringLiteral("ai_coding")));
+        QCOMPARE(decision.overrides.tone, std::optional(QStringLiteral("very_casual")));
+        QCOMPARE(decision.overrides.refinement, std::optional(ServiceChoice{QStringLiteral("none")}));
         QCOMPARE(decision.headless.destination, TranscriptDestination::Folder);
         QCOMPARE(decision.headless.folder, dir.path());
-        QVERIFY(!decision.headless.applyVocabulary);
+        QVERIFY(!decision.overrides.applyVocabulary);
         QVERIFY(decision.headless.json);
         QCOMPARE(parse({QStringLiteral("--headless")}).mode, LaunchMode::TranscribeHeadless);
         // Without options the files still open in the window.
@@ -1779,7 +1833,7 @@ private slots:
         QCOMPARE(parse({QStringLiteral("--vtt"), QStringLiteral("--vtt")}).headless.format, TranscriptFormat::WebVtt);
         QCOMPARE(parse({QStringLiteral("--output"), QStringLiteral("NONE")}).headless.destination,
                  TranscriptDestination::None);
-        QCOMPARE(parse({QStringLiteral("--cleanup"), QStringLiteral("Medium")}).headless.cleanupStrength,
+        QCOMPARE(parse({QStringLiteral("--cleanup"), QStringLiteral("Medium")}).overrides.cleanupLevel,
                  std::optional(QStringLiteral("balanced")));
         // After --, everything is a file, even a name that looks like an option.
         const QString dashed = dir.filePath(QStringLiteral("--memo.wav"));
@@ -1849,14 +1903,12 @@ private slots:
                    QStringLiteral("formal"), QStringLiteral("--raw"), QStringLiteral("--json")});
         QCOMPARE(decision.mode, LaunchMode::ListenHeadless);
         QCOMPARE(decision.untilSilenceMs, std::optional(1500));
-        QCOMPARE(decision.headless.refinementProviderId, std::optional(QStringLiteral("none")));
-        QCOMPARE(decision.headless.writingProfile, std::optional(QStringLiteral("ai_coding")));
-        QCOMPARE(decision.headless.spokenLanguage, std::optional(QStringLiteral("de")));
-        QCOMPARE(decision.headless.tone, std::optional(QStringLiteral("formal")));
+        QCOMPARE(decision.overrides.refinement, std::optional(ServiceChoice{QStringLiteral("none")}));
+        QCOMPARE(decision.overrides.writingProfile, std::optional(QStringLiteral("ai_coding")));
+        QCOMPARE(decision.overrides.spokenLanguage, std::optional(QStringLiteral("de")));
+        QCOMPARE(decision.overrides.tone, std::optional(QStringLiteral("formal")));
         QVERIFY(decision.headless.raw);
         QVERIFY(decision.headless.json);
-        QVERIFY(!decision.sessionOverrides.writingProfile);
-        QVERIFY(!decision.sessionOverrides.spokenLanguage);
 
         QCOMPARE(parse({}).mode, LaunchMode::ListenHeadless);
         QCOMPARE(parse({}).untilSilenceMs, std::nullopt);
@@ -1867,10 +1919,10 @@ private slots:
         QVERIFY(vocabularyFile.open(QIODevice::WriteOnly));
         vocabularyFile.write("readSharedChoice\nSpeecher CLI\n");
         vocabularyFile.close();
-        QCOMPARE(parse({QStringLiteral("--vocab-file"), vocabulary}).headless.addedVocabulary,
+        QCOMPARE(parse({QStringLiteral("--vocab-file"), vocabulary}).overrides.addedVocabulary,
                  QStringList({QStringLiteral("readSharedChoice"), QStringLiteral("Speecher CLI")}));
         QCOMPARE(parse({QStringLiteral("--vocab-file"), vocabulary, QStringLiteral("--vocab-file"), vocabulary})
-                     .headless.addedVocabulary,
+                     .overrides.addedVocabulary,
                  QStringList({QStringLiteral("readSharedChoice"), QStringLiteral("Speecher CLI"),
                               QStringLiteral("readSharedChoice"), QStringLiteral("Speecher CLI")}));
         QCOMPARE(parse({QStringLiteral("--until-silence")}).untilSilenceMs, std::optional(2000));
@@ -1964,6 +2016,10 @@ private slots:
         QVERIFY(start.recordMicrophoneOnly);
         QCOMPARE(parse({QStringLiteral("start")}).recordPath, QString());
         QVERIFY(!parse({QStringLiteral("start")}).recordMicrophoneOnly);
+        QCOMPARE(parse({QStringLiteral("start"), QStringLiteral("--name"), QStringLiteral(" Weekly sync ")}).recordTitle,
+                 QStringLiteral("Weekly sync"));
+        QCOMPARE(parse({QStringLiteral("start")}).recordTitle, QString());
+        QCOMPARE(parse({QStringLiteral("start"), QStringLiteral("--name")}).exitCode, 2);
         QTemporaryDir dir;
         const QString vocabulary = dir.filePath(QStringLiteral("terms.txt"));
         QFile vocabularyFile(vocabulary);
@@ -2095,6 +2151,8 @@ private slots:
             {QStringLiteral("cancel"), {}},
             {QStringLiteral("status"), {QStringLiteral("--json"), QStringLiteral("--watch")}},
             {QStringLiteral("last"), {}},
+            {QStringLiteral("history"),
+             {QStringLiteral("--kind"), QStringLiteral("--since"), QStringLiteral("--limit"), QStringLiteral("--json")}},
             {QStringLiteral("vocabulary add"), {}},
             {QStringLiteral("settings"), {}},
             {QStringLiteral("setup"), {}},
@@ -2106,7 +2164,7 @@ private slots:
             {QStringLiteral("listen"), shared + QStringList{QStringLiteral("--until-silence")}},
             {QStringLiteral("providers"), {QStringLiteral("--json")}},
             {QStringLiteral("record start"),
-             {QStringLiteral("--to"), QStringLiteral("--mic-only"), QStringLiteral("--vocab-file")}},
+             {QStringLiteral("--to"), QStringLiteral("--name"), QStringLiteral("--mic-only"), QStringLiteral("--vocab-file")}},
             {QStringLiteral("record status"), {QStringLiteral("--json")}},
             {QStringLiteral("record stop"), {}},
             {QStringLiteral("completions bash"), {}},
@@ -2295,7 +2353,7 @@ private slots:
             const CommandLineDecision decision = parseCommandLine(
                 {QStringLiteral("speecher"), QStringLiteral("toggle"), QStringLiteral("--profile"), names.at(index)},
                 {});
-            QCOMPARE(decision.sessionOverrides.writingProfile, std::optional(ids.at(index)));
+            QCOMPARE(decision.overrides.writingProfile, std::optional(ids.at(index)));
         }
     }
 
@@ -2409,8 +2467,8 @@ private slots:
             {QStringLiteral("speecher"), QStringLiteral("transcribe"), QStringLiteral("--tone"),
              QStringLiteral("very-terse"), QStringLiteral("--cleanup"), QStringLiteral("notes"), audio},
             {});
-        QCOMPARE(decision.headless.tone, std::optional(QStringLiteral("custom_very_terse")));
-        QCOMPARE(decision.headless.cleanupStrength, std::optional(QStringLiteral("custom_notes")));
+        QCOMPARE(decision.overrides.tone, std::optional(QStringLiteral("custom_very_terse")));
+        QCOMPARE(decision.overrides.cleanupLevel, std::optional(QStringLiteral("custom_notes")));
         settings.raw().clear();
     }
 
@@ -2432,7 +2490,7 @@ private slots:
             {QStringLiteral("speecher"), QStringLiteral("transcribe"), QStringLiteral("--profile"),
              QStringLiteral("stand-up"), audio},
             {});
-        QCOMPARE(decision.headless.writingProfile, std::optional(QStringLiteral("custom_stand_up")));
+        QCOMPARE(decision.overrides.writingProfile, std::optional(QStringLiteral("custom_stand_up")));
         settings.raw().clear();
     }
 
@@ -2442,10 +2500,10 @@ private slots:
             return parseCommandLine(QStringList{QStringLiteral("speecher")} + arguments, {});
         };
         QCOMPARE(parse({QStringLiteral("toggle"), QStringLiteral("--language"), QStringLiteral("DE")})
-                     .sessionOverrides.spokenLanguage,
+                     .overrides.spokenLanguage,
                  std::optional(QStringLiteral("de")));
         QCOMPARE(parse({QStringLiteral("start"), QStringLiteral("--language"), QStringLiteral("auto")})
-                     .sessionOverrides.spokenLanguage,
+                     .overrides.spokenLanguage,
                  std::optional(QStringLiteral("auto")));
         QTemporaryDir dir;
         const QString audio = dir.filePath(QStringLiteral("memo.wav"));
@@ -2453,7 +2511,7 @@ private slots:
         QVERIFY(file.open(QIODevice::WriteOnly));
         file.close();
         QCOMPARE(parse({QStringLiteral("transcribe"), QStringLiteral("--language"), QStringLiteral("fr"), audio})
-                     .headless.spokenLanguage,
+                     .overrides.spokenLanguage,
                  std::optional(QStringLiteral("fr")));
         for (const QStringList &mistake :
              {QStringList{QStringLiteral("toggle"), QStringLiteral("--language"), QStringLiteral("klingon")},
@@ -2479,18 +2537,18 @@ private slots:
         };
         const auto profile = [&parse](const QString &value) {
             return parse({QStringLiteral("toggle"), QStringLiteral("--profile"), value})
-                .sessionOverrides.writingProfile;
+                .overrides.writingProfile;
         };
 
         const CommandLineDecision toggle = parse({QStringLiteral("toggle"), QStringLiteral("--profile"),
                                                   QStringLiteral("Email")});
         QCOMPARE(toggle.mode, LaunchMode::RunCli);
-        QCOMPARE(toggle.sessionOverrides.writingProfile, std::optional(WritingProfile::Email));
+        QCOMPARE(toggle.overrides.writingProfile, std::optional(WritingProfile::Email));
         const CommandLineDecision start = parse({QStringLiteral("start"), QStringLiteral("--profile"),
                                                  QStringLiteral("AI-Coding"), QStringLiteral("--format"),
                                                  QStringLiteral("html")});
-        QCOMPARE(start.sessionOverrides.writingProfile, std::optional(WritingProfile::AiCoding));
-        QCOMPARE(start.sessionOverrides.outputFormat, std::optional(OutputFormat::Html));
+        QCOMPARE(start.overrides.writingProfile, std::optional(WritingProfile::AiCoding));
+        QCOMPARE(start.overrides.outputFormat, std::optional(OutputFormat::Html));
         QCOMPARE(profile(QStringLiteral("ai coding")), std::optional(WritingProfile::AiCoding));
         QCOMPARE(profile(QStringLiteral("Daily Sync")), std::optional(QStringLiteral("custom_stand_up")));
         QCOMPARE(profile(QStringLiteral("daily-sync")), std::optional(QStringLiteral("custom_stand_up")));
@@ -2498,7 +2556,7 @@ private slots:
         // What toggle and start pass on to the daemon they start.
         QCOMPARE(parse({QStringLiteral("--daemon"), QStringLiteral("--start-listening"), QStringLiteral("--profile"),
                         QStringLiteral("custom_stand_up")})
-                     .sessionOverrides.writingProfile,
+                     .overrides.writingProfile,
                  std::optional(QStringLiteral("custom_stand_up")));
 
         // A custom profile named like a built-in makes that name ambiguous.
@@ -3234,7 +3292,7 @@ private slots:
             FakeGlobalShortcutBinder *cancel = nullptr;
             int dictationSuspensions = -1;
             int cancelSuspensions = -1;
-            void deliver(const OutputSettings &, const DeliveryContent &, const Target &) override
+            void deliver(const OutputSettings &, const DeliveryContent &, const Target &, const PastingChoice &) override
             {
                 dictationSuspensions = dictation->suspendCount - dictation->resumeCount;
                 cancelSuspensions = cancel->suspendCount - cancel->resumeCount;
@@ -3248,7 +3306,7 @@ private slots:
         connect(&delivery, &TextDeliveryAdapter::delivered, this,
                 [&deliveredOk](const DeliveryResult &result) { deliveredOk = result.ok; });
 
-        delivery.deliver({}, {}, {});
+        delivery.deliver({}, {}, {}, {});
         QCOMPARE(inner.dictationSuspensions, 1);
         QCOMPARE(inner.cancelSuspensions, 1);
         QCOMPARE(dictation.resumeCount, 0);
@@ -3260,6 +3318,42 @@ private slots:
         QCOMPARE(deliveredOk, std::optional<bool>(true));
     }
 
+    // Dictation and Paste Again both inject the paste keys, so every shortcut
+    // looks away while either delivers, the Recording Shortcut as well: bound
+    // to Ctrl+V, it would otherwise take the paste.
+    void everyDeliverySuspendsEveryShortcut()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        QList<FakeDelivery *> deliveries;
+        platform->textDeliveries = [&deliveries](QObject *parent) {
+            deliveries.append(new FakeDelivery(parent));
+            deliveries.last()->holdsAnswer = true;
+            return deliveries.last();
+        };
+        ApplicationController controller(true, platform);
+        const QList<FakeGlobalShortcutBinder *> binders{platform->binder, platform->cancelBinder, platform->pauseBinder,
+                                                       platform->pasteAgainBinder, platform->recordingBinder};
+        const QList<ShortcutSuspendingDelivery *> suspending =
+            controller.findChildren<ShortcutSuspendingDelivery *>(Qt::FindDirectChildrenOnly);
+        QCOMPARE(suspending.size(), 2);
+        QCOMPARE(deliveries.size(), 2);
+
+        for (qsizetype each = 0; each < suspending.size(); ++each) {
+            suspending[each]->deliver({}, {}, {}, {});
+            for (FakeGlobalShortcutBinder *binder : binders) {
+                QCOMPARE(binder->suspendCount - binder->resumeCount, 1);
+            }
+            for (FakeDelivery *delivery : deliveries) {
+                if (delivery->calls > delivery->answers) {
+                    delivery->answer();
+                }
+            }
+            for (FakeGlobalShortcutBinder *binder : binders) {
+                QCOMPARE(binder->suspendCount - binder->resumeCount, 0);
+            }
+        }
+    }
+
     // Deliveries that overlap share one suspension, which lifts with the last
     // answer: the binders do not count theirs.
     void overlappingDeliveriesKeepShortcutsSuspendedUntilTheLastAnswer()
@@ -3269,8 +3363,8 @@ private slots:
         inner.holdsAnswer = true;
         ShortcutSuspendingDelivery delivery(&inner, {&dictation});
 
-        delivery.deliver({}, {}, {});
-        delivery.deliver({}, {}, {});
+        delivery.deliver({}, {}, {}, {});
+        delivery.deliver({}, {}, {}, {});
         QCOMPARE(dictation.suspendCount, 1);
         inner.answer();
         QCOMPARE(dictation.resumeCount, 0);
@@ -3294,7 +3388,7 @@ private slots:
         inner.holdsAnswer = true;
         ShortcutSuspendingDelivery delivery(&inner, {&router});
 
-        delivery.deliver({}, {}, {});
+        delivery.deliver({}, {}, {}, {});
         inner.answer();
         QCOMPARE(combination->suspendCount, 0);
         QCOMPARE(combination->resumeCount, 0);
@@ -3395,11 +3489,9 @@ private slots:
         ApplicationController controller(true, platform);
         FakeAppFrontEnd frontEnd;
         controller.setFrontEnd(&frontEnd);
-        LocalSpeechSettings local = controller.settings()->dictationSnapshot().speech.local;
-        local.modelId = QStringLiteral("moonshine-small");
         controller.settings()->edit([&](AppSettings &draft) {
-            draft.speech.local = local;
-            draft.speech.providerId = QStringLiteral("local");
+            localModelId(draft.speech) = QStringLiteral("moonshine-small");
+            draft.speech.services.order = {QStringLiteral("local")};
             return true;
         });
 
@@ -3438,6 +3530,72 @@ private slots:
             {IpcCommand::Transcribe, {}, {QStringLiteral("/a.wav"), QStringLiteral("/b.mp3")}}, nullptr);
 
         QCOMPARE(frontEnd.calls, QStringList({QStringLiteral("showTranscribeFiles /a.wav /b.mp3")}));
+    }
+
+    // speecher history reads its words and options; a wrong one is a usage
+    // mistake.
+    void historyReadsItsSearch()
+    {
+        const auto parse = [](const QStringList &arguments) {
+            return parseCommandLine(QStringList{QStringLiteral("speecher"), QStringLiteral("history")} + arguments, {});
+        };
+        const CommandLineDecision search = parse({QStringLiteral("retry"), QStringLiteral("--kind"),
+                                                  QStringLiteral("file"), QStringLiteral("loop"),
+                                                  QStringLiteral("--since"), QStringLiteral("2026-11-01"),
+                                                  QStringLiteral("--limit"), QStringLiteral("5"),
+                                                  QStringLiteral("--json"), QStringLiteral("--"),
+                                                  QStringLiteral("--literal")});
+        QCOMPARE(search.mode, LaunchMode::RunCli);
+        QCOMPARE(search.ipcCommand, IpcCommand::History);
+        QVERIFY(search.json);
+        QCOMPARE(search.historySearch, (HistorySearch{QStringLiteral("retry loop --literal"), QStringLiteral("file"),
+                                                      QDate(2026, 11, 1), 5}));
+        QCOMPARE(parse({}).historySearch, HistorySearch{});
+        for (const QStringList &wrong : {QStringList{QStringLiteral("--kind"), QStringLiteral("call")},
+                                         QStringList{QStringLiteral("--since"), QStringLiteral("yesterday")},
+                                         QStringList{QStringLiteral("--limit"), QStringLiteral("0")},
+                                         QStringList{QStringLiteral("--delete")}}) {
+            QCOMPARE(parse(wrong).exitCode, 2);
+        }
+    }
+
+    // The running app answers history from History: what holds every word,
+    // newest first, of the kind asked.
+    void historyCommandSearchesHistory()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        controller.history()->clear({}, {}, true);
+        const auto add = [&controller](HistoryKind kind, const QString &text, int minutesAgo) {
+            HistoryEntry entry;
+            entry.kind = kind;
+            entry.stats.finishedAt = QDateTime::currentDateTime().addSecs(-60 * minutesAgo);
+            entry.stats.appName = QStringLiteral("Slack");
+            entry.kept = HistoryKeep::Text;
+            entry.text = text;
+            controller.history()->add(entry);
+        };
+        add(HistoryKind::Dictation, QStringLiteral("the retry loop again"), 3);
+        add(HistoryKind::File, QStringLiteral("a retry in the interview"), 2);
+        add(HistoryKind::Dictation, QStringLiteral("lunch at noon"), 1);
+
+        QLocalServer server;
+        QVERIFY(server.listen(QStringLiteral("spchr-h-%1").arg(QUuid::createUuid().toString(QUuid::Id128).left(12))));
+        QLocalSocket client;
+        client.connectToServer(server.fullServerName());
+        QVERIFY(server.waitForNewConnection(2000));
+        IpcRequest request{IpcCommand::History};
+        request.history.text = QStringLiteral("retry");
+        request.history.kind = QStringLiteral("dictation");
+        controller.ipcCommands()->handle(request, server.nextPendingConnection());
+        QVERIFY(client.waitForReadyRead(2000));
+
+        const QJsonArray found = QJsonDocument::fromJson(client.readLine()).object()[u"history"].toArray();
+        QCOMPARE(found.size(), 1);
+        QCOMPARE(found.first()[u"text"].toString(), QStringLiteral("the retry loop again"));
+        QCOMPARE(found.first()[u"app"].toString(), QStringLiteral("Slack"));
+        QCOMPARE(found.first()[u"kind"].toString(), QStringLiteral("dictation"));
+        controller.history()->clear({}, {}, true);
     }
 
     // The running app answers providers with the sign-ins it has seen.
@@ -3551,7 +3709,7 @@ private slots:
         watcher.write(QByteArrayLiteral("{\"command\":\"status\"}\n"));
         // An unknown speech provider fails the session as it starts.
         controller.settings()->edit([](AppSettings &draft) {
-            draft.speech.providerId = QStringLiteral("missing");
+            draft.speech.services.order = {QStringLiteral("missing")};
             return true;
         });
         controller.session()->startListening();
@@ -3579,7 +3737,7 @@ private slots:
         ApplicationController controller(true, platform);
         controller.settings()->edit([](AppSettings &draft) {
             draft.setupCompleted = true;
-            draft.speech.providerId = QStringLiteral("codex");
+            draft.speech.services.order = {QStringLiteral("codex")};
             return true;
         });
         QPointer<test::FakeSpeechTranscriber> codex;
@@ -3642,7 +3800,7 @@ private slots:
         ApplicationController controller(true, platform);
         controller.settings()->edit([](AppSettings &draft) {
             draft.setupCompleted = true;
-            draft.speech.providerId = QStringLiteral("codex");
+            draft.speech.services.order = {QStringLiteral("codex")};
             return true;
         });
         bool connected = false;
@@ -3665,6 +3823,62 @@ private slots:
         QTRY_VERIFY(connected);
         QVERIFY(!controller.isRecording());
         QVERIFY(!QFileInfo::exists(path));
+    }
+
+    // A line the file takes while the recording still starts belongs to it:
+    // its History Entry gets the line once the start finishes. A start that
+    // fails takes its lines with it, so the next recording has only its own.
+    void linesWrittenWhileARecordingStartsGoToItsEntry()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        platform->audioInputs = [](QObject *parent) { return new test::FakeAudioInput(parent); };
+        platform->systemAudioInputs = [](QObject *parent) { return new test::FakeAudioInput(parent); };
+        ApplicationController controller(true, platform);
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.setupCompleted = true;
+            draft.speech.services.order = {QStringLiteral("codex")};
+            draft.history.keeps = HistoryKeep::Text;
+            return true;
+        });
+        // One stream for the microphone and one for system audio; until the
+        // second connects, the first already writes lines.
+        QList<QPointer<test::FakeSpeechTranscriber>> streams;
+        controller.providerRegistry()->registerSpeechProvider(
+            {QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")}, [&streams](QObject *parent) {
+                auto *codex = new test::FakeSpeechTranscriber(parent);
+                codex->providerId = QStringLiteral("codex");
+                codex->streamsFinals = true;
+                codex->onStartAttempt = [codex, &streams] { streams.append(codex); };
+                return codex;
+            });
+        QTemporaryDir dir;
+        const auto startWithOneStreamConnected = [&](const QString &name) {
+            streams.clear();
+            controller.startRecording({dir.filePath(name), {}}, [](const QString &) {});
+            platform->microphoneAnswer(true);
+            QTRY_COMPARE(streams.size(), 2);
+            streams.first()->emitConnected();
+            QCOMPARE(controller.recording()->phase(), RecordingSession::Phase::Starting);
+        };
+
+        startWithOneStreamConnected(QStringLiteral("failed.md"));
+        streams.first()->emitFinalText(QStringLiteral("Lost with the start."));
+        controller.recording()->stop();
+        QCOMPARE(controller.recording()->phase(), RecordingSession::Phase::Off);
+
+        startWithOneStreamConnected(QStringLiteral("call.md"));
+        streams.first()->emitFinalText(QStringLiteral("Said while it started."));
+        streams.last()->emitConnected();
+        QVERIFY(controller.isRecording());
+        streams.first()->emitFinalText(QStringLiteral("Said once it ran."));
+
+        QStringList texts;
+        for (const HistoryLine &line : controller.history()->lines(controller.recordingHistoryId())) {
+            texts.append(line.text);
+        }
+        QCOMPARE(texts, (QStringList{QStringLiteral("Said while it started."), QStringLiteral("Said once it ran.")}));
+        controller.recording()->stop();
+        QTRY_COMPARE(controller.recording()->phase(), RecordingSession::Phase::Off);
     }
 
     // Outside an AppImage, the AppImage updater's restart opens the release
@@ -3690,7 +3904,7 @@ private slots:
         }
         controller.settings()->edit([](AppSettings &draft) {
             draft.setupCompleted = true;
-            draft.speech.providerId = QStringLiteral("codex");
+            draft.speech.services.order = {QStringLiteral("codex")};
             return true;
         });
         controller.providerRegistry()->registerSpeechProvider(
@@ -3749,7 +3963,7 @@ private slots:
         }
         controller.settings()->edit([](AppSettings &draft) {
             draft.setupCompleted = true;
-            draft.speech.providerId = QStringLiteral("codex");
+            draft.speech.services.order = {QStringLiteral("codex")};
             return true;
         });
         // A speech provider that prepares, so the session asks the
@@ -3789,9 +4003,10 @@ private slots:
         QTemporaryDir dir;
         const QString audio = dir.filePath(QStringLiteral("silence.wav"));
         QVERIFY(writeSilentWav(audio));
-        TranscribeOptions options;
-        options.speechProviderId = QStringLiteral("claude");
-        QVERIFY(controller.fileTranscription()->start({audio}, options));
+        RunOverrides run;
+        run.speech = ServiceChoice{QStringLiteral("claude")};
+        run.refinement = ServiceChoice{kNoRefinementProvider};
+        QVERIFY(controller.fileTranscription()->start({audio}, run));
         QCOMPARE(updater->restartBlocker(), UpdateController::RestartBlocker::FileTranscription);
 
         ManifestUpdaterTestAccess::setState(*updater, UpdateController::State::ReadyToRestart);
@@ -3837,11 +4052,11 @@ private slots:
         QVERIFY(writeSilentWav(audio));
         TranscribeQueue &queue = *controller.transcribeQueue();
         queue.addFiles({audio});
-        TranscribeOptions options = queue.options();
-        options.speechProviderId = QStringLiteral("claude");
-        options.refinementProviderId = QStringLiteral("none");
-        options.destination = TranscriptDestination::None;
-        queue.setOptions(options);
+        RunOverrides run;
+        run.speech = ServiceChoice{QStringLiteral("claude")};
+        run.refinement = ServiceChoice{kNoRefinementProvider};
+        queue.setOverrides(run);
+        queue.setOptions({TranscriptDestination::None});
         QVERIFY(queue.start());
 
         ManifestUpdaterTestAccess::setState(*updater, UpdateController::State::ReadyToRestart);

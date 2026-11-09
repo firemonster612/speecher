@@ -1,6 +1,5 @@
 #pragma once
 
-#include "core/OutputFormat.h"
 #include "core/ProviderAttemptIssue.h"
 #include "core/ProviderChain.h"
 #include "core/ProviderFailure.h"
@@ -10,21 +9,8 @@
 #include <QString>
 #include <QStringList>
 
-#include <optional>
 
 namespace speecher {
-
-// What `toggle` and `start` on the command line change for one Dictation
-// Session. Nothing is saved.
-struct SessionOverrides {
-    std::optional<OutputFormat> outputFormat;
-    // A Writing Profile id.
-    std::optional<QString> writingProfile;
-    // A Spoken Language: a language code, or kAutomaticSpokenLanguage.
-    std::optional<QString> spokenLanguage;
-
-    bool operator==(const SessionOverrides &other) const = default;
-};
 
 enum class DictationState {
     Idle,
@@ -96,9 +82,9 @@ SessionKeys sessionKeysWanted(DictationState state,
                               const ShortcutBinding &pauseShortcut,
                               bool suspended);
 
-// The tray icon's tooltip and Quit item. recording: a recording is running,
-// which `speecher record` starts.
-QString trayToolTip(bool listening, bool recording);
+// The tray icon's tooltip and Quit item. recordingFor: how long the
+// recording running has run ("12:03"), empty while none runs.
+QString trayToolTip(bool listening, const QString &recordingFor);
 QString trayQuitCaption();
 
 // Which providers a Dictation Session used and which let it down.

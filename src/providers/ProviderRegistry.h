@@ -46,9 +46,9 @@ public:
     bool refinementProviderReadsScreenshots(const QString &id) const;
     // Both, by role, for as long as the registry lives.
     ProviderLabels labels() const;
-    // withWritingProfileProviders, passing over a profile's speech service
-    // this registry lacks, as one that can't hear the Spoken Language is.
-    AppSettings withProfileProviders(const AppSettings &settings, const WritingProfileSettings &profile) const;
+    // Whether this registry has the speech service, for planDictation, which
+    // passes over a profile's speech service it lacks.
+    std::function<bool(const QString &service)> offersSpeech() const;
 
     SpeechTranscriber *speechProvider(const QString &id);
     TranscriptRefiner *refinementProvider(const QString &id);

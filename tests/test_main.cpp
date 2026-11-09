@@ -1,4 +1,5 @@
 #include "common/test_suites.h"
+#include "frontend/quick/host/QuickFrontEnd.h"
 
 #include <QApplication>
 #include <QDebug>
@@ -104,6 +105,7 @@ int main(int argc, char **argv)
         return 1;
     }
 #endif
+    speecher::QuickFrontEnd::configureQmlEngine();
     QApplication app(argc, argv);
     QStandardPaths::setTestModeEnabled(true);
 #ifndef Q_OS_WIN
@@ -149,6 +151,8 @@ int main(int argc, char **argv)
     };
     if (selected("transcript_state")) result |= runTranscriptStateTests(argc, argv);
     if (selected("bindings")) result |= runBindingsTests(argc, argv);
+    if (selected("apps")) result |= runAppsTests(argc, argv);
+    if (selected("dictation_plan")) result |= runDictationPlanTests(argc, argv);
     if (selected("settings")) result |= runSettingsTests(argc, argv);
     if (selected("provider_registry")) result |= runProviderRegistryTests(argc, argv);
     if (selected("platform_composition")) result |= runPlatformCompositionTests(argc, argv);
@@ -159,8 +163,10 @@ int main(int argc, char **argv)
     if (selected("quick_updates")) result |= runQuickUpdatesTests(argc, argv);
     if (selected("quick_transcription")) result |= runQuickTranscriptionTests(argc, argv);
     if (selected("quick_system")) result |= runQuickSystemTests(argc, argv);
+    if (selected("quick_apps")) result |= runQuickAppsTests(argc, argv);
     if (selected("quick_models")) result |= runQuickModelsTests(argc, argv);
     if (selected("quick_insights")) result |= runQuickInsightsTests(argc, argv);
+    if (selected("quick_history")) result |= runQuickHistoryTests(argc, argv);
     if (selected("quick_accounts")) result |= runQuickAccountsTests(argc, argv);
     if (selected("quick_audio")) result |= runQuickAudioTests(argc, argv);
     if (selected("quick_library")) result |= runQuickLibraryTests(argc, argv);
@@ -191,6 +197,8 @@ int main(int argc, char **argv)
     if (selected("vocabulary")) result |= runVocabularyTests(argc, argv);
     if (selected("phone_transfer")) result |= runPhoneTransferTests(argc, argv);
     if (selected("insights")) result |= runInsightsTests(argc, argv);
+    if (selected("history_store")) result |= runHistoryStoreTests(argc, argv);
+    if (selected("history_import")) result |= runHistoryImportTests(argc, argv);
     if (selected("provider_auth")) result |= runProviderAuthTests(argc, argv);
     if (selected("claude_voice")) result |= runClaudeVoiceTests(argc, argv);
     if (selected("codex_dictation")) result |= runCodexDictationTests(argc, argv);

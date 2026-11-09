@@ -1,9 +1,14 @@
 #include "common/test_prelude.h"
+#include "common/apps_fixtures.h"
+#include "common/vocabulary_entries.h"
+#include "core/EndpointSettings.h"
 #include "core/ProviderChain.h"
+#include "core/ProviderReadiness.h"
 #include "core/WritingProfileEdits.h"
-#include "core/WritingProfileProviders.h"
+#include "core/settings/ServiceOrderMigration.h"
 #include "core/settings/SpokenLanguages.h"
 #include "core/settings/SettingsKeys.h"
+#include "dictation/DictationPlan.h"
 #include <QProcess>
 #ifdef SPEECHER_WITH_QKEYCHAIN
 #include "core/ShortcutBinding.h"
@@ -13,6 +18,22 @@
 
 using namespace speecher;
 
+
+
+namespace {
+
+// The settings a dictation under profile runs with, as planDictation leads
+// its Service Orders.
+AppSettings profiled(AppSettings settings, WritingProfileSettings profile)
+{
+    profile.profile = QStringLiteral("custom_test");
+    settings.refinement.writingProfiles.append(profile);
+    RunOverrides run;
+    run.writingProfile = profile.profile;
+    return planDictation(settings, Target{}, run).settings;
+}
+
+} // namespace
 
 class SettingsTests : public QObject {
     Q_OBJECT
@@ -59,52 +80,201 @@ private slots:
         QCOMPARE(actual, QSettings::IniFormat);
     }
 
-    void fallbackProvidersAreStoredInOrderWithinTheCap()
+    // An order holds every service of its job, each once, in order.
+    void serviceOrdersAreStoredInOrder()
     {
         const QString claude = QStringLiteral("claude");
         const QString codex = QStringLiteral("codex");
         const QString local = QStringLiteral("local");
         const QString endpoint = QStringLiteral("endpoint");
-        QCOMPARE(normalizedFallbackProviders(ProviderRole::Speech, claude,
-                                             {endpoint, QString(), QStringLiteral("whisper"), claude, endpoint,
-                                              local, codex}),
-                 (QStringList{endpoint, local}));
-        QCOMPARE(providerChain(ProviderRole::Speech, codex, {local, claude}), (QStringList{codex, local, claude}));
-        QCOMPARE(normalizedFallbackProviders(ProviderRole::Refinement, QStringLiteral("openai"),
-                                             {QStringLiteral("none"), claude, QStringLiteral("anthropic")}),
+        QCOMPARE(normalizedServiceOrder(ProviderRole::Speech,
+                                        {{endpoint, QString(), QStringLiteral("whisper"), claude, endpoint, local, codex}})
+                     .order,
+                 (QStringList{endpoint, claude, local, codex}));
+        QCOMPARE(serviceChain(ProviderRole::Speech, {codex, local, claude, local, endpoint}),
+                 (QStringList{codex, local, claude, endpoint}));
+        QCOMPARE(normalizedServiceOrder(ProviderRole::Refinement, {{QStringLiteral("none"), claude, QStringLiteral("anthropic")}})
+                     .order,
                  QStringList{QStringLiteral("anthropic")});
 
         SettingsStore settings;
         settings.raw().clear();
-        // A key nothing has written reads as no fallbacks.
-        QVERIFY(settings.dictationSnapshot().speech.fallbackProviderIds.isEmpty());
-        QVERIFY(settings.dictationSnapshot().refinement.fallbackProviderIds.isEmpty());
+        // Nothing written reads as the default, with nothing behind it.
+        QCOMPARE(settings.dictationSnapshot().speech.services.order, QStringList{claude});
 
         settings.edit([&](AppSettings &draft) {
-            draft.speech.providerId = codex;
-            draft.speech.fallbackProviderIds = {local, codex, endpoint, claude};
+            draft.speech.services.order = {codex, local, codex, endpoint, claude};
             return true;
         });
-        QCOMPARE(SettingsStore().dictationSnapshot().speech.fallbackProviderIds, (QStringList{local, endpoint}));
-        // The new primary leaves the fallbacks.
-        settings.edit([&](AppSettings &draft) { draft.speech.providerId = local; return true; });
-        QCOMPARE(SettingsStore().dictationSnapshot().speech.fallbackProviderIds, QStringList{endpoint});
+        QCOMPARE(SettingsStore().dictationSnapshot().speech.services.order, (QStringList{codex, local, endpoint, claude}));
+        // A service moved first leaves its old place.
+        settings.edit([&](AppSettings &draft) { draft.speech.services = draft.speech.services.withMain(local); return true; });
+        QCOMPARE(SettingsStore().dictationSnapshot().speech.services.order, (QStringList{local, codex, endpoint, claude}));
     }
 
-    void refinementNoneClearsItsFallbacks()
+    // Each entry keeps its own choice, and keeps it while it is out of the
+    // order, for when it comes back.
+    void serviceChoicesStayWithTheirService()
     {
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("openai");
-            draft.refinement.fallbackProviderIds = {QStringLiteral("local")};
+            draft.speech.services.order = {QStringLiteral("claude"), QStringLiteral("codex")};
+            draft.speech.services.choice(QStringLiteral("codex")).language = QStringLiteral("ja");
             return true;
         });
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
-        QVERIFY(settings.dictationSnapshot().refinement.fallbackProviderIds.isEmpty());
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
-        QVERIFY(settings.dictationSnapshot().refinement.fallbackProviderIds.isEmpty());
-        QVERIFY(providerChain(ProviderRole::Refinement, QStringLiteral("none"), {QStringLiteral("local")}).isEmpty());
+        settings.edit([](AppSettings &draft) {
+            draft.speech.services.order = {QStringLiteral("claude")};
+            return true;
+        });
+        const ServiceOrder saved = SettingsStore().dictationSnapshot().speech.services;
+        QCOMPARE(saved.order, QStringList{QStringLiteral("claude")});
+        QCOMPARE(saved.choice(QStringLiteral("codex")).language, QStringLiteral("ja"));
+        // An entry with nothing chosen names only its service.
+        QCOMPARE(saved.choice(QStringLiteral("endpoint")), ServiceChoice{QStringLiteral("endpoint")});
+    }
+
+    // Clean up my words off runs no refinement service and keeps the order
+    // for when it comes back on.
+    void cleanUpMyWordsOffKeepsTheOrder()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        const QStringList order{QStringLiteral("openai"), QStringLiteral("local")};
+        settings.edit([&](AppSettings &draft) {
+            draft.refinement.services.order = order;
+            draft.refinement.enabled = false;
+            return true;
+        });
+        AppSettings saved = SettingsStore().dictationSnapshot();
+        QVERIFY(!saved.refinement.enabled);
+        QCOMPARE(saved.refinement.services.order, order);
+        QVERIFY(serviceChain(saved.refinement).isEmpty());
+
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = true; return true; });
+        QCOMPARE(serviceChain(SettingsStore().dictationSnapshot().refinement), order);
+    }
+
+    // Every shape an older release saved becomes one order per job, once,
+    // and the older keys stay for a downgrade.
+    void serviceOrdersMigrateFromEveryOldShape()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        const auto set = [&settings](const QString &key, const QVariant &value) { settings.raw().setValue(key, value); };
+        set(SettingsKeys::SpeechProvider, QStringLiteral("codex"));
+        set(SettingsKeys::SpeechFallbackProviders, QStringList{QStringLiteral("local"), QStringLiteral("endpoint")});
+        set(SettingsKeys::SpeechFallbackLanguages + QStringLiteral("/local"), QStringLiteral("de"));
+        set(SettingsKeys::LocalModel, QStringLiteral("whisper-small"));
+        set(SettingsKeys::SpeechEndpointModel, QStringLiteral("whisper-1"));
+        set(SettingsKeys::RefinementProvider, QStringLiteral("none"));
+        set(SettingsKeys::OpenAiModel, QStringLiteral("gpt-6-astra"));
+        set(SettingsKeys::OpenAiFastMode, false);
+        set(SettingsKeys::AnthropicModel, QStringLiteral("claude-sonnet-5-5"));
+        set(SettingsKeys::AnthropicEffort, QStringLiteral("max"));
+        set(SettingsKeys::AnthropicFastMode, false);
+        set(SettingsKeys::LocalRunnerModel, QStringLiteral("gemma4:e4b"));
+        set(SettingsKeys::CliproxyBaseUrl, QStringLiteral("http://proxy.example:8317"));
+        set(SettingsKeys::RefinementEndpointPreset, QStringLiteral("cliproxy"));
+        set(SettingsKeys::RefinementEndpointBaseUrl, QStringLiteral("http://custom.example/v1"));
+        set(SettingsKeys::RefinementEndpointModel, QStringLiteral("qwen3.5:4b"));
+        set(SettingsKeys::SecretsInKeyring, QStringList{QStringLiteral("refinement-endpoint-key")});
+        settings.raw().sync();
+
+        migrateServiceOrder(settings.raw());
+
+        const AppSettings migrated = SettingsStore().snapshot();
+        const ServiceOrder &speech = migrated.speech.services;
+        QCOMPARE(speech.order, (QStringList{QStringLiteral("codex"), QStringLiteral("local"), QStringLiteral("endpoint")}));
+        QCOMPARE(speech.choice(QStringLiteral("local")).language, QStringLiteral("de"));
+        QCOMPARE(speech.choice(QStringLiteral("endpoint")).language, QString());
+        QCOMPARE(localModelId(migrated.speech), QStringLiteral("whisper-small"));
+        QCOMPARE(speech.choice(QStringLiteral("endpoint")).model, QStringLiteral("whisper-1"));
+        // None is Clean up my words off, with an order waiting for it.
+        const RefinementSettings &refinement = migrated.refinement;
+        QVERIFY(!refinement.enabled);
+        QVERIFY(!refinement.services.order.isEmpty());
+        QCOMPARE(refinement.services.choice(QStringLiteral("openai")),
+                 (ServiceChoice{QStringLiteral("openai"), QStringLiteral("gpt-6-astra"), {}, QStringLiteral("none"),
+                                QStringLiteral("standard")}));
+        QCOMPARE(refinement.services.choice(QStringLiteral("anthropic")),
+                 (ServiceChoice{QStringLiteral("anthropic"), QStringLiteral("claude-sonnet-5-5"), {}, QStringLiteral("max"),
+                                QStringLiteral("standard")}));
+        QCOMPARE(refinement.services.choice(QStringLiteral("local")).model, QStringLiteral("gemma4:e4b"));
+        QCOMPARE(refinement.services.choice(QStringLiteral("endpoint")).model, QStringLiteral("qwen3.5:4b"));
+        // The CLI Proxy preset is the server at the proxy's address, which
+        // sends the proxy's key: the key kept for the Custom server is let go.
+        QCOMPARE(refinement.server.baseUrl, QStringLiteral("http://proxy.example:8317/v1"));
+        QVERIFY(usesProxyKey(refinement, migrated.accounts));
+        QVERIFY(!settings.raw().value(SettingsKeys::SecretsInKeyring).toStringList().contains(
+            QStringLiteral("refinement-endpoint-key")));
+
+        // An older release still finds what it saved.
+        QCOMPARE(settings.raw().value(SettingsKeys::SpeechProvider).toString(), QStringLiteral("codex"));
+        QCOMPARE(settings.raw().value(SettingsKeys::RefinementProvider).toString(), QStringLiteral("none"));
+        QCOMPARE(settings.raw().value(SettingsKeys::RefinementEndpointPreset).toString(), QStringLiteral("cliproxy"));
+
+        // Once: an order chosen since stays.
+        settings.edit([](AppSettings &draft) {
+            draft.speech.services.order = {QStringLiteral("claude")};
+            return true;
+        });
+        migrateServiceOrder(settings.raw());
+        QCOMPARE(SettingsStore().snapshot().speech.services.order, QStringList{QStringLiteral("claude")});
+        settings.raw().clear();
+    }
+
+    // Settings with nothing to migrate keep their defaults, Refinement's
+    // still free to follow the coding apps installed.
+    void aFreshInstallMigratesNothing()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        migrateServiceOrder(settings.raw());
+        QVERIFY(!settings.raw().contains(SettingsKeys::SpeechServices));
+        QVERIFY(!settings.raw().contains(SettingsKeys::RefinementServices));
+        settings.raw().clear();
+    }
+
+    // Each entry is judged by its own choice: the Local Model it names, the
+    // cleanup model it asks the Local Runner for.
+    void aServiceIsJudgedByItsOwnEntry()
+    {
+        AppSettings settings;
+        settings.speech.services.order = {QStringLiteral("claude"), QStringLiteral("local")};
+        localModelId(settings.speech) = QStringLiteral("whisper-small");
+        LiveFacts facts;
+        facts.downloadedModels = {QStringLiteral("parakeet")};
+        QCOMPARE(fallbackProblem(ProviderRole::Speech, QStringLiteral("local"), settings, facts), FallbackProblem::NoModel);
+        localModelId(settings.speech) = QStringLiteral("parakeet");
+        QCOMPARE(fallbackProblem(ProviderRole::Speech, QStringLiteral("local"), settings, facts), FallbackProblem::None);
+
+        settings.refinement.localRunner.runner = QStringLiteral("ollama");
+        facts.runners = {{QStringLiteral("ollama"), QStringLiteral("Ollama 0.12.3")}};
+        facts.runnersChecked = true;
+        QCOMPARE(fallbackProblem(ProviderRole::Refinement, QStringLiteral("local"), settings, facts),
+                 FallbackProblem::NoModel);
+        settings.refinement.services.choice(QStringLiteral("local")).model = QStringLiteral("gemma4:e4b");
+        QCOMPARE(fallbackProblem(ProviderRole::Refinement, QStringLiteral("local"), settings, facts), FallbackProblem::None);
+
+        // The server's model is its entry's, and its address its own.
+        QCOMPARE(fallbackProblem(ProviderRole::Refinement, QStringLiteral("endpoint"), settings, facts),
+                 FallbackProblem::NoServer);
+        settings.refinement.server.baseUrl = QStringLiteral("http://localhost:11434/v1");
+        QCOMPARE(fallbackProblem(ProviderRole::Refinement, QStringLiteral("endpoint"), settings, facts),
+                 FallbackProblem::None);
+    }
+
+    // A profile's or a run's choice runs over the order's entry for its
+    // service, field by field.
+    void aChoiceRunsOverTheEntryForItsService()
+    {
+        const ServiceChoice entry{QStringLiteral("openai"), QStringLiteral("gpt-6-luna"), {}, QStringLiteral("none"),
+                                  QStringLiteral("fast")};
+        QCOMPARE(mergedServiceChoice(entry, {QStringLiteral("openai"), QStringLiteral("gpt-6-astra")}),
+                 (ServiceChoice{QStringLiteral("openai"), QStringLiteral("gpt-6-astra"), {}, QStringLiteral("none"),
+                                QStringLiteral("fast")}));
+        QCOMPARE(mergedServiceChoice(entry, {}), entry);
     }
 
     void fallbackProvidersRoundTripThroughASnapshot()
@@ -112,15 +282,13 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         AppSettings draft = settings.snapshot();
-        draft.speech.providerId = QStringLiteral("codex");
-        draft.speech.fallbackProviderIds = {QStringLiteral("endpoint"), QStringLiteral("local")};
-        draft.refinement.providerId = QStringLiteral("anthropic");
-        draft.refinement.fallbackProviderIds = {QStringLiteral("local")};
+        draft.speech.services.order = {QStringLiteral("codex"), QStringLiteral("endpoint"), QStringLiteral("local")};
+        draft.refinement.services.order = {QStringLiteral("anthropic"), QStringLiteral("local")};
         settings.applySnapshot(draft);
 
         const AppSettings saved = SettingsStore().snapshot();
-        QCOMPARE(saved.speech.fallbackProviderIds, draft.speech.fallbackProviderIds);
-        QCOMPARE(saved.refinement.fallbackProviderIds, draft.refinement.fallbackProviderIds);
+        QCOMPARE(saved.speech.services.order.mid(1), draft.speech.services.order.mid(1));
+        QCOMPARE(saved.refinement.services.order.mid(1), draft.refinement.services.order.mid(1));
     }
 
     // A draft taken before another window swapped the primary and a fallback
@@ -130,18 +298,16 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
-            draft.speech.providerId = QStringLiteral("claude");
-            draft.speech.fallbackProviderIds = {QStringLiteral("codex")};
+            draft.speech.services.order = {QStringLiteral("claude"), QStringLiteral("codex")};
             return true;
         });
         AppSettings draft = settings.snapshot();
-        draft.speech.providerId = QStringLiteral("codex");
-        draft.speech.fallbackProviderIds = {QStringLiteral("claude")};
+        draft.speech.services.order = {QStringLiteral("codex"), QStringLiteral("claude")};
         settings.applySnapshot(draft);
 
         const AppSettings saved = SettingsStore().snapshot();
-        QCOMPARE(saved.speech.providerId, QStringLiteral("codex"));
-        QCOMPARE(saved.speech.fallbackProviderIds, QStringList{QStringLiteral("claude")});
+        QCOMPARE(saved.speech.services.main(), QStringLiteral("codex"));
+        QCOMPARE(saved.speech.services.order.mid(1), QStringList{QStringLiteral("claude")});
     }
 
     void otherTestProcessesCannotClearSettingsFallbacks()
@@ -160,7 +326,7 @@ private slots:
         QVERIFY(peer.waitForFinished());
         QVERIFY2(peer.exitStatus() == QProcess::NormalExit && peer.exitCode() == 0,
                  peer.readAll().constData());
-        QCOMPARE(SettingsStore().snapshot().speech.endpoint.apiKey, QStringLiteral("speech-secret"));
+        QCOMPARE(SettingsStore().snapshot().speech.server.apiKey, QStringLiteral("speech-secret"));
     }
 
     void identityMigrationMergesOnlyMissingSettingsOnce()
@@ -210,66 +376,6 @@ private slots:
         migrateRefinementModels(settings);
         QCOMPARE(settings.value(QStringLiteral("anthropic/model")).toString(),
                  QStringLiteral("claude-sonnet-5"));
-    }
-
-    // Paste with no longer offers inserting directly or copying only. Under
-    // either, a rule that said to paste only inserted, or only copied, so those
-    // rules take that method now.
-    void outputMethodMigrationMovesPastingRulesToTheOldMethod()
-    {
-        using Scope = PasteRuleScope;
-        using Method = PasteMethod;
-        QTemporaryDir dir;
-        QVERIFY(dir.isValid());
-        QSettings settings(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
-        const QList<PasteRule> stored{
-            {Scope::Category, QStringLiteral("terminal"), Method::TerminalPaste, true},
-            {Scope::Category, QStringLiteral("browser"), Method::ClipboardOnly, true},
-            {Scope::Application, QStringLiteral("org.kde.kate"), Method::StandardPaste, false},
-            {Scope::Application, QStringLiteral("org.kde.konsole"), Method::DirectInsert, true},
-            {Scope::Global, QString(), Method::StandardPaste, true},
-        };
-        const auto migrated = [&settings, &stored](const QString &method) {
-            settings.setValue(QStringLiteral("output/method"), method);
-            settings.setValue(QStringLiteral("output/pasteRules"), pasteRulesToJson(stored));
-            migrateOutputMethod(settings);
-            return pasteRulesFromJson(settings.value(QStringLiteral("output/pasteRules")).toByteArray());
-        };
-
-        QCOMPARE(migrated(QStringLiteral("direct_insert")),
-                 (QList<PasteRule>{
-                     {Scope::Category, QStringLiteral("terminal"), Method::DirectInsert, true},
-                     {Scope::Category, QStringLiteral("browser"), Method::ClipboardOnly, true},
-                     {Scope::Application, QStringLiteral("org.kde.kate"), Method::DirectInsert, false},
-                     {Scope::Application, QStringLiteral("org.kde.konsole"), Method::DirectInsert, true},
-                     {Scope::Global, QString(), Method::DirectInsert, true},
-                 }));
-        QCOMPARE(settings.value(QStringLiteral("output/method")).toString(), QStringLiteral("automatic"));
-
-        const QList<PasteRule> copyOnly{
-            {Scope::Category, QStringLiteral("terminal"), Method::ClipboardOnly, true},
-            {Scope::Category, QStringLiteral("browser"), Method::ClipboardOnly, true},
-            {Scope::Application, QStringLiteral("org.kde.kate"), Method::ClipboardOnly, false},
-            {Scope::Application, QStringLiteral("org.kde.konsole"), Method::DirectInsert, true},
-            {Scope::Global, QString(), Method::ClipboardOnly, true},
-        };
-        QCOMPARE(migrated(QStringLiteral("qt-clipboard")), copyOnly);
-        QCOMPARE(migrated(QStringLiteral("wl-copy")), copyOnly);
-        QCOMPARE(settings.value(QStringLiteral("output/method")).toString(), QStringLiteral("automatic"));
-
-        // Nothing stored means the default rules, which migrate the same way.
-        settings.remove(QStringLiteral("output/pasteRules"));
-        settings.setValue(QStringLiteral("output/method"), QStringLiteral("direct_insert"));
-        migrateOutputMethod(settings);
-        QCOMPARE(pasteRulesFromJson(settings.value(QStringLiteral("output/pasteRules")).toByteArray()),
-                 (QList<PasteRule>{
-                     {Scope::Category, QStringLiteral("terminal"), Method::DirectInsert, true},
-                     {Scope::Global, QString(), Method::DirectInsert, true},
-                 }));
-
-        // Automatic and keyboard paste are left alone.
-        QCOMPARE(migrated(QStringLiteral("ydotool")), stored);
-        QCOMPARE(settings.value(QStringLiteral("output/method")).toString(), QStringLiteral("ydotool"));
     }
 
     // Old installs hold QKeySequence text under shortcuts/toggleDictation, so
@@ -410,34 +516,31 @@ private slots:
         QCOMPARE(settings.dictationSnapshot().launchAtLogin, false);
 #endif
         QVERIFY(settings.dictationSnapshot().vocabulary.isEmpty());
-        QCOMPARE(settings.dictationSnapshot().bindings.size(), 0);
-        QCOMPARE(settings.dictationSnapshot().refinement.providerId, QStringLiteral("openai"));
+        QCOMPARE(settings.dictationSnapshot().refinement.services.main(), QStringLiteral("openai"));
         QCOMPARE(settings.dictationSnapshot().refinement.style, QStringLiteral("balanced"));
-        QCOMPARE(settings.dictationSnapshot().refinement.defaultWritingProfile, QStringLiteral("other"));
+        QCOMPARE(fallbackWritingProfile(settings.dictationSnapshot().apps), QStringLiteral("other"));
         QCOMPARE(settings.dictationSnapshot().refinement.writingProfiles, defaultWritingProfileSettings());
         QCOMPARE(settings.dictationSnapshot().refinement.writingProfiles.size(), 5);
-        QVERIFY(settings.dictationSnapshot().refinement.writingProfileOverrides.isEmpty());
-        QVERIFY(settings.dictationSnapshot().appRecognitionRules.isEmpty());
+        QCOMPARE(settings.dictationSnapshot().apps, AppsSettings{});
         QCOMPARE(settings.dictationSnapshot().refinement.useTargetContext, true);
         QCOMPARE(settings.dictationSnapshot().refinement.includeScreenshotContext, false);
-        QCOMPARE(settings.dictationSnapshot().refinement.openAiModel, QStringLiteral("gpt-6-luna"));
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("openai")).model, QStringLiteral("gpt-6-luna"));
         QCOMPARE(settings.dictationSnapshot().accounts.openAiAuthMode, OpenAiAuthMode::Auto);
-        QCOMPARE(settings.dictationSnapshot().refinement.openAiEffort, QStringLiteral("none"));
-        QCOMPARE(settings.dictationSnapshot().refinement.openAiSpeed, QStringLiteral("fast"));
-        QCOMPARE(settings.dictationSnapshot().refinement.anthropicModel, QStringLiteral("claude-opus-5-5"));
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("openai")).effort, QStringLiteral("none"));
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("openai")).speed, QStringLiteral("fast"));
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("anthropic")).model, QStringLiteral("claude-opus-5-5"));
         QCOMPARE(settings.dictationSnapshot().accounts.anthropicAuthMode, AnthropicAuthMode::Oauth);
-        QCOMPARE(settings.dictationSnapshot().refinement.anthropicEffort, QStringLiteral("low"));
-        QCOMPARE(settings.dictationSnapshot().refinement.anthropicFastMode, true);
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("anthropic")).effort, QStringLiteral("low"));
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("anthropic")).speed,
+                 QStringLiteral("fast"));
         // The Codex accuracy pass is on until someone turns it off.
         QCOMPARE(settings.dictationSnapshot().speech.codexFinalRetranscribe, true);
         settings.edit([](AppSettings &draft) { draft.speech.codexFinalRetranscribe = false; return true; });
         QCOMPARE(settings.dictationSnapshot().speech.codexFinalRetranscribe, false);
         QCOMPARE(settings.snapshot().speech.language, QStringLiteral("en"));
-        QCOMPARE(settings.dictationSnapshot().output.method, QString::fromLatin1(OutputMethod::Automatic));
+        QCOMPARE(settings.dictationSnapshot().output.steps, (DeliverySteps{.insert = true, .press = true, .keep = true}));
         QCOMPARE(settings.dictationSnapshot().output.format, OutputFormat::PlainText);
-        QCOMPARE(settings.dictationSnapshot().output.pasteRules, defaultPasteRules());
         QCOMPARE(settings.dictationSnapshot().output.ydotoolEnabled, false);
-        QCOMPARE(settings.dictationSnapshot().output.restoreClipboardAfterTyping, false);
         QCOMPARE(settings.snapshot().output.completionStatusDurationMs, 500);
         const AudioCaptureSettings audio = settings.dictationSnapshot().audio;
         QCOMPARE(audio.deviceId, QString());
@@ -461,16 +564,6 @@ private slots:
         QCOMPARE(settings.dictationSnapshot().refinement.style, QStringLiteral("light_cleanup"));
         settings.raw().setValue(SettingsKeys::RefinementStyle, QStringLiteral("unknown"));
         QCOMPARE(settings.dictationSnapshot().refinement.style, QStringLiteral("balanced"));
-        settings.edit([](AppSettings &draft) {
-            draft.refinement.defaultWritingProfile = QStringLiteral("personal");
-            return true;
-        });
-        QCOMPARE(settings.dictationSnapshot().refinement.defaultWritingProfile, QStringLiteral("personal"));
-        settings.edit([](AppSettings &draft) {
-            draft.refinement.defaultWritingProfile = QStringLiteral("ai_coding");
-            return true;
-        });
-        QCOMPARE(settings.dictationSnapshot().refinement.defaultWritingProfile, QStringLiteral("ai_coding"));
         settings.raw().setValue(QStringLiteral("refinement/writingProfiles"),
                                 QByteArray(R"([{"profile":"work","cleanupStrength":"strong_polish","tone":"formal"},)"
                                            R"({"profile":"email","cleanupStrength":"balanced","tone":"casual"},)"
@@ -496,26 +589,6 @@ private slots:
                  QStringLiteral("very_casual"));
         QCOMPARE(writingProfileSettingsFor(settings.dictationSnapshot().refinement.writingProfiles, WritingProfile::AiCoding).cleanupStrength,
                  QStringLiteral("none"));
-        settings.edit([](AppSettings &draft) {
-            draft.refinement.writingProfileOverrides = {
-                {QStringLiteral("org.mozilla.firefox"), WritingProfile::Personal, true},
-                {QStringLiteral("org.kde.kate"), WritingProfile::Other, false},
-            };
-            return true;
-        });
-        QCOMPARE(settings.dictationSnapshot().refinement.writingProfileOverrides.size(), 2);
-        QCOMPARE(settings.dictationSnapshot().refinement.writingProfileOverrides.first().profile, WritingProfile::Personal);
-        settings.edit([](AppSettings &draft) {
-            draft.appRecognitionRules = {
-                {QStringLiteral("com.acme.shell"), AppCategory::Terminal, WritingProfile::Work},
-                {QStringLiteral("chat.example"), std::nullopt, WritingProfile::Personal},
-            };
-            return true;
-        });
-        QCOMPARE(settings.dictationSnapshot().appRecognitionRules.size(), 2);
-        QCOMPARE(settings.dictationSnapshot().appRecognitionRules.first().category, AppCategory::Terminal);
-        QCOMPARE(settings.dictationSnapshot().appRecognitionRules.last().writingProfile, WritingProfile::Personal);
-        QCOMPARE(settings.snapshot().appRecognitionRules.size(), 2);
         settings.edit([](AppSettings &draft) { draft.refinement.useTargetContext = false; return true; });
         QCOMPARE(settings.dictationSnapshot().refinement.useTargetContext, false);
         settings.edit([](AppSettings &draft) { draft.refinement.includeScreenshotContext = true; return true; });
@@ -526,12 +599,12 @@ private slots:
         QCOMPARE(settings.dictationSnapshot().ui.soundsEnabled, false);
 
         settings.edit([](AppSettings &draft) {
-            draft.refinement.openAiModel = QStringLiteral(" gpt-5.4-nano ");
+            draft.refinement.services.choice(QStringLiteral("openai")).model = QStringLiteral(" gpt-5.4-nano ");
             return true;
         });
-        QCOMPARE(settings.dictationSnapshot().refinement.openAiModel, QStringLiteral("gpt-5.4-nano"));
-        settings.edit([](AppSettings &draft) { draft.refinement.openAiModel = QString(); return true; });
-        QCOMPARE(settings.dictationSnapshot().refinement.openAiModel, QStringLiteral("gpt-6-luna"));
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("openai")).model, QStringLiteral("gpt-5.4-nano"));
+        settings.edit([](AppSettings &draft) { draft.refinement.services.choice(QStringLiteral("openai")).model = QString(); return true; });
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("openai")).model, QStringLiteral("gpt-6-luna"));
 
         // Each auth mode is stored by the name earlier releases stored, and
         // the names they stored before these read as the mode they meant.
@@ -558,58 +631,58 @@ private slots:
             settings.raw().setValue(QStringLiteral("openai/auth/mode"), QString::fromLatin1(name));
             QCOMPARE(settings.dictationSnapshot().accounts.openAiAuthMode, mode);
         }
-        settings.edit([](AppSettings &draft) { draft.refinement.openAiEffort = QStringLiteral("xhigh"); return true; });
-        QCOMPARE(settings.dictationSnapshot().refinement.openAiEffort, QStringLiteral("xhigh"));
-        settings.edit([](AppSettings &draft) { draft.refinement.openAiEffort = QStringLiteral("none"); return true; });
-        QCOMPARE(settings.dictationSnapshot().refinement.openAiEffort, QStringLiteral("none"));
+        settings.edit([](AppSettings &draft) { draft.refinement.services.choice(QStringLiteral("openai")).effort = QStringLiteral("xhigh"); return true; });
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("openai")).effort, QStringLiteral("xhigh"));
+        settings.edit([](AppSettings &draft) { draft.refinement.services.choice(QStringLiteral("openai")).effort = QStringLiteral("none"); return true; });
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("openai")).effort, QStringLiteral("none"));
         settings.raw().setValue(QStringLiteral("openai/effort"), QStringLiteral("minimal"));
-        QCOMPARE(settings.dictationSnapshot().refinement.openAiEffort, QStringLiteral("none"));
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("openai")).effort, QStringLiteral("none"));
         settings.edit([](AppSettings &draft) {
-            draft.refinement.openAiEffort = QStringLiteral("unsupported");
+            draft.refinement.services.choice(QStringLiteral("openai")).effort = QStringLiteral("unsupported");
             return true;
         });
-        QCOMPARE(settings.dictationSnapshot().refinement.openAiEffort, QStringLiteral("none"));
-        // Fast mode turned off before Speed existed reads as Standard. The
-        // edits above saved a speed, which an older release never did.
-        settings.raw().remove(SettingsKeys::OpenAiSpeed);
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("openai")).effort, QStringLiteral("none"));
+        // Fast mode turned off before Speed existed migrates as Standard.
+        settings.raw().clear();
         settings.raw().setValue(QStringLiteral("openai/fastMode"), false);
-        QCOMPARE(settings.dictationSnapshot().refinement.openAiSpeed, QStringLiteral("standard"));
+        migrateServiceOrder(settings.raw());
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("openai")).speed, QStringLiteral("standard"));
         settings.edit([](AppSettings &draft) {
-            draft.refinement.openAiSpeed = QStringLiteral("ultrafast");
+            draft.refinement.services.choice(QStringLiteral("openai")).speed = QStringLiteral("ultrafast");
             return true;
         });
-        QCOMPARE(settings.dictationSnapshot().refinement.openAiSpeed, QStringLiteral("ultrafast"));
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("openai")).speed, QStringLiteral("ultrafast"));
         settings.edit([](AppSettings &draft) {
-            draft.refinement.openAiSpeed = QStringLiteral("unsupported");
+            draft.refinement.services.choice(QStringLiteral("openai")).speed = QStringLiteral("unsupported");
             return true;
         });
-        QCOMPARE(settings.dictationSnapshot().refinement.openAiSpeed, QStringLiteral("fast"));
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("openai")).speed, QStringLiteral("fast"));
 
         settings.edit([](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("anthropic");
+            draft.refinement.services.order = {QStringLiteral("anthropic")};
             return true;
         });
-        QCOMPARE(settings.dictationSnapshot().refinement.providerId, QStringLiteral("anthropic"));
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("unknown"); return true; });
-        QCOMPARE(settings.dictationSnapshot().refinement.providerId, QStringLiteral("openai"));
+        QCOMPARE(settings.dictationSnapshot().refinement.services.main(), QStringLiteral("anthropic"));
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("unknown")}; return true; });
+        QCOMPARE(settings.dictationSnapshot().refinement.services.main(), QStringLiteral("openai"));
 
         settings.edit([](AppSettings &draft) {
-            draft.refinement.anthropicModel = QStringLiteral(" claude-opus-5 ");
+            draft.refinement.services.choice(QStringLiteral("anthropic")).model = QStringLiteral(" claude-opus-5 ");
             return true;
         });
-        QCOMPARE(settings.dictationSnapshot().refinement.anthropicModel, QStringLiteral("claude-opus-5"));
-        settings.edit([](AppSettings &draft) { draft.refinement.anthropicModel = QString(); return true; });
-        QCOMPARE(settings.dictationSnapshot().refinement.anthropicModel, QStringLiteral("claude-opus-5-5"));
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("anthropic")).model, QStringLiteral("claude-opus-5"));
+        settings.edit([](AppSettings &draft) { draft.refinement.services.choice(QStringLiteral("anthropic")).model = QString(); return true; });
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("anthropic")).model, QStringLiteral("claude-opus-5-5"));
         settings.edit([](AppSettings &draft) {
-            draft.refinement.anthropicModel = QStringLiteral("claude-haiku-4-5-20251001");
+            draft.refinement.services.choice(QStringLiteral("anthropic")).model = QStringLiteral("claude-haiku-4-5-20251001");
             return true;
         });
-        QCOMPARE(settings.dictationSnapshot().refinement.anthropicModel, QStringLiteral("claude-haiku-5-5"));
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("anthropic")).model, QStringLiteral("claude-haiku-5-5"));
         settings.edit([](AppSettings &draft) {
-            draft.refinement.anthropicModel = QStringLiteral("claude-haiku-4-5");
+            draft.refinement.services.choice(QStringLiteral("anthropic")).model = QStringLiteral("claude-haiku-4-5");
             return true;
         });
-        QCOMPARE(settings.dictationSnapshot().refinement.anthropicModel, QStringLiteral("claude-haiku-5-5"));
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("anthropic")).model, QStringLiteral("claude-haiku-5-5"));
         settings.edit([](AppSettings &draft) {
             draft.accounts.anthropicAuthMode = AnthropicAuthMode::Cliproxy;
             return true;
@@ -643,24 +716,26 @@ private slots:
         QVERIFY(oauthDir.endsWith(QStringLiteral("cliproxy-api/oauth"))
                 || oauthDir.endsWith(QStringLiteral(".cli-proxy-api")));
         settings.edit([](AppSettings &draft) {
-            draft.refinement.anthropicEffort = QStringLiteral("high");
+            draft.refinement.services.choice(QStringLiteral("anthropic")).effort = QStringLiteral("high");
             return true;
         });
-        QCOMPARE(settings.dictationSnapshot().refinement.anthropicEffort, QStringLiteral("high"));
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("anthropic")).effort, QStringLiteral("high"));
         settings.edit([](AppSettings &draft) {
-            draft.refinement.anthropicEffort = QStringLiteral("max");
+            draft.refinement.services.choice(QStringLiteral("anthropic")).effort = QStringLiteral("max");
             return true;
         });
-        QCOMPARE(settings.dictationSnapshot().refinement.anthropicEffort, QStringLiteral("max"));
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("anthropic")).effort, QStringLiteral("max"));
         settings.edit([](AppSettings &draft) {
-            draft.refinement.anthropicEffort = QStringLiteral("none");
+            draft.refinement.services.choice(QStringLiteral("anthropic")).effort = QStringLiteral("none");
             return true;
         });
-        QCOMPARE(settings.dictationSnapshot().refinement.anthropicEffort, QStringLiteral("low"));
-        settings.edit([](AppSettings &draft) { draft.refinement.anthropicFastMode = false; return true; });
-        QCOMPARE(settings.dictationSnapshot().refinement.anthropicFastMode, false);
-        settings.edit([](AppSettings &draft) { draft.refinement.anthropicFastMode = true; return true; });
-        QCOMPARE(settings.dictationSnapshot().refinement.anthropicFastMode, true);
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("anthropic")).effort, QStringLiteral("low"));
+        settings.edit([](AppSettings &draft) { draft.refinement.services.choice(QStringLiteral("anthropic")).speed = QStringLiteral("standard"); return true; });
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("anthropic")).speed,
+                 QStringLiteral("standard"));
+        settings.edit([](AppSettings &draft) { draft.refinement.services.choice(QStringLiteral("anthropic")).speed = QStringLiteral("fast"); return true; });
+        QCOMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("anthropic")).speed,
+                 QStringLiteral("fast"));
 
         settings.edit([](AppSettings &draft) { draft.ui.pauseMediaDuringTranscription = true; return true; });
         QCOMPARE(settings.dictationSnapshot().ui.pauseMediaDuringTranscription, true);
@@ -668,51 +743,20 @@ private slots:
         QCOMPARE(settings.dictationSnapshot().ui.pauseMediaDuringTranscription, false);
 
         settings.edit([](AppSettings &draft) {
-            draft.output.method = QString::fromLatin1(OutputMethod::DirectInsert);
+            draft.output.steps = {.insert = false, .press = true, .keep = false};
             return true;
         });
-        QCOMPARE(settings.dictationSnapshot().output.method, QString::fromLatin1(OutputMethod::DirectInsert));
-        settings.edit([](AppSettings &draft) { draft.output.method = QStringLiteral("ydotool"); return true; });
-#ifdef Q_OS_LINUX
-        QCOMPARE(settings.dictationSnapshot().output.method, QString::fromLatin1(OutputMethod::Ydotool));
-#else
-        // Only Linux has the virtual keyboard; elsewhere Speecher pastes
-        // Automatically, rather than only copying every dictation.
-        QCOMPARE(settings.dictationSnapshot().output.method, QString::fromLatin1(OutputMethod::Automatic));
-#endif
-        settings.edit([](AppSettings &draft) { draft.output.method = QStringLiteral("wtype"); return true; });
-        QCOMPARE(settings.dictationSnapshot().output.method, QString::fromLatin1(OutputMethod::Automatic));
-        settings.edit([](AppSettings &draft) { draft.output.method = QStringLiteral("unknown"); return true; });
-        QCOMPARE(settings.dictationSnapshot().output.method, QString::fromLatin1(OutputMethod::Automatic));
-        settings.edit([](AppSettings &draft) { draft.output.method = QStringLiteral("clipboard"); return true; });
-        QCOMPARE(settings.dictationSnapshot().output.method, QString::fromLatin1(OutputMethod::WlCopy));
+        QCOMPARE(settings.dictationSnapshot().output.steps, (DeliverySteps{.insert = false, .press = true, .keep = false}));
+        // A file that turns every step off still keeps the words.
+        settings.raw().setValue(QStringLiteral("output/pressPasteKeys"), false);
+        QCOMPARE(settings.dictationSnapshot().output.steps, (DeliverySteps{.insert = false, .press = false, .keep = true}));
         settings.setYdotoolEnabled(true);
         QCOMPARE(settings.dictationSnapshot().output.ydotoolEnabled, true);
-        settings.edit([](AppSettings &draft) {
-            draft.output.method = QString::fromLatin1(OutputMethod::Ydotool);
-            return true;
-        });
         settings.setYdotoolEnabled(false);
-        QCOMPARE(settings.dictationSnapshot().output.method, QString::fromLatin1(OutputMethod::Automatic));
-        settings.edit([](AppSettings &draft) { draft.output.restoreClipboardAfterTyping = true; return true; });
-        QCOMPARE(settings.dictationSnapshot().output.restoreClipboardAfterTyping, true);
-        settings.edit([](AppSettings &draft) { draft.output.restoreClipboardAfterTyping = false; return true; });
-        QCOMPARE(settings.dictationSnapshot().output.restoreClipboardAfterTyping, false);
         settings.edit([](AppSettings &draft) { draft.output.format = OutputFormat::Html; return true; });
         QCOMPARE(settings.dictationSnapshot().output.format, OutputFormat::Html);
         settings.raw().setValue(QStringLiteral("output/format"), QStringLiteral("unsupported"));
         QCOMPARE(settings.dictationSnapshot().output.format, OutputFormat::PlainText);
-        settings.edit([](AppSettings &draft) {
-            draft.output.pasteRules = {
-                {PasteRuleScope::Application, QStringLiteral("org.kde.kate"), PasteMethod::DirectInsert, true},
-                {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true},
-            };
-            return true;
-        });
-        QCOMPARE(settings.dictationSnapshot().output.pasteRules.size(), 2);
-        QCOMPARE(settings.dictationSnapshot().output.pasteRules.first().match, QStringLiteral("org.kde.kate"));
-        QCOMPARE(settings.dictationSnapshot().output.pasteRules.first().method, PasteMethod::DirectInsert);
-
         settings.edit([](AppSettings &draft) {
             draft.audio = {
                 QStringLiteral(" mic-id "),
@@ -755,24 +799,25 @@ private slots:
         settings.raw().clear();
     }
 
-    // Each fallback's own Spoken Language round-trips; settings saved before
-    // fallbacks had one load with none, and an English-only fallback behind
-    // Automatic then listens for English.
-    void fallbackSpokenLanguagesRoundTrip()
+    // An entry's own Spoken Language round-trips; one with none behind
+    // Automatic, English-only, then listens for English.
+    void entrySpokenLanguagesRoundTrip()
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.raw().setValue(SettingsKeys::SpeechProvider, QStringLiteral("codex"));
-        settings.raw().setValue(SettingsKeys::SpeechFallbackProviders, QStringList{QStringLiteral("local")});
-        settings.raw().setValue(SettingsKeys::SpokenLanguage, QStringLiteral("auto"));
+        settings.edit([](AppSettings &draft) {
+            draft.speech.services.order = {QStringLiteral("codex"), QStringLiteral("local")};
+            draft.speech.language = QStringLiteral("auto");
+            return true;
+        });
         AppSettings draft = SettingsStore().snapshot();
-        QVERIFY(draft.speech.fallbackLanguages.isEmpty());
+        QVERIFY(draft.speech.services.choice(QStringLiteral("local")).language.isEmpty());
         QCOMPARE(chainSpeechSettings(draft.speech, QStringLiteral("local")).language, QStringLiteral("en"));
 
-        draft.speech.fallbackLanguages = {{QStringLiteral("local"), QStringLiteral("de")}};
+        draft.speech.services.choice(QStringLiteral("local")).language = QStringLiteral("de");
         settings.applySnapshot(draft);
         const AppSettings saved = SettingsStore().snapshot();
-        QCOMPARE(saved.speech.fallbackLanguages, draft.speech.fallbackLanguages);
+        QCOMPARE(saved.speech.services.choice(QStringLiteral("local")).language, QStringLiteral("de"));
         QCOMPARE(saved.speech.language, QStringLiteral("auto"));
         settings.raw().clear();
     }
@@ -807,16 +852,15 @@ private slots:
         QFETCH(QString, expected);
         QFETCH(bool, listens);
         SpeechSettings speech;
-        speech.providerId = QStringLiteral("codex");
+        speech.services.order = {QStringLiteral("codex"), fallback};
         speech.language = spoken;
-        speech.local.modelId = QStringLiteral("parakeet");
-        if (!chosen.isEmpty()) {
-            speech.fallbackLanguages.insert(fallback, chosen);
-        }
-        speech.fallbackLanguages.insert(QStringLiteral("codex"), QStringLiteral("ja"));
+        localModelId(speech) = QStringLiteral("parakeet");
+        speech.services.choice(fallback).language = chosen;
+        // The first entry's own language waits for it to move down.
+        speech.services.choice(QStringLiteral("codex")).language = QStringLiteral("ja");
 
         const SpeechSettings resolved = chainSpeechSettings(speech, fallback);
-        QCOMPARE(resolved.providerId, fallback);
+        QCOMPARE(resolved.services.main(), fallback);
         QCOMPARE(resolved.language, expected);
         QCOMPARE(listensForSpokenLanguage(resolved), listens);
         QCOMPARE(chainSpeechSettings(speech, QStringLiteral("codex")).language, spoken);
@@ -827,11 +871,11 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         QCOMPARE(settings.snapshot().speech.local, LocalSpeechSettings{});
-        QCOMPARE(settings.snapshot().speech.local.modelId, QStringLiteral("parakeet"));
+        QCOMPARE(localModelId(settings.snapshot().speech), QStringLiteral("parakeet"));
         QCOMPARE(settings.snapshot().speech.local.idleUnloadMinutes, 10);
 
         AppSettings draft = settings.snapshot();
-        draft.speech.local.modelId = QStringLiteral("cohere");
+        localModelId(draft.speech) = QStringLiteral("cohere");
         draft.speech.local.modelChosen = true;
         draft.speech.local.runsOn = {QStringLiteral("cuda"), QStringLiteral("0000:c1:00.0")};
         draft.speech.local.idleUnloadMinutes = 0;
@@ -866,27 +910,27 @@ private slots:
 
         qputenv("SPEECHER_TEST_CODEX_INSTALLED", "0");
         qputenv("SPEECHER_TEST_CLAUDE_INSTALLED", "1");
-        QCOMPARE(settings.dictationSnapshot().refinement.providerId, QStringLiteral("anthropic"));
+        QCOMPARE(settings.dictationSnapshot().refinement.services.main(), QStringLiteral("anthropic"));
 
         qputenv("SPEECHER_TEST_CODEX_INSTALLED", "1");
         qputenv("SPEECHER_TEST_CLAUDE_INSTALLED", "1");
-        QCOMPARE(settings.dictationSnapshot().refinement.providerId, QStringLiteral("openai"));
+        QCOMPARE(settings.dictationSnapshot().refinement.services.main(), QStringLiteral("openai"));
 
         qputenv("SPEECHER_TEST_CODEX_INSTALLED", "1");
         qputenv("SPEECHER_TEST_CLAUDE_INSTALLED", "0");
-        QCOMPARE(settings.dictationSnapshot().refinement.providerId, QStringLiteral("openai"));
+        QCOMPARE(settings.dictationSnapshot().refinement.services.main(), QStringLiteral("openai"));
 
         qputenv("SPEECHER_TEST_CODEX_INSTALLED", "0");
         qputenv("SPEECHER_TEST_CLAUDE_INSTALLED", "0");
-        QCOMPARE(settings.dictationSnapshot().refinement.providerId, QStringLiteral("openai"));
+        QCOMPARE(settings.dictationSnapshot().refinement.services.main(), QStringLiteral("openai"));
 
         settings.edit([](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("anthropic");
+            draft.refinement.services.order = {QStringLiteral("anthropic")};
             return true;
         });
         qputenv("SPEECHER_TEST_CODEX_INSTALLED", "1");
         qputenv("SPEECHER_TEST_CLAUDE_INSTALLED", "1");
-        QCOMPARE(settings.dictationSnapshot().refinement.providerId, QStringLiteral("anthropic"));
+        QCOMPARE(settings.dictationSnapshot().refinement.services.main(), QStringLiteral("anthropic"));
     }
 
     void settingsSnapshotApplyPersistsCliProxyAccounts()
@@ -950,22 +994,19 @@ private slots:
         const auto profile = [](const AppSettings &loaded, const QString &id) {
             return writingProfileSettingsFor(loaded.refinement.writingProfiles, id);
         };
-        QCOMPARE(profile(draft, WritingProfile::Work).speechProvider, QString());
-        QCOMPARE(profile(draft, WritingProfile::Work).speechModel, QString());
-        QCOMPARE(profile(draft, WritingProfile::Work).refinementProvider, QString());
+        QCOMPARE(profile(draft, WritingProfile::Work).speechFirst, std::nullopt);
+        QCOMPARE(profile(draft, WritingProfile::Work).refinementFirst, std::nullopt);
 
-        draft.refinement.writingProfiles[1].refinementProvider = QStringLiteral("anthropic");
-        draft.refinement.writingProfiles[1].refinementModel = QStringLiteral("claude-sonnet-5-5");
-        draft.refinement.writingProfiles[3].speechProvider = QStringLiteral("local");
-        draft.refinement.writingProfiles[3].speechModel = QStringLiteral("moonshine-small");
+        draft.refinement.writingProfiles[1].refinementFirst = ServiceChoice{QStringLiteral("anthropic"), QStringLiteral("claude-sonnet-5-5")};
+        draft.refinement.writingProfiles[3].speechFirst = ServiceChoice{QStringLiteral("local"), QStringLiteral("moonshine-small")};
         settings.applySnapshot(draft);
 
         const AppSettings loaded = SettingsStore().snapshot();
-        QCOMPARE(profile(loaded, WritingProfile::Email).refinementProvider, QStringLiteral("anthropic"));
-        QCOMPARE(profile(loaded, WritingProfile::Email).refinementModel, QStringLiteral("claude-sonnet-5-5"));
-        QCOMPARE(profile(loaded, WritingProfile::Email).speechProvider, QString());
-        QCOMPARE(profile(loaded, WritingProfile::AiCoding).speechProvider, QStringLiteral("local"));
-        QCOMPARE(profile(loaded, WritingProfile::AiCoding).speechModel, QStringLiteral("moonshine-small"));
+        QCOMPARE(profile(loaded, WritingProfile::Email).refinementFirst,
+                 (ServiceChoice{QStringLiteral("anthropic"), QStringLiteral("claude-sonnet-5-5")}));
+        QCOMPARE(profile(loaded, WritingProfile::Email).speechFirst, std::nullopt);
+        QCOMPARE(profile(loaded, WritingProfile::AiCoding).speechFirst,
+                 (ServiceChoice{QStringLiteral("local"), QStringLiteral("moonshine-small")}));
         const QByteArray stored = settings.raw().value(QStringLiteral("refinement/writingProfiles")).toByteArray();
         QVERIFY(stored.contains(R"("profile":"work","tone":"none"})"));
 
@@ -974,63 +1015,58 @@ private slots:
             QStringLiteral("refinement/writingProfiles"),
             QByteArray(R"([{"profile":"email","cleanupStrength":"balanced","tone":"none",)"
                        R"("refinementProvider":"anthropic","refinementModel":"claude-haiku-4-5"}])"));
-        QCOMPARE(profile(SettingsStore().snapshot(), WritingProfile::Email).refinementModel,
+        QCOMPARE(profile(SettingsStore().snapshot(), WritingProfile::Email).refinementFirst->model,
                  QStringLiteral("claude-haiku-5-5"));
         settings.raw().clear();
     }
 
-    // The profile's service goes first, then the page's whole chain without
-    // it; its model rides along, and the
-    // page's choice stays where the profile has none.
+    // The profile's service goes first, then the page's whole order without
+    // it; its model rides along, and the page's entry stays where the
+    // profile names no model.
     void profileProvidersLeadThePagesChains()
     {
         AppSettings settings;
-        settings.speech.providerId = QStringLiteral("claude");
-        settings.speech.fallbackProviderIds = {QStringLiteral("local"), QStringLiteral("codex")};
-        settings.speech.local.modelId = QStringLiteral("parakeet");
-        settings.refinement.providerId = QStringLiteral("openai");
-        settings.refinement.fallbackProviderIds = {QStringLiteral("local")};
-        settings.refinement.anthropicModel = QStringLiteral("claude-opus-5-5");
+        settings.speech.services.order = {QStringLiteral("claude"), QStringLiteral("local"), QStringLiteral("codex")};
+        localModelId(settings.speech) = QStringLiteral("parakeet");
+        settings.refinement.services.order = {QStringLiteral("openai"), QStringLiteral("local")};
+        settings.refinement.services.choice(QStringLiteral("anthropic")).model = QStringLiteral("claude-opus-5-5");
 
         WritingProfileSettings profile;
-        AppSettings resolved = withWritingProfileProviders(settings, profile);
-        QCOMPARE(resolved.speech.providerId, QStringLiteral("claude"));
-        QCOMPARE(resolved.speech.fallbackProviderIds, (QStringList{QStringLiteral("local"), QStringLiteral("codex")}));
-        QCOMPARE(resolved.refinement.providerId, QStringLiteral("openai"));
+        AppSettings resolved = profiled(settings, profile);
+        QCOMPARE(resolved.speech.services.main(), QStringLiteral("claude"));
+        QCOMPARE(resolved.speech.services.order.mid(1), (QStringList{QStringLiteral("local"), QStringLiteral("codex")}));
+        QCOMPARE(resolved.refinement.services.main(), QStringLiteral("openai"));
 
-        profile.speechProvider = QStringLiteral("local");
-        profile.speechModel = QStringLiteral("moonshine-small");
-        profile.refinementProvider = QStringLiteral("anthropic");
-        profile.refinementModel = QStringLiteral("claude-sonnet-5-5");
-        resolved = withWritingProfileProviders(settings, profile);
-        QCOMPARE(resolved.speech.providerId, QStringLiteral("local"));
-        QCOMPARE(resolved.speech.local.modelId, QStringLiteral("moonshine-small"));
-        QCOMPARE(resolved.speech.fallbackProviderIds, (QStringList{QStringLiteral("claude"), QStringLiteral("codex")}));
-        QCOMPARE(resolved.refinement.providerId, QStringLiteral("anthropic"));
-        QCOMPARE(resolved.refinement.anthropicModel, QStringLiteral("claude-sonnet-5-5"));
-        QCOMPARE(resolved.refinement.openAiModel, settings.refinement.openAiModel);
-        QCOMPARE(resolved.refinement.fallbackProviderIds,
+        profile.speechFirst = ServiceChoice{QStringLiteral("local"), QStringLiteral("moonshine-small")};
+        profile.refinementFirst = ServiceChoice{QStringLiteral("anthropic"), QStringLiteral("claude-sonnet-5-5")};
+        resolved = profiled(settings, profile);
+        QCOMPARE(resolved.speech.services.main(), QStringLiteral("local"));
+        QCOMPARE(localModelId(resolved.speech), QStringLiteral("moonshine-small"));
+        QCOMPARE(resolved.speech.services.order.mid(1), (QStringList{QStringLiteral("claude"), QStringLiteral("codex")}));
+        QCOMPARE(resolved.refinement.services.main(), QStringLiteral("anthropic"));
+        QCOMPARE(resolved.refinement.services.choice(QStringLiteral("anthropic")).model, QStringLiteral("claude-sonnet-5-5"));
+        QCOMPARE(resolved.refinement.services.choice(QStringLiteral("openai")).model, settings.refinement.services.choice(QStringLiteral("openai")).model);
+        QCOMPARE(resolved.refinement.services.order.mid(1),
                  (QStringList{QStringLiteral("openai"), QStringLiteral("local")}));
 
         // The page's whole chain follows, even a full one: the profile's
         // service makes it one longer rather than dropping the last.
-        settings.speech.fallbackProviderIds = {QStringLiteral("codex"), QStringLiteral("endpoint")};
-        settings.refinement.fallbackProviderIds = {QStringLiteral("local"), QStringLiteral("endpoint")};
-        resolved = withWritingProfileProviders(settings, profile);
-        QCOMPARE(resolved.speech.fallbackProviderIds,
+        settings.speech.services.order = {settings.speech.services.main(), QStringLiteral("codex"), QStringLiteral("endpoint")};
+        settings.refinement.services.order = {settings.refinement.services.main(), QStringLiteral("local"), QStringLiteral("endpoint")};
+        resolved = profiled(settings, profile);
+        QCOMPARE(resolved.speech.services.order.mid(1),
                  (QStringList{QStringLiteral("claude"), QStringLiteral("codex"), QStringLiteral("endpoint")}));
-        QCOMPARE(providerChain(ProviderRole::Speech, resolved.speech.providerId, resolved.speech.fallbackProviderIds),
+        QCOMPARE(serviceChain(resolved.speech),
                  (QStringList{QStringLiteral("local"), QStringLiteral("claude"), QStringLiteral("codex"),
                               QStringLiteral("endpoint")}));
-        QCOMPARE(resolved.refinement.fallbackProviderIds,
+        QCOMPARE(resolved.refinement.services.order.mid(1),
                  (QStringList{QStringLiteral("openai"), QStringLiteral("local"), QStringLiteral("endpoint")}));
 
-        // A profile can refine while the Refinement page says None.
-        settings.refinement.providerId = QStringLiteral("none");
-        settings.refinement.fallbackProviderIds.clear();
-        resolved = withWritingProfileProviders(settings, profile);
-        QCOMPARE(resolved.refinement.providerId, QStringLiteral("anthropic"));
-        QCOMPARE(resolved.refinement.fallbackProviderIds, QStringList());
+        // With Clean up my words off nothing refines, whatever the profile
+        // picks.
+        settings.refinement.enabled = false;
+        resolved = profiled(settings, profile);
+        QVERIFY(serviceChain(resolved.refinement).isEmpty());
     }
 
     // A profile's Local Model that can't hear the Spoken Language is passed
@@ -1038,20 +1074,19 @@ private slots:
     void profileSpeechThatCantHearTheLanguageIsPassedOver()
     {
         AppSettings settings;
-        settings.speech.providerId = QStringLiteral("claude");
+        settings.speech.services.order = {QStringLiteral("claude")};
         settings.speech.language = QStringLiteral("ja");
         WritingProfileSettings profile;
-        profile.speechProvider = QStringLiteral("local");
-        profile.speechModel = QStringLiteral("parakeet");
+        profile.speechFirst = ServiceChoice{QStringLiteral("local"), QStringLiteral("parakeet")};
 
-        AppSettings resolved = withWritingProfileProviders(settings, profile);
-        QCOMPARE(resolved.speech.providerId, QStringLiteral("claude"));
-        QCOMPARE(resolved.speech.local.modelId, settings.speech.local.modelId);
+        AppSettings resolved = profiled(settings, profile);
+        QCOMPARE(resolved.speech.services.main(), QStringLiteral("claude"));
+        QCOMPARE(localModelId(resolved.speech), localModelId(settings.speech));
 
-        profile.speechModel = QStringLiteral("qwen3-asr");
-        resolved = withWritingProfileProviders(settings, profile);
-        QCOMPARE(resolved.speech.providerId, QStringLiteral("local"));
-        QCOMPARE(resolved.speech.local.modelId, QStringLiteral("qwen3-asr"));
+        profile.speechFirst->model = QStringLiteral("qwen3-asr");
+        resolved = profiled(settings, profile);
+        QCOMPARE(resolved.speech.services.main(), QStringLiteral("local"));
+        QCOMPARE(localModelId(resolved.speech), QStringLiteral("qwen3-asr"));
     }
 
     // A profile keeps a custom tone or level that still exists, and falls back
@@ -1109,10 +1144,10 @@ private slots:
         settings.raw().clear();
     }
 
-    // A rule keeps a custom profile while it exists. Deleting the profile
-    // clears it from a rule that also sets an app type, drops a rule that set
-    // nothing else, and turns a fallback that named it into Other.
-    void deletingAProfileClearsItsRulesAndTheFallback()
+    // An App or App Type keeps a custom profile while it exists. Deleting
+    // the profile leaves each following its wider place, and Other apps on
+    // the Other profile.
+    void deletingAProfileClearsItFromAppsAndTypes()
     {
         SettingsStore settings;
         settings.raw().clear();
@@ -1120,22 +1155,23 @@ private slots:
         draft.refinement.writingProfiles.append(
             {QStringLiteral("custom_standup"), QStringLiteral("light_cleanup"), QStringLiteral("none"), QString(),
              QStringLiteral("Standup")});
-        draft.refinement.defaultWritingProfile = QStringLiteral("custom_standup");
-        draft.appRecognitionRules = {
-            {QStringLiteral("zulip"), std::nullopt, QStringLiteral("custom_standup")},
-            {QStringLiteral("mattermost"), AppCategory::Browser, QStringLiteral("custom_standup")},
+        test::setOtherAppsProfile(draft.apps, QStringLiteral("custom_standup"));
+        draft.apps.apps = {
+            test::textApp(QStringLiteral("zulip"), std::nullopt, QStringLiteral("custom_standup")),
+            test::textApp(QStringLiteral("mattermost"), AppCategory::Browser, QStringLiteral("custom_standup")),
         };
         settings.applySnapshot(draft);
         AppSettings loaded = SettingsStore().snapshot();
-        QCOMPARE(loaded.appRecognitionRules, draft.appRecognitionRules);
-        QCOMPARE(loaded.refinement.defaultWritingProfile, QStringLiteral("custom_standup"));
+        QCOMPARE(loaded.apps, draft.apps);
 
         loaded.refinement.writingProfiles.removeLast();
         settings.applySnapshot(loaded);
         const AppSettings deleted = SettingsStore().snapshot();
-        QCOMPARE(deleted.appRecognitionRules,
-                 (QList<AppRecognitionRule>{{QStringLiteral("mattermost"), AppCategory::Browser, std::nullopt}}));
-        QCOMPARE(deleted.refinement.defaultWritingProfile, QStringLiteral("other"));
+        QCOMPARE(deleted.apps.apps.size(), 2);
+        QCOMPARE(deleted.apps.apps.at(0).writingProfile, std::nullopt);
+        QCOMPARE(deleted.apps.apps.at(1).type, AppCategory::Browser);
+        QCOMPARE(deleted.apps.apps.at(1).writingProfile, std::nullopt);
+        QCOMPARE(fallbackWritingProfile(deleted.apps), WritingProfile::Other);
         settings.raw().clear();
     }
 
@@ -1193,24 +1229,24 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         AppSettings draft = settings.snapshot();
-        draft.speech.endpoint.apiKey = QStringLiteral("speech-key");
-        draft.refinement.endpoint.apiKey = QStringLiteral("refinement-key");
+        draft.speech.server.apiKey = QStringLiteral("speech-key");
+        draft.refinement.server.apiKey = QStringLiteral("refinement-key");
         QTimer::singleShot(0, &settings, [&settings] {
             settings.edit([](AppSettings &nested) {
-                nested.refinement.openAiModel = QStringLiteral("nested-model");
-                nested.speech.endpoint.apiKey = QStringLiteral("nested-speech-key");
-                nested.refinement.cliproxyApiKey = QStringLiteral("nested-proxy-key");
+                nested.refinement.services.choice(QStringLiteral("openai")).model = QStringLiteral("nested-model");
+                nested.speech.server.apiKey = QStringLiteral("nested-speech-key");
+                nested.accounts.cliproxyApiKey = QStringLiteral("nested-proxy-key");
                 return true;
             });
         });
 
         settings.applySnapshot(draft);
 
-        QTRY_COMPARE(SettingsStore().dictationSnapshot().refinement.openAiModel, QStringLiteral("nested-model"));
-        QTRY_COMPARE(SettingsStore().snapshot().speech.endpoint.apiKey, QStringLiteral("nested-speech-key"));
-        QTRY_COMPARE(SettingsStore().snapshot().refinement.cliproxyApiKey, QStringLiteral("nested-proxy-key"));
-        QTRY_COMPARE(SettingsStore().snapshot().refinement.endpoint.apiKey, QStringLiteral("refinement-key"));
-        QCOMPARE(settings.snapshot().speech.endpoint.apiKey, QStringLiteral("nested-speech-key"));
+        QTRY_COMPARE(SettingsStore().dictationSnapshot().refinement.services.choice(QStringLiteral("openai")).model, QStringLiteral("nested-model"));
+        QTRY_COMPARE(SettingsStore().snapshot().speech.server.apiKey, QStringLiteral("nested-speech-key"));
+        QTRY_COMPARE(SettingsStore().snapshot().accounts.cliproxyApiKey, QStringLiteral("nested-proxy-key"));
+        QTRY_COMPARE(SettingsStore().snapshot().refinement.server.apiKey, QStringLiteral("refinement-key"));
+        QCOMPARE(settings.snapshot().speech.server.apiKey, QStringLiteral("nested-speech-key"));
         settings.raw().clear();
     }
 
@@ -1223,51 +1259,59 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         AppSettings draft = settings.snapshot();
-        draft.speech.endpoint.apiKey = QStringLiteral("speech-key");
+        draft.speech.server.apiKey = QStringLiteral("speech-key");
         QTimer::singleShot(0, &settings, [&settings] {
             settings.edit([](AppSettings &nested) {
-                nested.refinement.openAiModel = QStringLiteral("nested-model");
+                nested.refinement.services.choice(QStringLiteral("openai")).model = QStringLiteral("nested-model");
                 return true;
             });
         });
 
         settings.applySnapshot(draft);
 
-        QTRY_COMPARE(SettingsStore().dictationSnapshot().refinement.openAiModel, QStringLiteral("nested-model"));
-        QTRY_COMPARE(SettingsStore().snapshot().speech.endpoint.apiKey, QStringLiteral("speech-key"));
+        QTRY_COMPARE(SettingsStore().dictationSnapshot().refinement.services.choice(QStringLiteral("openai")).model, QStringLiteral("nested-model"));
+        QTRY_COMPARE(SettingsStore().snapshot().speech.server.apiKey, QStringLiteral("speech-key"));
         settings.raw().clear();
     }
 
-    void settingsBindingRulesRoundTrip()
+    void vocabularyEntriesRoundTripEveryKind()
     {
         SettingsStore().raw().clear();
         SettingsCodecs settings;
 
-        const QList<BindingRule> rules{
-            {QStringLiteral("my email"), QStringLiteral("efox@example.com")},
-            {QStringLiteral("signature"), QStringLiteral("Line 1\nLine 2")},
-        };
-        QString error;
-        QVERIFY(settings.setBindingRules(rules, &error));
-        QVERIFY(error.isEmpty());
+        VocabularyEntry limited = test::replacementEntry(QStringLiteral("sig"), QStringLiteral("Best,\nEnzo"));
+        limited.profiles = {WritingProfile::Email};
+        limited.apps = {QStringLiteral("org.mozilla.thunderbird")};
+        limited.enabled = false;
+        VocabularyEntry learned = test::learnedEntry(QStringLiteral("cute"), QStringLiteral("Qt"),
+                                                     QStringLiteral("org.kde.kate"), QStringLiteral("c1"));
+        learned.createdAtMs = 1000;
+        learned.lastObservedAtMs = 2000;
+        settings.setVocabularyEntries({
+            {QStringLiteral("Kubernetes")},
+            test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com")),
+            limited,
+            learned,
+            // The matcher can't apply a phrase with no letter or number.
+            test::replacementEntry(QStringLiteral("..."), QStringLiteral("dots")),
+        });
 
-        const QList<BindingRule> loaded = settings.bindingRules();
-        QCOMPARE(loaded.size(), 2);
-        QCOMPARE(loaded.at(0).phrase, QStringLiteral("my email"));
-        QCOMPARE(loaded.at(0).replacement, QStringLiteral("efox@example.com"));
-        QCOMPARE(loaded.at(1).phrase, QStringLiteral("signature"));
-        QCOMPARE(loaded.at(1).replacement, QStringLiteral("Line 1\nLine 2"));
-
-        const AppSettings snapshot = settings.snapshot();
-        QCOMPARE(snapshot.bindings.size(), 2);
-        QCOMPARE(snapshot.bindings.at(1).replacement, QStringLiteral("Line 1\nLine 2"));
-
-        QVERIFY(!settings.setBindingRules({
-            {QStringLiteral("my,email"), QStringLiteral("one")},
-            {QStringLiteral("MY email"), QStringLiteral("two")},
-        }, &error));
-        QVERIFY(error.contains(QStringLiteral("duplicates")));
-        QCOMPARE(settings.bindingRules().size(), 2);
+        const QList<VocabularyEntry> loaded = settings.vocabularyEntries();
+        QCOMPARE(loaded.size(), 4);
+        QCOMPARE(loaded.at(0).term, QStringLiteral("Kubernetes"));
+        QVERIFY(!loaded.at(0).isReplacement());
+        QCOMPARE(loaded.at(1).replacement, QStringLiteral("efox@example.com"));
+        QCOMPARE(loaded.at(2).replacement, QStringLiteral("Best,\nEnzo"));
+        QCOMPARE(loaded.at(2).profiles, QStringList{WritingProfile::Email});
+        QCOMPARE(loaded.at(2).apps, QStringList{QStringLiteral("org.mozilla.thunderbird")});
+        QVERIFY(!loaded.at(2).enabled);
+        learned.id = QStringLiteral("c1");
+        QCOMPARE(loaded.at(3), learned);
+        for (const VocabularyEntry &entry : loaded) {
+            QVERIFY(!entry.id.isEmpty());
+        }
+        // Ids stay put from one read to the next.
+        QCOMPARE(settings.vocabularyEntries(), loaded);
     }
 
     void correctionEvidenceActivatesByConfidenceWithoutExposingPendingEvidence()
@@ -1278,37 +1322,68 @@ private slots:
 
         const CorrectionEvidence medium{QStringLiteral("cute"), QStringLiteral("Qt"), 0.75};
         QVERIFY(!settings.recordCorrectionEvidence(medium, QStringLiteral("org.kde.kate")));
-        QVERIFY(settings.dictationSnapshot().learnedCorrections.isEmpty());
-        QVERIFY(settings.snapshot().learnedCorrections.isEmpty());
+        QVERIFY(settings.dictationSnapshot().vocabulary.isEmpty());
+        QVERIFY(settings.snapshot().vocabulary.isEmpty());
 
         QVERIFY(settings.recordCorrectionEvidence(medium, QStringLiteral("org.kde.kate")));
 
-        QList<LearnedCorrection> corrections = settings.dictationSnapshot().learnedCorrections;
+        QList<VocabularyEntry> corrections = test::learnedEntries(settings.dictationSnapshot().vocabulary);
         QCOMPARE(corrections.size(), 1);
-        QCOMPARE(corrections.first().original, QStringLiteral("cute"));
-        QCOMPARE(corrections.first().corrected, QStringLiteral("Qt"));
-        QCOMPARE(corrections.first().applicationId, QStringLiteral("org.kde.kate"));
+        QCOMPARE(corrections.first().term, QStringLiteral("cute"));
+        QCOMPARE(corrections.first().replacement, QStringLiteral("Qt"));
+        QCOMPARE(corrections.first().apps, QStringList{QStringLiteral("org.kde.kate")});
         QCOMPARE(corrections.first().confidence, 0.75);
         QCOMPARE(corrections.first().evidenceCount, 2);
         QVERIFY(corrections.first().enabled);
 
         AppSettings snapshot = settings.snapshot();
         QVERIFY(snapshot.speech.vocabulary.contains(QStringLiteral("Qt")));
-        QVERIFY(!snapshot.bindings.contains(BindingRule{QStringLiteral("cute"), QStringLiteral("Qt")}));
+        QVERIFY(test::replacementEntries(snapshot.vocabulary).isEmpty());
 
-        settings.edit([](AppSettings &draft) { draft.learnedCorrections.first().enabled = false; return true; });
+        settings.edit([](AppSettings &draft) { draft.vocabulary.first().enabled = false; return true; });
         snapshot = settings.snapshot();
         QVERIFY(!snapshot.speech.vocabulary.contains(QStringLiteral("Qt")));
 
-        settings.edit([](AppSettings &draft) { draft.learnedCorrections.first().enabled = true; return true; });
+        settings.edit([](AppSettings &draft) { draft.vocabulary.first().enabled = true; return true; });
         QVERIFY(settings.recordCorrectionEvidence(medium, QStringLiteral("org.kde.kate")));
-        corrections = settings.dictationSnapshot().learnedCorrections;
+        corrections = test::learnedEntries(settings.dictationSnapshot().vocabulary);
         QCOMPARE(corrections.size(), 1);
-        QCOMPARE(corrections.first().corrected, QStringLiteral("Qt"));
+        QCOMPARE(corrections.first().replacement, QStringLiteral("Qt"));
         QCOMPARE(corrections.first().evidenceCount, 3);
 
-        settings.edit([](AppSettings &draft) { draft.learnedCorrections.clear(); return true; });
-        QVERIFY(settings.dictationSnapshot().learnedCorrections.isEmpty());
+        settings.edit([](AppSettings &draft) { draft.vocabulary.clear(); return true; });
+        QVERIFY(settings.dictationSnapshot().vocabulary.isEmpty());
+    }
+
+    // A Learned Correction the person limited to an App stays limited to it:
+    // seen in that App it adds evidence, seen elsewhere it changes nothing.
+    void learningKeepsTheAppsAPersonLimitedACorrectionTo()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        VocabularyEntry limited;
+        limited.term = QStringLiteral("cute");
+        limited.replacement = QStringLiteral("Qt");
+        limited.source = QStringLiteral("learned");
+        limited.apps = {QStringLiteral("app:org.kde.kate")};
+        limited.evidenceCount = 1;
+        settings.edit([&limited](AppSettings &draft) {
+            draft.apps.apps = {test::idApp(QStringLiteral("org.kde.kate"))};
+            draft.vocabulary = {limited};
+            return true;
+        });
+        const CorrectionEvidence evidence{QStringLiteral("cute"), QStringLiteral("Qt"), 0.95};
+
+        QVERIFY(settings.recordCorrectionEvidence(evidence, QStringLiteral("org.kde.kate")));
+        QList<VocabularyEntry> corrections = test::learnedEntries(settings.dictationSnapshot().vocabulary);
+        QCOMPARE(corrections.size(), 1);
+        QCOMPARE(corrections.first().apps, limited.apps);
+        QCOMPARE(corrections.first().evidenceCount, 2);
+
+        QVERIFY(!settings.recordCorrectionEvidence(evidence, QStringLiteral("firefox")));
+        corrections = test::learnedEntries(settings.dictationSnapshot().vocabulary);
+        QCOMPARE(corrections.size(), 1);
+        QCOMPARE(corrections.first().apps, limited.apps);
     }
 
     void correctionLearningSettingChangesAreObservableWithoutRestart()
@@ -1341,9 +1416,9 @@ private slots:
             {QStringLiteral("open ai"), QStringLiteral("Open API"), 0.98},
             QStringLiteral("org.kde.kate")));
 
-        const QList<LearnedCorrection> corrections = settings.dictationSnapshot().learnedCorrections;
+        const QList<VocabularyEntry> corrections = test::learnedEntries(settings.dictationSnapshot().vocabulary);
         QCOMPARE(corrections.size(), 1);
-        QCOMPARE(corrections.first().corrected, QStringLiteral("OpenAI"));
+        QCOMPARE(corrections.first().replacement, QStringLiteral("OpenAI"));
         QCOMPARE(corrections.first().evidenceCount, 1);
     }
 
@@ -1356,15 +1431,15 @@ private slots:
 
         settings.edit([](AppSettings &draft) { draft.correctionLearningEnabled = false; return true; });
         QVERIFY(!settings.recordCorrectionEvidence(evidence, QStringLiteral("org.kde.kate")));
-        QVERIFY(settings.dictationSnapshot().learnedCorrections.isEmpty());
+        QVERIFY(settings.dictationSnapshot().vocabulary.isEmpty());
 
         settings.edit([](AppSettings &draft) { draft.correctionLearningEnabled = true; return true; });
         QVERIFY(settings.recordCorrectionEvidence(evidence, QStringLiteral("org.kde.kate")));
         QVERIFY(settings.recordCorrectionEvidence(evidence, QStringLiteral("org.mozilla.firefox")));
 
-        const QList<LearnedCorrection> corrections = settings.dictationSnapshot().learnedCorrections;
+        const QList<VocabularyEntry> corrections = test::learnedEntries(settings.dictationSnapshot().vocabulary);
         QCOMPARE(corrections.size(), 1);
-        QVERIFY(corrections.first().applicationId.isEmpty());
+        QVERIFY(corrections.first().apps.isEmpty());
         QCOMPARE(corrections.first().evidenceCount, 2);
         QVERIFY(corrections.first().lastObservedAtMs >= corrections.first().createdAtMs);
 
@@ -1373,8 +1448,8 @@ private slots:
             QStringLiteral("cute"), QStringLiteral("Qt"), 0.75};
         QVERIFY(!settings.recordCorrectionEvidence(medium, QStringLiteral("org.kde.kate")));
         QVERIFY(settings.recordCorrectionEvidence(medium, QStringLiteral("org.mozilla.firefox")));
-        QCOMPARE(settings.dictationSnapshot().learnedCorrections.size(), 1);
-        QVERIFY(settings.dictationSnapshot().learnedCorrections.first().applicationId.isEmpty());
+        QCOMPARE(test::learnedEntries(settings.dictationSnapshot().vocabulary).size(), 1);
+        QVERIFY(settings.dictationSnapshot().vocabulary.first().apps.isEmpty());
     }
 
     void lowConfidenceEvidenceIsDiscarded()
@@ -1385,7 +1460,7 @@ private slots:
         QVERIFY(!settings.recordCorrectionEvidence(
             {QStringLiteral("cute"), QStringLiteral("Qt"), 0.4},
             QStringLiteral("org.kde.kate")));
-        QVERIFY(settings.dictationSnapshot().learnedCorrections.isEmpty());
+        QVERIFY(settings.dictationSnapshot().vocabulary.isEmpty());
         QVERIFY(!settings.raw().contains(QStringLiteral("vocabulary/correctionEvidence")));
         QVERIFY(!settings.recordCorrectionEvidence(
             {QStringLiteral("open ai"), QStringLiteral("OpenAI"), 0.98}, {}));
@@ -1469,18 +1544,16 @@ private slots:
                     .boringMode = true,
                     .pauseMediaDuringTranscription = false,
                     .soundsEnabled = true};
-            s.speech.providerId = QStringLiteral("codex");
-            s.speech.fallbackProviderIds = {QStringLiteral("local")};
+            s.speech.services.order = {QStringLiteral("codex"), QStringLiteral("local")};
             s.speech.codexFinalRetranscribe = false;
             s.speech.language = QStringLiteral("de");
-            s.speech.local = {.modelId = QStringLiteral("whisper-small"),
-                              .runsOn = {.backend = QStringLiteral("cpu")},
+            localModelId(s.speech) = QStringLiteral("whisper-small");
+            s.speech.local = {.runsOn = {.backend = QStringLiteral("cpu")},
                               .idleUnloadMinutes = 0,
                               .speedTestSeconds = {{QStringLiteral("whisper-small/cpu"), 2.5}},
                               .modelChosen = true};
-            s.speech.endpoint = {.baseUrl = QStringLiteral("http://localhost:8080"),
-                                 .path = QStringLiteral("/inference"),
-                                 .model = QStringLiteral("whisper")};
+            s.speech.server = {.baseUrl = QStringLiteral("http://localhost:8080"), .path = QStringLiteral("/inference")};
+            s.speech.services.choice(QStringLiteral("endpoint")).model = QStringLiteral("whisper");
             s.audio = {.deviceId = QStringLiteral("device-1"),
                        .mode = QStringLiteral("warm"),
                        .vadEnabled = true,
@@ -1488,8 +1561,7 @@ private slots:
                        .postRollMs = 250,
                        .readinessTimeoutMs = 700,
                        .vadThresholdPercent = 4};
-            s.refinement.providerId = QStringLiteral("anthropic");
-            s.refinement.fallbackProviderIds = {QStringLiteral("local")};
+            s.refinement.services.order = {QStringLiteral("anthropic"), QStringLiteral("local")};
             s.refinement.customTones = {{.id = QStringLiteral("custom_pirate"),
                                          .name = QStringLiteral("Pirate"),
                                          .instruction = QStringLiteral("Talk like a pirate.")}};
@@ -1503,40 +1575,42 @@ private slots:
                     profile.tone = QStringLiteral("custom_pirate");
                 }
             }
-            s.appRecognitionRules = {{.match = QStringLiteral("org.example.Notes"),
-                                      .category = AppCategory::Office,
-                                      .writingProfile = WritingProfile::Work}};
-            s.refinement.defaultWritingProfile = WritingProfile::Work;
-            s.refinement.writingProfileOverrides = {{.applicationId = QStringLiteral("org.mozilla.firefox"),
-                                                     .profile = WritingProfile::Personal,
-                                                     .enabled = false}};
+            s.apps.apps = {{.id = QStringLiteral("app:notes"),
+                            .name = QStringLiteral("Notes"),
+                            .icon = QStringLiteral("org.example.Notes"),
+                            .matches = {{AppMatchKind::Id, QStringLiteral("org.example.Notes")},
+                                        {AppMatchKind::Name, QStringLiteral("notes")},
+                                        {AppMatchKind::WindowTitle, QStringLiteral("Gmail")}},
+                            .type = AppCategory::Office,
+                            .writingProfile = WritingProfile::Work,
+                            .pasting = {std::nullopt, PasteKeyCombo::Standard}}};
+            test::setOtherAppsProfile(s.apps, WritingProfile::Work);
+            s.apps.types[1].pasting.steps = DeliverySteps{false, false, true};
+            s.apps.types[0].writingProfile.reset();
             s.refinement.useTargetContext = false;
             s.refinement.includeScreenshotContext = true;
             s.refinement.additionalInstructions = QStringLiteral("Use British spelling.");
             s.refinement.customSystemPromptEnabled = true;
             s.refinement.customSystemPrompt = QStringLiteral("Clean this up.");
-            s.refinement.openAiModel = QStringLiteral("gpt-6.1-sol");
-            s.refinement.openAiEffort = QStringLiteral("high");
-            s.refinement.openAiSpeed = QStringLiteral("standard");
-            s.refinement.anthropicModel = QStringLiteral("claude-fable-5");
-            s.refinement.anthropicEffort = QStringLiteral("max");
-            s.refinement.anthropicFastMode = false;
-            s.refinement.cliproxyBaseUrl = QStringLiteral("http://localhost:8317");
-            s.refinement.endpoint = {.format = QStringLiteral("anthropic"),
-                                     .baseUrl = QStringLiteral("http://localhost:11434/v1"),
-                                     .model = QStringLiteral("llama")};
-            s.refinement.localRunner = {.runner = QStringLiteral("lmstudio"), .model = QStringLiteral("qwen")};
+            s.refinement.services.choice(QStringLiteral("openai")).model = QStringLiteral("gpt-6.1-sol");
+            s.refinement.services.choice(QStringLiteral("openai")).effort = QStringLiteral("high");
+            s.refinement.services.choice(QStringLiteral("openai")).speed = QStringLiteral("standard");
+            s.refinement.services.choice(QStringLiteral("anthropic")).model = QStringLiteral("claude-fable-5");
+            s.refinement.services.choice(QStringLiteral("anthropic")).effort = QStringLiteral("max");
+            s.refinement.services.choice(QStringLiteral("anthropic")).speed = QStringLiteral("standard");
+            s.accounts.cliproxyBaseUrl = QStringLiteral("http://localhost:8317");
+            s.refinement.server = {.baseUrl = QStringLiteral("http://localhost:11434/v1"),
+                                   .format = QStringLiteral("anthropic")};
+            s.refinement.services.choice(QStringLiteral("endpoint")).model = QStringLiteral("llama");
+            s.refinement.localRunner = {.runner = QStringLiteral("lmstudio")};
+            s.refinement.services.choice(QStringLiteral("local")).model = QStringLiteral("qwen");
             s.accounts.openAiAuthMode = OpenAiAuthMode::Cliproxy;
             s.accounts.openAiCliproxyAccount = QStringLiteral("codex-a.json");
             s.accounts.anthropicAuthMode = AnthropicAuthMode::Cliproxy;
             s.accounts.anthropicCliproxyAccount = QStringLiteral("claude-b.json");
             s.accounts.cliproxyOauthDirConfigured = QStringLiteral("/custom/cliproxy");
-            s.output.method = QString::fromLatin1(OutputMethod::DirectInsert);
+            s.output.steps = {.insert = true, .press = false, .keep = false};
             s.output.format = OutputFormat::Html;
-            s.output.pasteRules = {{.scope = PasteRuleScope::Global,
-                                    .method = PasteMethod::ClipboardOnly,
-                                    .enabled = true}};
-            s.output.restoreClipboardAfterTyping = true;
             s.output.completionStatusDurationMs = 2000;
             s.shortcutActivationMode = ShortcutActivationMode::Toggle;
             s.updates = {.channel = UpdateChannel::Nightly,
@@ -1544,20 +1618,22 @@ private slots:
                          .autoInstall = true,
                          .checkIntervalMinutes = 480,
                          .checkIntervalUnit = QStringLiteral("hours")};
+            VocabularyEntry learned = test::learnedEntry(QStringLiteral("teh"), QStringLiteral("the"), {},
+                                                         QStringLiteral("c1"));
+            learned.createdAtMs = 1000;
+            learned.evidenceCount = 3;
+            learned.lastObservedAtMs = 2000;
+            VocabularyEntry replacement = test::replacementEntry(QStringLiteral("my email"),
+                                                                 QStringLiteral("efox@example.com"));
+            replacement.id = QStringLiteral("r1");
             s.vocabulary = {{.term = QStringLiteral("Speecher"),
                              .source = QStringLiteral("manual"),
-                             .context = QStringLiteral("The app.")}};
-            s.learnedCorrections = {{.id = QStringLiteral("c1"),
-                                     .original = QStringLiteral("teh"),
-                                     .corrected = QStringLiteral("the"),
-                                     .createdAtMs = 1000,
-                                     .confidence = 0.95,
-                                     .enabled = true,
-                                     .evidenceCount = 3,
-                                     .lastObservedAtMs = 2000}};
+                             .context = QStringLiteral("The app."),
+                             .id = QStringLiteral("t1")},
+                            replacement,
+                            learned};
             s.correctionLearningEnabled = false;
-            s.insightsEnabled = false;
-            s.bindings = {{.phrase = QStringLiteral("my email"), .replacement = QStringLiteral("efox@example.com")}};
+            s.history = {HistoryKeep::Audio, 30, -1};
             edited = s;
             return true;
         }));
@@ -1571,17 +1647,15 @@ private slots:
         QCOMPARE(saved.ui, edited.ui);
         QCOMPARE(saved.speech, edited.speech);
         QCOMPARE(saved.audio, edited.audio);
-        QCOMPARE(saved.appRecognitionRules, edited.appRecognitionRules);
+        QCOMPARE(saved.apps, edited.apps);
         QCOMPARE(saved.refinement, edited.refinement);
         QCOMPARE(saved.accounts, edited.accounts);
         QCOMPARE(saved.output, edited.output);
         QCOMPARE(saved.updates, edited.updates);
         QCOMPARE(saved.shortcutActivationMode, edited.shortcutActivationMode);
-        QCOMPARE(saved.bindings, edited.bindings);
         QCOMPARE(saved.vocabulary, edited.vocabulary);
-        QCOMPARE(saved.learnedCorrections, edited.learnedCorrections);
         QCOMPARE(saved.correctionLearningEnabled, edited.correctionLearningEnabled);
-        QCOMPARE(saved.insightsEnabled, edited.insightsEnabled);
+        QCOMPARE(saved.history, edited.history);
         settings.raw().clear();
     }
 
@@ -1594,18 +1668,18 @@ private slots:
         QTest::ignoreMessage(QtCriticalMsg,
                              "Settings: not saved, since the edit changed speech.vocabulary, which is never stored");
         QVERIFY(!settings.edit([](AppSettings &s) {
-            s.refinement.openAiModel = QStringLiteral("gpt-6.1-sol");
+            s.refinement.services.choice(QStringLiteral("openai")).model = QStringLiteral("gpt-6.1-sol");
             s.speech.vocabulary = {QStringLiteral("Speecher")};
             return true;
         }));
         QTest::ignoreMessage(QtCriticalMsg,
                              "Settings: not saved, since the edit changed output.ydotoolEnabled, which is never stored");
         QVERIFY(!settings.edit([](AppSettings &s) {
-            s.refinement.openAiModel = QStringLiteral("gpt-6.1-sol");
+            s.refinement.services.choice(QStringLiteral("openai")).model = QStringLiteral("gpt-6.1-sol");
             s.output.ydotoolEnabled = true;
             return true;
         }));
-        QCOMPARE(SettingsStore().dictationSnapshot().refinement.openAiModel, QStringLiteral("gpt-6-luna"));
+        QCOMPARE(SettingsStore().dictationSnapshot().refinement.services.choice(QStringLiteral("openai")).model, QStringLiteral("gpt-6-luna"));
     }
 
     void settingsSnapshot()
@@ -1617,21 +1691,17 @@ private slots:
             draft.ui.theme = QStringLiteral("dark");
             draft.ui.pauseMediaDuringTranscription = false;
             draft.ui.soundsEnabled = true;
-            draft.speech.providerId = QStringLiteral("claude");
+            draft.speech.services.order = {QStringLiteral("claude")};
             return true;
         });
         settings.edit([](AppSettings &draft) {
-            draft.vocabulary = {{QStringLiteral("Deepgram Nova 3")}, {QStringLiteral("Speecher")}};
+            draft.vocabulary = {{QStringLiteral("Deepgram Nova 3")}, {QStringLiteral("Speecher")},
+                                test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com"))};
             return true;
         });
-        QVERIFY(settings.edit([](AppSettings &draft) {
-            draft.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
-            return true;
-        }));
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         settings.raw().setValue(SettingsKeys::RefinementStyle, QStringLiteral("strong_polish"));
         settings.edit([](AppSettings &draft) {
-            draft.refinement.defaultWritingProfile = QStringLiteral("personal");
             draft.refinement.writingProfiles = {
                 {WritingProfile::Work, QStringLiteral("strong_polish"), QStringLiteral("formal")},
                 {WritingProfile::Email, QStringLiteral("balanced"), QStringLiteral("none")},
@@ -1639,24 +1709,17 @@ private slots:
                 {WritingProfile::AiCoding, QStringLiteral("none"), QStringLiteral("formal")},
                 {WritingProfile::Other, QStringLiteral("balanced"), QStringLiteral("none")},
             };
-            draft.refinement.writingProfileOverrides = {
-                {QStringLiteral("org.mozilla.firefox"), WritingProfile::Personal, true},
-            };
             draft.refinement.useTargetContext = false;
             draft.refinement.includeScreenshotContext = true;
             draft.accounts.openAiAuthMode = OpenAiAuthMode::Env;
-            draft.refinement.openAiEffort = QStringLiteral("high");
-            draft.refinement.openAiSpeed = QStringLiteral("standard");
-            draft.refinement.anthropicModel = QStringLiteral("claude-opus-5");
+            draft.refinement.services.choice(QStringLiteral("openai")).effort = QStringLiteral("high");
+            draft.refinement.services.choice(QStringLiteral("openai")).speed = QStringLiteral("standard");
+            draft.refinement.services.choice(QStringLiteral("anthropic")).model = QStringLiteral("claude-opus-5");
             draft.accounts.anthropicAuthMode = AnthropicAuthMode::Oauth;
-            draft.refinement.anthropicEffort = QStringLiteral("xhigh");
-            draft.refinement.anthropicFastMode = false;
+            draft.refinement.services.choice(QStringLiteral("anthropic")).effort = QStringLiteral("xhigh");
+            draft.refinement.services.choice(QStringLiteral("anthropic")).speed = QStringLiteral("standard");
             draft.output.format = OutputFormat::Html;
-            draft.output.pasteRules = {
-                {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true},
-                {PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly, true},
-            };
-            draft.output.restoreClipboardAfterTyping = true;
+            draft.output.steps.keep = false;
             draft.output.completionStatusDurationMs = 900;
             draft.audio = {
                 QStringLiteral("device-1"),
@@ -1675,7 +1738,7 @@ private slots:
         QCOMPARE(snapshot.ui.theme, QStringLiteral("dark"));
         QCOMPARE(snapshot.ui.pauseMediaDuringTranscription, false);
         QCOMPARE(snapshot.ui.soundsEnabled, true);
-        QCOMPARE(snapshot.speech.providerId, QStringLiteral("claude"));
+        QCOMPARE(snapshot.speech.services.main(), QStringLiteral("claude"));
         QCOMPARE(snapshot.speech.vocabulary.size(), 2);
         QCOMPARE(snapshot.audio.deviceId, QStringLiteral("device-1"));
         QCOMPARE(snapshot.audio.mode, QStringLiteral("warm"));
@@ -1691,14 +1754,10 @@ private slots:
         });
         QCOMPARE(settings.snapshot().audio.readinessTimeoutMs, 500);
         QCOMPARE(snapshot.audio.vadThresholdPercent, 4);
-        QCOMPARE(snapshot.bindings.size(), 1);
-        QCOMPARE(snapshot.bindings.at(0).replacement, QStringLiteral("efox@example.com"));
-        QCOMPARE(snapshot.refinement.providerId, QStringLiteral("openai"));
+        QCOMPARE(test::replacementEntries(snapshot.vocabulary).size(), 1);
+        QCOMPARE(test::replacementEntries(snapshot.vocabulary).at(0).replacement, QStringLiteral("efox@example.com"));
+        QCOMPARE(snapshot.refinement.services.main(), QStringLiteral("openai"));
         QCOMPARE(snapshot.refinement.style, QStringLiteral("strong_polish"));
-        QCOMPARE(snapshot.refinement.defaultWritingProfile, QStringLiteral("personal"));
-        QCOMPARE(snapshot.refinement.writingProfileOverrides.size(), 1);
-        QCOMPARE(snapshot.refinement.writingProfileOverrides.first().applicationId,
-                 QStringLiteral("org.mozilla.firefox"));
         QCOMPARE(writingProfileSettingsFor(snapshot.refinement.writingProfiles, WritingProfile::Work).tone,
                  QStringLiteral("formal"));
         QCOMPARE(writingProfileSettingsFor(snapshot.refinement.writingProfiles, WritingProfile::AiCoding).tone,
@@ -1706,22 +1765,19 @@ private slots:
         QCOMPARE(snapshot.refinement.useTargetContext, false);
         QCOMPARE(snapshot.refinement.includeScreenshotContext, true);
         QCOMPARE(snapshot.accounts.openAiAuthMode, OpenAiAuthMode::Env);
-        QCOMPARE(snapshot.refinement.openAiEffort, QStringLiteral("high"));
-        QCOMPARE(snapshot.refinement.openAiSpeed, QStringLiteral("standard"));
-        QCOMPARE(snapshot.refinement.anthropicModel, QStringLiteral("claude-opus-5"));
+        QCOMPARE(snapshot.refinement.services.choice(QStringLiteral("openai")).effort, QStringLiteral("high"));
+        QCOMPARE(snapshot.refinement.services.choice(QStringLiteral("openai")).speed, QStringLiteral("standard"));
+        QCOMPARE(snapshot.refinement.services.choice(QStringLiteral("anthropic")).model, QStringLiteral("claude-opus-5"));
         QCOMPARE(snapshot.accounts.anthropicAuthMode, AnthropicAuthMode::Oauth);
-        QCOMPARE(snapshot.refinement.anthropicEffort, QStringLiteral("xhigh"));
-        QCOMPARE(snapshot.refinement.anthropicFastMode, false);
+        QCOMPARE(snapshot.refinement.services.choice(QStringLiteral("anthropic")).effort, QStringLiteral("xhigh"));
+        QCOMPARE(snapshot.refinement.services.choice(QStringLiteral("anthropic")).speed, QStringLiteral("standard"));
         // Claude Code's config directory, as CLAUDE_CONFIG_DIR (set by test_main) moves it.
         QCOMPARE(snapshot.accounts.claudeCredentialsPath,
                  QDir(qEnvironmentVariable("CLAUDE_CONFIG_DIR")).filePath(QStringLiteral(".credentials.json")));
-        QCOMPARE(snapshot.output.method, QString::fromLatin1(OutputMethod::Automatic));
+        QCOMPARE(snapshot.output.steps, (DeliverySteps{.insert = true, .press = true, .keep = false}));
         QCOMPARE(snapshot.output.format, OutputFormat::Html);
         QCOMPARE(snapshot.output.ydotoolEnabled, false);
-        QCOMPARE(snapshot.output.restoreClipboardAfterTyping, true);
         QCOMPARE(snapshot.output.completionStatusDurationMs, 900);
-        QCOMPARE(snapshot.output.pasteRules.size(), 2);
-        QCOMPARE(snapshot.output.pasteRules.last().method, PasteMethod::ClipboardOnly);
     }
 
     void removingAToneMovesItsProfilesAndUndoMovesBackOnlyTheUnchanged()

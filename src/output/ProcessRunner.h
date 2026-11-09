@@ -41,6 +41,8 @@ struct ProcessResult {
     bool ok = false;
     QByteArray output;
     QString error;
+    // The command never ran, so it did nothing.
+    bool failedToStart = false;
 };
 
 // Starts command and returns at once, with a function that stops it: the

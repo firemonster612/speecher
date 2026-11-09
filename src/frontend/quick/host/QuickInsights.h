@@ -24,12 +24,12 @@ class QuickInsights final : public QObject, public HostSingleton<QuickInsights> 
     Q_OBJECT
     QML_NAMED_ELEMENT(Insights)
     QML_SINGLETON
-    // ready, empty (nothing kept, or cleared) or off (Keep insights is off;
-    // what was kept stays until cleared).
+    // ready, empty (nothing kept, or cleared) or off (What Speecher Keeps is
+    // Nothing; what was kept stays until cleared).
     Q_PROPERTY(QString state READ state NOTIFY changed)
     Q_PROPERTY(bool hasData READ hasData NOTIFY changed)
-    // The dictations the log keeps, whether or not Insights is on, and the
-    // day of the first (null with none).
+    // The dictations History counts, whether or not it keeps new ones, and
+    // the day of the first (null with none).
     Q_PROPERTY(int kept READ kept NOTIFY changed)
     Q_PROPERTY(QVariant firstDictation READ firstDictation NOTIFY changed)
     // 7d, 30d, year or all; the figures, hours, apps and profiles cover it.
@@ -54,9 +54,10 @@ class QuickInsights final : public QObject, public HostSingleton<QuickInsights> 
     // desktop lets Speecher see edits), recent: the newest three as
     // [{ heard, fixed }] }.
     Q_PROPERTY(QVariantMap corrections READ corrections NOTIFY correctionsChanged)
-    // The latest transcript, kept in memory only: { text, words, app,
-    // profile, date }, where app, profile and date are empty or null unless
-    // insights recorded it. Null before the first.
+    // The latest transcript: { text, words, app, appId, profile, date },
+    // where app, appId (the ID an App's Id match compares), profile and date
+    // are empty or null unless History recorded it. The one this run heard,
+    // else History's newest while it keeps text; null with neither.
     Q_PROPERTY(QVariant latest READ latest NOTIFY latestChanged)
 
 public:
@@ -78,9 +79,6 @@ public:
     QVariantMap corrections() const;
     QVariant latest() const;
 
-    // Deletes the kept history. False, with the history kept, when its file
-    // could not be deleted.
-    Q_INVOKABLE bool clear();
     // Puts Home's share text, which the page words, on the clipboard.
     Q_INVOKABLE void copyText(const QString &text);
     // Puts Home's share picture, which the page draws, on the clipboard.
@@ -102,6 +100,7 @@ signals:
 
 private:
     void refresh();
+    QVariant newestInHistory() const;
     void refreshCorrections();
     void scheduleMidnight();
 

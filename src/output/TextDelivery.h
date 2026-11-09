@@ -6,27 +6,32 @@
 #include <functional>
 #include <memory>
 #include <QPointer>
-#include <QStringList>
+#include <QString>
 
 namespace speecher {
 
 class DeliveryBackend {
 public:
-    // htmlAvailable is a clipboard backend's alone.
-    using Outcome = ClipboardCopied;
+    struct Outcome {
+        bool ok = false;
+        // A failure the backend knows sent no key, such as a keystroke it
+        // could not create or a batch Windows refused whole: the clipboard
+        // the paste borrowed goes back. Otherwise a failure after the gate
+        // let the keys go may have sent some, and the words stay copied.
+        bool noInputSent = false;
+        QString error;
+    };
     // Asked with a reply, which hears whether the keystroke may go out.
     using PasteGate = std::function<void(std::function<void(bool clear)>)>;
     virtual ~DeliveryBackend() = default;
-    // A keyboard backend pastes what is already on the clipboard; a
-    // clipboard backend copies content. done runs once with the outcome, and
-    // may run before deliver() returns.
+    // A backend presses the paste keys, pasting what is already on the
+    // clipboard. done runs once with the outcome, and may run before
+    // deliver() returns.
     // clearToInject is the final gate: a keyboard backend asks it after all
     // of its preparation (modifier release) and sends the paste keystroke
     // from its reply, aborting when the reply is false. It refuses once the
     // delivery was answered, and otherwise when focus moved off the Target;
     // asking the compositor, it may reply on a later turn of the event loop.
-    // Clipboard-only backends may ignore it; a null one means nothing gates
-    // the injection.
     virtual void deliver(const DeliveryContent &content,
                          const PasteGate &clearToInject,
                          std::function<void(const Outcome &)> done) = 0;
@@ -39,7 +44,7 @@ public:
     using BackendFactory = std::function<std::unique_ptr<DeliveryBackend>(
         const QString &method,
         const OutputSettings &settings,
-        PasteMethod pasteMethod)>;
+        PasteKeyCombo keys)>;
 
     explicit TextDelivery(QObject *parent = nullptr);
     explicit TextDelivery(TargetProvider *targetProvider, QObject *parent = nullptr);
@@ -48,44 +53,34 @@ public:
     ~TextDelivery() override;
     void deliver(const OutputSettings &settings,
                  const DeliveryContent &content,
-                 const Target &target) override;
-    // The steps deliver takes for this paste method and these settings, in
-    // order: insert (straight into the app, through accessibility), press
-    // (the paste keys) and copy (the words left on the clipboard).
-    static QStringList pasteRoute(const OutputSettings &settings, PasteMethod pasteMethod);
-    // What deliver needs of the computer to get words past the clipboard with
-    // this paste method and these settings: nothing (it only copies, or
-    // presses the paste keys itself), desktop accessibility (to insert, and
-    // on macOS to press ⌘V), the virtual keyboard (to press the keys), or
-    // either of them.
-    enum class PasteNeed { Nothing, Accessibility, VirtualKeyboard, Either };
-    static PasteNeed pasteNeed(const OutputSettings &settings, PasteMethod pasteMethod);
-    // Whether words get no further than the clipboard: what need asks for is
-    // missing. accessibility counts when it is on only for the session;
-    // virtualKeyboard is the keyboard ready to type.
-    static bool wordsStayCopied(PasteNeed need, bool accessibility, bool virtualKeyboard);
-    static QStringList orderedMethods(const OutputSettings &settings);
-    static QStringList orderedMethods(const OutputSettings &settings, PasteMethod pasteMethod);
+                 const Target &target,
+                 const PastingChoice &pasting) override;
+    // The paste keys backend the Press step uses here, as the backend
+    // factory is asked for it, or empty where none can press them yet (Linux
+    // before the virtual keyboard is set up).
+    static QString pressMethod(const OutputSettings &settings);
     // How long a delivery may take before it is answered as unfinished and
     // its remaining steps dropped. Tests shorten it.
     void setAnswerDeadlineMs(int ms);
 
 private:
-    // The paste method deliver starts from, and whether it pastes blindly into
-    // whatever has focus because the Target cannot be tracked.
-    struct PasteChoice {
-        PasteMethod method = PasteMethod::ClipboardOnly;
+    // The plan deliver follows, and whether it pastes blindly into whatever
+    // has focus because the Target cannot be tracked.
+    struct PlanChoice {
+        DeliveryPlan plan;
         bool currentFocusFallback = false;
     };
     class PreviousClipboard;
-    // One delivery's steps, from the paste choice to the answer.
+    // One delivery's steps, from the plan to the answer.
     class Run;
 
     void useDefaultBackendFactory();
-    // The Paste Rule's method when the Target can be told apart from whatever
-    // else is in front, or when a global rule pastes blindly into the current
-    // focus; only the clipboard otherwise, and always for a secure field.
-    static PasteChoice choosePasteMethod(const OutputSettings &settings, const Target &target);
+    // The Pasting choice's steps, or else the settings', when the Target can be told
+    // apart from whatever else is in front, or when the steps alone press
+    // the keys blindly into the current focus; only Keep otherwise, and
+    // always for a secure field.
+    static PlanChoice choosePlan(const OutputSettings &settings, const PastingChoice &pasting,
+                                 const Target &target);
     // Runs the first request, unless a run is still there, answered or not.
     void startNext();
     // Answers the running request, once. The next starts once its run is gone.
@@ -95,6 +90,7 @@ private:
         OutputSettings settings;
         DeliveryContent content;
         Target target;
+        PastingChoice pasting;
     };
     // The delivery under way first, then those asked for meanwhile.
     QList<Request> m_requests;

@@ -359,7 +359,7 @@ public:
         currentAttemptId = attemptId;
         lastVocabulary = settings.vocabulary;
         lastLanguage = settings.language;
-        lastLocalModel = settings.local.modelId;
+        lastLocalModel = localModelId(settings);
         if (onStartAttempt) {
             onStartAttempt();
         }
@@ -546,7 +546,7 @@ public:
         lastBindingVocabulary = context.bindingVocabulary;
         lastStyle = settings.style;
         lastTone = context.tone;
-        lastAnthropicModel = settings.anthropicModel;
+        lastAnthropicModel = settings.services.choice(QStringLiteral("anthropic")).model;
         if (autoComplete) {
             emit completed(autoCompleteText);
         }
@@ -612,9 +612,11 @@ public:
     // holdsAnswer is set; answers counts the answers given.
     void deliver(const OutputSettings &settings,
                  const DeliveryContent &content,
-                 const Target &target) override
+                 const Target &target,
+                 const PastingChoice &pasting) override
     {
         ++calls;
+        lastPasting = pasting;
         lastSettings = settings;
         lastContent = content;
         lastTarget = target;
@@ -640,6 +642,7 @@ public:
     OutputSettings lastSettings;
     DeliveryContent lastContent;
     Target lastTarget;
+    PastingChoice lastPasting;
     QString lastText;
 };
 

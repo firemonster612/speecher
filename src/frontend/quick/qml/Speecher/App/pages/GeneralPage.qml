@@ -11,11 +11,9 @@ Page {
     id: page
     objectName: "generalPage"
     title: Schema.page("general").title
-    // Startup shows only where Speecher can start at login.
-    subtitle: System.canLaunchAtLogin ? Schema.page("general").subtitle : Schema.page("general").subtitleNoStartup
+    subtitle: Schema.page("general").subtitle
 
     property bool _phoneOpen: false
-    property bool _confirmClear: false
     property bool _confirmRemove: false
     property bool _removeSettings: false
     readonly property bool _removed: Removal.report.steps !== undefined
@@ -58,123 +56,73 @@ Page {
     }
     Component.onDestruction: Phone.stop()
 
-    SubpageRows { pageId: "general" }
-
-    // Only where Speecher can start at login.
-    Reveal {
-        open: System.canLaunchAtLogin
-        Section {
-            title: Schema.row("launchAtLogin").section
-            SchemaRow { rowId: "launchAtLogin" }
-        }
-    }
-
-    // Two short groups side by side.
-    Row {
-        id: pair
-        width: parent.width
-        spacing: Theme.space4
-        readonly property real _half: (width - spacing) / 2
-
-        // The pair lines up: the same header and card heights.
-        Section {
-            id: phoneSection
-            width: pair._half
-            minimumHeaderHeight: insightsSection.naturalHeaderHeight
-            minimumCardHeight: insightsSection.naturalCardHeight
-            title: Schema.row("copyToPhone").section
-            SchemaRow {
-                rowId: "copyToPhone"
-                stacked: true
-                Button {
-                    text: page._phoneOpen ? page.t.hideCode : page.t.showCode
-                    iconName: page._phoneOpen ? "chevron-up" : "qr-code"
-                    size: "small"
-                    onClicked: page.showPhoneCode(!page._phoneOpen)
-                }
-            }
-            Reveal {
-                open: page._phoneOpen
-                Item {
-                    width: parent.width
-                    implicitHeight: qr.height + Theme.space4
-                    QrCode {
-                        id: qr
-                        x: Theme.rowInset
-                        width: 148
-                        height: 148
-                        // Empty once sent, as the code works once.
-                        text: Phone.link
-                    }
-                    Column {
-                        anchors.left: qr.right
-                        anchors.leftMargin: Theme.space4
-                        anchors.right: parent.right
-                        anchors.rightMargin: Theme.rowInset
-                        anchors.verticalCenter: qr.verticalCenter
-                        spacing: Theme.space2
-                        // Empty until the first code is shown.
-                        Txt {
-                            width: parent.width
-                            text: Phone.bundle.terms === undefined ? "" : page.phoneSummary(Phone.bundle)
-                            variant: "small"
-                            wrapMode: Text.WordWrap
-                        }
-                        Txt {
-                            width: parent.width
-                            text: page.phoneNote(Phone.state)
-                            variant: "small"
-                            tone: "secondary"
-                            wrapMode: Text.WordWrap
-                        }
-                    }
-                }
-            }
-        }
-
-        Section {
-            id: insightsSection
-            width: pair._half
-            minimumHeaderHeight: phoneSection.naturalHeaderHeight
-            minimumCardHeight: phoneSection.naturalCardHeight
-            title: Schema.row("insightsEnabled").section
-            SchemaRow {
-                rowId: "insightsEnabled"
-                help: Settings.values.insightsEnabled ? spec.help : spec.offHelp
-            }
-            SchemaRow {
-                rowId: "clearInsights"
-                help: Insights.kept > 0
-                      ? Words.count(Insights.kept, "dictation", "dictations") + " kept since " + Qt.formatDate(Insights.firstDictation, "MMMM yyyy") + "."
-                      : "No dictation history yet."
-                Button {
-                    text: "Clear history…"
-                    variant: "danger"
-                    size: "small"
-                    enabled: Insights.kept > 0 && !page._confirmClear
-                    onClicked: page._confirmClear = true
-                }
-            }
-            InlineConfirm {
-                cancelText: Words.cancel
-                open: page._confirmClear
-                text: "Delete " + Words.count(Insights.kept, "dictation", "dictations") + "?"
-                detail: Words.cantUndo
-                confirmText: Words.delete_
-                onCancelled: page._confirmClear = false
-                onConfirmed: {
-                    page._confirmClear = false
-                    if (!Insights.clear())
-                        Toaster.show("Speecher couldn't delete the insights history. Close any app that has the history file open, then try again.",
-                                     { icon: "alert-triangle", tone: "negative" })
-                }
-            }
-        }
+    // The switch where Speecher can start at login, else how to do it by hand.
+    Section {
+        title: Schema.row("launchAtLogin").section
+        SchemaRow { rowId: "launchAtLogin" }
+        SchemaRow { rowId: "launchAtLoginGuide" }
     }
 
     Section {
-        visible: System.canRemove
+        id: phoneSection
+        title: Schema.row("copyToPhone").section
+        SchemaRow {
+            rowId: "copyToPhone"
+            stacked: true
+            Button {
+                text: page._phoneOpen ? page.t.hideCode : page.t.showCode
+                iconName: page._phoneOpen ? "chevron-up" : "qr-code"
+                size: "small"
+                onClicked: page.showPhoneCode(!page._phoneOpen)
+            }
+        }
+        Reveal {
+            open: page._phoneOpen
+            Item {
+                width: parent.width
+                implicitHeight: qr.height + Theme.space4
+                QrCode {
+                    id: qr
+                    x: Theme.rowInset
+                    width: 148
+                    height: 148
+                    // Empty once sent, as the code works once.
+                    text: Phone.link
+                }
+                Column {
+                    anchors.left: qr.right
+                    anchors.leftMargin: Theme.space4
+                    anchors.right: parent.right
+                    anchors.rightMargin: Theme.rowInset
+                    anchors.verticalCenter: qr.verticalCenter
+                    spacing: Theme.space2
+                    // Empty until the first code is shown.
+                    Txt {
+                        width: parent.width
+                        text: Phone.bundle.terms === undefined ? "" : page.phoneSummary(Phone.bundle)
+                        variant: "small"
+                        wrapMode: Text.WordWrap
+                    }
+                    Txt {
+                        width: parent.width
+                        text: page.phoneNote(Phone.state)
+                        variant: "small"
+                        tone: "secondary"
+                        wrapMode: Text.WordWrap
+                    }
+                }
+            }
+        }
+    }
+
+
+    // One row, which needs no heading over it.
+    Section { SchemaRow { rowId: "runSetup" } }
+
+    // Removing Speecher where it can remove itself, else how the system does.
+    Section {
         title: Schema.row("removeSpeecher").section
+        SchemaRow { rowId: "removeSpeecherGuide" }
         SchemaRow {
             rowId: "removeSpeecher"
             Button {
@@ -208,4 +156,6 @@ Page {
             RemovalReport { inset: Theme.rowInset }
         }
     }
+
+    SubpageRows { pageId: "general" }
 }

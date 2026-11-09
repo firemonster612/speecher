@@ -7,6 +7,9 @@
 #include "core/VocabularyEdits.h"
 #include "core/VocabularyLimit.h"
 #include "core/WritingProfileEdits.h"
+#include "dictation/DictationPlan.h"
+#include "frontend/quick/host/QmlValues.h"
+#include "providers/ProviderRegistry.h"
 
 #include <QDebug>
 #include <QFile>
@@ -19,29 +22,25 @@ namespace speecher {
 
 namespace {
 
-ApplicationController *g_controller = nullptr;
-
-// What add and update return for a record they can't convert.
-const QString invalidRecord = QStringLiteral("invalid");
-
-QString refusalName(EditRefusal refusal)
+// Why a dictation with this profile doesn't lead with its own speech
+// service, as QuickLibrary::profiles words it, or empty while it does. The
+// resolver decides, so the editor never claims a service a dictation skips.
+QString speechSkipped(const AppSettings &settings, const WritingProfileSettings &profile, const OffersSpeech &offersSpeech)
 {
-    switch (refusal) {
-    case EditRefusal::None:
+    if (!profile.speechFirst) {
         return {};
-    case EditRefusal::Blank:
-        return QStringLiteral("blank");
-    case EditRefusal::Taken:
-        return QStringLiteral("taken");
-    case EditRefusal::Incomplete:
-        return QStringLiteral("incomplete");
-    case EditRefusal::Missing:
-        return QStringLiteral("missing");
-    case EditRefusal::BuiltIn:
-        return QStringLiteral("builtIn");
     }
-    return invalidRecord;
+    RunOverrides run;
+    run.writingProfile = profile.profile;
+    const DictationPlan plan = planDictation(settings, Target{}, run, offersSpeech);
+    if (plan.sources.value(QStringLiteral("speech")) == QStringLiteral("profile:") + profile.profile) {
+        return {};
+    }
+    return offersSpeech && !offersSpeech(profile.speechFirst->service) ? QStringLiteral("unavailable")
+                                                                       : QStringLiteral("language");
 }
+
+ApplicationController *g_controller = nullptr;
 
 // Each setter below copies the record fields `fields` names onto an entry;
 // the list's EditedList names the fields it takes.
@@ -60,16 +59,23 @@ void setProfileFields(WritingProfileSettings &profile, const QVariantMap &fields
             profile.outputLanguage = value;
         } else if (it.key() == QLatin1String("instructions")) {
             profile.instructions = value;
-        } else if (it.key() == QLatin1String("speech")) {
-            profile.speechProvider = value;
-        } else if (it.key() == QLatin1String("speechModel")) {
-            profile.speechModel = value;
-        } else if (it.key() == QLatin1String("refinement")) {
-            profile.refinementProvider = value;
-        } else if (it.key() == QLatin1String("refinementModel")) {
-            profile.refinementModel = value;
         }
     }
+    // A service of its own, or "" for the page's order; its model goes with
+    // it, and only with it.
+    const auto setFirst = [&fields](std::optional<ServiceChoice> &first, const char *serviceField, const char *modelField) {
+        const QString serviceKey = QLatin1String(serviceField);
+        if (fields.contains(serviceKey)) {
+            const QString service = fields.value(serviceKey).toString();
+            first = service.isEmpty() ? std::nullopt : std::optional(ServiceChoice{service});
+        }
+        const QString modelKey = QLatin1String(modelField);
+        if (first && fields.contains(modelKey)) {
+            first->model = fields.value(modelKey).toString();
+        }
+    };
+    setFirst(profile.speechFirst, "speech", "speechModel");
+    setFirst(profile.refinementFirst, "refinement", "refinementModel");
 }
 
 void setToneFields(CustomTone &tone, const QVariantMap &fields)
@@ -95,10 +101,13 @@ void setLevelFields(CustomCleanupLevel &level, const QVariantMap &fields)
     }
 }
 
-void setTermFields(VocabularyEntry &entry, const QVariantMap &fields)
+void setVocabularyFields(VocabularyEntry &entry, const QVariantMap &fields)
 {
     if (fields.contains(QStringLiteral("term"))) {
         entry.term = fields.value(QStringLiteral("term")).toString();
+    }
+    if (fields.contains(QStringLiteral("replacement"))) {
+        entry.replacement = fields.value(QStringLiteral("replacement")).toString();
     }
     if (fields.contains(QStringLiteral("keyTerm"))) {
         entry.keyTerm = fields.value(QStringLiteral("keyTerm")).toBool();
@@ -109,44 +118,11 @@ void setTermFields(VocabularyEntry &entry, const QVariantMap &fields)
     if (fields.contains(QStringLiteral("profiles"))) {
         entry.profiles = fields.value(QStringLiteral("profiles")).toStringList();
     }
-}
-
-void setCorrectionFields(LearnedCorrection &correction, const QVariantMap &fields)
-{
-    if (fields.contains(QStringLiteral("heard"))) {
-        correction.original = fields.value(QStringLiteral("heard")).toString();
-    }
-    if (fields.contains(QStringLiteral("corrected"))) {
-        correction.corrected = fields.value(QStringLiteral("corrected")).toString();
+    if (fields.contains(QStringLiteral("apps"))) {
+        entry.apps = fields.value(QStringLiteral("apps")).toStringList();
     }
     if (fields.contains(QStringLiteral("enabled"))) {
-        correction.enabled = fields.value(QStringLiteral("enabled")).toBool();
-    }
-}
-
-void setReplacementFields(BindingRule &rule, const QVariantMap &fields)
-{
-    if (fields.contains(QStringLiteral("phrase"))) {
-        rule.phrase = fields.value(QStringLiteral("phrase")).toString();
-    }
-    if (fields.contains(QStringLiteral("replacement"))) {
-        rule.replacement = fields.value(QStringLiteral("replacement")).toString();
-    }
-}
-
-// An empty category or profile sets none.
-void setRuleFields(AppRecognitionRule &rule, const QVariantMap &fields)
-{
-    if (fields.contains(QStringLiteral("match"))) {
-        rule.match = fields.value(QStringLiteral("match")).toString();
-    }
-    if (fields.contains(QStringLiteral("category"))) {
-        const QString category = fields.value(QStringLiteral("category")).toString();
-        rule.category = category.isEmpty() ? std::nullopt : std::optional(appCategoryFromName(category));
-    }
-    if (fields.contains(QStringLiteral("profile"))) {
-        const QString profile = fields.value(QStringLiteral("profile")).toString();
-        rule.writingProfile = profile.isEmpty() ? std::nullopt : std::optional(profile);
+        entry.enabled = fields.value(QStringLiteral("enabled")).toBool();
     }
 }
 
@@ -203,46 +179,18 @@ const EditedList editedLists[] = {
              s, id, [&patch](CustomCleanupLevel &level) { setLevelFields(level, patch); }, builtInNames);
      },
      nullptr},
-    {"terms",
-     {QStringLiteral("term"), QStringLiteral("keyTerm"), QStringLiteral("context"), QStringLiteral("profiles")},
+    {"vocabulary",
+     {QStringLiteral("term"), QStringLiteral("replacement"), QStringLiteral("keyTerm"), QStringLiteral("context"),
+      QStringLiteral("profiles"), QStringLiteral("apps"), QStringLiteral("enabled")},
      [](AppSettings &s, const QVariantMap &item, const QStringList &) {
          VocabularyEntry entry;
-         setTermFields(entry, item);
+         setVocabularyFields(entry, item);
          return addVocabularyEntry(s, entry);
      },
-     [](AppSettings &s, const QString &term, const QVariantMap &patch, const QStringList &) {
-         return editVocabularyEntry(s, term, [&patch](VocabularyEntry &entry) { setTermFields(entry, patch); });
+     [](AppSettings &s, const QString &id, const QVariantMap &patch, const QStringList &) {
+         return editVocabularyEntry(s, id, [&patch](VocabularyEntry &entry) { setVocabularyFields(entry, patch); });
      },
      removeVocabularyEntry},
-    {"corrections",
-     {QStringLiteral("heard"), QStringLiteral("corrected"), QStringLiteral("enabled")},
-     nullptr,
-     [](AppSettings &s, const QString &id, const QVariantMap &patch, const QStringList &) {
-         return editLearnedCorrection(s, id, [&patch](LearnedCorrection &correction) { setCorrectionFields(correction, patch); });
-     },
-     removeLearnedCorrection},
-    {"replacements",
-     {QStringLiteral("phrase"), QStringLiteral("replacement")},
-     [](AppSettings &s, const QVariantMap &item, const QStringList &) {
-         BindingRule rule;
-         setReplacementFields(rule, item);
-         return addBindingRule(s, rule);
-     },
-     [](AppSettings &s, const QString &phrase, const QVariantMap &patch, const QStringList &) {
-         return editBindingRule(s, phrase, [&patch](BindingRule &rule) { setReplacementFields(rule, patch); });
-     },
-     removeBindingRule},
-    {"recognitionRules",
-     {QStringLiteral("match"), QStringLiteral("category"), QStringLiteral("profile")},
-     [](AppSettings &s, const QVariantMap &item, const QStringList &) {
-         AppRecognitionRule rule;
-         setRuleFields(rule, item);
-         return addAppRecognitionRule(s, rule);
-     },
-     [](AppSettings &s, const QString &match, const QVariantMap &patch, const QStringList &) {
-         return editAppRecognitionRule(s, match, [&patch](AppRecognitionRule &rule) { setRuleFields(rule, patch); });
-     },
-     removeAppRecognitionRule},
 };
 
 const EditedList *findList(const QString &name)
@@ -260,19 +208,10 @@ const EditedList *findList(const QString &name)
 bool convertible(const EditedList &list, QVariantMap record)
 {
     record.remove(QStringLiteral("id"));
-    const QString category = record.value(QStringLiteral("category")).toString();
-    const bool knownCategory = category.isEmpty() || appCategoryFromName(category) != AppCategory::Unknown;
     const QStringList keys = record.keys();
-    return knownCategory && std::all_of(keys.cbegin(), keys.cend(), [&list](const QString &key) {
+    return std::all_of(keys.cbegin(), keys.cend(), [&list](const QString &key) {
         return list.fields.contains(key);
     });
-}
-
-QVariantMap ruleRecord(const AppRecognitionRule &rule)
-{
-    return {{QStringLiteral("match"), rule.match},
-            {QStringLiteral("category"), rule.category ? appCategoryName(*rule.category) : QString()},
-            {QStringLiteral("profile"), rule.writingProfile.value_or(QString())}};
 }
 
 // The file chosen for an import, read whole, or nothing with why.
@@ -321,15 +260,6 @@ QuickLibrary::ControllerScope::~ControllerScope()
     g_controller = nullptr;
 }
 
-QVariantList QuickLibrary::builtInRecognitionRules() const
-{
-    QVariantList rules;
-    for (const AppRecognitionRule &rule : builtInAppRecognitionRules()) {
-        rules.append(ruleRecord(rule));
-    }
-    return rules;
-}
-
 int QuickLibrary::keyTermLimit() const
 {
     return VocabularyLimit::maxKeyterms;
@@ -363,7 +293,7 @@ QString QuickLibrary::add(const QString &list, const QVariantMap &item, const QS
         qWarning().noquote() << "Library.add(" + list + ") takes no entry with" << item.keys();
         return invalidRecord;
     }
-    return saveUnlessRefused([&](AppSettings &s) { return edited->add(s, item, builtInNames); });
+    return saveUnlessRefused(*m_controller->settings(), [&](AppSettings &s) { return edited->add(s, item, builtInNames); });
 }
 
 QString QuickLibrary::update(const QString &list, const QString &key, const QVariantMap &patch,
@@ -374,7 +304,7 @@ QString QuickLibrary::update(const QString &list, const QString &key, const QVar
         qWarning().noquote() << "Library.update(" + list + ") takes no fields" << patch.keys();
         return invalidRecord;
     }
-    return saveUnlessRefused([&](AppSettings &s) { return edited->update(s, key, patch, builtInNames); });
+    return saveUnlessRefused(*m_controller->settings(), [&](AppSettings &s) { return edited->update(s, key, patch, builtInNames); });
 }
 
 int QuickLibrary::remove(const QString &list, const QString &key)
@@ -386,12 +316,12 @@ int QuickLibrary::remove(const QString &list, const QString &key)
     }
     SettingsEdit undo;
     save([&](AppSettings &s) { return bool(undo = edited->remove(s, key)); });
-    return keepUndo(undo);
+    return m_undo.keep(undo);
 }
 
 void QuickLibrary::removeProfile(const QString &id)
 {
-    // Saving drops what named it: app matches, term limits, the fallback.
+    // Saving drops what named it: Apps' and App Types' profile, term limits.
     if (!save([&id](AppSettings &s) { return removeWritingProfile(s, id); })) {
         qWarning().noquote() << "Library.removeProfile:" << id << "is not one of the user's profiles";
     }
@@ -401,45 +331,60 @@ int QuickLibrary::removeTone(const QString &id)
 {
     SettingsEdit undo;
     save([&](AppSettings &s) { return bool(undo = removeCustomTone(s, id)); });
-    return keepUndo(undo);
+    return m_undo.keep(undo);
 }
 
 int QuickLibrary::removeLevel(const QString &id)
 {
     SettingsEdit undo;
     save([&](AppSettings &s) { return bool(undo = removeCustomCleanupLevel(s, id)); });
-    return keepUndo(undo);
+    return m_undo.keep(undo);
 }
 
 int QuickLibrary::undoLastCorrection()
 {
     SettingsEdit undo;
     save([&](AppSettings &s) {
-        return !s.learnedCorrections.isEmpty() && bool(undo = removeLearnedCorrection(s, s.learnedCorrections.first().id));
+        const VocabularyEntry *newest = nullptr;
+        for (const VocabularyEntry &entry : s.vocabulary) {
+            if (entry.isLearned() && (!newest || entry.createdAtMs > newest->createdAtMs)) {
+                newest = &entry;
+            }
+        }
+        return newest && bool(undo = removeVocabularyEntry(s, QString(newest->id)));
     });
-    return keepUndo(undo);
+    return m_undo.keep(undo);
 }
 
 void QuickLibrary::undo(int token)
 {
-    if (token != m_lastUndo || !m_undo) {
+    const SettingsEdit edit = m_undo.take(token);
+    if (!edit) {
         return;
     }
-    const SettingsEdit edit = std::exchange(m_undo, {});
     save([&](AppSettings &s) {
         edit(s);
         return true;
     });
 }
 
-QVariantMap QuickLibrary::importTerms(const QUrl &file)
+QVariantMap QuickLibrary::importVocabulary(const QUrl &file)
 {
     QString error;
-    const std::optional<QByteArray> csv = readImport(file, &error);
-    if (!csv) {
+    const std::optional<QByteArray> contents = readImport(file, &error);
+    if (!contents) {
         return importResult(0, error);
     }
-    const QList<VocabularyEntry> incoming = parseVocabularyCsv(*csv, &error);
+    QList<VocabularyEntry> incoming;
+    if (file.toLocalFile().endsWith(QStringLiteral(".json"), Qt::CaseInsensitive)) {
+        for (const BindingRule &rule : BindingProcessor::parseJsonImport(*contents, &error)) {
+            VocabularyEntry entry{rule.phrase, QStringLiteral("import")};
+            entry.replacement = rule.replacement;
+            incoming.append(entry);
+        }
+    } else {
+        incoming = parseVocabularyCsv(*contents, &error);
+    }
     if (!error.isEmpty()) {
         return importResult(0, error);
     }
@@ -447,26 +392,10 @@ QVariantMap QuickLibrary::importTerms(const QUrl &file)
     save([&](AppSettings &s) {
         const QList<VocabularyEntry> before = s.vocabulary;
         added = importVocabularyEntries(s, incoming);
-        // A term listed already can take a context it lacked, so a file that
-        // adds none may still change the list.
+        // A spelling listed already can take a context it lacked, so a file
+        // that adds none may still change the list.
         return s.vocabulary != before;
     });
-    return importResult(added, {});
-}
-
-QVariantMap QuickLibrary::importReplacements(const QUrl &file)
-{
-    QString error;
-    const std::optional<QByteArray> json = readImport(file, &error);
-    if (!json) {
-        return importResult(0, error);
-    }
-    const QList<BindingRule> incoming = BindingProcessor::parseJsonImport(*json, &error);
-    if (!error.isEmpty()) {
-        return importResult(0, error);
-    }
-    int added = 0;
-    save([&](AppSettings &s) { return (added = importBindingRules(s, incoming)) > 0; });
     return importResult(added, {});
 }
 
@@ -475,26 +404,12 @@ bool QuickLibrary::save(const std::function<bool(AppSettings &)> &edit)
     return m_controller->settings()->edit(edit);
 }
 
-QString QuickLibrary::saveUnlessRefused(const std::function<EditRefusal(AppSettings &)> &edit)
-{
-    EditRefusal refusal = EditRefusal::None;
-    save([&](AppSettings &s) { return (refusal = edit(s)) == EditRefusal::None; });
-    return refusalName(refusal);
-}
-
-int QuickLibrary::keepUndo(const SettingsEdit &undo)
-{
-    if (!undo) {
-        return -1;
-    }
-    m_undo = undo;
-    return ++m_lastUndo;
-}
-
 void QuickLibrary::refresh()
 {
     const AppSettings settings = m_controller->settings()->dictationSnapshot();
     const RefinementSettings &refinement = settings.refinement;
+    const ProviderRegistry *registry = m_controller->providerRegistry();
+    const OffersSpeech offersSpeech = registry ? registry->offersSpeech() : OffersSpeech();
 
     QVariantList profiles;
     for (const WritingProfileSettings &profile : refinement.writingProfiles) {
@@ -506,10 +421,11 @@ void QuickLibrary::refresh()
             {QStringLiteral("tone"), profile.tone},
             {QStringLiteral("language"), profile.outputLanguage},
             {QStringLiteral("instructions"), profile.instructions},
-            {QStringLiteral("speech"), profile.speechProvider},
-            {QStringLiteral("speechModel"), profile.speechModel},
-            {QStringLiteral("refinement"), profile.refinementProvider},
-            {QStringLiteral("refinementModel"), profile.refinementModel},
+            {QStringLiteral("speech"), profile.speechFirst ? profile.speechFirst->service : QString()},
+            {QStringLiteral("speechModel"), profile.speechFirst ? profile.speechFirst->model : QString()},
+            {QStringLiteral("speechSkipped"), speechSkipped(settings, profile, offersSpeech)},
+            {QStringLiteral("refinement"), profile.refinementFirst ? profile.refinementFirst->service : QString()},
+            {QStringLiteral("refinementModel"), profile.refinementFirst ? profile.refinementFirst->model : QString()},
         });
     }
     QVariantList tones;
@@ -525,54 +441,41 @@ void QuickLibrary::refresh()
                                   {QStringLiteral("base"), level.base},
                                   {QStringLiteral("instructions"), level.instructions}});
     }
-    QVariantList terms;
+    QVariantList vocabulary;
     QStringList keyTerms;
     for (const VocabularyEntry &entry : normalizeVocabularyEntries(settings.vocabulary)) {
-        terms.append(QVariantMap{{QStringLiteral("term"), entry.term},
-                                 {QStringLiteral("keyTerm"), entry.keyTerm},
-                                 {QStringLiteral("context"), entry.context},
-                                 {QStringLiteral("profiles"), entry.profiles},
-                                 {QStringLiteral("source"), entry.source},
-                                 {QStringLiteral("uses"), qMax(0, entry.frequency)}});
-        if (entry.keyTerm) {
+        vocabulary.append(QVariantMap{{QStringLiteral("id"), entry.id},
+                                      {QStringLiteral("kind"), entry.isReplacement() ? QStringLiteral("replacement")
+                                                                                      : QStringLiteral("spelling")},
+                                      {QStringLiteral("term"), entry.term},
+                                      {QStringLiteral("replacement"), entry.replacement},
+                                      {QStringLiteral("keyTerm"), entry.keyTerm},
+                                      {QStringLiteral("context"), entry.context},
+                                      {QStringLiteral("profiles"), entry.profiles},
+                                      {QStringLiteral("apps"), entry.apps},
+                                      {QStringLiteral("source"), entry.source},
+                                      {QStringLiteral("learned"), entry.isLearned()},
+                                      {QStringLiteral("enabled"), entry.enabled},
+                                      {QStringLiteral("uses"), qMax(0, entry.frequency)},
+                                      {QStringLiteral("confidence"), entry.confidence},
+                                      {QStringLiteral("evidence"), entry.evidenceCount},
+                                      {QStringLiteral("learnedAtMs"), double(entry.createdAtMs)}});
+        if (!entry.isReplacement() && entry.keyTerm && entry.enabled) {
             keyTerms.append(entry.term);
         }
     }
-    QVariantList corrections;
-    for (const LearnedCorrection &correction : settings.learnedCorrections) {
-        corrections.append(QVariantMap{{QStringLiteral("id"), correction.id},
-                                       {QStringLiteral("heard"), correction.original},
-                                       {QStringLiteral("corrected"), correction.corrected},
-                                       {QStringLiteral("app"), correction.applicationId},
-                                       {QStringLiteral("confidence"), correction.confidence},
-                                       {QStringLiteral("enabled"), correction.enabled}});
-    }
-    QVariantList replacements;
-    for (const BindingRule &rule : settings.bindings) {
-        replacements.append(QVariantMap{{QStringLiteral("phrase"), rule.phrase},
-                                        {QStringLiteral("replacement"), rule.replacement}});
-    }
-    QVariantList rules;
-    for (const AppRecognitionRule &rule :
-         recognitionRulesWithMigratedProfileOverrides(settings.appRecognitionRules, refinement.writingProfileOverrides)) {
-        rules.append(ruleRecord(rule));
-    }
-    const QString &speech = settings.speech.providerId;
+    const QString speech = settings.speech.services.main();
     const bool takesKeyTerms = VocabularyLimit::takesKeyterms(speech);
     const int keyTermsSent = int(VocabularyLimit::speechKeyterms(keyTerms, speech).size());
 
-    if (profiles == m_profiles && tones == m_customTones && levels == m_customCleanupLevels && terms == m_terms
-        && corrections == m_corrections && replacements == m_replacements && rules == m_recognitionRules
-        && takesKeyTerms == m_speechTakesKeyTerms && keyTermsSent == m_keyTermsSent) {
+    if (profiles == m_profiles && tones == m_customTones && levels == m_customCleanupLevels
+        && vocabulary == m_vocabulary && takesKeyTerms == m_speechTakesKeyTerms && keyTermsSent == m_keyTermsSent) {
         return;
     }
     m_profiles = profiles;
     m_customTones = tones;
     m_customCleanupLevels = levels;
-    m_terms = terms;
-    m_corrections = corrections;
-    m_replacements = replacements;
-    m_recognitionRules = rules;
+    m_vocabulary = vocabulary;
     m_speechTakesKeyTerms = takesKeyTerms;
     m_keyTermsSent = keyTermsSent;
     emit listsChanged();

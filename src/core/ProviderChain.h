@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/ProviderTable.h"
+#include "core/ServiceOrder.h"
 
 #include <QString>
 #include <QStringList>
@@ -9,11 +10,11 @@
 
 namespace speecher {
 
+struct RefinementSettings;
+struct SpeechSettings;
+
 // A provider's registry label, by role and id.
 using ProviderLabels = std::function<QString(ProviderRole role, const QString &providerId)>;
-
-// A primary may be followed by at most this many fallbacks.
-inline constexpr int kMaxFallbackProviders = 2;
 
 // Whether id names a provider of this role that a chain may hold. Ids of
 // providers missing from this build (a Local Model without local speech)
@@ -21,18 +22,16 @@ inline constexpr int kMaxFallbackProviders = 2;
 // session skips them at runtime.
 bool isChainProviderId(ProviderRole role, const QString &id);
 
-// The fallbacks as stored: in order, without blanks, "none", unknown ids, the
-// primary or repeats, and at most kMaxFallbackProviders. A refinement primary
-// of "none" has none.
-QStringList normalizedFallbackProviders(ProviderRole role,
-                                        const QString &primary,
-                                        const QStringList &fallbacks);
+// The order as stored: services of this role in order, without blanks,
+// unknown ids or repeats. Each entry's choice names
+// its service; choices of services out of the order stay.
+ServiceOrder normalizedServiceOrder(ProviderRole role, ServiceOrder services);
 
-// The primary followed by its fallbacks, without blanks, unknown ids or
-// repeats: the order a Dictation Session tries them in. Empty for a
-// refinement primary of "none". Stored fallbacks hold at most
-// kMaxFallbackProviders; a Writing Profile's service leads the page's whole
-// chain, so a session's may hold one more.
-QStringList providerChain(ProviderRole role, const QString &primary, const QStringList &fallbacks);
+// The services a Dictation Session tries, in order, without blanks, unknown
+// ids or repeats. A Writing Profile's service leads the page's whole order.
+QStringList serviceChain(ProviderRole role, const QStringList &order);
+QStringList serviceChain(const SpeechSettings &speech);
+// Empty while refinement is off (Clean up my words).
+QStringList serviceChain(const RefinementSettings &refinement);
 
 } // namespace speecher

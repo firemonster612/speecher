@@ -11,7 +11,9 @@ import Speecher.Wording
 // orb) in its left end and its round buttons in its right. It reads the
 // dictation from source (the live one by default; the settings page passes a
 // demo) and the popup rows from Settings, and words it itself (t). The live
-// one carries the update and What's New offers over the capsule (OfferChips).
+// one carries the update and What's New offers over the capsule (OfferChips),
+// and while a call is recording, the recording pill in the capsule's place
+// when no dictation is up (RecordingPill), or a chip over it during one.
 Item {
     id: popup
 
@@ -19,7 +21,11 @@ Item {
     readonly property string phase: source.state
     readonly property bool shown: phase !== "idle"
     // Faded out, so the window carrying it can go.
-    readonly property bool empty: !shown && holder.opacity === 0
+    readonly property bool empty: !shown && holder.opacity === 0 && recordingPill.empty
+    // A call is recording, which the live popup shows unless the pill
+    // setting is off. Not recording, which is this dictation's listening.
+    readonly property bool callRecording: source === Dictation && Recording.state !== "off"
+                                          && Settings.values.recordingPill !== false
     readonly property bool live: ["starting", "listening", "paused", "transcribing", "refining", "delivering"].includes(phase)
     readonly property bool recording: phase === "starting" || phase === "listening" || phase === "paused"
     // The refined words show from refining until the text is out.
@@ -32,7 +38,8 @@ Item {
     // place of the sound.
     readonly property bool renewing: recording && source.renewing
     // The voice shows while listening and paused: as the scatter ribbon, or
-    // in Boring mode as level bars beside the record dot.
+    // with Voice display set to Level bars (boringMode) as level bars beside
+    // the record dot.
     readonly property bool voiceShown: (phase === "listening" || phase === "paused") && !renewing
     readonly property bool boring: Settings.values.boringMode === true
     readonly property bool ribbonShown: !boring && voiceShown
@@ -128,9 +135,12 @@ Item {
     // Where the capsule is drawn, in the popup's coordinates, frame by frame
     // as it grows and shrinks between phases and with the scale (about its
     // bottom centre) and lift it arrives and leaves with.
-    readonly property rect capsule: Qt.rect(holder.x + holder.width * (1 - holder.scale) / 2,
-                                            holder.y + holder.height * (1 - holder.scale) + lift.y,
-                                            holder.width * holder.scale, holder.height * holder.scale)
+    // While the pill shows in its place, the pill.
+    readonly property rect capsule: recordingPill.shown && !shown
+        ? Qt.rect(recordingPill.x, recordingPill.y, recordingPill.width, recordingPill.height)
+        : Qt.rect(holder.x + holder.width * (1 - holder.scale) / 2,
+                  holder.y + holder.height * (1 - holder.scale) + lift.y,
+                  holder.width * holder.scale, holder.height * holder.scale)
     // Room over the capsule for both offers (OfferChips), the update's and
     // What's New's.
     readonly property int offerRoom: offers.fullHeight + offers.anchors.bottomMargin
@@ -155,6 +165,18 @@ Item {
         anchors.bottom: holder.top
         anchors.bottomMargin: 10
         active: popup.source === Dictation && popup.shown && !popup.reviewShown
+        callRecording: popup.callRecording
+    }
+
+    RecordingPill {
+        id: recordingPill
+        objectName: "recordingPill"
+        allowed: popup.source === Dictation && Settings.values.recordingPill !== false && !popup.shown
+        width: implicitWidth
+        height: implicitHeight
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: (popup.barHeight - height) / 2
     }
 
     Item {

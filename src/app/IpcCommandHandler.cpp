@@ -4,10 +4,13 @@
 #include "app/ProvidersCommand.h"
 #include "app/UpdateController.h"
 #include "core/SettingsStore.h"
+#include "core/history/HistoryStore.h"
 #include "dictation/DictationSession.h"
 #include "recording/RecordingPresentation.h"
 #include "recording/RecordingSession.h"
 
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QLocalSocket>
 #ifdef SPEECHER_E2E_HOOKS
 #include <QCoreApplication>
@@ -17,6 +20,38 @@
 #include <utility>
 
 namespace speecher {
+namespace {
+
+// `speecher history`'s answer: the entries the search finds, newest first.
+QJsonArray historyJson(const HistoryStore &history, const HistorySearch &search)
+{
+    HistoryQuery query;
+    query.text = search.text;
+    if (const std::optional<HistoryKind> kind = historyKindFromName(search.kind)) {
+        query.kinds = {*kind};
+    }
+    query.from = search.since.startOfDay();
+    query.limit = qBound(1, search.limit, 1000);
+    QJsonArray entries;
+    for (const HistoryHit &hit : history.search(query)) {
+        const HistoryEntry &entry = hit.entry;
+        entries.append(QJsonObject{
+            {QStringLiteral("id"), entry.id},
+            {QStringLiteral("kind"), historyKindName(entry.kind)},
+            {QStringLiteral("finishedAt"), entry.stats.finishedAt.toString(Qt::ISODate)},
+            {QStringLiteral("app"), entry.stats.appName},
+            {QStringLiteral("profile"), entry.stats.profile},
+            {QStringLiteral("title"), entry.title},
+            {QStringLiteral("words"), entry.stats.words},
+            {QStringLiteral("audioMs"), entry.stats.audioMs},
+            {QStringLiteral("outcome"), historyOutcomeName(entry.outcome)},
+            {QStringLiteral("text"), entry.text.value_or(QString())},
+        });
+    }
+    return entries;
+}
+
+} // namespace
 
 IpcCommandHandler::IpcCommandHandler(ApplicationController &controller,
                                      RecordingSession &recording,
@@ -32,6 +67,7 @@ IpcCommandHandler::IpcCommandHandler(ApplicationController &controller,
     connect(&m_recording, &RecordingSession::stopped, this, [this](const RecordingStatus &status) {
         IpcResponse reply = response();
         reply.recording = status;
+        reply.recording->historyId = m_controller.recordingHistoryId();
         for (const QPointer<QLocalSocket> &socket : std::exchange(m_recordStopReplies, {})) {
             SingleInstanceIpc::writeResponse(socket, reply);
         }
@@ -63,14 +99,23 @@ IpcResponse IpcCommandHandler::response(bool ok, const QString &message) const
 IpcResponse IpcCommandHandler::statusResponse() const
 {
     IpcResponse reply = response();
-    reply.recording = m_recording.status();
+    reply.recording = recordingStatus();
     return reply;
+}
+
+RecordingStatus IpcCommandHandler::recordingStatus() const
+{
+    RecordingStatus status = m_recording.status();
+    if (status.recording) {
+        status.historyId = m_controller.recordingHistoryId();
+    }
+    return status;
 }
 
 void IpcCommandHandler::startRecording(const IpcRequest &request, QLocalSocket *socket)
 {
     m_controller.startRecording(
-        request.files.value(0), request.terms, request.microphoneOnly,
+        {request.files.value(0), request.title, request.terms, request.microphoneOnly},
         [this, socket = QPointer(socket)](const QString &error) {
             if (!error.isEmpty()) {
                 SingleInstanceIpc::writeResponse(socket, response(false, error));
@@ -84,7 +129,7 @@ void IpcCommandHandler::startRecording(const IpcRequest &request, QLocalSocket *
                 return;
             }
             IpcResponse reply = response();
-            reply.recording = m_recording.status();
+            reply.recording = recordingStatus();
             SettingsStore *settings = m_controller.settings();
             if (!settings->recordingConsentNoticeShown()) {
                 settings->setRecordingConsentNoticeShown(true);
@@ -97,7 +142,7 @@ void IpcCommandHandler::startRecording(const IpcRequest &request, QLocalSocket *
 void IpcCommandHandler::handle(const IpcRequest &request, QLocalSocket *socket)
 {
     SettingsStore *settings = m_controller.settings();
-    const SessionOverrides &overrides = request.overrides;
+    const RunOverrides &overrides = request.overrides;
     if (overrides.writingProfile
         && offeredWritingProfile(*overrides.writingProfile, settings->dictationSnapshot().refinement.writingProfiles, {}).isEmpty()) {
         SingleInstanceIpc::writeResponse(socket, response(false, QStringLiteral("Unknown writing profile")));
@@ -196,9 +241,19 @@ void IpcCommandHandler::handle(const IpcRequest &request, QLocalSocket *socket)
         m_ipc->addStatusWatcher(socket, statusResponse());
         return;
     case IpcCommand::Last: {
-        const QString lastTranscript = m_controller.lastTranscript();
+        // What this run heard last, else History's newest.
+        QString lastTranscript = m_controller.lastTranscript();
+        if (lastTranscript.isEmpty()) {
+            lastTranscript = m_controller.pasteAgainText();
+        }
         IpcResponse reply = response(!lastTranscript.isEmpty());
         reply.text = lastTranscript;
+        SingleInstanceIpc::writeResponse(socket, reply);
+        return;
+    }
+    case IpcCommand::History: {
+        IpcResponse reply = response();
+        reply.history = historyJson(*m_controller.history(), request.history);
         SingleInstanceIpc::writeResponse(socket, reply);
         return;
     }

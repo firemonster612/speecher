@@ -29,14 +29,14 @@ public:
 
     explicit RefinementChain(Acquire acquire, QObject *parent = nullptr);
 
-    // Starts over at primary, with fallbacks after it; none for
-    // kNoRefinementProvider. Cancels a preparation still running.
-    void begin(const QString &primary, const QStringList &fallbacks);
+    // Starts over at the first of chain (serviceChain); an empty chain
+    // refines nothing. Cancels a preparation still running.
+    void begin(const QStringList &chain);
     const QStringList &providerIds() const;
     // The refiner the session is on.
     QString currentId() const;
-    // refinement as the current refiner runs it: its id, with the keys the
-    // walk has read.
+    // refinement as the current refiner runs it: first in its order, with
+    // the keys the walk has read.
     RefinementSettings currentSettings() const;
 
     // What the system says about the internet. Only refiners that need it are

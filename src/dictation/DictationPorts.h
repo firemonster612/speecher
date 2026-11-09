@@ -130,7 +130,7 @@ class TargetProvider : public QObject {
 public:
     using QObject::QObject;
     // What the platform sees of the focused target. Its category is core's
-    // to decide: see classifyTarget. done runs once, unless context is gone
+    // to decide: see resolveApp. done runs once, unless context is gone
     // by then: before this returns where the platform knows at once, later
     // where it must ask the compositor.
     virtual void capture(QObject *context, std::function<void(const Target &)> done) = 0;
@@ -223,10 +223,12 @@ public:
     using QObject::QObject;
     // Returns at once; delivered() follows with what became of the words,
     // never from inside deliver(). Deliveries are answered in the order they
-    // were asked for.
+    // were asked for. pasting is the Target's Pasting choice (resolveApp),
+    // each part unset where no App or App Type sets it.
     virtual void deliver(const OutputSettings &settings,
                          const DeliveryContent &content,
-                         const Target &target) = 0;
+                         const Target &target,
+                         const PastingChoice &pasting) = 0;
 
 signals:
     void delivered(const speecher::DeliveryResult &result);

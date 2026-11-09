@@ -101,7 +101,9 @@ Card {
                 variant: "small"
                 tone: card.suggested ? "primary" : "secondary"
                 strong: card.suggested
-                elide: Text.ElideRight
+                // What it is best for is the reason to pick it: wrapped,
+                // never cut.
+                wrapMode: Text.WordWrap
             }
             LinkedText {
                 id: metaLine

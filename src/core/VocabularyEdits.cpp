@@ -3,6 +3,9 @@
 #include "core/BindingProcessor.h"
 #include "core/Vocabulary.h"
 
+#include <QHash>
+#include <QSet>
+
 #include <algorithm>
 
 namespace speecher {
@@ -14,179 +17,165 @@ bool sameText(const QString &left, const QString &right)
     return left.compare(right, Qt::CaseInsensitive) == 0;
 }
 
-// The index of the first entry of list `matches` picks, or -1.
-template <typename T, typename Matches>
-qsizetype indexWhere(const QList<T> &list, Matches matches)
+QSet<QString> foldedSet(const QStringList &list)
 {
-    const auto found = std::find_if(list.cbegin(), list.cend(), matches);
-    return found == list.cend() ? -1 : found - list.cbegin();
-}
-
-// Whether an entry of list but the one at `self` is `same` as entry.
-template <typename T, typename Same>
-bool takenByAnother(const QList<T> &list, qsizetype self, const T &entry, Same same)
-{
-    for (qsizetype i = 0; i < list.size(); ++i) {
-        if (i != self && same(list.at(i), entry)) {
-            return true;
-        }
+    QSet<QString> folded;
+    for (const QString &item : list) {
+        folded.insert(item.toCaseFolded());
     }
-    return false;
+    return folded;
 }
 
-// The terms as the page lists them: tidied, one per text, in send order.
-QList<VocabularyEntry> &listedTerms(AppSettings &settings)
+// Two spellings of one term, or two replacements of one phrase under the
+// same limits, which would compete.
+bool clash(const VocabularyEntry &left, const VocabularyEntry &right)
+{
+    if (left.isReplacement() != right.isReplacement()) {
+        return false;
+    }
+    if (!left.isReplacement()) {
+        return sameText(left.term, right.term);
+    }
+    return BindingProcessor::normalizedPhrase(left.term) == BindingProcessor::normalizedPhrase(right.term)
+        && foldedSet(left.profiles) == foldedSet(right.profiles) && foldedSet(left.apps) == foldedSet(right.apps);
+}
+
+// The list as the page shows it: tidied, one spelling per term.
+QList<VocabularyEntry> &listed(AppSettings &settings)
 {
     settings.vocabulary = normalizeVocabularyEntries(settings.vocabulary);
     return settings.vocabulary;
 }
 
-bool sameTerm(const VocabularyEntry &left, const VocabularyEntry &right)
+qsizetype indexOfId(const QList<VocabularyEntry> &entries, const QString &id)
 {
-    return sameText(left.term, right.term);
+    const auto found = std::find_if(entries.cbegin(), entries.cend(),
+                                    [&id](const VocabularyEntry &entry) { return entry.id == id; });
+    return found == entries.cend() ? -1 : found - entries.cbegin();
 }
 
-qsizetype indexOfTerm(const QList<VocabularyEntry> &terms, const QString &term)
+bool knownApp(const AppSettings &settings, const QString &limit)
 {
-    return indexWhere(terms, [text = term.simplified()](const VocabularyEntry &entry) { return sameText(entry.term, text); });
+    return !limit.startsWith(QStringLiteral("app:"))
+        || std::any_of(settings.apps.apps.cbegin(), settings.apps.apps.cend(),
+                       [&limit](const AppEntry &app) { return app.id == limit; });
 }
 
-EditRefusal checkTerm(VocabularyEntry &entry, qsizetype self, const AppSettings &settings)
+EditRefusal check(VocabularyEntry &entry, qsizetype self, const AppSettings &settings)
 {
-    entry.term = entry.term.simplified();
-    entry.context = entry.context.trimmed();
+    // Tidied as the list stores it, so the checks see what will be saved.
+    entry = normalizeVocabularyEntries({entry}).value(0);
     entry.profiles = offeredVocabularyProfiles(entry.profiles, settings.refinement.writingProfiles);
     if (entry.term.isEmpty()) {
         return EditRefusal::Blank;
     }
-    return takenByAnother(settings.vocabulary, self, entry, sameTerm) ? EditRefusal::Taken : EditRefusal::None;
-}
-
-// Two corrections of the same words in the same app would compete.
-bool sameCorrection(const LearnedCorrection &left, const LearnedCorrection &right)
-{
-    return sameText(left.original, right.original) && sameText(left.applicationId, right.applicationId);
-}
-
-EditRefusal checkCorrection(LearnedCorrection &correction, qsizetype self, const QList<LearnedCorrection> &corrections)
-{
-    correction.original = correction.original.trimmed();
-    correction.corrected = correction.corrected.trimmed();
-    if (correction.original.isEmpty()) {
-        return EditRefusal::Blank;
-    }
-    if (correction.corrected.isEmpty()) {
+    // A Learned Correction keeps text to write; emptied, it would turn into
+    // a spelling of what was misheard.
+    if (self >= 0 && settings.vocabulary.at(self).isLearned() && !entry.isReplacement()) {
         return EditRefusal::Incomplete;
     }
-    return takenByAnother(corrections, self, correction, sameCorrection) ? EditRefusal::Taken : EditRefusal::None;
-}
-
-bool samePhrase(const BindingRule &left, const BindingRule &right)
-{
-    return BindingProcessor::normalizedPhrase(left.phrase) == BindingProcessor::normalizedPhrase(right.phrase);
-}
-
-EditRefusal checkReplacement(BindingRule &rule, qsizetype self, const QList<BindingRule> &rules)
-{
-    rule.phrase = rule.phrase.trimmed();
-    // What the dictation's replacements check on each rule.
-    const BindingValidationResult alone = BindingProcessor::validateRules({rule});
-    if (!alone.ok()) {
-        return alone.issues.first().type == BindingValidationIssue::Type::EmptyPhrase ? EditRefusal::Blank
-                                                                                        : EditRefusal::Incomplete;
+    if (entry.isReplacement() && !BindingProcessor::validateRules({{entry.term, entry.replacement}}).ok()) {
+        return EditRefusal::Blank;
     }
-    return takenByAnother(rules, self, rule, samePhrase) ? EditRefusal::Taken : EditRefusal::None;
-}
-
-qsizetype indexOfPhrase(const QList<BindingRule> &rules, const QString &phrase)
-{
-    return indexWhere(rules, [&phrase](const BindingRule &rule) { return samePhrase(rule, {phrase, {}}); });
+    // A limit to a removed App the entry has already stays (keepVocabularyLimitsOf).
+    const QStringList kept = self >= 0 ? settings.vocabulary.at(self).apps : QStringList();
+    if (!std::all_of(entry.apps.cbegin(), entry.apps.cend(), [&](const QString &limit) {
+            return knownApp(settings, limit) || kept.contains(limit);
+        })) {
+        return EditRefusal::Missing;
+    }
+    for (qsizetype i = 0; i < settings.vocabulary.size(); ++i) {
+        if (i != self && clash(settings.vocabulary.at(i), entry)) {
+            return EditRefusal::Taken;
+        }
+    }
+    return EditRefusal::None;
 }
 
 } // namespace
 
 EditRefusal addVocabularyEntry(AppSettings &settings, VocabularyEntry entry)
 {
-    return appendEntry(listedTerms(settings), entry, [&settings](VocabularyEntry &added, qsizetype self) {
-        return checkTerm(added, self, settings);
-    });
+    entry.id.clear();
+    entry = withVocabularyIds({entry}).first();
+    return appendEntry(listed(settings), entry,
+                       [&settings](VocabularyEntry &added, qsizetype self) { return check(added, self, settings); });
 }
 
-EditRefusal editVocabularyEntry(AppSettings &settings, const QString &term, const EntryChange<VocabularyEntry> &change)
+EditRefusal editVocabularyEntry(AppSettings &settings, const QString &id, const EntryChange<VocabularyEntry> &change)
 {
-    QList<VocabularyEntry> &terms = listedTerms(settings);
-    return changeEntry(terms, indexOfTerm(terms, term), change,
-                       [&settings](VocabularyEntry &entry, qsizetype self) { return checkTerm(entry, self, settings); });
+    // Copied first: listed() rebuilds the list an id may have come from.
+    const QString wanted = id;
+    QList<VocabularyEntry> &entries = listed(settings);
+    return changeEntry(entries, indexOfId(entries, wanted), change,
+                       [&settings](VocabularyEntry &entry, qsizetype self) { return check(entry, self, settings); });
 }
 
-SettingsEdit removeVocabularyEntry(AppSettings &settings, const QString &term)
+SettingsEdit removeVocabularyEntry(AppSettings &settings, const QString &id)
 {
-    QList<VocabularyEntry> &terms = listedTerms(settings);
-    const qsizetype index = indexOfTerm(terms, term);
+    // Copied first: listed() rebuilds the list an id may have come from.
+    const QString wanted = id;
+    QList<VocabularyEntry> &entries = listed(settings);
+    const qsizetype index = indexOfId(entries, wanted);
     if (index < 0) {
         return {};
     }
-    const auto putBack = takeEntry(terms, index, sameTerm);
-    return [putBack](AppSettings &draft) { putBack(listedTerms(draft)); };
+    const auto putBack = takeEntry(entries, index, [](const VocabularyEntry &entry, const VocabularyEntry &removed) {
+        return entry.id == removed.id || clash(entry, removed);
+    });
+    return [putBack](AppSettings &draft) { putBack(listed(draft)); };
 }
 
 int importVocabularyEntries(AppSettings &settings, const QList<VocabularyEntry> &incoming)
 {
-    const qsizetype listed = listedTerms(settings).size();
-    settings.vocabulary = normalizeVocabularyEntries(settings.vocabulary + incoming);
-    return int(settings.vocabulary.size() - listed);
-}
-
-EditRefusal editLearnedCorrection(AppSettings &settings, const QString &id, const EntryChange<LearnedCorrection> &change)
-{
-    QList<LearnedCorrection> &corrections = settings.learnedCorrections;
-    const qsizetype index = indexWhere(corrections, [&id](const LearnedCorrection &correction) { return correction.id == id; });
-    return changeEntry(corrections, index, change, [&corrections](LearnedCorrection &correction, qsizetype self) {
-        return checkCorrection(correction, self, corrections);
-    });
-}
-
-SettingsEdit removeLearnedCorrection(AppSettings &settings, const QString &id)
-{
-    QList<LearnedCorrection> &corrections = settings.learnedCorrections;
-    const qsizetype index = indexWhere(corrections, [&id](const LearnedCorrection &correction) { return correction.id == id; });
-    if (index < 0) {
-        return {};
+    QList<VocabularyEntry> spellings;
+    int added = 0;
+    for (const VocabularyEntry &entry : incoming) {
+        if (entry.isReplacement()) {
+            added += addVocabularyEntry(settings, entry) == EditRefusal::None;
+        } else {
+            spellings.append(entry);
+        }
     }
-    const auto putBack = takeEntry(corrections, index, [](const LearnedCorrection &entry, const LearnedCorrection &removed) {
-        return entry.id == removed.id || sameCorrection(entry, removed);
-    });
-    return [putBack](AppSettings &draft) { putBack(draft.learnedCorrections); };
+    const qsizetype before = listed(settings).size();
+    settings.vocabulary = withVocabularyIds(normalizeVocabularyEntries(settings.vocabulary + spellings));
+    return added + int(settings.vocabulary.size() - before);
 }
 
-EditRefusal addBindingRule(AppSettings &settings, BindingRule rule)
+SettingsEdit keepVocabularyLimitsOf(AppSettings &settings, const AppEntry &removed)
 {
-    QList<BindingRule> &rules = settings.bindings;
-    return appendEntry(rules, rule, [&rules](BindingRule &added, qsizetype self) { return checkReplacement(added, self, rules); });
-}
-
-EditRefusal editBindingRule(AppSettings &settings, const QString &phrase, const EntryChange<BindingRule> &change)
-{
-    QList<BindingRule> &rules = settings.bindings;
-    return changeEntry(rules, indexOfPhrase(rules, phrase), change,
-                       [&rules](BindingRule &rule, qsizetype self) { return checkReplacement(rule, self, rules); });
-}
-
-SettingsEdit removeBindingRule(AppSettings &settings, const QString &phrase)
-{
-    const qsizetype index = indexOfPhrase(settings.bindings, phrase);
-    if (index < 0) {
-        return {};
+    QStringList ids;
+    for (const AppMatch &match : removed.matches) {
+        if (match.kind == AppMatchKind::Id) {
+            ids.append(match.value);
+        }
     }
-    const auto putBack = takeEntry(settings.bindings, index, samePhrase);
-    return [putBack](AppSettings &draft) { putBack(draft.bindings); };
-}
-
-int importBindingRules(AppSettings &settings, const QList<BindingRule> &incoming)
-{
-    return int(std::count_if(incoming.cbegin(), incoming.cend(), [&settings](const BindingRule &rule) {
-        return addBindingRule(settings, rule) == EditRefusal::None;
-    }));
+    // Each rewritten entry's limits before and after, by its id.
+    QHash<QString, std::pair<QStringList, QStringList>> rewritten;
+    for (VocabularyEntry &entry : settings.vocabulary) {
+        const QStringList before = entry.apps;
+        if (entry.apps.removeAll(removed.id) == 0) {
+            continue;
+        }
+        entry.apps += ids;
+        entry.apps.removeDuplicates();
+        // With nothing else to limit it, the limit stays on the App, which
+        // matches nothing while it is gone: an empty list applies everywhere.
+        if (entry.apps.isEmpty()) {
+            entry.apps = before;
+        } else {
+            rewritten.insert(entry.id, {before, entry.apps});
+        }
+    }
+    return [rewritten](AppSettings &draft) {
+        for (VocabularyEntry &entry : draft.vocabulary) {
+            const auto limits = rewritten.constFind(entry.id);
+            // Limits changed since are the person's, and stay.
+            if (limits != rewritten.cend() && entry.apps == limits->second) {
+                entry.apps = limits->first;
+            }
+        }
+    };
 }
 
 } // namespace speecher

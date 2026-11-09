@@ -85,7 +85,8 @@ private:
         QDBusMessage report = QDBusMessage::createMethodCall(
             target.captured(1), target.captured(2), target.captured(3), QStringLiteral("reportWindow"));
         report << QStringLiteral("konsole") << QStringLiteral("konsole") << QStringLiteral("Shell")
-               << QStringLiteral("4242") << QStringLiteral("{window-%1}").arg(m_runs);
+               << QStringLiteral("4242") << QStringLiteral("{window-%1}").arg(m_runs)
+               << QStringLiteral("org.kde.konsole");
         if (target.hasCaptured(4)) {
             report << target.captured(4);
         }
@@ -193,6 +194,7 @@ private slots:
         QTRY_VERIFY(answered);
         QVERIFY(window);
         QCOMPARE(window->resourceClass, QStringLiteral("konsole"));
+        QCOMPARE(window->desktopFileName, QStringLiteral("org.kde.konsole"));
         QCOMPARE(window->internalId, QStringLiteral("{window-1}"));
         QVERIFY(QFile::exists(runtime.filePath(QStringLiteral("speecher-kwin-active-window.js"))));
     }

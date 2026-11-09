@@ -3,10 +3,12 @@
 #include "app/AccessibilityMonitor.h"
 #include "app/ApplicationController.h"
 #include "app/PlatformComposition.h"
-#include "core/OutputMethod.h"
+#include "core/DeliverySteps.h"
+#include "core/PasteKeys.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickRemoval.h"
-#include "output/TextDelivery.h"
+#include "frontend/quick/host/QuickSettings.h"
+#include "output/DeliveryNeeds.h"
 
 #include <QClipboard>
 #include <QDebug>
@@ -15,6 +17,8 @@
 #include <QProcess>
 #include <QSysInfo>
 #include <QUrl>
+
+#include <optional>
 
 namespace speecher {
 
@@ -25,6 +29,7 @@ const QString microphoneId = QStringLiteral("microphoneAccess");
 const QString accessibilityId = QStringLiteral("desktopAccessibility");
 const QString shortcutsId = QStringLiteral("globalShortcuts");
 const QString keyboardId = QStringLiteral("virtualKeyboardHealth");
+const QString screenRecordingId = QStringLiteral("screenRecording");
 
 QVariantMap checkEntry(const QString &id, const char *state, const char *reason, const char *fix = "")
 {
@@ -61,6 +66,11 @@ QVariantMap microphoneCheck(const PlatformComposition *platform)
 
 QVariantMap accessibilityCheck(const ApplicationController *controller)
 {
+#ifdef Q_OS_WIN
+    // UI Automation needs no permission, so there is nothing to check.
+    Q_UNUSED(controller);
+    return checkEntry(accessibilityId, "ok", "notNeeded");
+#else
     if (!controller->accessibility()->supported()) {
         return checkEntry(accessibilityId, "off", "unsupported");
     }
@@ -70,7 +80,21 @@ QVariantMap accessibilityCheck(const ApplicationController *controller)
     if (!controller->accessibility()->persistent()) {
         return checkEntry(accessibilityId, "attention", "sessionOnly", "enable");
     }
-    return checkEntry(accessibilityId, "ok", "on");
+    // Kept on by what Speecher set up, which Chromium apps join on restart.
+    return checkEntry(accessibilityId, "ok", controller->platform()->canDisablePermanentAccessibility() ? "keptOn" : "on");
+#endif
+}
+
+// Screen capture, where the system asks for it (macOS), while screenshot
+// context is on: nothing else Speecher does captures the screen.
+std::optional<QVariantMap> screenRecordingCheck(const ApplicationController *controller)
+{
+    const std::optional<bool> allowed = controller->platform()->screenRecordingAllowed();
+    if (!allowed || !controller->settings()->dictationSnapshot().refinement.includeScreenshotContext) {
+        return std::nullopt;
+    }
+    return *allowed ? checkEntry(screenRecordingId, "ok", "allowed")
+                    : checkEntry(screenRecordingId, "off", "denied", "openSettings");
 }
 
 QVariantMap shortcutCheck(const ApplicationController *controller)
@@ -166,25 +190,63 @@ QString failureName(Failure failure)
     return QStringLiteral("filesLeft");
 }
 
-// What the default paste needs of the computer with these settings.
-TextDelivery::PasteNeed defaultPasteNeed(const OutputSettings &output)
+} // namespace
+
+// A delivery step as it stands here, before deliverySteps shapes it for QML.
+struct DeliveryStepState {
+    DeliveryStep step;
+    bool on = false;
+    bool ready = false;
+    QStringList needs;
+    QStringList waiting;
+};
+
+namespace {
+
+// Where words end up from these steps, as pastingOutcome words it.
+QString outcomeOf(const QList<DeliveryStepState> &states)
 {
-    return TextDelivery::pasteNeed(output, globalPasteMethod(output.pasteRules));
+    bool keeps = false;
+    for (const DeliveryStepState &state : states) {
+        if (!state.on || !state.ready) {
+            continue;
+        }
+        if (state.step != DeliveryStep::Keep) {
+            return QStringLiteral("delivers");
+        }
+        keeps = true;
+    }
+    return keeps ? QStringLiteral("clipboard") : QStringLiteral("nothing");
+}
+
+QVariantList stepEntries(const QList<DeliveryStepState> &states)
+{
+    QVariantList entries;
+    for (const DeliveryStepState &state : states) {
+        entries.append(QVariantMap{{QStringLiteral("id"), deliveryStepName(state.step)},
+                                   {QStringLiteral("on"), state.on},
+                                   {QStringLiteral("ready"), state.ready},
+                                   {QStringLiteral("needs"), state.needs},
+                                   {QStringLiteral("waiting"), state.waiting}});
+    }
+    return entries;
 }
 
 } // namespace
 
-QuickSystem::QuickSystem(ApplicationController *controller, VirtualKeyboardSetup *virtualKeyboard,
-                         const QuickRemoval *removal, QObject *parent)
+QuickSystem::QuickSystem(ApplicationController *controller, const QuickSettings *settings,
+                         VirtualKeyboardSetup *virtualKeyboard, const QuickRemoval *removal, QObject *parent)
     : QObject(parent)
     , m_controller(controller)
+    , m_settings(settings)
     , m_virtualKeyboard(virtualKeyboard)
     , m_removal(removal)
 {
     connect(controller->accessibility(), &AccessibilityMonitor::stateChanged, this, &QuickSystem::changed);
     connect(controller, &ApplicationController::globalShortcutChanged, this, &QuickSystem::changed);
     connect(controller, &ApplicationController::globalShortcutSupportChanged, this, &QuickSystem::changed);
-    connect(controller->settings(), &SettingsStore::snapshotApplied, this, &QuickSystem::changed);
+    // Saved settings and the setup assistant's draft alike.
+    connect(settings, &QuickSettings::valuesChanged, this, &QuickSystem::changed);
     connect(m_virtualKeyboard, &VirtualKeyboardSetup::changed, this, &QuickSystem::changed);
     connect(m_virtualKeyboard, &VirtualKeyboardSetup::failed, this, [this](Failure failure, const QString &error) {
         m_failures[keyboardId].append(failureEntry(failureName(failure), error));
@@ -211,12 +273,17 @@ QVariantList QuickSystem::checks() const
 {
     QList<QVariantMap> entries{microphoneCheck(m_controller->platform()), accessibilityCheck(m_controller),
                                shortcutCheck(m_controller)};
-    if constexpr (OutputMethod::hasVirtualKeyboard) {
+    if constexpr (PasteKeys::hasVirtualKeyboard) {
         entries.append(virtualKeyboardCheck(*m_virtualKeyboard));
+    }
+    if (const std::optional<QVariantMap> screenRecording = screenRecordingCheck(m_controller)) {
+        entries.append(*screenRecording);
     }
     QVariantList checks;
     for (QVariantMap check : entries) {
-        check.insert(QStringLiteral("failures"), m_failures.value(check.value(QStringLiteral("id")).toString()));
+        const QString id = check.value(QStringLiteral("id")).toString();
+        check.insert(QStringLiteral("needed"), id == microphoneId);
+        check.insert(QStringLiteral("failures"), m_failures.value(id));
         checks.append(check);
     }
     return checks;
@@ -242,39 +309,79 @@ QString QuickSystem::virtualKeyboardTest() const
     return testName(m_virtualKeyboard->test());
 }
 
-QStringList QuickSystem::pasteRoute() const
+QVariantList QuickSystem::deliverySteps() const
 {
-    const OutputSettings output = m_controller->settings()->dictationSnapshot().output;
-    return TextDelivery::pasteRoute(output, globalPasteMethod(output.pasteRules));
+    return stepEntries(stepStates(m_settings->shown().output.steps));
 }
 
-QString QuickSystem::pasteNeed() const
+QList<DeliveryStepState> QuickSystem::stepStates(const DeliverySteps &steps) const
 {
-    switch (defaultPasteNeed(m_controller->settings()->dictationSnapshot().output)) {
-    case TextDelivery::PasteNeed::Accessibility:
-        return QStringLiteral("accessibility");
-    case TextDelivery::PasteNeed::VirtualKeyboard:
-        return QStringLiteral("keyboard");
-    case TextDelivery::PasteNeed::Either:
-        return QStringLiteral("either");
-    case TextDelivery::PasteNeed::Nothing:
-        break;
-    }
-    return {};
+    const auto there = [this](const QString &need) {
+        if (need == DeliveryNeed::Accessibility) {
+            // On only for the session counts.
+            return this->accessibility();
+        }
+        if (need == DeliveryNeed::VirtualKeyboard) {
+            // Ready as its health row says: set up, with no setup or typing
+            // test under way.
+            return virtualKeyboardCheck(*m_virtualKeyboard).value(QStringLiteral("state")) == QLatin1String("ok");
+        }
+        return clipboardHelperReady(need);
+    };
+    const auto state = [&steps, &there](DeliveryStep step) {
+        DeliveryStepState state{.step = step, .on = steps.has(step), .needs = deliveryNeeds(step, steps)};
+        for (const QString &need : std::as_const(state.needs)) {
+            if (!there(need)) {
+                state.waiting << need;
+            }
+        }
+        // Keep off runs nothing to wait for; what it needs then is Press's.
+        state.ready = state.waiting.isEmpty() || (step == DeliveryStep::Keep && !steps.keep);
+        return state;
+    };
+    return {state(DeliveryStep::Insert), state(DeliveryStep::Press), state(DeliveryStep::Keep)};
 }
 
-bool QuickSystem::wordsStayCopied() const
+QString QuickSystem::pastingOutcome() const
 {
-    // Ready as its health row says: set up, with no setup or typing test
-    // under way.
-    const bool keyboard = virtualKeyboardCheck(*m_virtualKeyboard).value(QStringLiteral("state")) == QLatin1String("ok");
-    return TextDelivery::wordsStayCopied(defaultPasteNeed(m_controller->settings()->dictationSnapshot().output),
-                                         accessibility(), keyboard);
+    return outcomeOf(stepStates(m_settings->shown().output.steps));
+}
+
+QVariantList QuickSystem::stepsPlan(const QVariantMap &steps) const
+{
+    return stepEntries(stepStates({steps.value(QStringLiteral("insert")).toBool(),
+                                   steps.value(QStringLiteral("press")).toBool(),
+                                   steps.value(QStringLiteral("keep")).toBool()}));
+}
+
+bool QuickSystem::copiesFormatted() const
+{
+    return clipboardCopiesFormatted();
+}
+
+bool QuickSystem::waylandSession() const
+{
+    return clipboardNeedsHelpers();
+}
+
+bool QuickSystem::identifiesAppsWithoutAccessibility() const
+{
+#ifdef Q_OS_LINUX
+    // The compositor fallback asks KWin (AtSpiTargetProvider).
+    return desktop() == u"kde";
+#else
+    return true;
+#endif
 }
 
 bool QuickSystem::hasVirtualKeyboard() const
 {
-    return OutputMethod::hasVirtualKeyboard;
+    return PasteKeys::hasVirtualKeyboard;
+}
+
+bool QuickSystem::hasGlobalShortcuts() const
+{
+    return !m_controller->globalShortcutSupportKnown() || m_controller->globalShortcutsSupported();
 }
 
 bool QuickSystem::canOpenShortcutSettings() const
@@ -302,6 +409,15 @@ QString QuickSystem::computerName() const
     return QSysInfo::machineHostName();
 }
 
+QString QuickSystem::desktop() const
+{
+#ifdef Q_OS_LINUX
+    return qEnvironmentVariable("XDG_CURRENT_DESKTOP").section(QLatin1Char(':'), 0, 0).toLower();
+#else
+    return {};
+#endif
+}
+
 QVariantMap QuickSystem::check(const QString &id) const
 {
     for (const QVariant &check : checks()) {
@@ -315,16 +431,6 @@ QVariantMap QuickSystem::check(const QString &id) const
 
 void QuickSystem::fix(const QString &id)
 {
-    runFix(id, VirtualKeyboardSetup::AfterSetUp::KeepOutputMethod);
-}
-
-void QuickSystem::fixFromSetup(const QString &id)
-{
-    runFix(id, VirtualKeyboardSetup::AfterSetUp::PasteAutomatically);
-}
-
-void QuickSystem::runFix(const QString &id, VirtualKeyboardSetup::AfterSetUp afterSetUp)
-{
     if (m_removal->running()) {
         return;
     }
@@ -337,6 +443,11 @@ void QuickSystem::runFix(const QString &id, VirtualKeyboardSetup::AfterSetUp aft
         m_controller->platform()->openMicrophoneSettings();
         return;
     }
+    if (id == screenRecordingId) {
+        m_controller->platform()->requestScreenRecording();
+        emit changed();
+        return;
+    }
     if (id == accessibilityId) {
         QString error;
         if (!m_controller->accessibility()->enablePermanently(&error)) {
@@ -346,7 +457,7 @@ void QuickSystem::runFix(const QString &id, VirtualKeyboardSetup::AfterSetUp aft
         return;
     }
     if (action == QLatin1String("setUp")) {
-        m_virtualKeyboard->setUp(afterSetUp);
+        m_virtualKeyboard->setUp();
     } else if (action == QLatin1String("start")) {
         m_virtualKeyboard->startService();
     } else if (action == QLatin1String("enable")) {

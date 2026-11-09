@@ -62,33 +62,29 @@ public:
     // an unknown length.
     ListedFile listedFile(const QString &path) const;
 
-    // The next batch's choices, seeded from the settings dictation uses and
-    // never written back to them. Until one is chosen here they follow the
-    // settings; a profile, cleanup level or tone chosen here that the
-    // settings stop offering gives way to the profile's own.
+    // What the next batch changes for itself, never written back to the
+    // settings; an unset choice follows them. A profile, cleanup level or
+    // tone chosen here that the settings stop offering is unset again.
+    const RunOverrides &overrides() const;
+    void setOverrides(const RunOverrides &overrides);
+    // Where the next batch saves its transcripts.
     const TranscribeOptions &options() const;
     void setOptions(const TranscribeOptions &options);
-    // Picks a Writing Profile and takes its services, cleanup level and tone,
-    // as dictation would.
-    void chooseProfile(const QString &profile);
-    // The model the batch's speech service runs, where it has one to choose
-    // (a Local Model, a Custom Endpoint's), otherwise empty.
-    QString speechModel() const;
-    // The model the chosen refinement provider runs for the chosen profile,
-    // or empty when the provider names none.
-    QString refinementModel() const;
+    // What a batch with overrides would run with now, by planDictation.
+    DictationPlan plan(const RunOverrides &overrides) const;
 
     // Transcribes the listed files. False, with problem() saying why, when it
     // cannot start.
     bool start();
     // Stops the batch or the retry; files already finished keep their results.
     void cancel();
-    // Back to setup: the finished files leave the list and the choices start
-    // over from the settings.
+    // Back to setup: the finished files leave the list and the overrides
+    // start over.
     void backToSetup();
 
     // The batch as it started.
     const QStringList &batch() const;
+    const RunOverrides &batchOverrides() const;
     const TranscribeOptions &batchOptions() const;
     const TranscribeBatchLabels &batchLabels() const;
     // Whether the batch refines, so its results offer the raw text too.
@@ -138,7 +134,6 @@ signals:
     void unsavedResultsChanged();
 
 private:
-    void seedOptions();
     void dropWithdrawnChoices();
     void setStep(Step step);
     void resetFile();
@@ -154,11 +149,11 @@ private:
     Step m_step = Step::Configure;
     QStringList m_files;
     QHash<QString, ListedFile> m_listed;
+    RunOverrides m_overrides;
     TranscribeOptions m_options;
-    // A choice was made here since the options were last seeded.
-    bool m_optionsChosen = false;
 
     QStringList m_batch;
+    RunOverrides m_batchOverrides;
     TranscribeOptions m_batchOptions;
     TranscribeBatchLabels m_batchLabels;
     bool m_batchRefines = false;

@@ -57,6 +57,7 @@ Item {
         width: parent.width
         title: Words.shell.appName
         detail: Words.shortVersion(Updates.version)
+        compactDetail: Words.versionNumber(Updates.version)
         detailTip: Words.version(Updates.version)
     }
 

@@ -42,7 +42,12 @@ Commands (sent to the running Speecher):
                            has it, or false; --watch prints a line now and on
                            each change until Ctrl-C, and waits for a Speecher
                            to start when none runs
-  last                     print the last transcript
+  last                     print the last transcript, or History's newest
+  history [<words>] [--kind <kind>] [--since <day>] [--limit <n>] [--json]
+                           print what History kept that holds every word,
+                           newest first: 20, or up to 1000 with --limit;
+                           --kind is dictation, file or recording, --since a
+                           yyyy-mm-dd day. Deleting is in the History page
   vocabulary add [--] <terms...>
                            save the terms to the custom vocabulary
   settings | setup         open settings or the setup assistant
@@ -100,15 +105,16 @@ Check which speech and refinement services can work:
   --json                   print a JSON array of objects instead of a table
 
 Record a call into a file, in the running Speecher (started if needed):
-  speecher record start [--to <file>] [--mic-only] [--vocab-file <path>]
+  speecher record start [--to <file>] [--name <title>] [--mic-only] [--vocab-file <path>]
                            record the microphone as "me" and system audio
                            as "them", and print the file's path once the
                            speech provider is connected, or exit with
                            status 1 and no file;
                            each utterance is appended as one line,
                            "[hh:mm:ss] me: text" or "[hh:mm:ss] them: text"
-                           (default file: recordings/<yyyy-mm-dd-hhmm>.md in
-                           Speecher's data folder)
+                           (default file: <name>-<yyyy-mm-dd-hhmm>.md, or
+                           .txt, in the folder Recordings saves to)
+  --name <title>           the recording's name in History and its file's
   --mic-only               record the microphone alone, without system audio
   --vocab-file <path>      add the file's terms to the custom vocabulary for
                            this recording, as transcribe does
@@ -432,13 +438,15 @@ QString addVocabularyFile(const QString &path, QStringList *terms)
 }
 
 // Reads one of the choices transcribe and listen share, the one at index,
-// into options, moving index past its value. Returns false for an option that
-// is not one of them; sets error for a usage mistake.
+// into decision, moving index past its value. Returns false for an option
+// that is not one of them; sets error for a usage mistake.
 bool readSharedChoice(const QStringList &arguments,
                       qsizetype &index,
-                      HeadlessTranscribeOptions &options,
+                      CommandLineDecision *decision,
                       QString *error)
 {
+    RunOverrides &overrides = decision->overrides;
+    HeadlessTranscribeOptions &options = decision->headless;
     const QString argument = arguments.at(index);
     const auto value = [&] { return optionValue(arguments, index, error); };
     const auto choice = [&](const CliNames &choices, std::optional<QString> *target) {
@@ -453,7 +461,7 @@ bool readSharedChoice(const QStringList &arguments,
         }
     };
     if (argument == QStringLiteral("--no-vocabulary")) {
-        options.applyVocabulary = false;
+        overrides.applyVocabulary = false;
     } else if (argument == QStringLiteral("--raw")) {
         options.raw = true;
     } else if (argument == QStringLiteral("--json")) {
@@ -461,24 +469,24 @@ bool readSharedChoice(const QStringList &arguments,
     } else if (argument == QStringLiteral("--model") || argument == QStringLiteral("--refine")) {
         // Checked against the registry once it exists; this only reads it.
         if (const std::optional<QString> given = value()) {
-            (argument == QStringLiteral("--model") ? options.speechProviderId
-                                                   : options.refinementProviderId) = given->toLower();
+            (argument == QStringLiteral("--model") ? overrides.speech : overrides.refinement) =
+                ServiceChoice{given->toLower()};
         }
     } else if (argument == QStringLiteral("--cleanup")) {
-        choice(cleanupNames(), &options.cleanupStrength);
+        choice(cleanupNames(), &overrides.cleanupLevel);
     } else if (argument == QStringLiteral("--profile")) {
         if (const std::optional<QString> given = value()) {
-            options.writingProfile = writingProfileNamed(*given, error);
+            overrides.writingProfile = writingProfileNamed(*given, error);
         }
     } else if (argument == QStringLiteral("--language")) {
         if (const std::optional<QString> given = value()) {
-            options.spokenLanguage = spokenLanguageNamed(*given, error);
+            overrides.spokenLanguage = spokenLanguageNamed(*given, error);
         }
     } else if (argument == QStringLiteral("--tone")) {
-        choice(toneNames(), &options.tone);
+        choice(toneNames(), &overrides.tone);
     } else if (argument == QStringLiteral("--vocab-file")) {
         if (const std::optional<QString> path = value()) {
-            *error = addVocabularyFile(*path, &options.addedVocabulary);
+            *error = addVocabularyFile(*path, &overrides.addedVocabulary);
         }
     } else {
         return false;
@@ -548,7 +556,7 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
         }
         headless = true;
         QString error;
-        if (readSharedChoice(arguments, index, options, &error)) {
+        if (readSharedChoice(arguments, index, decision, &error)) {
         } else if (argument == QStringLiteral("--headless")) {
         } else if (argument == QStringLiteral("--stdout")) {
             options.printTranscripts = true;
@@ -626,7 +634,7 @@ QString parseListenArguments(const QStringList &arguments, CommandLineDecision *
                 }
             }
             decision->untilSilenceMs = int(seconds * 1000);
-        } else if (!readSharedChoice(arguments, index, decision->headless, &error)) {
+        } else if (!readSharedChoice(arguments, index, decision, &error)) {
             error = QStringLiteral("Unknown listen option: %1").arg(argument);
         }
         if (!error.isEmpty()) {
@@ -696,6 +704,12 @@ QString parseRecordArguments(const QStringList &arguments, CommandLineDecision *
                 return QStringLiteral("--to needs a file, not a folder: %1").arg(*path);
             }
             decision->recordPath = QFileInfo(*path).absoluteFilePath();
+        } else if (subcommand == QStringLiteral("start") && argument == QStringLiteral("--name")) {
+            const std::optional<QString> title = optionValue(arguments, index, &error);
+            if (!title) {
+                return error;
+            }
+            decision->recordTitle = title->trimmed();
         } else if (subcommand == QStringLiteral("start") && argument == QStringLiteral("--mic-only")) {
             decision->recordMicrophoneOnly = true;
         } else if (subcommand == QStringLiteral("start") && argument == QStringLiteral("--vocab-file")) {
@@ -715,6 +729,56 @@ QString parseRecordArguments(const QStringList &arguments, CommandLineDecision *
     decision->ipcCommand = subcommand == QStringLiteral("start") ? IpcCommand::RecordStart
         : subcommand == QStringLiteral("status")                 ? IpcCommand::RecordStatus
                                                                  : IpcCommand::RecordStop;
+    return {};
+}
+
+// Reads `speecher history`'s words and options. Returns an error message
+// for a usage mistake.
+QString parseHistoryArguments(const QStringList &arguments, CommandLineDecision *decision)
+{
+    HistorySearch &search = decision->historySearch;
+    QStringList words;
+    bool optionsEnded = false;
+    for (qsizetype index = 0; index < arguments.size(); ++index) {
+        const QString argument = arguments.at(index);
+        if (optionsEnded || !argument.startsWith(QLatin1Char('-'))) {
+            words << argument;
+            continue;
+        }
+        QString error;
+        if (argument == QStringLiteral("--")) {
+            optionsEnded = true;
+        } else if (argument == QStringLiteral("--json")) {
+            decision->json = true;
+        } else if (argument == QStringLiteral("--kind")) {
+            const std::optional<QString> kind = optionValue(arguments, index, &error);
+            if (kind && !QStringList{QStringLiteral("dictation"), QStringLiteral("file"), QStringLiteral("recording")}
+                              .contains(kind->toLower())) {
+                error = QStringLiteral("Unknown --kind value: %1 (expected dictation, file or recording)").arg(*kind);
+            }
+            search.kind = kind.value_or(QString()).toLower();
+        } else if (argument == QStringLiteral("--since")) {
+            const std::optional<QString> since = optionValue(arguments, index, &error);
+            search.since = QDate::fromString(since.value_or(QString()), Qt::ISODate);
+            if (since && !search.since.isValid()) {
+                error = QStringLiteral("--since takes a date as yyyy-mm-dd, not %1").arg(*since);
+            }
+        } else if (argument == QStringLiteral("--limit")) {
+            const std::optional<QString> limit = optionValue(arguments, index, &error);
+            bool ok = false;
+            search.limit = limit.value_or(QString()).toInt(&ok);
+            if (limit && (!ok || search.limit < 1 || search.limit > 1000)) {
+                error = QStringLiteral("--limit takes a number from 1 to 1000, not %1").arg(*limit);
+            }
+        } else {
+            error = QStringLiteral("Unknown history option: %1").arg(argument);
+        }
+        if (!error.isEmpty()) {
+            return error;
+        }
+    }
+    search.text = words.join(QLatin1Char(' '));
+    decision->ipcCommand = IpcCommand::History;
     return {};
 }
 
@@ -768,6 +832,7 @@ QString parseArguments(const QStringList &arguments, CommandLineDecision *decisi
         || verb == QStringLiteral("cancel")
         || verb == QStringLiteral("status")
         || verb == QStringLiteral("last")
+        || verb == QStringLiteral("history")
         || verb == QStringLiteral("settings")
         || verb == QStringLiteral("setup")
         || verb == QStringLiteral("record")
@@ -777,7 +842,7 @@ QString parseArguments(const QStringList &arguments, CommandLineDecision *decisi
     decision->showSetup = arguments.contains(QStringLiteral("--show-setup"));
 
     QString error;
-    SessionOverrides &overrides = decision->sessionOverrides;
+    RunOverrides &overrides = decision->overrides;
     if (const std::optional<QString> format = dictationOptionValue(arguments, QStringLiteral("--format"), &error)) {
         overrides.outputFormat = outputFormatNamed(*format, &error);
     }
@@ -818,6 +883,9 @@ QString parseArguments(const QStringList &arguments, CommandLineDecision *decisi
         }
         if (verb == QStringLiteral("status")) {
             return parseStatusArguments(arguments.mid(2), decision);
+        }
+        if (verb == QStringLiteral("history")) {
+            return parseHistoryArguments(arguments.mid(2), decision);
         }
         // The other verbs are their commands' names.
         decision->ipcCommand = verb == QStringLiteral("settings") ? IpcCommand::ShowSettings

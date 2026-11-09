@@ -25,26 +25,28 @@ ClientWindow {
 
     readonly property var steps: choices.steps
     readonly property bool _last: step === steps.length - 1
-    // The furthest step the gates let anyone reach.
-    readonly property int _limit: steps.findIndex(s => !s.done) < 0 ? steps.length - 1 : steps.findIndex(s => !s.done)
+    // The needed steps that don't pass, by title, which keep setup from
+    // counting as done.
+    readonly property var _missing: steps.filter(s => s.needed).map(s => s.title)
     readonly property var _files: ({
         welcome: "WelcomeStep.qml", transcription: "TranscriptionStep.qml", microphone: "MicrophoneStep.qml",
-        accessibility: "AccessibilityStep.qml", delivery: "DeliveryStep.qml", refinement: "RefinementStep.qml",
+        delivery: "DeliveryStep.qml", refinement: "RefinementStep.qml",
         shortcut: "ShortcutStep.qml", ready: "ReadyStep.qml"
     })
 
-    // What the steps choose and where each stands. Finishing setup writes
-    // the choices to Settings.
+    // The draft of what the steps choose, and where each stands. Finishing
+    // setup saves the draft.
     SetupChoices {
         id: choices
         objectName: "setupChoices"
         onGoTo: stepId => window.go(window.steps.findIndex(s => s.id === stepId))
     }
 
-    function go(index) { if (choices.reachable(index)) step = Math.max(0, Math.min(steps.length - 1, index)) }
-    // Finish writes the choices, says setup is done, then closes; closing
-    // any other way leaves setup to run again.
-    function finish() { choices.finish(); Settings.completeSetup(); close() }
+    function go(index) { step = Math.max(0, Math.min(steps.length - 1, index)) }
+    // Finish saves the draft and closes, and says setup is done once every
+    // needed step passes; until then it is later, which leaves setup to run
+    // again. Closing any other way drops the draft.
+    function finish() { choices.save(); if (choices.complete) Settings.completeSetup(); close() }
     onStepChanged: stack.show()
 
     // Steps ------------------------------------------------------------
@@ -64,7 +66,6 @@ ClientWindow {
             width: parent.width - x - Theme.space6
             steps: window.steps
             current: window.step
-            limit: window._limit
             onPicked: index => window.go(index)
         }
 
@@ -131,29 +132,30 @@ ClientWindow {
             // In line with the step's content above.
             Rectangle { x: Theme.pageInset; width: parent.width - Theme.pageInset * 2; height: 1; color: Theme.rule }
 
-            // Skip and Back fade where they stand rather than reflowing the
-            // footer; the main button's label rolls to its new wording. Skip
-            // only passes steps that are already done, never goes around one.
-            Button {
+            // Skip setup saves the draft and closes, leaving setup to open
+            // again while a needed step is open, else finishing it. On the
+            // last step, what still keeps setup from being done. Back fades where it stands rather than reflowing
+            // the footer; the main button's label rolls to its new wording.
+            Row {
                 x: Theme.pageInset
                 anchors.verticalCenter: parent.verticalCenter
-                text: Setup.text.skip
-                variant: "ghost"
-                enabled: !window._last && window._limit === window.steps.length - 1
-                onClicked: window.finish()
-                opacity: enabled ? 1 : 0
-                visible: opacity > 0
-                Behavior on opacity { Ease {} }
-            }
-            // Why Continue waits, where Skip would stand.
-            Txt {
-                x: Theme.pageInset
-                anchors.verticalCenter: parent.verticalCenter
-                text: Setup.text.waits
-                tone: "secondary"
-                opacity: !window._last && window._limit === window.step ? 1 : 0
-                visible: opacity > 0
-                Behavior on opacity { Ease {} }
+                spacing: Theme.space4
+                Button {
+                    opacity: window._last ? 0 : 1
+                    visible: opacity > 0
+                    Behavior on opacity { Ease {} }
+                    text: Setup.text.skip
+                    variant: "ghost"
+                    anchors.verticalCenter: parent.verticalCenter
+                    onClicked: window.finish()
+                }
+                Txt {
+                    text: Setup.text.stillMissing(window._missing)
+                    tone: "secondary"
+                    anchors.verticalCenter: parent.verticalCenter
+                    opacity: window._last && window._missing.length ? 1 : 0
+                    Behavior on opacity { Ease {} }
+                }
             }
             Row {
                 anchors.right: parent.right
@@ -169,9 +171,10 @@ ClientWindow {
                     onClicked: window.go(window.step - 1)
                 }
                 Button {
-                    text: window.step === 0 ? Setup.text.getStarted : window._last ? Setup.text.finish : Setup.text.continue_
+                    text: window.step === 0 ? Setup.text.getStarted
+                        : !window._last ? Setup.text.continue_
+                        : choices.complete ? Setup.text.finish : Setup.text.finishForNow
                     variant: "primary"
-                    enabled: window._limit > window.step || window._last && window._limit === window.step
                     onClicked: window._last ? window.finish() : window.go(window.step + 1)
                 }
             }

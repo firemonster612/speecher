@@ -1,5 +1,7 @@
 #include "platform/atspi/AtSpiTargetSnapshot.h"
 
+#include "core/Apps.h"
+
 #include <QCryptographicHash>
 #include <QDeadlineTimer>
 #include <QFile>

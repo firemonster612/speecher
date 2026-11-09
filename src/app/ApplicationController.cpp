@@ -3,9 +3,11 @@
 #include "app/AccessibilityMonitor.h"
 #include "app/Accounts.h"
 #include "app/AppFrontEnd.h"
+#include "app/HistoryKeeper.h"
 #include "app/IpcCommandHandler.h"
 #include "app/LocalSetup.h"
 #include "app/NetworkReachability.h"
+#include "app/PasteAgain.h"
 #include "app/ProviderAvailability.h"
 #include "app/ProviderSetup.h"
 #include "app/ShortcutGesture.h"
@@ -19,7 +21,9 @@
 #else
 #include "app/AppImageUpdater.h"
 #endif
-#include "core/InsightsLog.h"
+#include "core/history/HistoryImport.h"
+#include "core/history/HistoryStore.h"
+#include "core/SeenApps.h"
 #include "core/ProviderTable.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
@@ -37,6 +41,7 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QEventLoop>
+#include <QGuiApplication>
 #include <QStandardPaths>
 #include <QTimer>
 #ifdef Q_OS_MACOS
@@ -72,13 +77,17 @@ QString shortcutTakenText(GlobalShortcutRole takenBy)
         return QStringLiteral("That is already the Cancel Shortcut.");
     case GlobalShortcutRole::Pause:
         return QStringLiteral("That is already the Pause Shortcut.");
+    case GlobalShortcutRole::PasteAgain:
+        return QStringLiteral("That is already the Paste again shortcut.");
+    case GlobalShortcutRole::Recording:
+        return QStringLiteral("That is already the Recording Shortcut.");
     case GlobalShortcutRole::Dictation:
         break;
     }
     return QStringLiteral("That is already the Global Shortcut for dictation.");
 }
 
-// Where recordings, insights and Local Models are kept.
+// Where recordings, History and Local Models are kept.
 QString dataFolder()
 {
     return QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
@@ -100,6 +109,10 @@ ApplicationController::ApplicationController(bool popupOnly,
     , m_shortcutBinder(m_platform->createGlobalShortcutBinder(GlobalShortcutRole::Dictation, m_settings, this))
     , m_cancelShortcutBinder(m_platform->createGlobalShortcutBinder(GlobalShortcutRole::Cancel, m_settings, this))
     , m_pauseShortcutBinder(m_platform->createGlobalShortcutBinder(GlobalShortcutRole::Pause, m_settings, this))
+    , m_pasteAgainShortcutBinder(
+          m_platform->createGlobalShortcutBinder(GlobalShortcutRole::PasteAgain, m_settings, this))
+    , m_recordingShortcutBinder(
+          m_platform->createGlobalShortcutBinder(GlobalShortcutRole::Recording, m_settings, this))
     , m_sessionKeyGrab(m_platform->createSessionKeyGrab(this))
     , m_shortcutGesture(new ShortcutGesture(*m_settings, [this] { return sessionActive(); }, this))
     , m_whatsNew(new WhatsNewTracker(*m_settings, this))
@@ -132,7 +145,10 @@ ApplicationController::ApplicationController(bool popupOnly,
     // The Cancel and Pause Shortcuts act on press only; their release means
     // nothing. Outside a Dictation Session both do nothing.
     connect(m_cancelShortcutBinder, &GlobalShortcutBinder::activated, this, &ApplicationController::cancel);
-    for (const GlobalShortcutRole role : {GlobalShortcutRole::Cancel, GlobalShortcutRole::Pause}) {
+    connect(m_pasteAgainShortcutBinder, &GlobalShortcutBinder::activated, this, [this] { pasteAgain(); });
+    connect(m_recordingShortcutBinder, &GlobalShortcutBinder::activated, this, &ApplicationController::toggleRecording);
+    for (const GlobalShortcutRole role : {GlobalShortcutRole::Cancel, GlobalShortcutRole::Pause,
+                                          GlobalShortcutRole::PasteAgain, GlobalShortcutRole::Recording}) {
         GlobalShortcutBinder *binder = shortcutBinder(role);
         connect(binder, &GlobalShortcutBinder::bindingChanged, this, [this] {
             updateSessionShortcuts();
@@ -167,7 +183,7 @@ ApplicationController::ApplicationController(bool popupOnly,
     m_accounts = new Accounts(*m_settings, *m_availability, *m_providers, this);
     connect(m_localModels, &LocalModelStore::downloadFinished,
             this, &ApplicationController::notifyModelReady);
-    TargetProvider *targetProvider = m_platform->createTargetProvider(this);
+    TargetProvider *targetProvider = m_targetProvider = m_platform->createTargetProvider(this);
     targetProvider->setCorrectionObservationEnabled(m_settings->dictationSnapshot().correctionLearningEnabled);
     connect(m_settings,
             &SettingsStore::correctionLearningEnabledChanged,
@@ -192,10 +208,26 @@ ApplicationController::ApplicationController(bool popupOnly,
                                      targetProvider,
                                      new ShortcutSuspendingDelivery(
                                          m_platform->createTextDelivery(targetProvider, this),
-                                         {m_shortcutBinder, m_cancelShortcutBinder, m_pauseShortcutBinder},
+                                         {m_shortcutBinder, m_cancelShortcutBinder, m_pauseShortcutBinder,
+                                          m_pasteAgainShortcutBinder, m_recordingShortcutBinder},
                                          this),
                                      m_providers,
                                      this);
+    // Paste Again delivers through its own adapter, since the session counts
+    // the answers of its own.
+    m_pasteAgain = new PasteAgain(*m_settings, targetProvider,
+                                  new ShortcutSuspendingDelivery(
+                                      m_platform->createTextDelivery(targetProvider, this),
+                                      {m_shortcutBinder, m_cancelShortcutBinder, m_pauseShortcutBinder,
+                                       m_pasteAgainShortcutBinder, m_recordingShortcutBinder},
+                                      this),
+                                  this);
+    connect(m_pasteAgain, &PasteAgain::finished, this, [this](bool ok, const QString &message) {
+        if (!ok && m_frontEnd) {
+            m_frontEnd->showDictationError(message);
+        }
+        emit pasteAgainFinished(ok, message);
+    });
     m_session->setScreenshotContextProvider(
         m_platform->createScreenshotContextProvider(this));
     m_session->setReachability(m_reachability->reachability());
@@ -243,31 +275,46 @@ ApplicationController::ApplicationController(bool popupOnly,
     connect(m_fileTranscription, &FileTranscriptionSession::batchFinished, m_updates,
             &UpdateController::resumePendingRestart);
 
-    // A seed log stands in for real history in screenshots and demos, so it
-    // is never written; a pinned today makes those screenshots repeatable.
+    // Seeds stand in for real history in screenshots and demos: an insights
+    // log for Home's stats, a history seed for History's words. They go into
+    // a History in memory, so nothing is written; a pinned today makes those
+    // screenshots repeatable.
     const QString insightsSeed = qEnvironmentVariable("SPEECHER_INSIGHTS_SEED");
-    m_insightsLog = insightsSeed.isEmpty()
-        ? new InsightsLog(dataFolder() + QStringLiteral("/insights.jsonl"),
-                          InsightsLog::Access::ReadWrite,
-                          this)
-        : new InsightsLog(insightsSeed, InsightsLog::Access::ReadOnly, this);
+    const QString historySeed = qEnvironmentVariable("SPEECHER_HISTORY_SEED");
+    const bool seeded = !insightsSeed.isEmpty() || !historySeed.isEmpty();
+    m_history = seeded ? new HistoryStore(QStringLiteral(":memory:"), QString(), this)
+                       : new HistoryStore(dataFolder() + QStringLiteral("/history.sqlite3"),
+                                          dataFolder() + QStringLiteral("/history/audio"), this);
+    if (!seeded) {
+        importInsightsLog(*m_history, dataFolder() + QStringLiteral("/insights.jsonl"));
+        m_session->setHistoryAudioFolder(dataFolder() + QStringLiteral("/history/audio"));
+    }
+    if (const std::optional<QList<HistoryEntry>> seed = insightsSeed.isEmpty() ? std::nullopt : readInsightsLog(insightsSeed)) {
+        m_history->addAll(*seed);
+    }
+    if (const std::optional<QList<HistorySeedEntry>> seed = historySeed.isEmpty() ? std::nullopt : readHistorySeed(historySeed)) {
+        addHistorySeed(*m_history, *seed);
+    }
+    m_seenApps = new SeenApps(seeded ? QString() : dataFolder() + QStringLiteral("/seen-apps.json"), this);
     m_insightsToday =
         QDate::fromString(qEnvironmentVariable("SPEECHER_INSIGHTS_TODAY"), Qt::ISODate);
-    connect(m_session, &DictationSession::dictationRecorded, m_insightsLog, &InsightsLog::append);
+    m_historyKeeper = new HistoryKeeper(*m_history, *m_seenApps, *m_settings, *m_session, *m_fileTranscription,
+                                        *m_recording, seeded, this);
+    connect(m_historyKeeper, &HistoryKeeper::dictationKept, this, [this](const DictationRecord &record) {
+        m_lastRecord = record;
+        emit lastRecordChanged();
+    });
+    connect(m_historyKeeper, &HistoryKeeper::everythingCleared, this, &ApplicationController::forgetLastRecord);
     // The record describes the transcript Home shows, so it goes whenever
     // that transcript does: a new session starting (which drops the last
     // transcript, delivered or not) and a delivery. The session reports a
-    // delivery first, then (while insights record it) its record.
+    // delivery first, then (while History keeps it) its entry.
     connect(m_session, &DictationSession::stateChanged, this, [this] {
         if (m_session->state() == DictationState::Starting) {
             forgetLastRecord();
         }
     });
     connect(m_session, &DictationSession::transcriptDelivered, this, &ApplicationController::forgetLastRecord);
-    connect(m_session, &DictationSession::dictationRecorded, this, [this](const DictationRecord &record) {
-        m_lastRecord = record;
-        emit lastRecordChanged();
-    });
 
     m_ipcCommands = new IpcCommandHandler(*this, *m_recording,
                                           ipc ? std::move(ipc) : std::make_unique<SingleInstanceIpc>(m_platform), this);
@@ -347,6 +394,7 @@ TranscribeQueue *ApplicationController::transcribeQueue()
     if (!m_transcribeQueue) {
         m_transcribeQueue = new TranscribeQueue(m_settings, m_providers, m_fileTranscription,
                                                 [this] { return fileTranscriptionRefusal(); }, this);
+        m_historyKeeper->setTranscribeQueue(m_transcribeQueue);
         connect(m_transcribeQueue, &TranscribeQueue::unsavedResultsChanged, m_updates,
                 &UpdateController::resumePendingRestart);
         connect(m_transcribeQueue, &TranscribeQueue::unsavedResultsChanged, this,
@@ -370,28 +418,128 @@ bool ApplicationController::isRecording() const
     return m_recording->isRecording();
 }
 
-void ApplicationController::startRecording(const QString &path,
-                                           const QStringList &vocabulary,
-                                           bool microphoneOnly,
+RecordingSession *ApplicationController::recording() const
+{
+    return m_recording;
+}
+
+void ApplicationController::startRecording(const RecordingRequest &request,
                                            std::function<void(const QString &error)> done)
 {
-    if (!ensureSetupCompleted()) {
-        done(recordingNeedsSetupText());
+    const auto finished = [this, done = std::move(done)](const QString &error) {
+        done(error);
+        emit recordingStartFinished(error);
+    };
+    if (recordingStartPending() || m_recording->phase() != RecordingSession::Phase::Off) {
+        finished(recordingAlreadyStartedText());
         return;
     }
-    m_platform->requestMicrophoneAccess(this, [this, path, vocabulary, microphoneOnly,
-                                               done = std::move(done)](bool granted) {
-        if (!granted) {
-            done(microphoneAccessOffText());
+    // A recording needs only a microphone and a speech service that can
+    // record, not the rest of setup (pasting, a shortcut). While macOS asks
+    // for the microphone, the start waits here, cancellable.
+    const quint64 generation = ++m_recordingStartGeneration;
+    m_pendingRecordingStart = finished;
+    emit recordingStartPendingChanged();
+    m_platform->requestMicrophoneAccess(this, [this, request, generation, finished](bool granted) {
+        if (generation != m_recordingStartGeneration) {
             return;
         }
-        m_recording->start(path, vocabulary, dataFolder(), microphoneOnly, done);
+        m_pendingRecordingStart = {};
+        emit recordingStartPendingChanged();
+        if (!granted) {
+            finished(microphoneAccessOffText());
+            return;
+        }
+        m_recording->start(request, finished);
     });
 }
 
-InsightsLog *ApplicationController::insightsLog() const
+bool ApplicationController::recordingStartPending() const
 {
-    return m_insightsLog;
+    return bool(m_pendingRecordingStart);
+}
+
+bool ApplicationController::cancelRecordingStart()
+{
+    const auto finished = std::exchange(m_pendingRecordingStart, {});
+    if (!finished) {
+        return false;
+    }
+    ++m_recordingStartGeneration;
+    emit recordingStartPendingChanged();
+    finished(recordingCancelledText());
+    return true;
+}
+
+void ApplicationController::stopRecording()
+{
+    if (!cancelRecordingStart()) {
+        m_recording->stop();
+    }
+}
+
+void ApplicationController::toggleRecording()
+{
+    if (cancelRecordingStart()) {
+        return;
+    }
+    switch (m_recording->phase()) {
+    case RecordingSession::Phase::Starting:
+    case RecordingSession::Phase::Recording:
+        m_recording->stop();
+        return;
+    case RecordingSession::Phase::Stopping:
+        return;
+    case RecordingSession::Phase::Off:
+        break;
+    }
+    if (!m_settings->recordingConsentNoticeShown()) {
+        emit recordingConsentNeeded();
+        return;
+    }
+    startRecording({}, [this](const QString &error) {
+        if (!error.isEmpty() && m_frontEnd) {
+            m_frontEnd->showDictationError(error);
+        }
+    });
+}
+
+qint64 ApplicationController::recordingHistoryId() const
+{
+    return m_historyKeeper->recordingHistoryId();
+}
+
+HistoryStore *ApplicationController::history() const
+{
+    return m_history;
+}
+
+QString ApplicationController::pasteAgainText() const
+{
+    return m_historyKeeper->pasteAgainText();
+}
+
+void ApplicationController::pasteAgain(const QString &text)
+{
+    const QString words = text.isEmpty() ? pasteAgainText() : text;
+    if (words.trimmed().isEmpty() || sessionActive()) {
+        return;
+    }
+    // From History's page, the app to paste into is the one behind it.
+    if (m_frontEnd && QGuiApplication::applicationState() == Qt::ApplicationActive) {
+        m_frontEnd->hideMainWindow();
+    }
+    m_pasteAgain->paste(words);
+}
+
+SeenApps *ApplicationController::seenApps() const
+{
+    return m_seenApps;
+}
+
+TargetProvider *ApplicationController::targetProvider() const
+{
+    return m_targetProvider;
 }
 
 QDate ApplicationController::insightsToday() const
@@ -404,13 +552,9 @@ const std::optional<DictationRecord> &ApplicationController::lastRecord() const
     return m_lastRecord;
 }
 
-bool ApplicationController::clearInsights()
+bool ApplicationController::clearHistory(const QDateTime &from, const QDateTime &to, bool withStats)
 {
-    if (!m_insightsLog->clear()) {
-        return false;
-    }
-    forgetLastRecord();
-    return true;
+    return m_historyKeeper->clear(from, to, withStats);
 }
 
 void ApplicationController::forgetLastRecord()
@@ -511,11 +655,11 @@ void ApplicationController::notifyModelReady(const QString &modelId)
         return;
     }
     const SpeechSettings speech = m_settings->dictationSnapshot().speech;
-    const bool inUse = parseProviderId(speech.providerId) == ProviderId::Local && speech.local.modelId == modelId;
+    const bool inUse = parseProviderId(speech.services.main()) == ProviderId::Local && localModelId(speech) == modelId;
     m_frontEnd->notifyIfNoWindowShown(
         QStringLiteral("%1 is ready").arg(model->name),
         inUse ? QStringLiteral("You can start dictating. Speech stays on this computer.")
-              : QStringLiteral("Choose it on the Local models page to dictate with it."),
+              : QStringLiteral("Choose it in Services › This computer to dictate with it."),
         QStringLiteral("models"));
 }
 
@@ -561,6 +705,10 @@ GlobalShortcutBinder *ApplicationController::shortcutBinder(GlobalShortcutRole r
         return m_cancelShortcutBinder;
     case GlobalShortcutRole::Pause:
         return m_pauseShortcutBinder;
+    case GlobalShortcutRole::PasteAgain:
+        return m_pasteAgainShortcutBinder;
+    case GlobalShortcutRole::Recording:
+        return m_recordingShortcutBinder;
     case GlobalShortcutRole::Dictation:
         break;
     }
@@ -812,7 +960,7 @@ void ApplicationController::toggle()
     toggleWith({});
 }
 
-void ApplicationController::toggleWith(const SessionOverrides &overrides)
+void ApplicationController::toggleWith(const RunOverrides &overrides)
 {
     // Stop before the setup check: a session already listening always ends.
     if (sessionActive()) {
@@ -830,7 +978,7 @@ void ApplicationController::startListening()
     startListeningWith({});
 }
 
-void ApplicationController::startListeningWith(const SessionOverrides &overrides)
+void ApplicationController::startListeningWith(const RunOverrides &overrides)
 {
     if (!ensureSetupCompleted()) {
         return;

@@ -5,8 +5,10 @@
 #include "app/PlatformComposition.h"
 #include "app/TrayIcon.h"
 #include "app/UpdateController.h"
+#include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
 #include "frontend/quick/host/QuickPopupWindow.h"
+#include "platform/InstalledApps.h"
 
 #include <QApplication>
 #include <QDebug>
@@ -94,6 +96,32 @@ public:
     }
 };
 
+// image://appicon/<key>: an installed app's icon by the key InstalledApps
+// gave it, for AppIcon.qml. Where there is none it answers a 1×1 transparent
+// image, since a null one makes QML warn, and AppIcon draws the app's
+// initial for that. Loaded on the GUI thread: theme icons load nowhere else.
+class AppIconProvider final : public QQuickImageProvider {
+public:
+    AppIconProvider()
+        : QQuickImageProvider(QQuickImageProvider::Image)
+    {
+    }
+
+    QImage requestImage(const QString &id, QSize *size, const QSize &requestedSize) override
+    {
+        constexpr int defaultSide = 64;
+        QImage image = installedAppIcon(id, requestedSize.width() > 0 ? requestedSize.width() : defaultSide);
+        if (image.isNull()) {
+            image = QImage(1, 1, QImage::Format_ARGB32);
+            image.fill(Qt::transparent);
+        }
+        if (size) {
+            *size = image.size();
+        }
+        return image;
+    }
+};
+
 // Lets go of the microphone test for the pages in the window, which has
 // hidden or closed; a hidden window keeps its pages, so they can't.
 void releaseTestIn(QuickAudio &audio, const QQuickWindow *window)
@@ -108,6 +136,18 @@ void releaseTestIn(QuickAudio &audio, const QQuickWindow *window)
 
 } // namespace
 
+void QuickFrontEnd::configureQmlEngine()
+{
+    // The engine's incremental garbage collector, with compiled QML, now and
+    // then wipes objects the window is still building: on Windows (Qt 6.10)
+    // and macOS (Qt 6.11) a page's controls lose their properties, and the
+    // process can crash. A time limit of 0 collects in one pass instead,
+    // which never did that in our tests. A setting already made wins.
+    if (!qEnvironmentVariableIsSet("QV4_GC_TIMELIMIT")) {
+        qputenv("QV4_GC_TIMELIMIT", "0");
+    }
+}
+
 QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, TrayIcon *tray, QObject *parent)
     : QObject(parent)
     , m_controller(controller)
@@ -120,16 +160,20 @@ QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, TrayIcon *tray, 
     , m_transcription(controller)
     , m_virtualKeyboard(controller->settings())
     , m_removal(&m_virtualKeyboard, SpeecherRemoval::onThisComputer(controller))
-    , m_system(controller, &m_virtualKeyboard, &m_removal)
+    , m_system(controller, &m_settings, &m_virtualKeyboard, &m_removal)
     , m_phone(controller)
-    , m_models(controller)
+    , m_models(controller, &m_settings)
     , m_insights(controller)
+    , m_history(controller)
+    , m_recording(controller)
     , m_accounts(controller)
     , m_library(controller)
+    , m_apps(controller)
     , m_navigation(nullptr)
 {
     registerFonts();
     m_engine.addImageProvider(QStringLiteral("qr"), new QrCodeImageProvider);
+    m_engine.addImageProvider(QStringLiteral("appicon"), new AppIconProvider);
     // Into the log with the rest, marked so a load's warnings are easy to find.
     m_engine.setOutputWarningsToStandardError(false);
     connect(&m_engine, &QQmlEngine::warnings, this, [](const QList<QQmlError> &warnings) {
@@ -147,6 +191,26 @@ QuickFrontEnd::QuickFrontEnd(ApplicationController *controller, TrayIcon *tray, 
     connect(session, &DictationSession::popupShowRequested, m_popup, &QuickPopupWindow::show);
     connect(m_popup, &QuickPopupWindow::presented, session, &DictationSession::popupPresented);
     connect(&m_dictation, &QuickDictation::pageRequested, this, &QuickFrontEnd::showPage);
+    // The popup's recording pill shows while a recording runs, when the
+    // setting has it; the window hides once the pill has faded out.
+    connect(&m_recording, &QuickRecording::stateChanged, this, [this, controller] {
+        if (m_recording.state() != u"off" && controller->settings()->dictationSnapshot().recording.showPill) {
+            m_popup->show(0);
+        }
+    });
+    // The first recording ever, asked for from the tray or its shortcut,
+    // waits for the consent notice on Recordings.
+    connect(controller, &ApplicationController::recordingConsentNeeded, this,
+            [this] { showPage(QStringLiteral("recordings")); });
+    // A link in the setup assistant, or the popup's pill, opens its page in
+    // Main, and the way back brings the assistant up again.
+    connect(&m_navigation, &QuickNavigation::mainRequested, this, [this] { showPage({}); });
+    connect(&m_navigation, &QuickNavigation::setupRequested, this, [this] {
+        if (m_setup) {
+            m_setup->raise();
+            m_setup->requestActivate();
+        }
+    });
     connect(&m_updates, &QuickUpdates::pageRequested, this, &QuickFrontEnd::showPage);
     // An update restart brings back the windows that were on screen, never
     // the microphone: the new process has no dictation gesture behind it.
@@ -272,6 +336,9 @@ QQuickWindow *QuickFrontEnd::createWindow(const QString &typeName)
         delete object;
         return nullptr;
     }
+    // By its type, so a part inside can tell which window it is in
+    // (FixSheet).
+    window->setObjectName(typeName);
     window->installEventFilter(this);
     return window;
 }
@@ -290,7 +357,11 @@ bool QuickFrontEnd::eventFilter(QObject *watched, QEvent *event)
 
 void QuickFrontEnd::setupClosed()
 {
+    // Finish and Skip setup saved what setup chose; closing it any other
+    // way leaves it unsaved.
+    m_settings.dropDraft();
     releaseTestIn(m_audio, m_setup);
+    m_navigation.forgetReturnTo(QuickNavigation::setupOrigin);
     std::exchange(m_setup, nullptr)->deleteLater();
     m_controller->setupAssistantClosed();
 }

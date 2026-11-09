@@ -13,10 +13,19 @@ SearchLanding 1.0 SearchLanding.qml
 SubpageRows 1.0 SubpageRows.qml
 AccessibilityNotice 1.0 AccessibilityNotice.qml
 HealthRow 1.0 HealthRow.qml
+AccessibilityMenu 1.0 AccessibilityMenu.qml
 StartCommandRow 1.0 StartCommandRow.qml
+ShortcutRecorder 1.0 ShortcutRecorder.qml
 CommandChip 1.0 CommandChip.qml
-SignInRow 1.0 SignInRow.qml
-RefinerSignInRow 1.0 RefinerSignInRow.qml
+CommandsRow 1.0 CommandsRow.qml
+ErrorDetails 1.0 ErrorDetails.qml
+ServiceOrderList 1.0 ServiceOrderList.qml
+ServiceOrderSection 1.0 ServiceOrderSection.qml
+ServiceChoiceRow 1.0 ServiceChoiceRow.qml
+ServiceModelField 1.0 ServiceModelField.qml
+ServiceStatus 1.0 ServiceStatus.qml
+FixSheet 1.0 FixSheet.qml
+singleton Usable 1.0 Usable.qml
 RemovalReport 1.0 RemovalReport.qml
 VirtualKeyboardTest 1.0 VirtualKeyboardTest.qml
 StateText 1.0 StateText.qml

@@ -9,11 +9,11 @@ One dictation, from the microphone opening through toggle or push-to-talk until 
 _Avoid_: Recording job, transcription run
 
 **Recording**:
-A call recorded into a transcript file, started and stopped with `speecher record`. It streams the microphone (`me`) and, where Speecher captures it, system audio (`them`) to a speech provider, each in its own session, and appends a timed line per utterance as it runs, beside any Dictation Session, and nothing is pasted, copied or refined. Distinct from a Dictation Session, which ends by delivering one text.
+A call recorded into a transcript file, started and stopped on the Recordings page, from the tray, with the Recording Shortcut or with `speecher record`. It streams the microphone (`me`) and, where Speecher captures it, system audio (`them`) to a speech service, each in its own session, and appends a timed line per utterance as it runs, beside any Dictation Session, and nothing is pasted, copied or refined. It uses the speech Service Order's services that send each utterance's text as it ends, or its own first service ahead of them, and the Vocabulary of Other apps' Writing Profile, or of a profile chosen for recordings. It writes into the recordings folder (Documents/Speecher unless chosen), named by its name and when it started, or the file `--to` names, and is a History Entry as it runs. It stops itself after a stretch of silence on both sides (30 minutes unless changed), and may keep both sides' audio beside its transcript until it is deleted. Stopping it while it connects cancels it and leaves no file. Its History Entry keeps how it ended: stopped, after silence or by Speecher quitting, and what it missed (utterances not transcribed, audio lost while a side reconnected, a side that stopped, lines the file didn't take, audio that couldn't be saved). Distinct from a Dictation Session, which ends by delivering one text.
 _Avoid_: Call session, meeting mode
 
 **Spoken Language**:
-The language the speech service listens for, the main one for every Dictation Session, or Automatic where the service detects it. Each speech fallback has its own; one the user hasn't set takes the main Spoken Language where it listens for it, otherwise English while the main one is Automatic and it takes English, otherwise it is skipped. Distinct from a Writing Profile's output language, which refinement translates into.
+The language the first speech service in the Service Order listens for, for every Dictation Session, or Automatic where the service detects it. Each later entry of the speech Service Order may have its own; one the user hasn't set takes the main Spoken Language where it listens for it, otherwise English while the main one is Automatic and it takes English, otherwise it is skipped. Distinct from a Writing Profile's output language, which refinement translates into.
 _Avoid_: Dictation language, input language, locale
 
 **Raw Transcript**:
@@ -25,12 +25,12 @@ The final text after optional language-model cleanup.
 _Avoid_: AI transcript, formatted transcript
 
 **Target**:
-The desktop application and editable control selected when a Dictation Session starts.
+The desktop application and editable control selected when a Dictation Session starts. A Target that is a password field keeps its text out of History and Paste Again.
 _Avoid_: Destination, focused app
 
 **Writing Profile**:
-How refinement treats a Target, inferred from it, with a user-selected fallback and optional override. A profile is built-in (Work, Email, Personal, AI coding, Other) or user-defined, and sets a Cleanup Level, a Tone, Additional Instructions and an optional output language that refinement translates into. AI coding wins over a terminal's own identity when a coding agent is detected inside it.
-_Avoid_: Style preset, persona
+How refinement treats a Target, chosen by its App or App Type, else Other apps' profile. A profile is built-in (Work, Email, Personal, AI coding, Other) or user-defined, and sets a Cleanup Level, a Tone, Additional Instructions and an optional output language that refinement translates into. It may also name a speech and a refinement Service, with a model, that it tries first, ahead of the page's Service Order; unset, it is the same as the page's. AI coding wins over a terminal's own identity when a coding agent is detected inside it.
+_Avoid_: Style preset, persona, Writing Profile Override, default writing profile
 
 **Cleanup Level**:
 How much refinement may rewrite the Raw Transcript: None, Light, Medium, High, or a user-defined level built on one of them.
@@ -44,21 +44,61 @@ _Avoid_: Style, voice preset
 The user's own text added to the refinement prompt: once for every refinement, then once per Writing Profile.
 _Avoid_: Custom prompt, system prompt
 
-**Paste Rule**:
-A setting that chooses how Speecher attempts insertion for an application or application category.
-_Avoid_: Output route, injection rule
+**Delivery Step**:
+One way Speecher gets words out, which the person turns on or off, named the same everywhere: Insert (through accessibility), Press paste keys (copies the words and presses the paste keys, Ctrl+V or ⌘V unless an App or App Type picks a terminal's Ctrl+Shift+V), and Keep on clipboard. Delivery tries Insert, then Press when insertion is off, unavailable or rejected; Keep leaves the words on the clipboard afterwards. With Keep off, Press borrows the clipboard only once Speecher has saved what was there in a form it can put back, and puts it back after a confirmed paste or when no keys went out; a paste it can't confirm, or keys that may have partly gone out, leave the words there. So Insert off, Press on and Keep off pastes and leaves the clipboard as it was. At least one is on.
+_Avoid_: Output method, paste mode
+
+**App**:
+An application the person set something for, picked from installed apps or apps they dictated into. It holds an App Type, a Writing Profile, a Pasting choice and a History choice, each "Same as" what its App Type gives until changed. An App is recognized by its ids (desktop file id, bundle id or program name), or, for web apps and programs in a terminal, by text its name or window title contains; a window title never sets the App Type.
+_Avoid_: App rule, app match, recognition rule, application recognition, exception
+
+**App Type**:
+The kind of app a Target is: Terminal, Browser, Email, Office, Code editor, AI coding, or Other. Speecher sorts common apps into them from a built-in list, and each carries a Writing Profile, a Pasting choice and a History choice its apps follow. Other apps' profile is what any app Speecher doesn't recognize writes with.
+_Avoid_: Category, app category
+
+**Pasting choice**:
+How an App or App Type gets its words out: "Same as" what it follows, or Delivery Steps of its own, the same three switches as the Pasting page's; and, apart from them, the paste keys Press presses. Steps of its own are its steps, one on at least, even one the Pasting page has off. Its steps and its keys each come from the app's own, then Terminals' for anything running in a terminal, then its App Type's, then the Pasting page and the usual keys. Terminals press Ctrl+Shift+V on Linux and Windows. The Pasting page lists those with steps or keys of their own, read-only, and Apps changes them.
+_Avoid_: Paste Rule, exception, output route
+
+**History choice**:
+How an App or App Type lowers What Speecher Keeps for its dictations: Stats only or Nothing, never more than What Speecher Keeps. An app's own choice wins, then its App Type's, then Other apps'. Privacy & data lists the apps and types that keep less, read-only, and Apps changes them.
+_Avoid_: Excluded app, blocklist, private app
 
 **Vocabulary Entry**:
-A word or phrase Speecher should recognize, preserve, or replace during dictation. It may carry a context, which tells refinement what it means and when it applies, and may be limited to some Writing Profiles; under any other profile neither the speech service nor refinement gets it.
-_Avoid_: Dictionary word
-
-**Snippet**:
-A short spoken trigger that expands to longer user-written text.
-_Avoid_: Macro, template
+One entry of the Vocabulary, Speecher's one list of what it should spell or replace. A spelling is a word or phrase Speecher keeps spelled the person's way: as a key term the speech service takes it as a hint, and refinement reads every spelling, with a context that says what it means and when it applies. A replacement is a spoken phrase and the exact text written in its place, several lines included, where {date} and {time} become today's date and the time. Any entry may be limited to some Writing Profiles and some Apps; anywhere else neither the speech service nor refinement gets it, and no replacement is made. Of two replacements for one phrase, the person's own wins over a Learned Correction, and the narrower one, limited to an App, then to a profile, wins over the wider.
+_Avoid_: Word, dictionary word, term (for the entry), binding, snippet (as a kind of its own)
 
 **Learned Correction**:
-A local Vocabulary Entry inferred from a user's edit shortly after insertion.
+A replacement Speecher added to the Vocabulary itself, after the person fixed the same words the same way shortly after pasting. It is limited to the app it was learned in until the same fix is seen in another, keeps how many edits showed it and how sure Speecher is, and can be turned off, edited or widened like any other entry.
 _Avoid_: Training sample, correction history
+
+**Insights**:
+Home's summary of History's delivered dictations: counts, streaks, apps and profiles. Kept while What Speecher Keeps is Stats or above.
+_Avoid_: Insights history, insights log
+
+**History**:
+Everything Speecher kept on this computer of your Dictation Sessions, file transcriptions and Recordings, newest first and searchable, on the History page under Home and through `speecher history`. Each History Entry keeps what What Speecher Keeps allowed when it was made, and Home's stats are a summary of it. Recordings are kept whatever What Speecher Keeps says, never expire, audio included, and stay through a Clear; deleting one may take its files, and stays until every file it was asked to take is gone. An edit to a Recording's file comes back into its lines and search. A file transcription's entry is removed from History alone; its audio and saved transcript stay.
+_Avoid_: Log, archive, transcript list, insights log
+
+**History Entry**:
+One dictation, selection edit, transcribed file or Recording in History: its time, length, words, app and profile, and, when kept, its Refined and Raw Transcripts and its audio; a Recording's are its lines and its transcript file. A delete waits a moment for Undo, then is gone for good; a Recording's asks first instead. Refine again refines an entry's Raw Transcript once more with a Writing Profile, as a dictation into no app would.
+_Avoid_: Record, item, transcript (alone)
+
+**What Speecher Keeps**:
+How much of each dictation History holds, set in Privacy & data: Nothing, Stats, Text, or Text and audio. A new install keeps Text; an upgrade from Keep insights keeps Stats, or Nothing where insights were off. An App or App Type may lower it with its History choice, never raise it, and a password field always keeps Stats. Text and audio are deleted after their days (90 and 7 by default), and the stats stay; a cancelled dictation keeps nothing.
+_Avoid_: History mode, logging level, privacy level, Keep insights
+
+**Privacy & data**:
+The subpage of General that holds every choice about what Speecher keeps or shares, each in one place: What Speecher Keeps and its days, the History choices that keep less, Clear history, and links to what refinement sees (the text around the cursor and a screenshot, set on Refinement) and to learning Learned Corrections (set on Vocabulary). The last dictation's text stays in memory until Speecher quits, whatever History keeps, for Paste Again and `speecher last`.
+_Avoid_: Insights section, privacy settings (as several places)
+
+**Paste Again**:
+Delivering the last dictation's text once more into the app in front, through the Delivery Steps and that app's Pasting choice, from History, the tray or its optional Global Shortcut. It takes History's newest dictation while History keeps text, else the last one this run, and never one into a password field.
+_Avoid_: Re-paste, repeat
+
+**Recording Shortcut**:
+An optional Global Shortcut that starts a Recording with the saved choices and no name, or stops the one running. Unbound until the user sets one.
+_Avoid_: Record hotkey
 
 **Global Shortcut**:
 The system-wide key combination that toggles a Dictation Session from anywhere on the desktop. While a selection edit waits for review, it dictates a follow-up instruction that changes the edit instead.
@@ -97,20 +137,40 @@ The first Stable Release in which a setting appears, used to include that settin
 _Avoid_: Added version, introduced version
 
 **CLI Proxy API Account**:
-One OAuth login (claude or codex) stored as a JSON file in CLI Proxy API's auth directory, selectable as a credential source per provider family (Accounts page): the Anthropic auth mode covers Claude Voice dictation and Anthropic refinement, the OpenAI auth mode covers Codex dictation and OpenAI refinement. CLI Proxy API owns and refreshes these files; Speecher may also refresh an expired account and writes rotated tokens back while holding the account's adjacent lock file. The directory is auto-detected (`~/.cli-proxy-api`, then `~/.local/share/cliproxy-api/oauth`; override with `cliproxy/oauthDir`). On machines that don't host CLI Proxy API, set the server URL and API key on the Accounts page instead: refinement then goes through the proxy's own `/v1/messages` and `/v1/responses` endpoints and the server routes accounts itself (speech still needs the local files, since its websockets connect to the vendors directly).
+One OAuth login (claude or codex) stored as a JSON file in CLI Proxy API's auth directory: CLI Proxy API is one way to sign in to ChatGPT or to Claude (Sign in with, on the Services page). Claude's sign-in covers Claude Voice dictation and Claude refinement, ChatGPT's covers Codex dictation and ChatGPT refinement. CLI Proxy API owns and refreshes these files; Speecher may also refresh an expired account and writes rotated tokens back while holding the account's adjacent lock file. The directory is auto-detected (`~/.cli-proxy-api`, then `~/.local/share/cliproxy-api/oauth`; override with `cliproxy/oauthDir`). On machines that don't host CLI Proxy API, set its server URL and API key in that service's card on Services instead: refinement then goes through the proxy's own `/v1/messages` and `/v1/responses` endpoints and the server routes accounts itself (speech still needs the local files, since its websockets connect to the vendors directly).
 _Avoid_: Proxy token, cliproxy key
 
+**Service**:
+Something that turns speech into text or cleans text up: ChatGPT, Claude, This computer (a Local Model for speech, a Local Runner for refinement), or one of Your servers. Each is signed in to or connected once, on the Services page (This computer on its subpage).
+_Avoid_: Provider (in the UI), backend, engine
+
+**Service Order**:
+The services Speecher tries for one job, speech or refinement, first to last. The first is the main service; the others stand in when it is unavailable. Each entry carries its own model, ChatGPT's and Claude's refinement entries their thinking and speed, and a later speech entry its own Spoken Language. An entry keeps its choices while it is out of the order. Refinement's order runs only while Clean up my words is on.
+_Avoid_: Fallback chain, primary and fallbacks, fallbacks
+
+**Clean up my words**:
+The switch that turns refinement on or off for every dictation. Off, no refinement service runs, a Writing Profile's own included, and the words are pasted as spoken; the Service Order waits for it to come back on. Distinct from a Writing Profile's Cleanup Level None, which skips cleanup for that profile but still translates into its output language.
+_Avoid_: None (as a refinement service)
+
+**Run Overrides**:
+What one Dictation Session, Transcribe batch or headless `transcribe`/`listen` run changes for itself, never saved: its Writing Profile, Cleanup Level, Tone, Spoken Language, first speech and refinement Services with their models, output format, and vocabulary (terms it adds, or none of the saved ones). A run that names a refinement Service refines even with Clean up my words off; one that names none refines nothing.
+_Avoid_: Session overrides, run choices, batch options
+
+**Layers**:
+Where a setting's value comes from, widest first: the setting's own page (Defaults), the App Type, the App, the Writing Profile, then the Run Overrides. Each narrower place that can change a value starts with "Same as <wider place> (<value>)", and one resolver settles every run the same way and says which layer each value came from. An App sets a Writing Profile and Pasting, never a Service; a Writing Profile sets cleanup, tone, output language, instructions and its first Services.
+_Avoid_: Inheritance chain, overrides (for saved settings)
+
 **Local Model**:
-A speech-to-text model file Speecher downloads and runs on the user's own machine through transcribe.cpp, managed on the Local models page.
+A speech-to-text model file Speecher downloads and runs on the user's own machine through transcribe.cpp, managed on the This computer page under Services, beside the Local Runner.
 _Avoid_: Offline model, on-device model, embedded model
 
 **Local Runner**:
 A separately installed program that serves cleanup models over HTTP on the user's machine: Ollama, LM Studio or llama-server. Speecher detects it and uses it for refinement but does not run the model itself.
 _Avoid_: Local LLM, inference server, backend
 
-**Custom Endpoint**:
-A user-supplied server URL for one role, speech or refinement. The speech endpoint speaks OpenAI's audio transcriptions API; the refinement endpoint speaks OpenAI Chat Completions or Anthropic Messages. The CLI Proxy API server is a preset of the refinement endpoint.
-_Avoid_: BYO endpoint, self-hosted provider, custom provider
+**Server**:
+One of Your servers: a user-supplied URL that serves one job, one for speech (OpenAI's audio transcriptions API) and one for refinement (OpenAI Chat Completions or Anthropic Messages). Its model is its entry's in that job's Service Order. The refinement server can be pointed at the CLI Proxy API server, and then sends that server's key.
+_Avoid_: Custom Endpoint (retired), BYO endpoint, self-hosted provider
 
 **Hardware Tier**:
 The class Speecher assigns a machine from its detected GPU memory, RAM and CPU, used to label each Local Model fits, tight or too large and to pick a suggestion.

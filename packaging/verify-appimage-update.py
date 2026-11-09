@@ -660,7 +660,8 @@ def main():
 
     # The global shortcut toggles dictation, and dictation reaches the stub
     # speech service.
-    for key, value in (('stt/provider', 'endpoint'), ('refinement/provider', 'none'),
+    # The Service Order is JSON, a string QSettings keeps quoted.
+    for key, value in (('stt/services', r'"{\"order\":[\"endpoint\"]}"'), ('refinement/enabled', 'false'),
                        ('audio/vadEnabled', 'false'), ('audio/captureMode', 'on_demand')):
         write_setting(key, value)
     pid = launch(INSTALLED)

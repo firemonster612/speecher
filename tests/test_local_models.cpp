@@ -11,18 +11,28 @@
 #include "providers/LocalModelStore.h"
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
 #include "providers/LocalSpeechTranscriber.h"
+#include "providers/LocalSpeechWorker.h"
+#include "providers/SpeechAudio.h"
 #endif
 
 #include <QCryptographicHash>
+#include <QDir>
 #include <QElapsedTimer>
+#include <QThread>
 #include <QFile>
 #include <QSignalSpy>
 #include <QScopeGuard>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTemporaryDir>
+#include <QtEndian>
 
 #include <algorithm>
+#include <atomic>
+
+#ifdef Q_OS_LINUX
+#include <unistd.h>
+#endif
 
 using namespace speecher;
 
@@ -63,6 +73,177 @@ LocalModel fakeModel(const QByteArray &content)
     model.sha256 = QString::fromLatin1(QCryptographicHash::hash(content, QCryptographicHash::Sha256).toHex());
     return model;
 }
+
+#ifdef SPEECHER_WITH_LOCAL_SPEECH
+// What the fake engine below did, read once its signals are in.
+struct FakeModelCounts {
+    std::atomic<int> loads = 0;
+    std::atomic<int> sessions = 0;
+    // Sessions not yet destroyed, and how often a model loaded or unloaded
+    // under one, which transcribe.cpp forbids.
+    std::atomic<int> liveSessions = 0;
+    std::atomic<int> modelSwapsUnderSessions = 0;
+    // Sessions held in a call by the word kHeldWord, until heldOpen or
+    // their own abort.
+    std::atomic<int> held = 0;
+    std::atomic_bool heldOpen = false;
+};
+
+// A word a fake session stops on mid-call, as a slow model would.
+constexpr qint16 kHeldWord = 99;
+
+// A 100 ms chunk the fake hears as the word "w<word>"; quiet() it hears as
+// nothing.
+QByteArray spoken(qint16 word)
+{
+    QByteArray chunk(kSpeechChunkBytes, 0);
+    qToLittleEndian<qint16>(word, chunk.data());
+    return chunk;
+}
+
+QByteArray quiet()
+{
+    return QByteArray(kSpeechChunkBytes, 0);
+}
+
+QString fakeWords(const QByteArray &pcm)
+{
+    QStringList words;
+    for (qsizetype at = 0; at + kSpeechChunkBytes <= pcm.size(); at += kSpeechChunkBytes) {
+        if (const qint16 word = qFromLittleEndian<qint16>(pcm.constData() + at)) {
+            words << QStringLiteral("w%1").arg(word);
+        }
+    }
+    return words.join(QLatin1Char(' '));
+}
+
+// A streaming session commits each word as it is fed.
+class FakeSession final : public LocalSpeechEngine::Session {
+public:
+    FakeSession(FakeModelCounts &counts, std::function<bool()> shouldAbort)
+        : m_counts(counts)
+        , m_shouldAbort(std::move(shouldAbort))
+    {
+        ++m_counts.liveSessions;
+    }
+    ~FakeSession() override { --m_counts.liveSessions; }
+
+    std::optional<QString> transcribe(const QByteArray &pcm16, const QString &, QString *) override
+    {
+        return fakeWords(pcm16);
+    }
+    std::optional<QString> transcribeTimed(const QByteArray &pcm16, const QString &language,
+                                           QList<TranscriptSegment> *, QString *error) override
+    {
+        return transcribe(pcm16, language, error);
+    }
+    bool beginStream(const QString &, QString *) override
+    {
+        m_committed.clear();
+        return true;
+    }
+    bool feed(const QByteArray &pcm16, LocalSpeechEngine::StreamText *text, QString *) override
+    {
+        if (fakeWords(pcm16).contains(QStringLiteral("w%1").arg(kHeldWord))) {
+            ++m_counts.held;
+            while (!m_counts.heldOpen && !(m_shouldAbort && m_shouldAbort())) {
+                QThread::msleep(1);
+            }
+            --m_counts.held;
+            if (!m_counts.heldOpen) {
+                // Aborted, which says no error.
+                return false;
+            }
+        }
+        if (const QString words = fakeWords(pcm16); !words.isEmpty()) {
+            m_committed += words + QLatin1Char(' ');
+        }
+        text->committed = m_committed;
+        return true;
+    }
+    std::optional<QString> finalize(QString *) override { return m_committed.trimmed(); }
+
+private:
+    FakeModelCounts &m_counts;
+    std::function<bool()> m_shouldAbort;
+    QString m_committed;
+};
+
+class FakeEngine final : public LocalSpeechEngine {
+public:
+    FakeEngine(FakeModelCounts &counts, bool streams)
+        : m_counts(counts)
+        , m_streams(streams)
+    {
+    }
+    bool load(const QString &modelPath, const LocalRunsOn &runsOn, QString *) override
+    {
+        if (m_counts.liveSessions > 0) {
+            ++m_counts.modelSwapsUnderSessions;
+        }
+        ++m_counts.loads;
+        m_modelPath = modelPath;
+        m_runsOn = runsOn;
+        return true;
+    }
+    void unload() override
+    {
+        if (m_counts.liveSessions > 0) {
+            ++m_counts.modelSwapsUnderSessions;
+        }
+        m_modelPath.clear();
+    }
+    bool isLoaded(const QString &modelPath, const LocalRunsOn &runsOn) const override
+    {
+        return !m_modelPath.isEmpty() && modelPath == m_modelPath && runsOn == m_runsOn;
+    }
+    QString runsOnDescription() const override
+    {
+        return m_modelPath.isEmpty() ? QString() : QStringLiteral("Fake (CPU)");
+    }
+    bool streams() const override { return m_streams; }
+    std::unique_ptr<Session> openSession(std::function<bool()> shouldAbort, QString *) override
+    {
+        ++m_counts.sessions;
+        return std::make_unique<FakeSession>(m_counts, std::move(shouldAbort));
+    }
+
+private:
+    FakeModelCounts &m_counts;
+    bool m_streams;
+    QString m_modelPath;
+    LocalRunsOn m_runsOn;
+};
+
+// The model's file in store, the size the catalog gives, so it counts as
+// downloaded.
+bool fakeDownload(const LocalModelStore &store, const QString &modelId)
+{
+    const LocalModel *model = findLocalModel(modelId);
+    QFile file(store.modelPath(*model));
+    return QDir().mkpath(QFileInfo(file).path()) && file.open(QIODevice::WriteOnly) && file.resize(model->sizeBytes);
+}
+
+QStringList texts(const QSignalSpy &spy)
+{
+    QStringList result;
+    for (const QList<QVariant> &signal : spy) {
+        result << signal.at(1).toString();
+    }
+    return result;
+}
+
+#ifdef Q_OS_LINUX
+qint64 residentBytes()
+{
+    QFile statm(QStringLiteral("/proc/self/statm"));
+    if (!statm.open(QIODevice::ReadOnly)) {
+        return -1;
+    }
+    return statm.readAll().split(' ').value(1).toLongLong() * sysconf(_SC_PAGESIZE);
+}
+#endif
+#endif
 
 } // namespace
 
@@ -126,52 +307,6 @@ private slots:
         QVERIFY(!settings.secrets()->isSecretKnown(SecretStore::Secret::SpeechEndpointKey));
     }
 
-    // Setup's fallback offer joins the chain behind the primary, and changes
-    // nothing, not even the runner selection, when the chain would drop it.
-    void setupFallbackOfferJoinsOnlyAChainThatWouldKeepIt()
-    {
-        SettingsStore settings;
-        settings.raw().clear();
-        ProviderRegistry providers;
-        QTemporaryDir directory;
-        LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
-        LocalSetup setup(settings, providers, models);
-        LocalSetupTestAccess::setRunners(setup, {{QStringLiteral("ollama"), QStringLiteral("Ollama"),
-                                                  QStringLiteral("0.34.4"), QStringLiteral("http://127.0.0.1:11434/v1"),
-                                                  {QStringLiteral("gemma4:e4b")}}});
-        settings.edit([](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("anthropic");
-            return true;
-        });
-
-        const QString anthropic = QStringLiteral("anthropic");
-        const QStringList full{QStringLiteral("openai"), QStringLiteral("endpoint")};
-        settings.edit([&](AppSettings &draft) { draft.refinement.fallbackProviderIds = full; return true; });
-        setup.acceptSetupFallbackOffer(ProviderRole::Refinement, anthropic);
-        QCOMPARE(settings.dictationSnapshot().refinement.fallbackProviderIds, full);
-        QCOMPARE(settings.dictationSnapshot().refinement.localRunner, LocalRunnerSettings{});
-
-        settings.edit([](AppSettings &draft) { draft.refinement.fallbackProviderIds = {}; return true; });
-        setup.acceptSetupFallbackOffer(ProviderRole::Refinement, anthropic);
-        QCOMPARE(settings.dictationSnapshot().refinement.providerId, anthropic);
-        QCOMPARE(settings.dictationSnapshot().refinement.fallbackProviderIds, QStringList{QStringLiteral("local")});
-        QCOMPARE(settings.dictationSnapshot().refinement.localRunner.model, QStringLiteral("gemma4:e4b"));
-
-        // Already a fallback.
-        settings.edit([](AppSettings &draft) { draft.refinement.localRunner = {}; return true; });
-        setup.acceptSetupFallbackOffer(ProviderRole::Refinement, anthropic);
-        QCOMPARE(settings.dictationSnapshot().refinement.fallbackProviderIds, QStringList{QStringLiteral("local")});
-        QCOMPARE(settings.dictationSnapshot().refinement.localRunner, LocalRunnerSettings{});
-
-        // Setup's choice, saved with the fallback: with None saved, a chain
-        // behind it could hold no fallback at all.
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
-        QVERIFY(settings.dictationSnapshot().refinement.fallbackProviderIds.isEmpty());
-        setup.acceptSetupFallbackOffer(ProviderRole::Refinement, QStringLiteral("openai"));
-        QCOMPARE(settings.dictationSnapshot().refinement.providerId, QStringLiteral("openai"));
-        QCOMPARE(settings.dictationSnapshot().refinement.fallbackProviderIds, QStringList{QStringLiteral("local")});
-    }
-
     void endpointChecksDiscardSupersededResults_data()
     {
         QTest::addColumn<bool>("refinement");
@@ -192,7 +327,7 @@ private slots:
         QVERIFY(slow.listen(QHostAddress::LocalHost));
         QVERIFY(fast.listen(QHostAddress::LocalHost));
         const auto endpoint = [](quint16 port) {
-            SpeechEndpointSettings result;
+            ServerSettings result;
             result.baseUrl = QString("http://127.0.0.1:%1").arg(port);
             return result;
         };
@@ -201,16 +336,16 @@ private slots:
             return refinement ? facts.refinementEndpointModels : facts.speechEndpointModels;
         };
         const auto check = [&](AppSettings &snapshot) {
-            snapshot.refinement.endpoint.baseUrl = snapshot.speech.endpoint.baseUrl;
+            snapshot.refinement.server.baseUrl = snapshot.speech.server.baseUrl;
             settings.applySnapshot(snapshot);
-            if (refinement) setup.checkRefinementEndpoint(snapshot.refinement);
-            else setup.checkSpeechEndpoint(snapshot.speech.endpoint);
+            if (refinement) setup.checkRefinementEndpoint(resolvedRefinementEndpoint(snapshot.refinement, snapshot.accounts));
+            else setup.checkSpeechEndpoint(snapshot.speech.server);
         };
         auto snapshot = settings.snapshot();
-        snapshot.speech.endpoint = endpoint(slow.serverPort());
+        snapshot.speech.server = endpoint(slow.serverPort());
         check(snapshot);
         QTRY_VERIFY(slow.hasPendingConnections());
-        snapshot.speech.endpoint = endpoint(fast.serverPort());
+        snapshot.speech.server = endpoint(fast.serverPort());
         check(snapshot);
         QTRY_VERIFY(fast.hasPendingConnections());
         serveOnce(fast, "200 OK", R"({"data":[{"id":"new-B"}]})");
@@ -219,12 +354,12 @@ private slots:
         QTest::qWait(100);
         QCOMPARE(modelsForCheck(), QStringList{"new-B"});
         // Picking a model keeps the verdict; another server does not.
-        snapshot.speech.endpoint.model = "picked";
-        snapshot.refinement.endpoint.model = "picked";
+        snapshot.speech.services.choice(QStringLiteral("endpoint")).model = "picked";
+        snapshot.refinement.services.choice(QStringLiteral("endpoint")).model = "picked";
         settings.applySnapshot(snapshot);
         QCOMPARE(modelsForCheck(), QStringList{"new-B"});
-        snapshot.speech.endpoint = endpoint(slow.serverPort());
-        snapshot.refinement.endpoint.baseUrl = snapshot.speech.endpoint.baseUrl;
+        snapshot.speech.server = endpoint(slow.serverPort());
+        snapshot.refinement.server.baseUrl = snapshot.speech.server.baseUrl;
         settings.applySnapshot(snapshot);
         const auto facts = setup.liveFacts();
         QVERIFY((refinement ? facts.refinementEndpointStatus : facts.speechEndpointStatus).isEmpty());
@@ -242,18 +377,18 @@ private slots:
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
         auto snapshot = settings.snapshot();
-        snapshot.refinement.providerId = "endpoint";
-        snapshot.refinement.endpoint.baseUrl = "http://127.0.0.1:1/v";
+        snapshot.refinement.services.order = {"endpoint"};
+        snapshot.refinement.server.baseUrl = "http://127.0.0.1:1/v";
         settings.applySnapshot(snapshot);
         // Still typing: the address grows before the pause.
-        snapshot.refinement.endpoint.baseUrl = QString("http://127.0.0.1:%1/v1").arg(server.serverPort());
+        snapshot.refinement.server.baseUrl = QString("http://127.0.0.1:%1/v1").arg(server.serverPort());
         settings.applySnapshot(snapshot);
         QVERIFY(setup.liveFacts().refinementEndpointStatus.isEmpty());
 
         QTRY_VERIFY(server.hasPendingConnections());
         QVERIFY(serveOnce(server, "200 OK", R"({"data":[{"id":"first"},{"id":"second"}]})")
                     .startsWith("GET /v1/models"));
-        QTRY_COMPARE(settings.dictationSnapshot().refinement.endpoint.model, QString("first"));
+        QTRY_COMPARE(settings.dictationSnapshot().refinement.services.choice(QStringLiteral("endpoint")).model, QString("first"));
         QCOMPARE(setup.liveFacts().refinementEndpointStatus, QString("Connected. Models available: 2."));
         QCOMPARE(setup.liveFacts().refinementEndpointModels, QStringList({"first", "second"}));
         QVERIFY(!test::appRequestArrived(server, 1000));
@@ -322,7 +457,9 @@ private slots:
         LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
         providers.registerSpeechProvider({"local", "Local model"},
-            [&models](QObject *parent) { return new LocalSpeechTranscriber(models, parent); });
+            [&models, worker = std::make_shared<LocalSpeechWorker>()](QObject *parent) {
+                return new LocalSpeechTranscriber(models, worker, parent);
+            });
 #endif
         LocalSetup setup(settings, providers, models);
         QVERIFY(!settings.dictationSnapshot().speech.local.modelChosen);
@@ -330,17 +467,17 @@ private slots:
         unchanged.idleUnloadMinutes = 60;
         settings.edit([&](AppSettings &draft) { draft.speech.local = unchanged; return true; });
         QVERIFY(!settings.dictationSnapshot().speech.local.modelChosen);
-        const auto beforeProbe = settings.dictationSnapshot().speech.local.modelId;
+        const auto beforeProbe = localModelId(settings.dictationSnapshot().speech);
         setup.initializeSpeechModel();
         QVERIFY(!settings.dictationSnapshot().speech.local.modelChosen);
-        QCOMPARE(settings.dictationSnapshot().speech.local.modelId, beforeProbe);
+        QCOMPARE(localModelId(settings.dictationSnapshot().speech), beforeProbe);
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
         setup.probeHardware();
         // The first Metal device init compiles ggml's shaders, which took
         // about 45 s on a CI runner; the suite has 120 s.
         QTRY_VERIFY_WITH_TIMEOUT(setup.hardwareKnown(), 90000);
         const AppSettings probed = settings.dictationSnapshot();
-        QCOMPARE(probed.speech.local.modelId, setup.suggestedModel(probed).id);
+        QCOMPARE(localModelId(probed.speech), setup.suggestedModel(probed).id);
         QCOMPARE(setup.speechModelChoice(probed).id, setup.suggestedModel(probed).id);
         QVERIFY(!settings.dictationSnapshot().speech.local.modelChosen);
 #endif
@@ -365,9 +502,9 @@ private slots:
             QVERIFY(file.open(QIODevice::WriteOnly));
             QVERIFY(file.resize(model.sizeBytes));
         }
-        speech.providerId = "local";
+        speech.services.order = {QStringLiteral("local")};
         QVERIFY(setup.modelState(model, speech).inUse);
-        speech.providerId = "claude";
+        speech.services.order = {QStringLiteral("claude")};
         QVERIFY(!setup.modelState(model, speech).inUse);
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
         auto *provider = qobject_cast<LocalSpeechTranscriber *>(providers.speechProvider("local"));
@@ -494,7 +631,7 @@ private slots:
         }
         const QString speedKey = localSpeedTestKey(model.id, {QStringLiteral("cpu"), {}});
         settings.edit([&](AppSettings &draft) {
-            draft.speech.local.modelId = model.id;
+            localModelId(draft.speech) = model.id;
             draft.speech.local.speedTestSeconds.insert(speedKey, 0.8);
             return true;
         });
@@ -504,9 +641,9 @@ private slots:
         const auto restore = qScopeGuard([&] { folder.setPermissions(writable); });
 
         QVERIFY(!setup.removeModel(model));
-        const LocalSpeechSettings local = settings.dictationSnapshot().speech.local;
-        QCOMPARE(local.modelId, model.id);
-        QCOMPARE(local.speedTestSeconds.value(speedKey), 0.8);
+        const SpeechSettings speech = settings.dictationSnapshot().speech;
+        QCOMPARE(localModelId(speech), model.id);
+        QCOMPARE(speech.local.speedTestSeconds.value(speedKey), 0.8);
     }
 #endif
 
@@ -790,7 +927,7 @@ private slots:
         QVERIFY(model);
         LocalModelStore store(modelDir, QUrl());
         QVERIFY2(store.isDownloaded(*model), qPrintable(store.modelPath(*model)));
-        LocalSpeechTranscriber transcriber(store);
+        LocalSpeechTranscriber transcriber(store, std::make_shared<LocalSpeechWorker>());
         QSignalSpy partials(&transcriber, &SpeechTranscriber::partialTranscript);
         QSignalSpy transcripts(&transcriber, &SpeechTranscriber::attemptTranscript);
         QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
@@ -799,7 +936,7 @@ private slots:
         QSignalSpy timings(&transcriber, &SpeechTranscriber::attemptSegments);
 
         SpeechSettings settings;
-        settings.local.modelId = modelId;
+        localModelId(settings) = modelId;
         // Local models get no key terms. Given to Whisper as a prompt, terms
         // like these replaced whole clips with other text.
         settings.vocabulary = {QStringLiteral("Speecher"), QStringLiteral("Kirigami")};
@@ -877,12 +1014,12 @@ private slots:
             })) {
             QSKIP("This computer runs ROCm.");
         }
-        LocalSpeechEngine engine([] { return false; });
+        const std::unique_ptr<LocalSpeechEngine> engine = LocalSpeechEngine::create();
         QString error;
-        QVERIFY(!engine.load(QStringLiteral("/nonexistent.gguf"), {QStringLiteral("rocm"), {}}, &error));
+        QVERIFY(!engine->load(QStringLiteral("/nonexistent.gguf"), {QStringLiteral("rocm"), {}}, &error));
         QCOMPARE(error, QStringLiteral("ROCm is not available on this computer. Choose where the model "
-                                       "runs on the Local models page."));
-        QVERIFY(engine.runsOnDescription().isEmpty());
+                                       "runs in Services › This computer."));
+        QVERIFY(engine->runsOnDescription().isEmpty());
     }
 
     // An attempt that starts while the worker is busy must still get every
@@ -896,11 +1033,11 @@ private slots:
             QSKIP("Set SPEECHER_TEST_LOCAL_MODEL and SPEECHER_TEST_LOCAL_MODEL_DIR to run a real model.");
         }
         LocalModelStore store(modelDir, QUrl());
-        LocalSpeechTranscriber transcriber(store);
+        LocalSpeechTranscriber transcriber(store, std::make_shared<LocalSpeechWorker>());
         QSignalSpy transcripts(&transcriber, &SpeechTranscriber::attemptTranscript);
         QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
         SpeechSettings settings;
-        settings.local.modelId = modelId;
+        localModelId(settings) = modelId;
         QFile clip(QStringLiteral(":/speedtest/librispeech-6930-75918-0018.s16le"));
         QVERIFY(clip.open(QIODevice::ReadOnly));
         const QByteArray pcm = clip.readAll();
@@ -970,11 +1107,273 @@ private slots:
         QCOMPARE(finalStreamText(committed, revised), revised);
     }
 
+    void recordingGetsOneFinalPerUtterance_data()
+    {
+        QTest::addColumn<bool>("streams");
+        QTest::newRow("streaming model") << true;
+        QTest::newRow("batch model") << false;
+    }
+
+    // Each utterance a recording marks is one final, the last one's at the
+    // end, and no whole-attempt transcript replaces them.
+    void recordingGetsOneFinalPerUtterance()
+    {
+        QFETCH(bool, streams);
+        QTemporaryDir dir;
+        LocalModelStore store(dir.path(), QUrl());
+        QVERIFY(fakeDownload(store, QStringLiteral("moonshine-small")));
+        FakeModelCounts counts;
+        LocalSpeechTranscriber transcriber(
+            store, std::make_shared<LocalSpeechWorker>(std::make_unique<FakeEngine>(counts, streams)));
+        QSignalSpy connected(&transcriber, &SpeechTranscriber::attemptConnected);
+        QSignalSpy finals(&transcriber, &SpeechTranscriber::finalTranscript);
+        QSignalSpy transcripts(&transcriber, &SpeechTranscriber::attemptTranscript);
+        QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
+        QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
+        SpeechSettings settings;
+        localModelId(settings) = QStringLiteral("moonshine-small");
+
+        transcriber.startAttempt(1, settings, {.cutIntoUtterances = true});
+        // A recording counts as started once the model is loaded.
+        QVERIFY(connected.wait(2000));
+        transcriber.sendAudio(1, quiet());
+        transcriber.beginUtterance(1);
+        transcriber.sendAudio(1, spoken(1));
+        transcriber.sendAudio(1, spoken(2));
+        transcriber.endUtterance(1);
+        transcriber.sendAudio(1, quiet());
+        QTRY_COMPARE(texts(finals), QStringList{QStringLiteral("w1 w2")});
+        transcriber.beginUtterance(1);
+        transcriber.sendAudio(1, spoken(3));
+        transcriber.finishInput(1);
+        QVERIFY(completed.wait(2000));
+        QCOMPARE(texts(finals), (QStringList{QStringLiteral("w1 w2"), QStringLiteral("w3")}));
+        QVERIFY(transcripts.isEmpty());
+        QVERIFY(failed.isEmpty());
+
+        // Dictation is as before: a streaming model's runs of words as they
+        // are committed, then the whole text in their place, and a batch
+        // model's text at the end.
+        finals.clear();
+        transcriber.startAttempt(2, settings, {});
+        transcriber.sendAudio(2, spoken(1));
+        transcriber.endUtterance(2);
+        transcriber.sendAudio(2, spoken(2));
+        transcriber.finishInput(2);
+        QVERIFY(completed.wait(2000));
+        QCOMPARE(texts(transcripts), QStringList{QStringLiteral("w1 w2")});
+        QCOMPARE(finals.isEmpty(), !streams);
+        if (streams) {
+            QCOMPARE(texts(finals).join(QLatin1Char(' ')).simplified(), QStringLiteral("w1 w2"));
+        }
+        QVERIFY(connected.size() == 1 && failed.isEmpty());
+    }
+
+    // A recording's two sides and dictation load the model once, with a
+    // session each, and only one model at a time.
+    void transcribersShareOneLoadedModel()
+    {
+        QTemporaryDir dir;
+        LocalModelStore store(dir.path(), QUrl());
+        QVERIFY(fakeDownload(store, QStringLiteral("moonshine-small")));
+        QVERIFY(fakeDownload(store, QStringLiteral("moonshine-medium")));
+        FakeModelCounts counts;
+        const auto worker = std::make_shared<LocalSpeechWorker>(std::make_unique<FakeEngine>(counts, true));
+        LocalSpeechTranscriber me(store, worker);
+        LocalSpeechTranscriber them(store, worker);
+        LocalSpeechTranscriber dictation(store, worker);
+        QSignalSpy myFinals(&me, &SpeechTranscriber::finalTranscript);
+        QSignalSpy theirFinals(&them, &SpeechTranscriber::finalTranscript);
+        QSignalSpy dictationFailed(&dictation, &SpeechTranscriber::failed);
+        QSignalSpy dictationDone(&dictation, &SpeechTranscriber::attemptCompleted);
+        QSignalSpy speedTest(&dictation, &LocalSpeechTranscriber::speedTestFinished);
+        QSignalSpy runsOn(&dictation, &LocalSpeechTranscriber::runsOnChanged);
+        SpeechSettings settings;
+        localModelId(settings) = QStringLiteral("moonshine-small");
+
+        me.startAttempt(1, settings, {.cutIntoUtterances = true});
+        them.startAttempt(1, settings, {.cutIntoUtterances = true});
+        me.beginUtterance(1);
+        them.beginUtterance(1);
+        me.sendAudio(1, spoken(1));
+        them.sendAudio(1, spoken(2));
+        me.sendAudio(1, spoken(3));
+        me.endUtterance(1);
+        them.endUtterance(1);
+        QTRY_COMPARE(texts(myFinals), QStringList{QStringLiteral("w1 w3")});
+        QTRY_COMPARE(texts(theirFinals), QStringList{QStringLiteral("w2")});
+        QCOMPARE(counts.loads.load(), 1);
+        QCOMPARE(counts.sessions.load(), 2);
+        // Every transcriber hears where the model runs, whoever loaded it.
+        QCOMPARE(runsOn.size(), 1);
+        QCOMPARE(runsOn.first().at(0).toString(), QStringLiteral("Fake (CPU)"));
+
+        // The Speed Test waits for the recording.
+        dictation.runSpeedTest(QStringLiteral("moonshine-small"), {});
+        QCOMPARE(speedTest.first().at(2).toString(),
+                 QStringLiteral("Finish dictating or recording, then test the speed again."));
+
+        // Another model can't load in place of the one the recording holds.
+        SpeechSettings otherModel = settings;
+        localModelId(otherModel) = QStringLiteral("moonshine-medium");
+        dictation.startAttempt(1, otherModel, {});
+        QVERIFY(dictationFailed.wait(2000));
+        QCOMPARE(dictationFailed.first().at(0).value<SpeechFailure>().message,
+                 QStringLiteral("This computer is already transcribing with another model, and runs one model "
+                                "at a time."));
+        QCOMPARE(counts.loads.load(), 1);
+
+        // Once the recording ends, it can.
+        me.finishInput(1);
+        them.finishInput(1);
+        QTRY_VERIFY(!worker->attemptRunning());
+        dictation.startAttempt(2, otherModel, {});
+        dictation.sendAudio(2, spoken(4));
+        dictation.finishInput(2);
+        QVERIFY(dictationDone.wait(2000));
+        QCOMPARE(counts.loads.load(), 2);
+        // The sessions on the first model closed before the second loaded.
+        QCOMPARE(counts.modelSwapsUnderSessions.load(), 0);
+    }
+
+    // On the shared model, a dictation with the same model runs beside a
+    // recording; one side of the call going doesn't wait on another
+    // client's call in progress; and a dictation cancelled mid-call stops
+    // without stopping the call's other side.
+    void oneClientGoingLeavesTheOthers()
+    {
+        QTemporaryDir dir;
+        LocalModelStore store(dir.path(), QUrl());
+        QVERIFY(fakeDownload(store, QStringLiteral("moonshine-small")));
+        FakeModelCounts counts;
+        const auto worker = std::make_shared<LocalSpeechWorker>(std::make_unique<FakeEngine>(counts, true));
+        auto me = std::make_unique<LocalSpeechTranscriber>(store, worker);
+        LocalSpeechTranscriber them(store, worker);
+        LocalSpeechTranscriber dictation(store, worker);
+        QSignalSpy theirFinals(&them, &SpeechTranscriber::finalTranscript);
+        QSignalSpy theirFailures(&them, &SpeechTranscriber::failed);
+        QSignalSpy dictationDone(&dictation, &SpeechTranscriber::attemptCompleted);
+        QSignalSpy dictationFailed(&dictation, &SpeechTranscriber::failed);
+        QSignalSpy dictationFinals(&dictation, &SpeechTranscriber::finalTranscript);
+        SpeechSettings settings;
+        localModelId(settings) = QStringLiteral("moonshine-small");
+
+        me->startAttempt(1, settings, {.cutIntoUtterances = true});
+        them.startAttempt(1, settings, {.cutIntoUtterances = true});
+        dictation.startAttempt(1, settings, {});
+        dictation.sendAudio(1, spoken(5));
+        dictation.finishInput(1);
+        QVERIFY(dictationDone.wait(2000));
+        QVERIFY(dictationFailed.isEmpty());
+        QCOMPARE(counts.loads.load(), 1);
+        QCOMPARE(counts.sessions.load(), 3);
+
+        // A dictation held mid-call by a slow model.
+        dictation.startAttempt(2, settings, {});
+        dictation.sendAudio(2, spoken(kHeldWord));
+        QTRY_COMPARE(counts.held.load(), 1);
+        // My side of the call goes meanwhile, without waiting for it.
+        QElapsedTimer going;
+        going.start();
+        me.reset();
+        QVERIFY2(going.elapsed() < 500, qPrintable(QString::number(going.elapsed())));
+        // Their side carries on behind the held call.
+        them.beginUtterance(1);
+        them.sendAudio(1, spoken(2));
+        them.endUtterance(1);
+        // Cancelling the dictation stops its call, and only its call.
+        dictation.cancelAttempt(2);
+        QTRY_COMPARE(counts.held.load(), 0);
+        QTRY_COMPARE(texts(theirFinals), QStringList{QStringLiteral("w2")});
+        QVERIFY(theirFailures.isEmpty());
+        QVERIFY(dictationFailed.isEmpty());
+        QVERIFY(!texts(dictationFinals).join(QLatin1Char(' ')).contains(QStringLiteral("w%1").arg(kHeldWord)));
+        // My side's session closed with it; theirs and dictation's remain.
+        QTRY_COMPARE(counts.liveSessions.load(), 2);
+
+        them.finishInput(1);
+        QTRY_VERIFY(!worker->attemptRunning());
+        QCOMPARE(counts.loads.load(), 1);
+        QCOMPARE(counts.modelSwapsUnderSessions.load(), 0);
+    }
+
+    // transcribe.cpp runs two streams on one loaded model, interleaved, each
+    // its own; and the second takes far less memory than the model. Runs a
+    // streaming model when SPEECHER_TEST_LOCAL_MODEL names one.
+    void twoStreamsShareARealModel()
+    {
+        const QString modelId = qEnvironmentVariable("SPEECHER_TEST_LOCAL_MODEL");
+        const QString modelDir = qEnvironmentVariable("SPEECHER_TEST_LOCAL_MODEL_DIR");
+        if (modelId.isEmpty() || modelDir.isEmpty()) {
+            QSKIP("Set SPEECHER_TEST_LOCAL_MODEL and SPEECHER_TEST_LOCAL_MODEL_DIR to run a real model.");
+        }
+        const LocalModel *model = findLocalModel(modelId);
+        QVERIFY(model);
+        LocalModelStore store(modelDir, QUrl());
+        const auto worker = std::make_shared<LocalSpeechWorker>();
+        LocalSpeechTranscriber me(store, worker);
+        LocalSpeechTranscriber them(store, worker);
+        QSignalSpy myFinals(&me, &SpeechTranscriber::finalTranscript);
+        QSignalSpy theirFinals(&them, &SpeechTranscriber::finalTranscript);
+        QSignalSpy myConnected(&me, &SpeechTranscriber::attemptConnected);
+        QSignalSpy theirConnected(&them, &SpeechTranscriber::attemptConnected);
+        QSignalSpy completed(&them, &SpeechTranscriber::attemptCompleted);
+        SpeechSettings settings;
+        localModelId(settings) = modelId;
+        settings.local.runsOn = {QStringLiteral("cpu"), {}};
+        QFile clip(QStringLiteral(":/speedtest/librispeech-6930-75918-0018.s16le"));
+        QVERIFY(clip.open(QIODevice::ReadOnly));
+        const QByteArray pcm = clip.readAll();
+
+#ifdef Q_OS_LINUX
+        const qint64 beforeLoad = residentBytes();
+#endif
+        me.startAttempt(1, settings, {.cutIntoUtterances = true});
+        QVERIFY(myConnected.wait(60000));
+#ifdef Q_OS_LINUX
+        const qint64 oneSession = residentBytes();
+#endif
+        them.startAttempt(1, settings, {.cutIntoUtterances = true});
+        QVERIFY(theirConnected.wait(60000));
+#ifdef Q_OS_LINUX
+        const qint64 twoSessions = residentBytes();
+#endif
+        me.beginUtterance(1);
+        them.beginUtterance(1);
+        // Both streams run at once: each side gets the whole clip, the two
+        // fed in turn.
+        for (qsizetype offset = 0; offset < pcm.size(); offset += kSpeechChunkBytes) {
+            me.sendAudio(1, pcm.mid(offset, kSpeechChunkBytes));
+            them.sendAudio(1, pcm.mid(offset, kSpeechChunkBytes));
+            QTest::qWait(10);
+        }
+        me.endUtterance(1);
+        them.endUtterance(1);
+        QTRY_COMPARE_WITH_TIMEOUT(myFinals.size(), 1, 60000);
+        QTRY_COMPARE_WITH_TIMEOUT(theirFinals.size(), 1, 60000);
+        me.finishInput(1);
+        them.finishInput(1);
+        QVERIFY(completed.wait(60000));
+        for (const QString &text : {texts(myFinals).first(), texts(theirFinals).first()}) {
+            qInfo().noquote() << "final:" << text;
+            QVERIFY2(text.contains(QStringLiteral("tempest"), Qt::CaseInsensitive), qPrintable(text));
+            QVERIFY2(text.contains(QStringLiteral("security everywhere"), Qt::CaseInsensitive), qPrintable(text));
+        }
+#ifdef Q_OS_LINUX
+        // Each stream's own working memory comes on top, as it runs.
+        qInfo() << "resident MB: before" << beforeLoad / 1000000 << "one session" << oneSession / 1000000
+                << "two sessions" << twoSessions / 1000000 << "both streamed" << residentBytes() / 1000000
+                << "model file" << model->sizeBytes / 1000000;
+        QVERIFY(oneSession - beforeLoad > model->sizeBytes / 2);
+        QVERIFY(twoSessions - oneSession < model->sizeBytes / 10);
+#endif
+    }
+
     void missingModelFailsWithAnActionableMessage()
     {
         QTemporaryDir dir;
         LocalModelStore store(dir.path(), QUrl());
-        LocalSpeechTranscriber transcriber(store);
+        LocalSpeechTranscriber transcriber(store, std::make_shared<LocalSpeechWorker>());
         QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
         SpeechSettings settings;
 
@@ -985,7 +1384,7 @@ private slots:
         QVERIFY(failed.wait(2000));
         const SpeechFailure failure = failed.first().at(0).value<SpeechFailure>();
         QCOMPARE(failure.attemptId, quint64(7));
-        QVERIFY(failure.message.contains(QStringLiteral("Local models page")));
+        QVERIFY(failure.message.contains(QStringLiteral("Services › This computer")));
         QCOMPARE(failure.kind, ProviderFailureKind::Unavailable);
     }
 #endif

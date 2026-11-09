@@ -10,6 +10,38 @@ import Speecher.Wording
 QtObject {
     id: text
 
+    // Service Orders --------------------------------------------------------------
+
+    // Each job's order as Settings holds it, [{ service, model, language,
+    // effort, speed }], the first service first, and its services by id.
+    function entries(role) { return (role === "speech" ? Settings.values.speechServices : Settings.values.refinementServices) || [] }
+    function order(role) { return entries(role).map(e => e.service) }
+    // The services a dictation tries for refinement: none while Clean up my
+    // words is off.
+    readonly property var refiners: Settings.values.refinementEnabled === false ? [] : order("refinement")
+    // The first speech service, and the first refinement service, or none.
+    readonly property string mainSpeech: order("speech")[0] || ""
+    readonly property string mainRefiner: refiners[0] || "none"
+    // A service's entry in its job's order, or one naming only it.
+    function entry(role, id) { return entries(role).find(e => e.service === id) || { service: id } }
+    // A service in either job, by role, with its wording.
+    function serviceOf(role, id) { return role === "speech" ? service(id) : provider(id) }
+    // The Services card that fixes a service: chatgpt, claude, computer or
+    // servers.
+    function cardOf(id) {
+        return ({ codex: "chatgpt", openai: "chatgpt", claude: "claude", anthropic: "claude", local: "computer",
+                  endpoint: "servers" })[id] || ""
+    }
+    // The page that card is on: This computer's on its own subpage, the
+    // rest on Services.
+    function cardPage(id) { return cardOf(id) === "computer" ? "models" : "services" }
+    // The row a link to that card lands on, for a role's service.
+    function servicesRow(role, id) {
+        return ({ chatgpt: "openAiAuthMode", claude: "anthropicAuthMode",
+                  computer: role === "speech" ? "speechLocalModel" : "localRunner",
+                  servers: role === "speech" ? "speechEndpointUrl" : "refinementEndpointUrl" })[cardOf(id)] || ""
+    }
+
     // Speech services ----------------------------------------------------------
 
     // What each service is good at, how to sign in to one that signs in,
@@ -20,7 +52,7 @@ QtObject {
         codex: { icon: "openai", help: "Very accurate, %1.",
                  signIn: "Sign in to ChatGPT in the Codex app, then check again.", textShows: "A phrase at a time",
                  models: [{ name: "GPT Live Transcribe", note: "Writes each phrase as you pause." },
-                          { name: "GPT Transcribe", note: "Goes over the whole recording when you stop, while Transcribe again for accuracy is on." }] },
+                          { name: "GPT Transcribe", note: "Goes over the whole dictation when you stop, while Transcribe again for accuracy is on." }] },
         claude: { icon: "claude", help: "%1, automatic punctuation and numerals.",
                   signIn: "Sign in to Claude Code in its desktop app or with /login in the claude CLI, then check again.", textShows: "Words as you speak",
                   models: [{ name: "Deepgram Nova 3", note: "Writes your words as you speak." }] },
@@ -46,8 +78,12 @@ QtObject {
     // How a service's text arrives; a Local Model's depends on its model.
     function textShows(id) {
         if (id !== "local") return _service(id).textShows
-        const m = catalogModel(Models.localModelChoice)
-        return m && m.streams ? "Words as you speak" : "Text after you stop"
+        return streams(id) ? "Words as you speak" : "Text after you stop"
+    }
+    // Whether a service sends text while you speak, so the popup can show it.
+    function streams(id) {
+        if (id === "local") return !!(catalogModel(Models.localModelChoice) || {}).streams
+        return id !== "endpoint"
     }
 
     // A provider's status beside it: its problem, as core says it, or Ready
@@ -80,51 +116,38 @@ QtObject {
     readonly property string notChecked: "Not checked yet"
     // A sign-in no check has vouched for yet, as Accounts says Unknown.
     readonly property string signInUnknown: "Sign-in unknown"
-    // The state a choice's status is toned by: an unknown one is being
-    // checked, its check failed, or, for a sign-in, unknown as Accounts
-    // tones it; something that doesn't sign in is waiting for its check.
-    function _shownState(provider) {
-        if (provider.state !== "unknown") return provider.state
-        return provider.signInChecking ? "checking" : provider.signInCheckFailure ? "checkFailed"
-             : provider.signsIn ? "unknown" : "notChecked"
+    // What an order says under each service: { text, state }. Whether it
+    // can run and its place are two facts: a later service says it stands
+    // in only once it is ready, and keeps its own state until then.
+    function orderStatus(provider, index) {
+        if (index > 0 && provider.state === "ready") return { text: "Ready, used when the ones above are unavailable", state: "ready" }
+        return { text: status(provider), state: provider.state }
     }
-    // A provider as ServiceCards shows it, rated from ratings (Models'
-    // ratings by id), or with no rating at all when ratings is left out.
-    // note is the line under the ratings, its parts as sentences.
-    function _choice(provider, help, ratings, noteParts) {
-        const choice = { id: provider.id, label: provider.label, icon: provider.icon, help: help,
-                         state: _shownState(provider), status: status(provider) }
-        if (ratings) choice.bars = bars(ratings[provider.id])
-        if (noteParts) choice.note = noteParts.filter(t => !!t).join(". ")
-        return choice
+    // Whether a service's problem is fixed on Services: a sign-in, a runner
+    // or a server, rather than the Spoken Language above the list or a
+    // Local Runner's model, which its order row chooses.
+    function fixable(provider) {
+        return !["ready", "unknown", "language", "offline", ""].includes(provider.state)
+            && !(provider.refines && provider.id === "local" && provider.state === "noModel")
     }
-    // Speech services as a choice for dictation, saying what each is good
-    // at, how its text arrives and what it was rated on; Transcribe files',
-    // whose text all arrives at the end, leave out how it arrives. Setup's
-    // say what each needs and what it was rated on.
-    function speechChoices(services) {
-        return services.map(s => _helpChoice(s.id, [textShows(s.id), ratedAsNote(Models.speechRatings[s.id])]))
+    // Whether Fix has something to open for a service: its Services card,
+    // where it has one, while its problem is fixable there or, with
+    // signInInDoubt, while its sign-in may be the problem.
+    function hasFix(provider, signInInDoubt) {
+        return cardOf(provider.id) !== "" && (fixable(provider) || !!signInInDoubt)
     }
-    function fileSpeechChoices(services) {
-        return services.map(s => _helpChoice(s.id, [ratedAsNote(Models.speechRatings[s.id])]))
+    // A sign-in no check has vouched for: Check again asks, and Fix opens
+    // the sign-in in case it is the problem.
+    function unchecked(provider) { return provider.state === "unknown" && !!provider.signsIn }
+    // Checks a service's sign-in again: speech's through Models, a
+    // refinement service's through its Accounts card.
+    function checkSignIn(role, id) {
+        if (role === "speech") Models.checkSignIns()
+        else Accounts.recheck(id)
     }
-    // A service by what it is good at, the count of languages in that help
-    // linking to them.
-    function _helpChoice(id, noteParts) {
-        const s = service(id)
-        return Object.assign(_choice(s, s.help, Models.speechRatings, noteParts), { helpLink: s.languageLink })
-    }
-
-    // Where a speech service stands in the chain: 0 for the service itself,
-    // then its place among the fallbacks.
-    function roleText(place) { return place === 0 ? "Used as your service." : "Used as fallback " + place + "." }
-    // A service only Writing Profiles choose, by their names.
-    function profileRoleText(names) { return "Used by your " + Words.list(names) + (names.length > 1 ? " profiles." : " profile.") }
-    // What the fallback list says under each fallback: { text, state }.
-    function fallbackStatus(provider, index, primaryLabel) {
-        if (provider.state !== "ready" && provider.state !== "unknown") return { text: status(provider), state: provider.state }
-        return { text: index === 0 ? "Used when " + primaryLabel + " is unavailable." : "Used when the ones above are unavailable.",
-                 state: "ready" }
+    function checkingSignIn(role, provider) {
+        if (role === "speech") return !!provider.signInChecking
+        return (Accounts.services.find(s => s.id === provider.id) || {}).state === "checking"
     }
 
     // Ratings --------------------------------------------------------------------
@@ -132,18 +155,26 @@ QtObject {
     readonly property var _measures: ({ accuracy: "Accuracy", quality: "Quality", speed: "Speed" })
     // A rating's bars as RatingBars draws them, or null for none.
     function bars(rating) { return rating ? rating.bars.map(b => ({ label: _measures[b.measure], value: b.value })) : null }
+    // A service's ratings in a line, for the choices that add it to an
+    // order, so services can be compared there: "Accuracy 9, Speed 7 out of
+    // 10." with what it was rated as; empty for one without ratings.
+    function ratingLine(role, id) {
+        const rating = (role === "speech" ? Models.speechRatings : Models.refinementRatings)[id]
+        const known = rating ? rating.bars.filter(b => b.value !== null && b.value !== undefined) : []
+        if (!known.length) return ""
+        return known.map(b => _measures[b.measure] + " " + b.value).join(", ") + " out of 10." + ratedAsText(rating)
+    }
     // " Rated as Parakeet 0.6B on this computer.", after a role, or nothing.
     function ratedAsText(rating) { return rating && rating.ratedModel ? " Rated as " + rating.ratedModel + " on this computer." : "" }
-    // "Rated as Parakeet 0.6B", under a card's ratings, or nothing when
-    // they are the service's own.
-    function ratedAsNote(rating) { return rating && rating.ratedModel ? "Rated as " + rating.ratedModel : "" }
-    readonly property string unrated: "No rating"
-
     // Local Models ---------------------------------------------------------------
 
+    // Whether this build runs Local Models at all: the registry has the
+    // service only where transcribe.cpp was built in.
+    readonly property bool localSpeech: Models.speechServices.some(s => s.id === "local")
     function catalogModel(id) { return Models.catalog.find(m => m.id === id) || null }
-    // Downloaded models as a choice, for a profile's own speech model.
-    readonly property var downloadedModels: Models.downloaded.map(id => ({ id: id, label: catalogModel(id).name }))
+    // Downloaded models as a choice, with what each is best for.
+    readonly property var downloadedModels: Models.downloaded.map(id => catalogModel(id) || { id: id, name: id, bestFor: "" })
+                                                             .map(m => ({ id: m.id, label: m.name, help: m.bestFor }))
 
     readonly property var _ratings: ({ recommended: "Recommended", good: "Good", situational: "Situational",
                                        notRecommended: "Not recommended" })
@@ -214,7 +245,7 @@ QtObject {
     // The library's filter: every model, or only those on this computer.
     readonly property var libraryFilters: [{ id: "all", label: "All" }, { id: "downloaded", label: "Downloaded" }]
 
-    // Custom Endpoints -----------------------------------------------------------
+    // Your servers -----------------------------------------------------------
 
     // A connection check as StatusText shows it: { text, tone, busy, dot }.
     function endpointCheck(check) {
@@ -238,33 +269,53 @@ QtObject {
 
     readonly property var _refiners: ({
         openai: { icon: "openai", help: "Uses your ChatGPT or Codex sign-in.",
-                  signIn: "Sign in with the Codex app, or add an OpenAI API key on Accounts." },
+                  signIn: "Sign in with the Codex app, or add an OpenAI API key on Services." },
         anthropic: { icon: "claude", help: "Uses your Claude Code sign-in.",
                      signIn: "Sign in to Claude Code in its desktop app or with /login in the claude CLI." },
         local: { icon: "cpu", help: "A model server running on this computer." },
         endpoint: { icon: "server", help: "Your own OpenAI- or Anthropic-compatible server." },
         none: { icon: "circle-off", help: "Keeps your words as spoken." }
     })
-    // A refinement provider with its wording, or None.
+    // Every refinement service a dictation may use: the order's, in the
+    // order it tries them, then those Writing Profiles pick for themselves.
+    // None while Clean up my words is off. Each once. A function, so
+    // ModelText reads Library only where something asks.
+    function refinersInUse() {
+        if (!refiners.length) return []
+        return refiners.concat(Library.profiles.map(p => p.refinement))
+                       .filter((id, i, all) => id.length > 0 && all.indexOf(id) === i)
+    }
+    // A refinement service with its wording, or None.
     function provider(id) {
         if (id === "none") return { id: "none", label: "None", icon: _refiners.none.icon, help: _refiners.none.help, state: "", problem: "", refines: true }
         const known = Models.refinementProviders.find(p => p.id === id) || { id: id, label: id, state: "unknown", problem: "" }
         return Object.assign({ icon: "circle", help: "" }, _refiners[id], known, { refines: true })
     }
-    // The providers, then None, as a choice, with what each was rated on.
-    function refinementChoices(providers) {
-        return providers.map(p => _choice(provider(p.id), provider(p.id).help, Models.refinementRatings,
-                                          [ratedAsNote(Models.refinementRatings[p.id])]))
-            .concat([_choice(provider("none"), _refiners.none.help)])
+    // The models ChatGPT and Claude suggest, [{ id, label }]; none for
+    // another service, whose model is typed or the runner's or server's.
+    function suggestedModels(id) { return id === "openai" ? Models.openAiModels : id === "anthropic" ? Models.anthropicModels : [] }
+    // Whether a job's service runs a model one can choose: every refinement
+    // service, and speech's Local Model and server. Claude Voice and
+    // ChatGPT dictation name theirs.
+    function choosesModel(role, id) { return role === "refinement" || id === "local" || id === "endpoint" }
+    // The models a service offers to choose, [{ id, label }]: the Local
+    // Models downloaded, a server's or the runner's once checked, ChatGPT's
+    // and Claude's. ServiceModelField shows them.
+    function modelChoices(role, id) {
+        const named = models => models.map(m => ({ id: m, label: m }))
+        if (id === "endpoint") return named((role === "speech" ? Models.speechEndpoint : Models.refinementEndpoint).models || [])
+        if (id === "local" && role === "speech") return downloadedModels
+        if (id === "local") {
+            const runner = Models.runners.find(r => r.id === Settings.values.localRunner)
+            return named(runner ? runner.models : [])
+        }
+        return role === "refinement" ? suggestedModels(id) : []
     }
-    // The model a provider refines with, as its settings name it.
+    // The model a refinement service refines with, by its name in the
+    // suggestions where it has one.
     function refinementModel(id) {
-        const v = Settings.values
-        const listed = (models, model) => (models.find(m => m.id === model) || { label: model || "" }).label
-        return id === "openai" ? listed(Models.openAiModels, v.openAiModel)
-             : id === "anthropic" ? listed(Models.anthropicModels, v.anthropicModel)
-             : id === "local" ? v.localRunnerModel || ""
-             : id === "endpoint" ? v.refinementEndpointModel || "" : ""
+        const model = entry("refinement", id).model || ""
+        return (suggestedModels(id).find(m => m.id === model) || { label: model }).label
     }
 
     // What the Local Runner row says: looking, what was found, or none.
@@ -275,6 +326,22 @@ QtObject {
              : Models.runnersChecked ? "None found. Install and start Ollama, LM Studio or llama-server."
              : "Not checked yet."
     }
+    // How This computer stands, for its row on Services: the cleanup
+    // runner, then the speech models. "Ollama isn't running, no speech
+    // model downloaded."
+    readonly property string computerSummary: {
+        const runner = Models.runners.find(r => r.id === Settings.values.localRunner)
+        const running = Models.runners.filter(r => r.running)
+        const cleanup = runner ? runner.label + (runner.running ? " runs cleanup" : " isn't running")
+                      : running.length ? Words.list(running.map(r => r.label)) + " found, not chosen for cleanup"
+                      : Models.runnersChecked ? "No cleanup runner found" : ""
+        const count = Models.downloaded.length
+        const speech = !localSpeech ? "this build can't run speech models"
+                     : count === 0 ? "no speech model downloaded"
+                     : count === 1 ? "1 speech model downloaded" : count + " speech models downloaded"
+        const line = [cleanup, speech].filter(s => s).join(", ")
+        return line.charAt(0).toUpperCase() + line.slice(1) + "."
+    }
     // A chosen runner that has stopped, as the runner menu lists it.
     function stoppedRunner(label) { return label + " (not running)" }
     // The Ollama pull of the cleanup model suggested here.
@@ -282,9 +349,7 @@ QtObject {
         const s = Models.cleanupSuggestion
         const pull = Models.pull
         if (pull.running) return "Downloading " + (s.name || pull.tag) + " through Ollama: " + size(pull.completedBytes) + " of " + size(pull.totalBytes)
-        if (!s.name) return "Cleanup would be slow on this computer. A cloud provider or skipping cleanup will feel faster."
+        if (!s.name) return "Cleanup would be slow on this computer. A cloud service or skipping cleanup will feel faster."
         return "Suggested for this computer: " + s.name + ", " + size(s.sizeBytes) + "." + (pull.error ? " " + pull.error : "")
     }
-    function fallbackOfferText(offer) { return "Add " + offer.name + " as a fallback, on this computer." }
-    readonly property string addFallback: "Add"
 }

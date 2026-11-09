@@ -1,5 +1,7 @@
 #include "common/test_prelude.h"
+#include "common/vocabulary_entries.h"
 #include "common/test_doubles.h"
+#include "common/apps_fixtures.h"
 
 #include <QScopeGuard>
 
@@ -39,7 +41,7 @@ private slots:
         QFETCH(bool, deliverySucceeds);
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         setCleanupLevel(settings, QStringLiteral("light_cleanup"));
         FakeAudioInput audio;
         FakeMediaController media;
@@ -84,7 +86,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         setCleanupLevel(settings, QStringLiteral("light_cleanup"));
         settings.edit([](AppSettings &draft) { draft.vocabulary = {{QStringLiteral("Qt")}}; return true; });
 
@@ -133,7 +135,7 @@ private slots:
         settings.raw().clear();
         settings.raw().setValue("ui/transcriptionPreviewEnabled", transcriptionPreview);
         settings.raw().setValue("ui/refinementPreviewEnabled", refinementPreview);
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         setCleanupLevel(settings, QStringLiteral("light_cleanup"));
 
         auto audio = std::make_unique<FakeAudioInput>();
@@ -176,10 +178,10 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         setCleanupLevel(settings, QStringLiteral("light_cleanup"));
         QVERIFY(settings.edit([](AppSettings &draft) {
-            draft.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
+            draft.vocabulary.append(test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com")));
             return true;
         }));
 
@@ -236,8 +238,8 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("openai");
-            draft.insightsEnabled = true;
+            draft.refinement.services.order = {QStringLiteral("openai")};
+            draft.history.keeps = HistoryKeep::Text;
             return true;
         });
         FakeAudioInput audio;
@@ -254,7 +256,7 @@ private slots:
         registerFakeSpeechProvider(registry, &speech);
         registerFakeRefiner(registry, &refiner);
         DictationSession session(&settings, &audio, &media, &target, &delivery, &registry);
-        QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
+        QSignalSpy recorded(&session, &DictationSession::dictationFinished);
         bool acted = false;
         const auto turnReviewOff = [&settings] {
             settings.edit([](AppSettings &draft) {
@@ -311,7 +313,7 @@ private slots:
         QVERIFY(!session.reviewUp());
         QVERIFY(session.state() != DictationState::Reviewing);
         QCOMPARE(recorded.count(), 1);
-        QCOMPARE(recorded.first().first().value<DictationRecord>().words, followUp ? 5 : 3);
+        QCOMPARE(recorded.first().first().value<HistoryEntry>().stats.words, followUp ? 5 : 3);
     }
 
     void dictationSessionEditsSelectedTextFromSpokenInstructions()
@@ -320,7 +322,7 @@ private slots:
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
             draft.ui.selectionEditReviewEnabled = false;
-            draft.refinement.providerId = QStringLiteral("openai");
+            draft.refinement.services.order = {QStringLiteral("openai")};
             return true;
         });
         settings.edit([](AppSettings &draft) { draft.vocabulary = {{QStringLiteral("Speecher")}}; return true; });
@@ -382,7 +384,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         FakeAudioInput audio;
         FakeMediaController media;
         FakeTargetProvider target;
@@ -424,7 +426,8 @@ private slots:
         QTRY_COMPARE(delivery.answers, 1);
         QCOMPARE(delivery.lastText, QStringLiteral("Move the standup to Thursday."));
         QCOMPARE(delivery.lastTarget.selectionStart, 4);
-        QCOMPARE(delivery.lastSettings.pasteRules, defaultPasteRules());
+        // Kate is a code editor, which sets no steps or keys of its own.
+        QCOMPARE(delivery.lastPasting, PastingChoice{});
         QCOMPARE(session.lastMessage(), QStringLiteral("Sent to the app"));
     }
 
@@ -443,7 +446,7 @@ private slots:
         QFETCH(QString, meanwhile);
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         FakeAudioInput audio;
         FakeMediaController media;
         FakeTargetProvider target;
@@ -496,8 +499,8 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("openai");
-            draft.insightsEnabled = true;
+            draft.refinement.services.order = {QStringLiteral("openai")};
+            draft.history.keeps = HistoryKeep::Text;
             return true;
         });
         FakeAudioInput audio;
@@ -515,7 +518,7 @@ private slots:
         registerFakeRefiner(registry, &refiner);
         DictationSession session(&settings, &audio, &media, &target, &delivery, &registry);
         QSignalSpy reviews(&session, &DictationSession::popupSelectionEditReviewRequested);
-        QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
+        QSignalSpy recorded(&session, &DictationSession::dictationFinished);
         const auto lastReview = [&reviews] { return reviews.last().first().value<SelectionEditReview>(); };
 
         session.startListening();
@@ -556,8 +559,8 @@ private slots:
         QCOMPARE(delivery.lastTarget.selectionStart, 4);
         // Insights counts every instruction spoken for the edit.
         QCOMPARE(recorded.count(), 1);
-        QCOMPARE(recorded.first().first().value<DictationRecord>().words, 7);
-        QCOMPARE(recorded.first().first().value<DictationRecord>().refinementProviders,
+        QCOMPARE(recorded.first().first().value<HistoryEntry>().stats.words, 7);
+        QCOMPARE(recorded.first().first().value<HistoryEntry>().stats.refinementProviders,
                  QStringList{QStringLiteral("openai")});
     }
 
@@ -581,7 +584,7 @@ private slots:
         QFETCH(int, deliveries);
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         FakeAudioInput audio;
         FakeMediaController media;
         FakeTargetProvider target;
@@ -639,7 +642,7 @@ private slots:
         QFETCH(QString, how);
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         FakeAudioInput audio;
         FakeMediaController media;
         FakeTargetProvider target;
@@ -704,7 +707,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         FakeAudioInput audio;
         FakeMediaController media;
         FakeTargetProvider target;
@@ -743,11 +746,14 @@ private slots:
     {
         QTest::addColumn<bool>("selectionMoved");
         QTest::addColumn<bool>("focusMoved");
-        QTest::newRow("keep original") << false << false;
-        QTest::newRow("selection changed, then replace") << true << false;
+        QTest::addColumn<bool>("appHasSteps");
+        QTest::newRow("keep original") << false << false << false;
+        QTest::newRow("selection changed, then replace") << true << false << false;
         // Another control with the same selection is still not the one the
         // edit was made in.
-        QTest::newRow("another control focused, then replace") << false << true;
+        QTest::newRow("another control focused, then replace") << false << true << false;
+        // Steps of the App's own still give way to the clipboard.
+        QTest::newRow("selection changed in an app with its own steps") << true << false << true;
     }
 
     // Keep original leaves the selection alone and says nothing. Replace after
@@ -757,9 +763,18 @@ private slots:
     {
         QFETCH(bool, selectionMoved);
         QFETCH(bool, focusMoved);
+        QFETCH(bool, appHasSteps);
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([appHasSteps](AppSettings &draft) {
+            draft.refinement.services.order = {QStringLiteral("openai")};
+            for (AppTypeSettings &type : draft.apps.types) {
+                if (appHasSteps && type.type == AppCategory::CodeEditor) {
+                    type.pasting.steps = DeliverySteps{.insert = true, .press = true, .keep = false};
+                }
+            }
+            return true;
+        });
         FakeAudioInput audio;
         FakeMediaController media;
         FakeTargetProvider target;
@@ -803,8 +818,8 @@ private slots:
         QCOMPARE(delivery.calls, 1);
         QTRY_COMPARE(delivery.answers, 1);
         QCOMPARE(delivery.lastText, QStringLiteral("Keep the original"));
-        QCOMPARE(delivery.lastSettings.pasteRules,
-                 (QList<PasteRule>{{PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly}}));
+        QCOMPARE(deliveryPlan(delivery.lastSettings.steps, delivery.lastPasting).steps,
+                 (DeliverySteps{.insert = false, .press = false, .keep = true}));
         QCOMPARE(session.lastMessage(), QStringLiteral("Sent to the app • Your selection changed"));
     }
 
@@ -814,7 +829,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         FakeAudioInput audio;
         FakeMediaController media;
         FakeTargetProvider target;
@@ -850,7 +865,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         setCleanupLevel(settings, QStringLiteral("light_cleanup"));
         FakeAudioInput audio;
         FakeMediaController media;
@@ -885,7 +900,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -924,16 +939,14 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("openai");
+            draft.refinement.services.order = {QStringLiteral("openai")};
             draft.refinement.writingProfiles = {
                 {WritingProfile::Work, QStringLiteral("strong_polish"), QStringLiteral("formal")},
                 {WritingProfile::Email, QStringLiteral("balanced"), QStringLiteral("none")},
                 {WritingProfile::Personal, QStringLiteral("light_cleanup"), QStringLiteral("casual")},
                 {WritingProfile::Other, QStringLiteral("none"), QStringLiteral("none")},
             };
-            draft.refinement.writingProfileOverrides = {
-                {QStringLiteral("firefox"), WritingProfile::Work, true},
-            };
+            draft.apps.apps = {idApp(QStringLiteral("firefox"), WritingProfile::Work)};
             return true;
         });
 
@@ -973,9 +986,9 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
         QVERIFY(settings.edit([](AppSettings &draft) {
-            draft.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
+            draft.vocabulary.append(test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com")));
             return true;
         }));
 
@@ -1000,11 +1013,11 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         QVERIFY(settings.edit([](AppSettings &draft) {
-            draft.bindings = {
-                {QStringLiteral("my email"), QStringLiteral("efox@example.com")},
-                {QStringLiteral("my phone"), QStringLiteral("+1 555 0100")},
+            draft.vocabulary += {
+                test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com")),
+                test::replacementEntry(QStringLiteral("my phone"), QStringLiteral("+1 555 0100")),
             };
             return true;
         }));
@@ -1034,10 +1047,10 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         settings.edit([](AppSettings &draft) { draft.vocabulary = {{QStringLiteral("Qt")}}; return true; });
         QVERIFY(settings.edit([](AppSettings &draft) {
-            draft.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
+            draft.vocabulary.append(test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com")));
             return true;
         }));
 
@@ -1072,10 +1085,10 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         settings.edit([](AppSettings &draft) { draft.vocabulary = {{QStringLiteral("Qt")}}; return true; });
         QVERIFY(settings.edit([](AppSettings &draft) {
-            draft.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
+            draft.vocabulary.append(test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com")));
             return true;
         }));
 
@@ -1110,11 +1123,11 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         QVERIFY(settings.edit([](AppSettings &draft) {
-            draft.bindings = {
-                {QStringLiteral("my email"), QStringLiteral("efox@example.com")},
-                {QStringLiteral("speecher binding"), QStringLiteral("bad replacement")},
+            draft.vocabulary += {
+                test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com")),
+                test::replacementEntry(QStringLiteral("speecher binding"), QStringLiteral("bad replacement")),
             };
             return true;
         }));
@@ -1149,9 +1162,9 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         QVERIFY(settings.edit([](AppSettings &draft) {
-            draft.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
+            draft.vocabulary.append(test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com")));
             return true;
         }));
 
@@ -1184,9 +1197,9 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         QVERIFY(settings.edit([](AppSettings &draft) {
-            draft.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
+            draft.vocabulary.append(test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com")));
             return true;
         }));
 
@@ -1219,9 +1232,9 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         QVERIFY(settings.edit([](AppSettings &draft) {
-            draft.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
+            draft.vocabulary.append(test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com")));
             return true;
         }));
 
@@ -1251,7 +1264,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -1280,9 +1293,9 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         QVERIFY(settings.edit([](AppSettings &draft) {
-            draft.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
+            draft.vocabulary.append(test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com")));
             return true;
         }));
 
@@ -1311,7 +1324,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -1340,7 +1353,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -1365,7 +1378,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -1399,7 +1412,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -1440,7 +1453,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -1483,7 +1496,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
         FakeAudioInput audio;
         FakeMediaController media;
         FakeDelivery delivery;
@@ -1514,7 +1527,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
         FakeAudioInput audio;
         FakeMediaController media;
         FakeDelivery delivery;
@@ -1543,7 +1556,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -1566,7 +1579,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -1606,7 +1619,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -1653,7 +1666,7 @@ private slots:
         QFETCH(bool, stops);
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("openai"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.services.order = {QStringLiteral("openai")}; return true; });
         setCleanupLevel(settings, QStringLiteral("light_cleanup"));
         FakeAudioInput audio;
         FakeMediaController media;
@@ -1703,7 +1716,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -1730,7 +1743,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.edit([](AppSettings &draft) { draft.refinement.providerId = QStringLiteral("none"); return true; });
+        settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();

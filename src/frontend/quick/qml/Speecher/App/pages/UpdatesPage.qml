@@ -23,6 +23,20 @@ Page {
         const builds = lines.length ? [{ version: "", sections: [{ title: page.t.commits, items: lines }] }] : []
         return builds.concat(news.releases || [])
     }
+    // The newest build's first few notes show; the rest of them, and the
+    // releases before it, wait behind What's new, which opens by itself when
+    // the page opens for an update's news.
+    readonly property int _previewLines: 3
+    readonly property var _latest: _news.length ? _news[0].sections : []
+    readonly property var _preview: _latest.length ? [Object.assign({}, _latest[0], { items: _latest[0].items.slice(0, _previewLines) })] : []
+    readonly property var _rest: {
+        if (!_latest.length) return []
+        const more = _latest[0].items.slice(_previewLines)
+        return (more.length ? [{ title: "", items: more }] : []).concat(_latest.slice(1))
+    }
+    readonly property bool _hasMore: _rest.length > 0 || _news.length > 1
+    property bool _newsOpen: false
+
     // Settings added since the version run before the update.
     readonly property var _newSettings: Object.keys(Schema.since).filter(id => Updates.newSince(Schema.since[id]))
 
@@ -38,13 +52,18 @@ Page {
         commit: c => c.title + " ([" + (c.pullRequest ? "#" + c.pullRequest : c.sha) + "](" + c.url + "))",
         compareCommits: url => "[Compare commits](" + url + ")",
         allReleases: "All releases",
+        showAll: "Show all of what's new",
+        showLess: "Show less",
         newSettings: "New settings",
         newSettingsCaption: "Added since the version you used before.",
-        noAutomaticDownloads: "This copy of Speecher can't install updates itself. Get new versions from the release page."
+        releasePage: "release page"
     })
 
     // Opening the page is seeing the news.
-    Component.onCompleted: Updates.acknowledgeWhatsNew()
+    Component.onCompleted: {
+        _newsOpen = Updates.whatsNewPending
+        Updates.acknowledgeWhatsNew()
+    }
 
     Section {
         // The number and channel; the whole build, for a bug report, is in
@@ -87,20 +106,47 @@ Page {
         // Only a copy that can replace itself installs in the background.
         SchemaRow {
             rowId: "autoInstallUpdates"
-            enabled: Updates.automaticDownloads
-            note: Updates.automaticDownloads ? spec.help : page.t.noAutomaticDownloads
+            helpLink: Updates.automaticDownloads ? "" : page.t.releasePage
+            onHelpLinkActivated: Updates.openAllReleases()
         }
     }
 
-    Repeater {
-        model: page._news
+    Reveal {
+        open: page._news.length > 0
         Section {
-            id: news
-            required property var modelData
-            required property int index
-            title: index === 0 ? page.t.whatsNewIn(modelData.version) : page.t.release(modelData.version)
-            actions: [ Button { visible: news.index === 0; text: page.t.allReleases; variant: "ghost"; size: "small"; trailingIcon: "external-link"; onClicked: Updates.openAllReleases() } ]
-            ReleaseNotes { groups: news.modelData.sections }
+            title: page.t.whatsNewIn(page._news.length ? page._news[0].version : "")
+            actions: [ Button { text: page.t.allReleases; variant: "ghost"; size: "small"; trailingIcon: "external-link"; onClicked: Updates.openAllReleases() } ]
+            ReleaseNotes { groups: page._preview }
+            Reveal {
+                open: page._newsOpen
+                ReleaseNotes { groups: page._rest }
+            }
+            SettingRow {
+                shown: page._hasMore
+                title: page._newsOpen ? page.t.showLess : page.t.showAll
+                clickable: true
+                trailingIcon: "chevron-down"
+                trailingRotation: page._newsOpen ? 180 : 0
+                onClicked: page._newsOpen = !page._newsOpen
+            }
+        }
+    }
+
+    // The releases the update crossed, under the newest.
+    Reveal {
+        open: page._newsOpen && page._news.length > 1
+        Column {
+            width: parent.width
+            spacing: Theme.sectionGap
+            Repeater {
+                model: page._news.slice(1)
+                Section {
+                    id: news
+                    required property var modelData
+                    title: page.t.release(modelData.version)
+                    ReleaseNotes { groups: news.modelData.sections }
+                }
+            }
         }
     }
 
@@ -122,7 +168,7 @@ Page {
                     help: spec.help || ""
                     clickable: true
                     trailingText: Schema.page(spec.page).title
-                    onClicked: Navigation.goToRow(spec.page, key)
+                    onClicked: Navigation.follow(spec.page, key)
                 }
             }
         }

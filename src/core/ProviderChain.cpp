@@ -1,5 +1,7 @@
 #include "core/ProviderChain.h"
 
+#include "core/AppSettings.h"
+
 #include <QtGlobal>
 
 namespace speecher {
@@ -16,37 +18,39 @@ bool isChainProviderId(ProviderRole role, const QString &id)
     return provider && providerServes(*provider, role);
 }
 
-QStringList normalizedFallbackProviders(ProviderRole role,
-                                        const QString &primary,
-                                        const QStringList &fallbacks)
+ServiceOrder normalizedServiceOrder(ProviderRole role, ServiceOrder services)
 {
-    QStringList kept;
-    if (role == ProviderRole::Refinement && primary == kNoRefinementProvider) {
-        return kept;
-    }
-    for (const QString &id : fallbacks) {
-        if (kept.size() == kMaxFallbackProviders) {
-            break;
+    services.order = serviceChain(role, services.order);
+    for (auto it = services.choices.begin(); it != services.choices.end();) {
+        if (!isChainProviderId(role, it.key())) {
+            it = services.choices.erase(it);
+            continue;
         }
-        if (id != primary && !kept.contains(id) && isChainProviderId(role, id)) {
-            kept.append(id);
-        }
+        it->service = it.key();
+        ++it;
     }
-    return kept;
+    return services;
 }
 
-QStringList providerChain(ProviderRole role, const QString &primary, const QStringList &fallbacks)
+QStringList serviceChain(ProviderRole role, const QStringList &order)
 {
-    if (role == ProviderRole::Refinement && primary == kNoRefinementProvider) {
-        return {};
-    }
-    QStringList chain{primary};
-    for (const QString &id : fallbacks) {
+    QStringList chain;
+    for (const QString &id : order) {
         if (!chain.contains(id) && isChainProviderId(role, id)) {
             chain.append(id);
         }
     }
     return chain;
+}
+
+QStringList serviceChain(const SpeechSettings &speech)
+{
+    return serviceChain(ProviderRole::Speech, speech.services.order);
+}
+
+QStringList serviceChain(const RefinementSettings &refinement)
+{
+    return refinement.enabled ? serviceChain(ProviderRole::Refinement, refinement.services.order) : QStringList();
 }
 
 } // namespace speecher

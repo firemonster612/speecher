@@ -3,11 +3,13 @@
 #include "common/test_system_singletons.h"
 
 #include "app/AccessibilityMonitor.h"
-#include "core/OutputMethod.h"
+#include "core/PasteKeys.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickAppearance.h"
 #include "frontend/quick/host/QuickAudio.h"
 #include "frontend/quick/host/QuickDictation.h"
+#include "frontend/quick/host/QuickApps.h"
+#include "frontend/quick/host/QuickHistory.h"
 #include "frontend/quick/host/QuickInsights.h"
 #include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickModels.h"
@@ -315,47 +317,74 @@ private slots:
         QVERIFY(SettingsStore().dictationSnapshot().output.ydotoolEnabled);
     }
 
-    // Only the setup assistant's own setup makes the output method Automatic,
-    // as the assistant did before.
-    void setupsKeyboardPastesAutomatically()
-    {
-        ApplicationController controller(true);
-        const QString ydotool = QString::fromLatin1(OutputMethod::Ydotool);
-        // The output method after setting up a keyboard that isn't there yet.
-        const auto afterSetUp = [&controller, &ydotool](bool fromSetup, bool helperSucceeds) {
-            controller.settings()->edit([&](AppSettings &draft) { draft.output.method = ydotool; return true; });
-            FakeKeyboard keyboard;
-            keyboard.helperSucceeds = helperSucceeds;
-            StandInSystem standIn(&controller, keyboard);
-        QuickSystem &system = standIn.system;
-            const QString id = QStringLiteral("virtualKeyboardHealth");
-            fromSetup ? system.fixFromSetup(id) : system.fix(id);
-            const bool finished = QTest::qWaitFor([&system] {
-                return keyboardCheck(system).value(QStringLiteral("state")).toString() != QLatin1String("working");
-            });
-            return finished ? SettingsStore().dictationSnapshot().output.method : QStringLiteral("still setting up");
-        };
-        QCOMPARE(afterSetUp(false, true), ydotool);
-        QCOMPARE(afterSetUp(true, true), QString::fromLatin1(OutputMethod::Automatic));
-        QCOMPARE(afterSetUp(true, false), ydotool);
-    }
-
     // Words stay on the clipboard while neither accessibility nor a ready
-    // virtual keyboard gets them in.
-    void wordsStayCopiedUntilTheKeyboardIsReady()
+    // virtual keyboard gets them in, and only while Keep is on.
+    void pastingOutcomeFollowsTheStepsThatCanRun()
     {
         ApplicationController controller(true);
         QVERIFY(!controller.accessibility()->enabled());
         FakeKeyboard missing;
         StandInSystem without(&controller, missing);
-        QCOMPARE(without.system.pasteNeed(), QStringLiteral("either"));
-        QVERIFY(without.system.wordsStayCopied());
+        const auto readySteps = [](const QuickSystem &system) {
+            QStringList ready;
+            for (const QVariant &step : system.deliverySteps()) {
+                if (step.toMap().value(QStringLiteral("ready")).toBool()) {
+                    ready << step.toMap().value(QStringLiteral("id")).toString();
+                }
+            }
+            return ready.join(u' ');
+        };
+        const auto setSteps = [&controller](DeliverySteps steps) {
+            controller.settings()->edit([steps](AppSettings &draft) { draft.output.steps = steps; return true; });
+        };
+        QCOMPARE(readySteps(without.system), QStringLiteral("keep"));
+        QCOMPARE(without.system.pastingOutcome(), QStringLiteral("clipboard"));
+        // Insertion waits for accessibility, by name.
+        const QVariantMap insert = without.system.deliverySteps().first().toMap();
+        QCOMPARE(insert.value(QStringLiteral("waiting")).toStringList(), QStringList{QStringLiteral("accessibility")});
+        // With Keep off nothing is left to hold them.
+        setSteps({.insert = true, .press = true, .keep = false});
+        QCOMPARE(without.system.pastingOutcome(), QStringLiteral("nothing"));
+        // Copying only was the choice, so it is the outcome.
+        setSteps({.insert = false, .press = false, .keep = true});
+        QCOMPARE(without.system.pastingOutcome(), QStringLiteral("clipboard"));
+        setSteps({});
 
         controller.settings()->setYdotoolEnabled(true);
         FakeKeyboard ready;
         ready.installed = YdotoolSetupState::Ready;
         StandInSystem with(&controller, ready);
-        QVERIFY(!with.system.wordsStayCopied());
+        QCOMPARE(with.system.pastingOutcome(), QStringLiteral("delivers"));
+    }
+
+    // What some steps do here: which are on, in order, and which of those
+    // this computer can run now.
+    void stepsPlanSaysWhatCanRun()
+    {
+        ApplicationController controller(true);
+        FakeKeyboard keyboard;
+        StandInSystem standIn(&controller, keyboard);
+        const auto ids = [&standIn](bool insert, bool press, bool keep, bool readyOnly) {
+            QStringList ids;
+            for (const QVariant &entry : standIn.system.stepsPlan({{QStringLiteral("insert"), insert},
+                                                                   {QStringLiteral("press"), press},
+                                                                   {QStringLiteral("keep"), keep}})) {
+                const QVariantMap step = entry.toMap();
+                if (step.value(QStringLiteral("on")).toBool()
+                    && (!readyOnly || step.value(QStringLiteral("ready")).toBool())) {
+                    ids << step.value(QStringLiteral("id")).toString();
+                }
+            }
+            return ids;
+        };
+        QCOMPARE(ids(true, true, true, false), (QStringList{"insert", "press", "keep"}));
+        QCOMPARE(ids(true, false, true, false), (QStringList{"insert", "keep"}));
+        QCOMPARE(ids(false, false, true, false), QStringList{"keep"});
+#ifdef Q_OS_LINUX
+        // Without accessibility or a virtual keyboard, only Keep can run.
+        QCOMPARE(ids(true, true, true, true), QStringList{"keep"});
+        QVERIFY(ids(false, true, false, true).isEmpty());
+#endif
     }
 
     // Removal goes on past a failed step and reports each one.
@@ -495,25 +524,24 @@ private slots:
         const auto kept = keepSettingsHere(*controller.settings());
         FakeKeyboard keyboard;
         SpeecherRemoval::Steps steps = quietRemoval();
-        QString methodAtStart;
-        steps.removeDesktopIntegration = [&controller, &methodAtStart] {
-            methodAtStart = controller.settings()->dictationSnapshot().output.method;
+        QString keyboardAtStart;
+        QuickSystem *started = nullptr;
+        steps.removeDesktopIntegration = [&keyboardAtStart, &started] {
+            keyboardAtStart = keyboardCheck(*started).value(QStringLiteral("state")).toString();
             return DesktopIntegrationRemoval{};
         };
         steps.deleteSettings = [&controller](QString *error) { return controller.settings()->deleteAll(error); };
         StandInSystem standIn(&controller, keyboard, steps);
         QuickSystem &system = standIn.system;
-        controller.settings()->edit([](AppSettings &draft) {
-            draft.output.method = QStringLiteral("clipboard");
-            return true;
-        });
+        started = &system;
         const QString file = controller.settings()->raw().fileName();
 
-        system.fixFromSetup(QStringLiteral("virtualKeyboardHealth"));
+        system.fix(QStringLiteral("virtualKeyboardHealth"));
         standIn.removal.start(false);
         QVERIFY(standIn.removal.running());
         QTRY_VERIFY(!standIn.removal.running());
-        QCOMPARE(methodAtStart, QString::fromLatin1(OutputMethod::Automatic));
+        QVERIFY(!keyboardAtStart.isEmpty());
+        QVERIFY(keyboardAtStart != QLatin1String("working"));
         QCOMPARE(system.virtualKeyboardTest(), QStringLiteral("off"));
         QCoreApplication::processEvents();
         QVERIFY(!QFile::exists(file));
@@ -545,8 +573,10 @@ private slots:
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
         QuickUpdates updates(&controller, controller.updates());
-        QuickModels models(&controller);
+        QuickModels models(&controller, &settings);
         QuickInsights insights(&controller);
+        QuickHistory history(&controller);
+        QuickApps apps(&controller);
         // Home reads Audio for its microphone.
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         // The window and General read Appearance, as the host always has it.
@@ -612,8 +642,12 @@ private slots:
         FakeKeyboard keyboard;
         StandInSystem standIn(&controller, keyboard);
         QuickPhone &phone = standIn.phone;
+        // General's rows read Library, which reads the services' models.
+        QuickModels models(&controller, &standIn.settings);
         // General clears Insights' history, as the host always has it.
         QuickInsights insights(&controller);
+        QuickHistory history(&controller);
+        QuickApps apps(&controller);
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         const std::unique_ptr<QObject> created = createQml(engine, R"(
@@ -643,86 +677,204 @@ private slots:
     }
 
 #ifdef Q_OS_LINUX
+    void aHealthRowFollowsItsCheck_data()
+    {
+        QTest::addColumn<QString>("error");
+        QTest::addColumn<QString>("said");
+        QTest::newRow("a sentence") << QStringLiteral("Authorization was declined.")
+                                    << QStringLiteral("Setup failed: Authorization was declined.");
+        // pkexec's own words come without a full stop.
+        QTest::newRow("words") << QStringLiteral("pkexec is not installed")
+                               << QStringLiteral("Setup failed: pkexec is not installed.");
+    }
+
     // A row follows its check as it changes, and a fix that fails says why
-    // in the row, as the setup assistant's row does.
+    // in the row, as the setup assistant's row does, as a sentence.
     void aHealthRowFollowsItsCheck()
     {
+        QFETCH(QString, error);
+        QFETCH(QString, said);
         ApplicationController controller(true);
         // The pages read Library, which works through this controller.
         const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
         FakeKeyboard keyboard;
         keyboard.helperSucceeds = false;
-        keyboard.helperError = QStringLiteral("Authorization was declined.");
+        keyboard.helperError = error;
         StandInSystem standIn(&controller, keyboard);
         QuickSystem &system = standIn.system;
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
         const std::unique_ptr<QObject> row = createQml(engine, R"(
             import Speecher.App
-            HealthRow { rowId: "virtualKeyboardHealth"; fromSetup: true }
+            HealthRow { rowId: "virtualKeyboardHealth" }
         )");
         QVERIFY(row);
         const auto reason = [&row] { return row->property("check").toMap().value(QStringLiteral("reason")).toString(); };
         QCOMPARE(reason(), QStringLiteral("notInstalled"));
 
-        system.fixFromSetup(QStringLiteral("virtualKeyboardHealth"));
+        system.fix(QStringLiteral("virtualKeyboardHealth"));
         QCOMPARE(reason(), QStringLiteral("settingUp"));
-        QTRY_COMPARE(row->property("help").toString(),
-                     QStringLiteral("Setup failed: Authorization was declined."));
+        QTRY_COMPARE(row->property("help").toString(), said);
         QCOMPARE(reason(), QStringLiteral("notInstalled"));
 
         // Trying again clears it.
         keyboard.helperSucceeds = true;
-        system.fixFromSetup(QStringLiteral("virtualKeyboardHealth"));
+        system.fix(QStringLiteral("virtualKeyboardHealth"));
         QVERIFY(!row->property("help").toString().startsWith(QLatin1String("Setup failed")));
         QTRY_COMPARE(reason(), QStringLiteral("testing"));
     }
 
-    // Setup goes on past a check that is as far as this computer gets, and
-    // the check still says so.
-    void setupSettlesForWhatTheComputerAllows()
+    // Setup words where the words end up from the one outcome Home and
+    // Pasting show, which follows its draft: the Pasting step passes once a
+    // step that is on gets them into the app, and is needed only while they
+    // get nowhere at all. Words left on the clipboard leave it open but not
+    // needed. The saved switches stay until setup saves. Setup counts as
+    // complete only once no needed step is open, and no step's check holds
+    // back another.
+    void setupPastingFollowsTheOutcomeOfItsDraft()
     {
         ApplicationController controller(true);
+        QVERIFY(!controller.accessibility()->enabled());
         // The pages read Library, which works through this controller.
         const QuickLibrary::ControllerScope library(&controller);
-        QuickSettings settings(&controller);
         FakeKeyboard keyboard;
         keyboard.installed = YdotoolSetupState::NeedsSignOut;
         keyboard.managed = true;
         StandInSystem standIn(&controller, keyboard);
-        QuickSystem &system = standIn.system;
         // Setup's choices read Models and Audio, as the host always has them.
-        QuickModels models(&controller);
+        QuickModels models(&controller, &standIn.settings);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         QQmlEngine engine;
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
         const std::unique_ptr<QObject> choices(component.create());
         QVERIFY2(choices, qPrintable(component.errorString()));
-        QVariantMap delivery;
-        for (const QVariant &step : plain(choices->property("steps")).toList()) {
-            if (step.toMap().value(QStringLiteral("id")) == QLatin1String("delivery")) {
-                delivery = step.toMap();
+        const auto step = [&choices](const char *id) {
+            for (const QVariant &step : plain(choices->property("steps")).toList()) {
+                if (step.toMap().value(QStringLiteral("id")) == QLatin1String(id)) {
+                    return step.toMap();
+                }
             }
-        }
-        QVERIFY(delivery.value(QStringLiteral("done")).toBool());
-        QCOMPARE(delivery.value(QStringLiteral("verdict")).toString(), QStringLiteral("Sign out first"));
+            return QVariantMap();
+        };
+        const auto delivery = [&step] { return step("delivery"); };
 
-        const std::unique_ptr<QObject> settled = createQml(engine, R"(
+        // A keyboard waiting for the next sign-in can't press the keys yet,
+        // so the words stay on the clipboard, as Home says.
+        QCOMPARE(standIn.system.pastingOutcome(), QStringLiteral("clipboard"));
+        QVERIFY(!delivery().value(QStringLiteral("done")).toBool());
+        QVERIFY(!delivery().value(QStringLiteral("needed")).toBool());
+        QCOMPARE(delivery().value(QStringLiteral("verdict")).toString(), QStringLiteral("Your words stay on the clipboard"));
+
+        // Keep off in the draft leaves nothing, in setup and in System
+        // alike, though the saved switches still keep the words.
+        standIn.settings.set(QStringLiteral("keepOnClipboard"), false);
+        QVERIFY(delivery().value(QStringLiteral("needed")).toBool());
+        QCOMPARE(delivery().value(QStringLiteral("verdict")).toString(), QStringLiteral("Nothing can deliver your words"));
+        QCOMPARE(standIn.system.pastingOutcome(), QStringLiteral("nothing"));
+        QVERIFY(controller.settings()->dictationSnapshot().output.steps.keep);
+
+        // A keyboard that is ready gets them in with Press alone, Keep off.
+        keyboard.installed = YdotoolSetupState::Ready;
+        controller.settings()->setYdotoolEnabled(true);
+        standIn.virtualKeyboard.refresh();
+        standIn.settings.set(QStringLiteral("insertThroughAccessibility"), false);
+        QTRY_VERIFY(delivery().value(QStringLiteral("done")).toBool());
+        QVERIFY(!delivery().value(QStringLiteral("needed")).toBool());
+        QCOMPARE(delivery().value(QStringLiteral("verdict")).toString(), QStringLiteral("Paste keys"));
+
+        // Refinement and the shortcut are never needed. Speech and the
+        // microphone are, until they pass, and keep setup from being
+        // complete; nothing else stops it.
+        QVERIFY(!step("refinement").value(QStringLiteral("needed")).toBool());
+        QVERIFY(!step("shortcut").value(QStringLiteral("needed")).toBool());
+        QVERIFY(step("microphone").value(QStringLiteral("needed")).toBool());
+        QVERIFY(!choices->property("complete").toBool());
+    }
+
+    // System's delivery steps and outcome are the settings as Settings
+    // shows them: with a draft's switches over the saved ones until it is
+    // dropped, and saved once it is saved. A row the draft doesn't hold
+    // saves at once, and a save from elsewhere shows under the draft.
+    void deliveryFollowsTheSettingsDraft()
+    {
+        ApplicationController controller(true);
+        FakeKeyboard keyboard;
+        StandInSystem standIn(&controller, keyboard);
+        QuickSettings &settings = standIn.settings;
+        const auto saved = [&controller] { return controller.settings()->dictationSnapshot(); };
+        QCOMPARE(standIn.system.pastingOutcome(), QStringLiteral("clipboard"));
+
+        settings.startDraft({QStringLiteral("keepOnClipboard")});
+        settings.set(QStringLiteral("keepOnClipboard"), false);
+        QCOMPARE(standIn.system.pastingOutcome(), QStringLiteral("nothing"));
+        QVERIFY(!settings.values().value(QStringLiteral("keepOnClipboard")).toBool());
+        QVERIFY(saved().output.steps.keep);
+        settings.dropDraft();
+        QCOMPARE(standIn.system.pastingOutcome(), QStringLiteral("clipboard"));
+        QVERIFY(settings.values().value(QStringLiteral("keepOnClipboard")).toBool());
+
+        settings.startDraft({QStringLiteral("keepOnClipboard")});
+        settings.set(QStringLiteral("keepOnClipboard"), false);
+        settings.set(QStringLiteral("outputFormat"), QStringLiteral("html"));
+        QCOMPARE(saved().output.format, OutputFormat::Html);
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.output.steps = draft.output.steps.withStep(DeliveryStep::Press, false);
+            return true;
+        });
+        QVERIFY(!settings.values().value(QStringLiteral("pressPasteKeys")).toBool());
+        QVERIFY(!settings.values().value(QStringLiteral("keepOnClipboard")).toBool());
+        settings.saveDraft();
+        QVERIFY((saved().output.steps == DeliverySteps{.insert = true, .press = false, .keep = false}));
+        QCOMPARE(standIn.system.pastingOutcome(), QStringLiteral("nothing"));
+    }
+
+    // Home shows each permission pasting relies on as a row of its own,
+    // with its fix, rather than one Pasting row for both. Nothing that can
+    // deliver makes them what dictation needs; the clipboard holding the
+    // words doesn't.
+    void homeShowsEachPastingPermissionOnItsOwnRow()
+    {
+        ApplicationController controller(true);
+        QVERIFY(!controller.accessibility()->enabled());
+        const QuickLibrary::ControllerScope library(&controller);
+        QuickSettings settings(&controller);
+        FakeKeyboard keyboard;
+        StandInSystem standIn(&controller, keyboard);
+        QuickDictation dictation(&controller);
+        QuickInsights insights(&controller);
+        QuickHistory history(&controller);
+        QuickApps apps(&controller);
+        QuickModels models(&controller, &standIn.settings);
+        QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
+        QuickNavigation navigation(nullptr);
+        QQmlEngine engine;
+        const std::unique_ptr<QObject> window = createQml(engine, R"(
             import QtQuick
-            import Speecher.App
-            QtObject {
-                property var results: [
-                    { id: "desktopAccessibility", state: "off", reason: "unsupported" },
-                    { id: "desktopAccessibility", state: "attention", reason: "sessionOnly" },
-                    { id: "desktopAccessibility", state: "off", reason: "off" },
-                    { id: "virtualKeyboardHealth", state: "attention", reason: "daemonNotRunning" },
-                    { id: "globalShortcuts", state: "off", reason: "unsupported" }
-                ].map(check => Setup.settled(check))
-            }
-        )");
-        QVERIFY(settled);
-        QCOMPARE(plain(settled->property("results")).toList(), (QVariantList{true, true, false, false, false}));
+            Window { width: 1000; height: 900; visible: true; HomePage { anchors.fill: parent } }
+        )", "qrc:/qt/qml/Speecher/App/pages/Test.qml");
+        QVERIFY(window);
+        auto *session = window->findChild<QObject *>(QStringLiteral("homeSession"));
+        QVERIFY(session);
+        auto *readiness = session->findChild<QObject *>(QStringLiteral("readiness"));
+        QVERIFY(readiness);
+        const auto ids = [readiness](const char *group) { return readiness->property(group).toStringList(); };
+        const QStringList permissions{QStringLiteral("desktopAccessibility"), QStringLiteral("virtualKeyboardHealth")};
+        for (const QString &id : permissions) {
+            QVERIFY2(ids("optionalChecks").contains(id), qPrintable(id));
+            QVERIFY(!ids("neededChecks").contains(id));
+        }
+        QVERIFY(plain(readiness->property("optionalItems")).toList().isEmpty());
+        QVERIFY(!readiness->property("pastingNeeded").toBool());
+
+        settings.set(QStringLiteral("keepOnClipboard"), false);
+        for (const QString &id : permissions) {
+            QVERIFY2(ids("neededChecks").contains(id), qPrintable(id));
+        }
+        QVERIFY(plain(readiness->property("neededItems")).toList().size() == 2);
+        QVERIFY(readiness->property("pastingNeeded").toBool());
+        QVERIFY(readiness->property("blocked").toBool());
+        QVERIFY(session->property("caption").toString().contains(QStringLiteral("a way to deliver your words")));
     }
 
 #endif
@@ -780,9 +932,10 @@ private slots:
     }
 
     // What this computer lacks, the virtual keyboard and removal off Linux,
-    // is gone alike from its pages, search and setup: General's keyboard
-    // row and Remove Speecher, Pasting's keyboard row and its Virtual
-    // keyboard only choice, which leaves Paste with nothing to choose.
+    // is gone alike from its pages, search and setup: Home's keyboard check
+    // and Remove Speecher, which General says how to do instead, Pasting's
+    // keyboard row and its Virtual keyboard only choice, which leaves Paste
+    // with nothing to choose.
     void whatTheComputerLacksIsGoneFromPagesSearchAndSetup()
     {
 #ifdef Q_OS_LINUX
@@ -796,10 +949,13 @@ private slots:
         QuickSettings settings(&controller);
         FakeKeyboard virtualKeyboard;
         StandInSystem standIn(&controller, virtualKeyboard);
-        // General reads Insights, Pasting and setup Models, setup Audio, as
+        // The pages and setup read Dictation, Insights, Models and Audio, as
         // the host always has them.
+        QuickDictation dictation(&controller);
         QuickInsights insights(&controller);
-        QuickModels models(&controller);
+        QuickHistory history(&controller);
+        QuickApps apps(&controller);
+        QuickModels models(&controller, &standIn.settings);
         QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
@@ -826,14 +982,21 @@ private slots:
             }
             return shown;
         };
-        const QHash<QString, bool> permissions = rowsShown("PermissionsPage");
-        QCOMPARE(permissions.value(QStringLiteral("virtualKeyboardHealth")), onLinux);
-        QVERIFY(permissions.value(QStringLiteral("microphoneAccess")));
-        QCOMPARE(rowsShown("GeneralPage").value(QStringLiteral("removeSpeecher")), onLinux);
+        // Home lists the checks while one fails, as the missing microphone
+        // does here: the virtual keyboard where Press relies on it, which a
+        // computer without one doesn't have.
+        const QHash<QString, bool> home = rowsShown("HomePage");
+        QCOMPARE(home.value(QStringLiteral("virtualKeyboardHealth")), onLinux);
+        // Microphone access is part of the Microphone row.
+        QVERIFY(!home.value(QStringLiteral("microphoneAccess")));
+        const QHash<QString, bool> general = rowsShown("GeneralPage");
+        QCOMPARE(general.value(QStringLiteral("removeSpeecher")), onLinux);
+        QCOMPARE(general.value(QStringLiteral("removeSpeecherGuide")), !onLinux);
+        // Every platform has the three delivery steps.
         const QHash<QString, bool> pasting = rowsShown("PastingPage");
-        QCOMPARE(pasting.value(QStringLiteral("virtualKeyboard")), onLinux);
-        QCOMPARE(pasting.value(QStringLiteral("outputMethod")), onLinux);
-        QVERIFY(pasting.value(QStringLiteral("globalPasteRule")));
+        for (const char *step : {"insertThroughAccessibility", "pressPasteKeys", "keepOnClipboard"}) {
+            QVERIFY2(pasting.value(QLatin1String(step)), step);
+        }
 
         const std::unique_ptr<QObject> probe = createQml(engine, R"(
             import QtQuick
@@ -841,19 +1004,17 @@ private slots:
             import Speecher.Wording
             QtObject {
                 readonly property var keyboard: Schema.search("keyboard", 50, need => System[need]).map(r => r.id)
-                readonly property var remove: Schema.search("remove", 50, need => System[need]).map(r => r.id)
-                readonly property var pasteWith: Schema.options(Schema.row("outputMethod"), need => System[need]).map(o => o.id)
+                readonly property var remove: Schema.search("remove speecher", 50, need => System[need]).map(r => r.id)
             }
         )");
         QVERIFY(probe);
         const QStringList keyboard = plain(probe->property("keyboard")).toStringList();
-        QCOMPARE(keyboard.contains(QStringLiteral("virtualKeyboardHealth")), onLinux);
-        QCOMPARE(keyboard.contains(QStringLiteral("virtualKeyboard")), onLinux);
-        QCOMPARE(keyboard.contains(QStringLiteral("outputMethod")), onLinux);
-        QCOMPARE(plain(probe->property("remove")).toStringList().contains(QStringLiteral("removeSpeecher")), onLinux);
-        const QStringList pasteWith = onLinux ? QStringList{QStringLiteral("automatic"), QStringLiteral("ydotool")}
-                                              : QStringList{QStringLiteral("automatic")};
-        QCOMPARE(plain(probe->property("pasteWith")).toStringList(), pasteWith);
+        // The step row stands for its check in search.
+        QVERIFY(!keyboard.contains(QStringLiteral("virtualKeyboardHealth")));
+        QVERIFY(keyboard.contains(QStringLiteral("pressPasteKeys")));
+        const QStringList remove = plain(probe->property("remove")).toStringList();
+        QCOMPARE(remove.contains(QStringLiteral("removeSpeecher")), onLinux);
+        QCOMPARE(remove.contains(QStringLiteral("removeSpeecherGuide")), !onLinux);
 
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
         const std::unique_ptr<QObject> choices(component.create());
@@ -862,41 +1023,128 @@ private slots:
         for (const QVariant &step : plain(choices->property("steps")).toList()) {
             stepIds.append(step.toMap().value(QStringLiteral("id")).toString());
         }
-        QCOMPARE(stepIds.contains(QStringLiteral("delivery")), onLinux);
-        QVERIFY(stepIds.contains(QStringLiteral("accessibility")));
+        // Seven steps on every platform: Pasting asks for accessibility itself.
+        QCOMPARE(stepIds, (QStringList{"welcome", "transcription", "microphone", "delivery", "refinement", "shortcut", "ready"}));
     }
 
-    // The App rules page's app type rows need accessibility to know the app.
-    void appTypeRowsFollowAccessibility()
+    // Pasting lists only the Apps and App Types with steps or keys of their
+    // own: on a fresh install the terminals' keys, where they differ, then
+    // what Apps sets, each with what it does here.
+    void pastingListsOnlyTheChoicesThatDiffer()
     {
         ApplicationController controller(true);
-        // The pages read Library, which works through this controller.
+        // The page reads Library, which works through this controller.
         const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
         FakeKeyboard keyboard;
         StandInSystem standIn(&controller, keyboard);
-        QuickSystem &system = standIn.system;
-        // The page's Library reads Models, as the host always has one.
-        QuickModels models(&controller);
+        QuickModels models(&controller, &standIn.settings);
+        QuickInsights insights(&controller);
+        QuickHistory history(&controller);
+        QuickApps apps(&controller);
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
-        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/AppRulesPage.qml")));
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/PastingPage.qml")));
         const std::unique_ptr<QObject> page(component.create());
         QVERIFY2(page, qPrintable(component.errorString()));
-
-        int typeRows = 0;
-        QList<QQuickItem *> items{qobject_cast<QQuickItem *>(page.get())};
-        while (!items.isEmpty()) {
-            QQuickItem *item = items.takeLast();
-            items += item->childItems();
-            const QString rowId = item->property("rowId").toString();
-            if (rowId.startsWith(QLatin1String("categoryPasteRule_"))) {
-                ++typeRows;
-                QCOMPARE(item->property("enabled").toBool(), system.accessibility());
+        QObject *section = page->findChild<QObject *>(QStringLiteral("appsPasteDifferently"));
+        QVERIFY(section);
+        const auto listed = [section] {
+            QStringList ids;
+            for (const QVariant &entry : plain(section->property("entries")).toList()) {
+                ids << entry.toMap().value(QStringLiteral("id")).toString();
             }
+            return ids;
+        };
+        QCOMPARE(listed(), terminalKeysDiffer ? QStringList{QStringLiteral("apptype:terminal")} : QStringList());
+
+        const QVariantMap insertAndKeep{{QStringLiteral("insert"), true}, {QStringLiteral("press"), false},
+                                        {QStringLiteral("keep"), true}};
+        QCOMPARE(apps.updateType(QStringLiteral("browser"), {{QStringLiteral("steps"), insertAndKeep}}), QString());
+        const QString kate = apps.add({{QStringLiteral("name"), QStringLiteral("Kate")},
+                                       {QStringLiteral("ids"), QStringList{QStringLiteral("org.kde.kate")}}})
+                                 .value(QStringLiteral("id")).toString();
+        QCOMPARE(apps.update(kate, {{QStringLiteral("keys"), QStringLiteral("terminal")}}), QString());
+        // Steps of its own keep one on.
+        QCOMPARE(apps.update(kate, {{QStringLiteral("steps"), QVariantMap{{QStringLiteral("insert"), false}}}}),
+                 QStringLiteral("incomplete"));
+        QStringList expected{QStringLiteral("apptype:browser"), QStringLiteral("appentry:") + kate};
+        if (terminalKeysDiffer) {
+            expected.prepend(QStringLiteral("apptype:terminal"));
         }
-        QCOMPARE(typeRows, 7);
+        QCOMPARE(listed(), expected);
+
+        // What a choice does here, as Apps' editor and this list say it.
+        QObject *schema = engine.singletonInstance<QObject *>(QStringLiteral("Speecher.Wording"), QStringLiteral("Schema"));
+        QVERIFY(schema);
+        const auto result = [&](bool insert, bool press, bool keep, const char *keys = "standard", bool terminalWins = false) {
+            QJSValue pasting = engine.toScriptValue(schema).property(QStringLiteral("pasting"));
+            const QVariant plan = standIn.system.stepsPlan({{QStringLiteral("insert"), insert},
+                                                            {QStringLiteral("press"), press},
+                                                            {QStringLiteral("keep"), keep}});
+            return pasting.property(QStringLiteral("pastingResult"))
+                .call({engine.toScriptValue(plan), QString::fromLatin1(keys), terminalWins})
+                .toString();
+        };
+        QCOMPARE(result(false, false, true), QStringLiteral("Clipboard only"));
+#ifdef Q_OS_LINUX
+        // Without accessibility only the copy it keeps can run here.
+        QCOMPARE(result(true, false, true), QStringLiteral("Clipboard only. Insert can't run here yet"));
+        QCOMPARE(result(false, true, false), QStringLiteral("No delivery here yet: Press can't run"));
+        // A Press that can't run still names a terminal's keys.
+        QCOMPARE(result(false, true, true, "terminal"),
+                 QStringLiteral("Clipboard only. Press (Ctrl+Shift+V) can't run here yet"));
+#endif
+        QCOMPARE(result(false, false, true, "standard", true),
+                 QStringLiteral("Clipboard only. Apps in a terminal paste like Terminals"));
     }
+
+#ifdef Q_OS_LINUX
+    // With Press the only step that runs, skipping the paste keys leaves
+    // nothing that can run here, whatever Insert's switch says; and a ready
+    // Press doesn't hide that selection edits can't read the selection.
+    void withOnlyPressRunningPastingSaysWhatIsMissing()
+    {
+        ApplicationController controller(true);
+        QVERIFY(!controller.accessibility()->enabled());
+        const QuickLibrary::ControllerScope library(&controller);
+        QuickSettings settings(&controller);
+        FakeKeyboard keyboard;
+        keyboard.installed = YdotoolSetupState::Ready;
+        keyboard.managed = true;
+        controller.settings()->setYdotoolEnabled(true);
+        StandInSystem standIn(&controller, keyboard);
+        QuickModels models(&controller, &standIn.settings);
+        QuickInsights insights(&controller);
+        QuickHistory history(&controller);
+        QuickApps apps(&controller);
+        QuickNavigation navigation(nullptr);
+        settings.set(QStringLiteral("keepOnClipboard"), false);
+        QQmlEngine engine;
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/pages/PastingPage.qml")));
+        const std::unique_ptr<QObject> page(component.create());
+        QVERIFY2(page, qPrintable(component.errorString()));
+        // What a Pasting choice does here, as Apps and Pasting say it.
+        QObject *schema = engine.singletonInstance<QObject *>(QStringLiteral("Speecher.Wording"), QStringLiteral("Schema"));
+        QVERIFY(schema);
+        const auto result = [&](bool insert, bool press, bool keep, const QString &keys) {
+            const QJSValue pasting = engine.toScriptValue(schema).property(QStringLiteral("pasting"));
+            const QVariantMap steps{{QStringLiteral("insert"), insert}, {QStringLiteral("press"), press},
+                                    {QStringLiteral("keep"), keep}};
+            return pasting.property(QStringLiteral("pastingResult"))
+                .call({engine.toScriptValue(standIn.system.stepsPlan(steps)), keys, false})
+                .toString();
+        };
+        QCOMPARE(result(true, false, false, QStringLiteral("standard")), QStringLiteral("No delivery here yet: Insert can't run"));
+        // The owner's "only press the keys": the clipboard goes back after.
+        QCOMPARE(result(false, true, false, QStringLiteral("standard")),
+                 QStringLiteral("Press Ctrl+V, then put your clipboard back"));
+        QCOMPARE(result(true, true, false, QStringLiteral("terminal")),
+                 QStringLiteral("Press Ctrl+Shift+V, then put your clipboard back. Insert can't run here yet"));
+        QCOMPARE(page->property("_selectionLimit").toString(),
+                 QStringLiteral("Reading the selection needs Desktop accessibility, which Insert above turns on."));
+    }
+#endif
 };
 
 int runQuickSystemTests(int argc, char **argv)

@@ -310,6 +310,10 @@ QtObject {
     // A dropdown and a text field at the right end of a settings row.
     readonly property int selectWidth: 220
     readonly property int fieldWidth: 260
+    // The widest a menu grows to show its entries whole; longer ones elide.
+    // "Same as Other apps (Insert, Press, Keep)" fits with room to spare in
+    // the wider fonts Windows draws.
+    readonly property int menuMaxWidth: 460
     readonly property int rowHeight: 52
     // How far a row's content sits in from the edge of its card.
     readonly property int rowInset: space4

@@ -53,10 +53,10 @@ void DictationSpeech::begin()
 
 bool DictationSpeech::selectProviders(const SpeechSettings &speech)
 {
-    if (!m_attempts->acquire(speech.providerId)) {
+    if (!m_attempts->acquire(speech.services.main())) {
         return false;
     }
-    m_attempts->chain()->begin(speech.providerId, speech.fallbackProviderIds);
+    m_attempts->chain()->begin(serviceChain(speech));
     return true;
 }
 

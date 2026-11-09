@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/PasteRules.h"
+#include "core/DeliverySteps.h"
 
 #include <QString>
 
@@ -12,10 +12,13 @@ class WinPasteDelivery {
 public:
     static void waitForReleasedKeys();
     // clearToInject is checked immediately before SendInput; false aborts
-    // without sending anything.
-    bool paste(PasteMethod method,
+    // without sending anything. inputSent says whether any key went out,
+    // which a failure can still have done when Windows took only part of
+    // the keystroke.
+    bool paste(PasteKeyCombo keys,
                const std::function<bool()> &clearToInject = {},
-               QString *error = nullptr);
+               QString *error = nullptr,
+               bool *inputSent = nullptr);
 };
 
 } // namespace speecher

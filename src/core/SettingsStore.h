@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/ProviderChain.h"
+#include "core/LearnedCorrection.h"
 #include "core/settings/SettingsCodecs.h"
 
 #include <QObject>
@@ -18,11 +19,6 @@ bool migrateSettingsIdentity(QSettings &newSettings,
 // Moves a saved refinement model that still names a replaced default to the
 // current default. Runs once, so choosing the old model again later sticks.
 void migrateRefinementModels(QSettings &settings);
-// Paste with once also offered inserting directly and copying only, which the
-// paste rules choose now. A stored method of either kind becomes Automatic,
-// and every rule that pasted becomes Direct insertion or Clipboard only, so
-// dictation delivers the way it did.
-void migrateOutputMethod(QSettings &settings);
 // Brings the settings an older Speecher saved up to date, before anything
 // reads them: the migrations above, in order, on the running instance's
 // store. Startup runs it once.

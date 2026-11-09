@@ -4,6 +4,8 @@
 #include "core/SettingsStore.h"
 #include "core/TranscriptState.h"
 #include "core/WordPreview.h"
+#include "core/history/HistoryAudioWriter.h"
+#include "core/history/HistoryPolicy.h"
 #include "core/ProviderReadiness.h"
 #include "core/settings/SpokenLanguages.h"
 #include "providers/ProviderRegistry.h"
@@ -12,6 +14,7 @@
 #include <QDebug>
 #include <QTimer>
 
+#include <algorithm>
 #include <utility>
 
 namespace speecher {
@@ -138,6 +141,15 @@ DictationSession::DictationSession(SettingsStore *settings,
             return;
         }
         m_speech->hear(pcm);
+        if (m_historyAudio) {
+            m_historyAudio->write(pcm);
+        }
+    });
+    // Audio no delivery took goes: a cancel, a failure, an empty result.
+    connect(this, &DictationSession::stateChanged, this, [this](DictationState state) {
+        if (state == DictationState::Idle || state == DictationState::Error) {
+            discardHistoryAudio();
+        }
     });
     connect(m_audio, &AudioInput::started, this, &DictationSession::microphoneStarted);
     connect(m_audio, &AudioInput::stopped, this, &DictationSession::microphoneStopped);
@@ -231,12 +243,12 @@ void DictationSession::toggle()
     toggleSession({});
 }
 
-void DictationSession::toggleWith(const SessionOverrides &overrides)
+void DictationSession::toggleWith(const RunOverrides &overrides)
 {
     toggleSession(overrides);
 }
 
-void DictationSession::toggleSession(const SessionOverrides &overrides)
+void DictationSession::toggleSession(const RunOverrides &overrides)
 {
     qInfo().noquote() << "toggle requested state=" + stateName();
     if (m_state == DictationState::Idle || m_state == DictationState::Error
@@ -257,12 +269,12 @@ void DictationSession::startListening()
     startSession({});
 }
 
-void DictationSession::startListeningWith(const SessionOverrides &overrides)
+void DictationSession::startListeningWith(const RunOverrides &overrides)
 {
     startSession(overrides);
 }
 
-void DictationSession::startSession(const SessionOverrides &overrides)
+void DictationSession::startSession(const RunOverrides &overrides)
 {
     // A start while an edit is reviewed, from a toggle or a push-to-talk
     // press, is a follow-up to it, on the edit's own settings: overrides do
@@ -282,28 +294,18 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     }
     m_completionTimer->stop();
 
-    // A follow-up keeps the settings the edit was made with.
-    AppSettings settings = followUp ? m_review.revision().settings : m_settings->dictationSnapshot();
-    RunChoices choices = followUp ? m_review.revision().choices : RunChoices{};
-    if (overrides.outputFormat) {
-        settings.output.format = *overrides.outputFormat;
-    }
-    if (overrides.writingProfile) {
-        choices.writingProfile = *overrides.writingProfile;
-    }
-    if (overrides.spokenLanguage) {
-        settings.speech.language = *overrides.spokenLanguage;
-    }
+    // A follow-up keeps the settings the edit was made with, and its plan.
+    const AppSettings settings = followUp ? m_review.revision().settings : m_settings->dictationSnapshot();
 
     ++m_generation;
     m_speech->begin();
     const quint64 generation = m_generation;
     m_sessionSettings = settings;
-    m_runChoices = choices;
+    m_overrides = overrides;
     m_heardSpeech = false;
     m_target = {};
     // The chains wait for the target, whose Writing Profile may lead them.
-    m_refinementChain->begin(kNoRefinementProvider, {});
+    m_refinementChain->begin({});
     m_usedRawTranscript = false;
     m_providerHistory = {};
     m_listeningMs = 0;
@@ -371,7 +373,17 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
 void DictationSession::continueStartupWithTarget(quint64 generation, const Target &target)
 {
     m_target = target;
-    m_target.category = classifyTarget(m_target, m_sessionSettings->appRecognitionRules);
+    // The target settles the Writing Profile, and with it the services the
+    // session runs and the terms the speech request may carry. A follow-up
+    // runs as the edit it follows did.
+    if (m_review.followingUp()) {
+        m_plan = m_review.revision().plan;
+    } else {
+        m_plan = planDictation(*m_sessionSettings, m_target, m_overrides, m_providers->offersSpeech());
+        m_sessionSettings = m_plan.settings;
+    }
+    m_target.category = m_plan.app.type;
+    openHistoryAudio();
     // Lengths only: the text itself stays out of the log.
     qInfo().noquote() << (m_review.followingUp() ? "target kept for follow-up app=" : "target captured app=")
                              + m_target.applicationId
@@ -379,16 +391,11 @@ void DictationSession::continueStartupWithTarget(quint64 generation, const Targe
                       << "accessible=" << m_target.accessible << "editable=" << m_target.editable
                       << "selectionLength=" << m_target.selectedText.size()
                       << "selectionEdit=" << m_target.hasSelection();
-    // The target settles the Writing Profile, and with it the services the
-    // session runs and the terms the speech request may carry.
     if (!selectProviders()) {
         return;
     }
-    m_sessionSettings->speech.vocabulary =
-        TranscriptPipeline::speechVocabulary(*m_sessionSettings, m_runChoices, m_target);
     const AppSettings settings = *m_sessionSettings;
-    const RefinementSettings effectiveRefinement =
-        TranscriptPipeline::effectiveRefinementSettings(settings, m_runChoices, m_target);
+    const RefinementSettings &effectiveRefinement = settings.refinement;
     // Once, for whichever refiner in the chain reads it.
     const QStringList &refiners = m_refinementChain->providerIds();
     const bool chainReadsScreenshots = std::any_of(refiners.cbegin(), refiners.cend(), [this](const QString &id) {
@@ -410,35 +417,33 @@ void DictationSession::continueStartupWithTarget(quint64 generation, const Targe
 
     // Walks the speech chain on from the provider it is on, never back: the
     // first provider that prepares takes the next attempt.
-    const bool refines = settings.refinement.providerId != kNoRefinementProvider;
+    const bool refines = !serviceChain(settings.refinement).isEmpty();
     m_speech->start(*m_sessionSettings, refines ? m_refiner.data() : nullptr);
 }
 
-// The target's Writing Profile's own services lead the chains. A fallback
-// that is missing or can't listen for the Spoken Language is passed over
-// later; the primary stops the dictation, as it always has.
+// The chains as the plan leads them. A fallback that is missing or can't
+// listen for the Spoken Language is passed over later; the primary stops the
+// dictation, as it always has.
 bool DictationSession::selectProviders()
 {
-    m_sessionSettings = m_providers->withProfileProviders(
-        *m_sessionSettings, TranscriptPipeline::writingProfile(*m_sessionSettings, m_runChoices, m_target));
     const AppSettings &settings = *m_sessionSettings;
-    qInfo().noquote() << "startListening speechProvider=" + settings.speech.providerId
-                      << "refinementProvider=" + settings.refinement.providerId;
+    const QString speech = settings.speech.services.main();
+    const QStringList refiners = serviceChain(settings.refinement);
+    qInfo().noquote() << "startListening speechProvider=" + speech
+                      << "refinementProvider=" + (refiners.isEmpty() ? kNoRefinementProvider : refiners.first());
     if (!m_speech->selectProviders(settings.speech)) {
-        failStartup(QStringLiteral("Unknown speech provider: %1").arg(settings.speech.providerId),
-                    speechSetupAction(settings.speech.providerId));
+        failStartup(QStringLiteral("Unknown speech provider: %1").arg(speech), speechSetupAction(speech));
         return false;
     }
-    if (const QString problem =
-            spokenLanguageProblem(settings.speech, m_providers->speechProviderLabel(settings.speech.providerId));
+    if (const QString problem = spokenLanguageProblem(settings.speech, m_providers->speechProviderLabel(speech));
         !problem.isEmpty()) {
         failStartup(problem, {ErrorFix::SettingsPage, QStringLiteral("speech")});
         return false;
     }
-    if (settings.refinement.providerId != kNoRefinementProvider) {
-        selectTranscriptRefiner(settings.refinement.providerId);
+    if (!refiners.isEmpty()) {
+        selectTranscriptRefiner(refiners.first());
     }
-    m_refinementChain->begin(settings.refinement.providerId, settings.refinement.fallbackProviderIds);
+    m_refinementChain->begin(refiners);
     return true;
 }
 
@@ -919,12 +924,14 @@ void DictationSession::beginRefinement(quint64 generation)
         // A follow-up edits the revision under review, not the selection.
         target.selectedText = m_review.revision().edit;
     }
-    m_transcriptPipeline = TranscriptPipeline::prepare(m_transcript->text(), settings, m_runChoices, target,
+    // The plan with the keys the chains have read since.
+    DictationPlan plan = m_plan;
+    plan.settings = settings;
+    m_transcriptPipeline = TranscriptPipeline::prepare(m_transcript->text(), plan, target,
                                                         m_transcript->heardLanguage());
     TranscriptPipelineResult &pipeline = m_transcriptPipeline;
     const RefinementSettings &refinement = pipeline.refinementSettings;
-    if (settings.refinement.providerId == kNoRefinementProvider
-        || refinement.style == QStringLiteral("none")) {
+    if (serviceChain(settings.refinement).isEmpty() || refinement.style == QStringLiteral("none")) {
         if (pipeline.editsSelection) {
             failSelectionEdit(QStringLiteral("Selection editing requires refinement to be enabled"));
             return;
@@ -950,7 +957,7 @@ void DictationSession::startRefiner()
     // A handler of the sign-in or of Refining may have stopped or cancelled
     // the session, and with it dropped the settings the refiner runs with.
     const quint64 step = m_step;
-    noteSignIn(refinement.providerId, true);
+    noteSignIn(refinement.services.main(), true);
     if (step != m_step || !enterRefining()) {
         return;
     }
@@ -958,10 +965,10 @@ void DictationSession::startRefiner()
     m_previewReplacements = BindingProcessor::replacementsByPlaceholder(m_transcriptPipeline.bindingResult.placeholders);
     TranscriptPipelineResult &pipeline = m_transcriptPipeline;
     TranscriptPipeline::includeScreenshotContext(pipeline,
-                                                 m_providers->refinementProviderReadsScreenshots(refinement.providerId),
+                                                 m_providers->refinementProviderReadsScreenshots(refinement.services.main()),
                                                  m_screenshotData,
                                                  m_screenshotMediaType);
-    qInfo() << "refinement started provider=" << refinement.providerId
+    qInfo() << "refinement started provider=" << refinement.services.main()
             << "rawLength=" << m_transcript->text().size()
             << "placeholderLength=" << pipeline.refinementInput.size()
             << "selectionEdit=" << pipeline.editsSelection
@@ -971,7 +978,7 @@ void DictationSession::startRefiner()
             << "bindingCount=" << pipeline.bindingResult.placeholders.size()
             << "noBindCount=" << pipeline.noBindPhrases.size()
             << "vocabularyCount=" << pipeline.refinementVocabulary.size();
-    noteRan(ProviderRole::Refinement, refinement.providerId);
+    noteRan(ProviderRole::Refinement, refinement.services.main());
     m_refiner->refine(pipeline.refinementInput,
                       pipeline.refinementVocabulary,
                       pipeline.refinementContext,
@@ -1066,7 +1073,7 @@ void DictationSession::reviewSelectionEdit(const QString &revised)
 void DictationSession::reviseSelectionEdit(const QString &revised)
 {
     const QString spoken = m_transcript->text();
-    m_review.revise({revised, {spoken}, m_target, *m_sessionSettings, m_runChoices, m_transcriptPipeline, m_speechWarning,
+    m_review.revise({revised, {spoken}, m_target, *m_sessionSettings, m_plan, m_transcriptPipeline, m_speechWarning,
                      m_providerHistory, countWords(spoken), m_listeningMs});
 }
 
@@ -1091,7 +1098,7 @@ void DictationSession::returnToReview()
     const EditReview::Revision &revision = m_review.revision();
     m_target = revision.target;
     m_sessionSettings = revision.settings;
-    m_runChoices = revision.choices;
+    m_plan = revision.plan;
     m_transcriptPipeline = revision.pipeline;
     // Nothing the follow-up met belongs in the receipt of the revision kept.
     m_usedRawTranscript = false;
@@ -1151,7 +1158,9 @@ void DictationSession::deliverRevision(bool selectionUnchanged)
     m_listeningMs = review.listeningMs;
     m_providerHistory = review.providerHistory;
     if (!selectionUnchanged) {
-        m_sessionSettings->output.pasteRules = {{PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly}};
+        // Only the clipboard: Insert or Press would land on the new selection.
+        // Set on the App's choice, which outranks the Pasting page's steps.
+        m_plan.app.pasting.steps = DeliverySteps{.insert = false, .press = false, .keep = true};
         deliverFinal(review.edit, selectionChangedNote(), review.spokenWords);
         return;
     }
@@ -1212,10 +1221,11 @@ void DictationSession::deliverFinal(const QString &text, const QString &note, st
     if (step != m_step) {
         return;
     }
-    m_awaitedDelivery = AwaitedDelivery{step, text, note, words, appName, profile, profileName,
+    m_awaitedDelivery = AwaitedDelivery{step, text, note, words, appName, m_target.applicationId.trimmed(), profile, profileName,
                                         settings.output.completionStatusDurationMs};
     ++m_unansweredDeliveries;
-    m_delivery->deliver(settings.output, makeDeliveryContent(text, settings.output.format), m_target);
+    m_delivery->deliver(settings.output, makeDeliveryContent(text, settings.output.format), m_target,
+                        m_plan.app.pasting);
 }
 
 void DictationSession::finishDelivery(const DeliveryResult &result)
@@ -1230,20 +1240,17 @@ void DictationSession::finishDelivery(const DeliveryResult &result)
         qInfo() << "delivery result ignored after the session moved on";
         return;
     }
+    const HistoryKeep keep = historyKeepNow();
+    const bool intoPasswordField = m_target.secure;
+    const auto record = [&](HistoryOutcome outcome) {
+        recordHistory(delivery, keep, outcome, m_transcript->text(), intoPasswordField);
+    };
     clearScreenshotContext();
     m_sessionSettings.reset();
     m_target = {};
     if (result.ok) {
         emit transcriptDelivered(delivery.text);
-        // The live setting, not the session snapshot: turning insights off
-        // mid-session must stop this one being recorded.
-        if (m_settings->dictationSnapshot().insightsEnabled) {
-            DictationRecord record{QDateTime::currentDateTime(), m_listeningMs, delivery.words, delivery.appName,
-                                   delivery.profile, delivery.profileName};
-            record.speechProviders = m_providerHistory.speechRan;
-            record.refinementProviders = m_providerHistory.refinementRan;
-            emit dictationRecorded(record);
-        }
+        record(result.receipt == DeliveryReceipt::Copied ? HistoryOutcome::Copied : HistoryOutcome::Delivered);
         // A role without fallbacks ends as it always has, its failures unnamed.
         ProviderHistory history = m_providerHistory;
         history.issues.removeIf([this](const ProviderAttemptIssue &issue) {
@@ -1270,9 +1277,73 @@ void DictationSession::finishDelivery(const DeliveryResult &result)
         m_completionTimer->start(durationMs);
     } else {
         qWarning().noquote() << "text delivery failed message=" + result.message;
+        // Words that never arrived are what a person most wants to find again.
+        record(HistoryOutcome::Undelivered);
         setState(DictationState::Error,
                  m_speechWarning.isEmpty() ? result.message : result.message + popupMessageSeparator() + m_speechWarning);
     }
+}
+
+HistoryKeep DictationSession::historyKeepNow() const
+{
+    if (!m_sessionSettings) {
+        return HistoryKeep::Nothing;
+    }
+    // The live setting too: lowering it mid-session applies to this one.
+    return std::min(historyKeep(m_sessionSettings->history, m_plan.app, m_target),
+                    m_settings->dictationSnapshot().history.keeps);
+}
+
+void DictationSession::setHistoryAudioFolder(const QString &folder)
+{
+    m_historyAudioFolder = folder;
+}
+
+void DictationSession::openHistoryAudio()
+{
+    discardHistoryAudio();
+    if (!m_historyAudioFolder.isEmpty() && historyKeepNow() == HistoryKeep::Audio) {
+        m_historyAudio = new HistoryAudioWriter(m_historyAudioFolder, this);
+    }
+}
+
+void DictationSession::discardHistoryAudio()
+{
+    if (m_historyAudio) {
+        std::exchange(m_historyAudio, nullptr)->discard();
+    }
+}
+
+void DictationSession::recordHistory(const AwaitedDelivery &delivery, HistoryKeep keep, HistoryOutcome outcome,
+                                     const QString &raw, bool intoPasswordField)
+{
+    HistoryEntry entry;
+    if (keep == HistoryKeep::Audio && m_historyAudio) {
+        entry.audioPath = std::exchange(m_historyAudio, nullptr)->finish();
+    }
+    discardHistoryAudio();
+    entry.outcome = outcome;
+    entry.kept = keep;
+    if (keep == HistoryKeep::Nothing) {
+        emit dictationFinished(entry, intoPasswordField);
+        return;
+    }
+    entry.kind = m_transcriptPipeline.editsSelection ? HistoryKind::Edit : HistoryKind::Dictation;
+    entry.stats = {QDateTime::currentDateTime(), m_listeningMs, delivery.words, delivery.appName,
+                   delivery.profile, delivery.profileName};
+    entry.stats.speechProviders = m_providerHistory.speechRan;
+    entry.stats.refinementProviders = m_providerHistory.refinementRan;
+    entry.stats.applicationId = delivery.applicationId;
+    if (keep >= HistoryKeep::Text) {
+        // A selection edit's raw text is the instruction spoken.
+        entry.text = delivery.text;
+        entry.rawText = raw;
+    }
+    // Text and audio, but the encoder wrote nothing: the entry keeps text.
+    if (keep == HistoryKeep::Audio && entry.audioPath.isEmpty()) {
+        entry.kept = HistoryKeep::Text;
+    }
+    emit dictationFinished(entry, intoPasswordField);
 }
 
 void DictationSession::resumePausedMedia()

@@ -146,7 +146,7 @@ DictationOutcome dictationOutcome(const QString &receipt,
         : copiedOnly                                                 ? PopupOutcome::Copied
                                                                      : PopupOutcome::Inserted;
     if (std::any_of(history.issues.cbegin(), history.issues.cend(), rejectedSignIn)) {
-        outcome.fix = {ErrorFix::SettingsPage, QStringLiteral("accounts")};
+        outcome.fix = {ErrorFix::SettingsPage, QStringLiteral("services")};
     }
     return outcome;
 }
@@ -157,10 +157,8 @@ PopupErrorAction speechSetupAction(const QString &providerId)
     if (provider == ProviderId::Local) {
         return {ErrorFix::SettingsPage, QStringLiteral("models")};
     }
-    if (provider == ProviderId::Endpoint) {
-        return {ErrorFix::SettingsPage, QStringLiteral("speech")};
-    }
-    return {ErrorFix::SettingsPage, QStringLiteral("accounts")};
+    // The sign-ins and the speech server are both on Services.
+    return {ErrorFix::SettingsPage, QStringLiteral("services")};
 }
 
 } // namespace speecher

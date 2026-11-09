@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/ServiceOrder.h"
+
 #include <QByteArray>
 #include <QList>
 #include <QHash>
@@ -42,14 +44,6 @@ bool isBuiltInWritingProfile(const QString &id);
 // or a custom profile's id. Anything else reads as Other.
 QString writingProfileFromName(const QString &name);
 
-struct WritingProfileOverride {
-    QString applicationId;
-    QString profile = WritingProfile::Other;
-    bool enabled = true;
-
-    bool operator==(const WritingProfileOverride &other) const = default;
-};
-
 struct WritingProfileSettings {
     QString profile = WritingProfile::Other;
     QString cleanupStrength = QStringLiteral("balanced");
@@ -61,14 +55,12 @@ struct WritingProfileSettings {
     // The language refinement writes in, by name, such as "Spanish". Empty
     // writes in the language that was spoken.
     QString outputLanguage;
-    // The speech service and refinement provider this profile uses ahead of
-    // the Dictation and Refinement pages' chains, by provider id; empty uses
-    // theirs. A model goes with its provider (see WritingProfileProviders.h);
-    // empty uses the provider's own.
-    QString speechProvider;
-    QString speechModel;
-    QString refinementProvider;
-    QString refinementModel;
+    // The speech and refinement service this profile tries first, ahead of
+    // the Speech to text and Refinement pages' Service Orders, with the
+    // model it asks of it; nullopt is the same as the page. An empty model
+    // is the order's entry's (see planDictation).
+    std::optional<ServiceChoice> speechFirst;
+    std::optional<ServiceChoice> refinementFirst;
 
     bool operator==(const WritingProfileSettings &other) const = default;
 };
@@ -81,14 +73,6 @@ QString writingProfileLabel(const QString &id, const QList<WritingProfileSetting
 QString offeredWritingProfile(const QString &id,
                               const QList<WritingProfileSettings> &profiles,
                               const QString &fallback = WritingProfile::Other);
-
-struct AppRecognitionRule {
-    QString match;
-    std::optional<AppCategory> category;
-    std::optional<QString> writingProfile;
-
-    bool operator==(const AppRecognitionRule &other) const = default;
-};
 
 QList<WritingProfileSettings> defaultWritingProfileSettings();
 WritingProfileSettings writingProfileSettingsFor(const QList<WritingProfileSettings> &settings,
@@ -180,33 +164,6 @@ struct Target {
     // records that the text was read. Call it only with text that was.
     void setNearbyText(const QString &text, int start, int end);
 };
-
-QList<AppRecognitionRule> builtInAppRecognitionRules();
-// Recognition rules replaced per-application Writing Profile overrides. This
-// folds any surviving override into the rule list that supersedes it; saving
-// the folded list and clearing the overrides is what retires them for good.
-QList<AppRecognitionRule> recognitionRulesWithMigratedProfileOverrides(
-    const QList<AppRecognitionRule> &rules,
-    const QList<WritingProfileOverride> &overrides);
-bool isTerminalTarget(const Target &target);
-AppCategory classifyTarget(const Target &target,
-                           const QList<AppRecognitionRule> &customRules = {});
-// Whether a running process is an AI coding tool, from its name and its
-// command line. Only the first two arguments count: the executable, or an
-// interpreter and the script it runs.
-bool isAiCodingProcess(const QString &processName, const QStringList &commandLine);
-// Whether a terminal's window title names an AI coding tool, such as "Claude
-// Code". Only for terminals: the AI coding rules otherwise ignore titles,
-// which a browser tab or a document can carry.
-bool terminalTitleNamesAiCodingTool(const Target &target);
-QString inferWritingProfile(const Target &target, const QString &fallback = WritingProfile::Other);
-QString resolveWritingProfile(const Target &target,
-                              const QList<WritingProfileOverride> &overrides,
-                              const QString &fallback = WritingProfile::Other);
-QString resolveWritingProfile(const Target &target,
-                              const QList<WritingProfileOverride> &overrides,
-                              const QList<AppRecognitionRule> &recognitionRules,
-                              const QString &fallback = WritingProfile::Other);
 
 struct RefinementContext {
     Target target;

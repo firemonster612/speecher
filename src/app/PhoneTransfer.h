@@ -12,6 +12,13 @@
 
 namespace speecher {
 
+// The Vocabulary Entries the phone takes, as the bundle's vocabulary and
+// replacements: the person's own, never Learned Corrections, and none
+// limited to apps, since the phone has no app ids. The phone limits a term
+// to profiles but not a replacement, so a replacement limited to profiles
+// stays behind too.
+QList<VocabularyEntry> phoneTerms(const AppSettings &settings);
+QList<VocabularyEntry> phoneReplacements(const AppSettings &settings);
 // The ADR's bundle: the user's own dictation setup as UTF-8 JSON, never
 // credentials.
 QByteArray phoneTransferBundle(const AppSettings &settings, const QString &computerName);

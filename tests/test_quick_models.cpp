@@ -1,3 +1,4 @@
+#include "common/service_order_rows.h"
 #include "common/test_doubles.h"
 #include "common/test_http.h"
 #include "common/test_local_setup.h"
@@ -126,7 +127,8 @@ private slots:
     void providersCarryTheirStateAndCoresProblem()
     {
         ApplicationController controller(true);
-        QuickModels models(&controller);
+        QuickSettings settings(&controller);
+        QuickModels models(&controller, &settings);
         QSignalSpy changed(&models, &QuickModels::changed);
 
         QVariantMap codex = entry(models.speechServices(), QStringLiteral("codex"));
@@ -162,7 +164,8 @@ private slots:
     void speechServicesCarryTheirLanguages()
     {
         ApplicationController controller(true);
-        QuickModels models(&controller);
+        QuickSettings settings(&controller);
+        QuickModels models(&controller, &settings);
         const auto languages = [&models](const QString &id) {
             return entry(models.speechServices(), id).value(QStringLiteral("languages")).toStringList();
         };
@@ -176,7 +179,7 @@ private slots:
         // What the Speech page's fallback pickers show: whether a service
         // offers Automatic, and the language it listens for in the chain.
         AppSettings draft = controller.settings()->dictationSnapshot();
-        draft.speech.fallbackLanguages = {{QStringLiteral("codex"), QStringLiteral("cy")}};
+        draft.speech.services.choice(QStringLiteral("codex")).language = QStringLiteral("cy");
         controller.settings()->applySnapshot(draft);
         const QVariantMap codex = entry(models.speechServices(), QStringLiteral("codex"));
         QVERIFY(codex.value(QStringLiteral("detects")).toBool());
@@ -190,7 +193,8 @@ private slots:
     void theHardwareProbeBringsFitsSuggestionsAndRatings()
     {
         ApplicationController controller(true);
-        QuickModels models(&controller);
+        QuickSettings settings(&controller);
+        QuickModels models(&controller, &settings);
         const QString parakeet = QStringLiteral("parakeet");
 
         QVERIFY(!models.hardwareKnown());
@@ -230,21 +234,47 @@ private slots:
         QCOMPARE(changed.count(), 1);
     }
 
-    // Use makes Local Model the service with that model chosen, in one save,
-    // as the Settings singleton then reads it; a name that is no model
-    // changes nothing.
+    // Models reads the settings as Settings shows them, so a Spoken
+    // Language drafted in setup that the drafted first service can't hear
+    // is a problem at once, and stops being one when the draft goes; the
+    // saved settings never change.
+    void theServicesFollowSetupsDraft()
+    {
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        QuickModels models(&controller, &settings);
+        const AppSettings before = controller.settings()->dictationSnapshot();
+        settings.startDraft({QStringLiteral("speechServices"), QStringLiteral("spokenLanguage")});
+        settings.set(QStringLiteral("speechServices"), test::serviceOrder({QStringLiteral("claude")}));
+        settings.set(QStringLiteral("spokenLanguage"), QStringLiteral("cy"));
+        QCOMPARE(models.spokenLanguageProblem(), QStringLiteral("Claude can't listen for Welsh. Choose another Spoken Language."));
+        QCOMPARE(controller.settings()->dictationSnapshot().speech, before.speech);
+        settings.dropDraft();
+        QVERIFY(!models.spokenLanguageProblem().contains(QLatin1String("Welsh")));
+    }
+
+    // Use makes Local Model the service with that model chosen, the model
+    // saved first so no save has Local Model first with another, as the
+    // Settings singleton then reads it; a name that is no model changes
+    // nothing.
     void useChoosesTheModelAndTheService()
     {
         ApplicationController controller(true);
         QuickSettings settings(&controller);
-        QuickModels models(&controller);
+        QuickModels models(&controller, &settings);
 
-        QSignalSpy saved(controller.settings(), &SettingsStore::snapshotApplied);
+        QStringList savedModels;
+        connect(controller.settings(), &SettingsStore::snapshotApplied, this, [&] {
+            const AppSettings saved = controller.settings()->dictationSnapshot();
+            if (saved.speech.services.main() == QLatin1String("local")) {
+                savedModels.append(localModelId(saved.speech));
+            }
+        });
         models.use(QStringLiteral("whisper-turbo"));
-        QCOMPARE(saved.count(), 1);
+        QCOMPARE(savedModels, QStringList{QStringLiteral("whisper-turbo")});
         const AppSettings stored = SettingsStore().dictationSnapshot();
-        QCOMPARE(stored.speech.providerId, QStringLiteral("local"));
-        QCOMPARE(stored.speech.local.modelId, QStringLiteral("whisper-turbo"));
+        QCOMPARE(stored.speech.services.main(), QStringLiteral("local"));
+        QCOMPARE(localModelId(stored.speech), QStringLiteral("whisper-turbo"));
         QVERIFY(stored.speech.local.modelChosen);
         QCOMPARE(settings.values().value(QStringLiteral("speechLocalModel")).toString(), QStringLiteral("whisper-turbo"));
         QCOMPARE(models.localModelChoice(), QStringLiteral("whisper-turbo"));
@@ -253,20 +283,38 @@ private slots:
 
         QTest::ignoreMessage(QtWarningMsg, "Models.use: made-up is not a Local Model");
         models.use(QStringLiteral("made-up"));
-        QCOMPARE(SettingsStore().dictationSnapshot().speech.local.modelId, QStringLiteral("whisper-turbo"));
+        QCOMPARE(localModelId(SettingsStore().dictationSnapshot().speech), QStringLiteral("whisper-turbo"));
     }
 
-    // A role setup doesn't offer a fallback for changes nothing.
-    void anUnknownFallbackRoleIsRefused()
+    // In setup, Use makes Local Model first in the draft, not the saved
+    // order, and the model it chose outlasts the draft's reorder: Finish
+    // saves both.
+    void useInSetupWaitsInTheDraft()
     {
         ApplicationController controller(true);
-        QuickModels models(&controller);
-        QSignalSpy saved(controller.settings(), &SettingsStore::snapshotApplied);
+        QuickSettings settings(&controller);
+        QuickModels models(&controller, &settings);
+        const QString claude = QStringLiteral("claude");
+        const QString codex = QStringLiteral("codex");
+        const QString local = QStringLiteral("local");
+        settings.set(QStringLiteral("speechServices"), test::serviceOrder({claude, codex, local}));
+        settings.set(QStringLiteral("speechLocalModel"), QStringLiteral("parakeet"));
+        settings.startDraft({QStringLiteral("speechServices")});
+        // A reorder hands back every entry as it was read, Parakeet too.
+        QVariantList reordered = settings.values().value(QStringLiteral("speechServices")).toList();
+        reordered.swapItemsAt(0, 1);
+        settings.set(QStringLiteral("speechServices"), reordered);
 
-        QTest::ignoreMessage(QtWarningMsg, "Models.acceptFallbackOffer: no role transcription");
-        models.acceptFallbackOffer(QStringLiteral("transcription"), QStringLiteral("openai"));
+        models.use(QStringLiteral("whisper-turbo"));
+        QCOMPARE(controller.settings()->dictationSnapshot().speech.services.order, (QStringList{claude, codex, local}));
+        QCOMPARE(settings.shown().speech.services.order, (QStringList{local, codex, claude}));
+        QCOMPARE(settings.values().value(QStringLiteral("speechLocalModel")).toString(), QStringLiteral("whisper-turbo"));
+        QCOMPARE(models.localModelChoice(), QStringLiteral("whisper-turbo"));
 
-        QCOMPARE(saved.count(), 0);
+        settings.saveDraft();
+        const AppSettings stored = SettingsStore().dictationSnapshot();
+        QCOMPARE(stored.speech.services.order, (QStringList{local, codex, claude}));
+        QCOMPARE(localModelId(stored.speech), QStringLiteral("whisper-turbo"));
     }
 
     // A failed download is the model's problem until the next try, and a
@@ -274,7 +322,8 @@ private slots:
     void downloadsReportProgressAndFailure()
     {
         ApplicationController controller(true);
-        QuickModels models(&controller);
+        QuickSettings settings(&controller);
+        QuickModels models(&controller, &settings);
         LocalModelStore *store = controller.localModelStore();
         const QString moonshine = QStringLiteral("moonshine-small");
 
@@ -290,11 +339,12 @@ private slots:
     void endpointChecksReportTheVerdict()
     {
         ApplicationController controller(true);
-        QuickModels models(&controller);
+        QuickSettings settings(&controller);
+        QuickModels models(&controller, &settings);
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
         AppSettings draft = controller.settings()->dictationSnapshot();
-        draft.speech.endpoint.baseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+        draft.speech.server.baseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
         controller.settings()->applySnapshot(draft);
         QVERIFY(!models.speechEndpoint().value(QStringLiteral("checked")).toBool());
 
@@ -310,7 +360,7 @@ private slots:
 
         // Port 1, where nothing listens: a port let go could be taken by a
         // server in another test process.
-        draft.speech.endpoint.baseUrl = QStringLiteral("http://127.0.0.1:1");
+        draft.speech.server.baseUrl = QStringLiteral("http://127.0.0.1:1");
         controller.settings()->applySnapshot(draft);
         models.testSpeechEndpoint();
         QTRY_VERIFY(!models.speechEndpoint().value(QStringLiteral("checking")).toBool());
@@ -321,7 +371,7 @@ private slots:
         QVERIFY(check.value(QStringLiteral("models")).toStringList().isEmpty());
     }
 
-    // Setup's Transcription step is done once the chosen service is ready,
+    // Setup's Transcription step is done once the first service is ready,
     // or while Local Model's download runs. A sign-in nobody has checked, a
     // server never tested and one whose test failed are not; the failure is
     // the endpoint's problem, in core's words.
@@ -338,7 +388,7 @@ private slots:
                 return codex;
             });
         QuickSettings settings(&controller);
-        QuickModels models(&controller);
+        QuickModels models(&controller, &settings);
         // Setup and the pages read System and Audio, as the host always has
         // them.
         test::SystemSingletons system(&controller);
@@ -349,8 +399,10 @@ private slots:
         QVERIFY2(choices, qPrintable(component.errorString()));
         const auto transcription = [&] { return setupStep(choices.get(), QStringLiteral("transcription")); };
 
-        // As a step's choice does, which leaves Settings behind.
-        const auto choose = [&](const QString &id) { QQmlProperty::write(choices.get(), QStringLiteral("speech"), id); };
+        // As the step's order does, into setup's draft.
+        const auto choose = [&](const QString &id) {
+            system.settings.set(QStringLiteral("speechServices"), test::serviceOrder({id}));
+        };
         choose(QStringLiteral("codex"));
         QVERIFY(!transcription().value(QStringLiteral("done")).toBool());
         QCOMPARE(transcription().value(QStringLiteral("verdict")).toString(), QStringLiteral("Checking…"));
@@ -401,7 +453,7 @@ private slots:
                 return codex;
             });
         QuickSettings settings(&controller);
-        QuickModels models(&controller);
+        QuickModels models(&controller, &settings);
         // Setup and the pages read System and Audio, as the host always has
         // them.
         test::SystemSingletons system(&controller);
@@ -410,7 +462,7 @@ private slots:
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
         const std::unique_ptr<QObject> choices(component.create());
         QVERIFY2(choices, qPrintable(component.errorString()));
-        QQmlProperty::write(choices.get(), QStringLiteral("speech"), QStringLiteral("codex"));
+        system.settings.set(QStringLiteral("speechServices"), test::serviceOrder({QStringLiteral("codex")}));
         const auto codex = [&] { return entry(models.speechServices(), QStringLiteral("codex")); };
         const auto transcription = [&] { return setupStep(choices.get(), QStringLiteral("transcription")); };
 
@@ -429,150 +481,13 @@ private slots:
         QVERIFY(!codex().value(QStringLiteral("signInChecking")).toBool());
     }
 
-    // Setup's Refinement step offers the runner as a fallback only behind a
-    // choice whose chain would take it: not behind a full one, judged against
-    // the step's choice rather than the saved primary.
-    void setupOffersAFallbackOnlyWhereTheChainTakesIt()
-    {
-        ApplicationController controller(true);
-        // The pages read Library, which works through this controller.
-        const QuickLibrary::ControllerScope library(&controller);
-        QuickSettings settings(&controller);
-        QuickModels models(&controller);
-        // Setup and the pages read System and Audio, as the host always has
-        // them.
-        test::SystemSingletons system(&controller);
-        QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
-        // Their key rows read Accounts, which the host always makes. Its
-        // keyring reads fail at once, so none is left waiting on this thread
-        // when it goes.
-        qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
-        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT"); });
-        QuickAccounts accounts(&controller);
-        LocalSetupTestAccess::setRunners(*controller.localSetup(),
-                                         {{QStringLiteral("ollama"), QStringLiteral("Ollama"), QStringLiteral("0.34.4"),
-                                           QStringLiteral("http://127.0.0.1:11434/v1"), {QStringLiteral("gemma4:e4b")}}});
-        settings.set(QStringLiteral("refinementProvider"), QStringLiteral("anthropic"));
-        QuickNavigation navigation(nullptr);
-        QQmlEngine engine;
-        QQmlComponent choicesComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
-        const std::unique_ptr<QObject> choices(choicesComponent.create());
-        QVERIFY2(choices, qPrintable(choicesComponent.errorString()));
-        QQmlComponent stepComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/RefinementStep.qml")));
-        const std::unique_ptr<QObject> step(stepComponent.beginCreate(engine.rootContext()));
-        QVERIFY2(step, qPrintable(stepComponent.errorString()));
-        step->setProperty("choices", QVariant::fromValue(choices.get()));
-        stepComponent.completeCreate();
-        QObject *offer = step->findChild<QObject *>(QStringLiteral("fallbackOffer"));
-        QVERIFY(offer);
-
-        QVERIFY(offer->property("open").toBool());
-        settings.set(QStringLiteral("refinementFallbacks"), QStringList{QStringLiteral("openai"), QStringLiteral("endpoint")});
-        QVERIFY(!offer->property("open").toBool());
-        // Behind OpenAI the chain keeps only the endpoint, so it has room.
-        QQmlProperty::write(choices.get(), QStringLiteral("cleanup"), QStringLiteral("openai"));
-        QVERIFY(offer->property("open").toBool());
-        QQmlProperty::write(choices.get(), QStringLiteral("cleanup"), QStringLiteral("local"));
-        QVERIFY(!offer->property("open").toBool());
-    }
-
-    // Setup's Refinement step says what Local Runner's rating was taken
-    // with, under its ratings and to assistive tech, as the settings page
-    // does.
-    void setupSaysWhatARatingWasTakenWith()
-    {
-        ApplicationController controller(true);
-        // The pages read Library, which works through this controller.
-        const QuickLibrary::ControllerScope library(&controller);
-        QuickSettings settings(&controller);
-        QuickModels models(&controller);
-        // Setup and the pages read System and Audio, as the host always has
-        // them.
-        test::SystemSingletons system(&controller);
-        QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
-        // Their key rows read Accounts, which the host always makes. Its
-        // keyring reads fail at once, so none is left waiting on this thread
-        // when it goes.
-        qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
-        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT"); });
-        QuickAccounts accounts(&controller);
-        LocalSetupTestAccess::setHardware(*controller.localSetup(), laptop());
-        const QString ratedModel =
-            models.refinementRatings().value(QStringLiteral("local")).toMap().value(QStringLiteral("ratedModel")).toString();
-        QVERIFY(!ratedModel.isEmpty());
-        QuickNavigation navigation(nullptr);
-        QQmlEngine engine;
-        QQmlComponent choicesComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
-        const std::unique_ptr<QObject> choices(choicesComponent.create());
-        QVERIFY2(choices, qPrintable(choicesComponent.errorString()));
-        QQmlComponent stepComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/RefinementStep.qml")));
-        const std::unique_ptr<QObject> step(stepComponent.beginCreate(engine.rootContext()));
-        QVERIFY2(step, qPrintable(stepComponent.errorString()));
-        step->setProperty("choices", QVariant::fromValue(choices.get()));
-        stepComponent.completeCreate();
-        const QList<QObject *> found = step->findChildren<QObject *>();
-        const auto cards = std::find_if(found.begin(), found.end(), [](QObject *object) {
-            return QByteArray(object->metaObject()->className()).startsWith("ServiceCards");
-        });
-        QVERIFY(cards != found.end());
-
-        const QVariantMap local = entry((*cards)->property("options").toList(), QStringLiteral("local"));
-        QCOMPARE(local.value(QStringLiteral("note")).toString(), QStringLiteral("Rated as ") + ratedModel);
-    }
-
-    // Setup's Transcription step offers the chosen Local Model's download
-    // until that model is here, whichever others are.
-    void setupOffersTheChosenModelsDownload()
-    {
-        ApplicationController controller(true);
-        // The pages read Library, which works through this controller.
-        const QuickLibrary::ControllerScope library(&controller);
-        QuickSettings settings(&controller);
-        QuickModels models(&controller);
-        // Setup and the pages read System and Audio, as the host always has
-        // them.
-        test::SystemSingletons system(&controller);
-        QuickAudio audio(&controller, nullptr, [] { return QList<AudioInputDeviceInfo>{}; });
-        // Their key rows read Accounts, which the host always makes. Its
-        // keyring reads fail at once, so none is left waiting on this thread
-        // when it goes.
-        qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
-        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT"); });
-        QuickAccounts accounts(&controller);
-        // The data folder outlives this process, and a model left in it
-        // would count as downloaded on the next run.
-        const auto removeModels = qScopeGuard([&] {
-            for (const QString &id : {QStringLiteral("moonshine-small"), QStringLiteral("parakeet")}) {
-                QFile::remove(controller.localModelStore()->modelPath(*findLocalModel(id)));
-            }
-        });
-        placeDownloaded(controller, QStringLiteral("moonshine-small"));
-        settings.set(QStringLiteral("speechLocalModel"), QStringLiteral("parakeet"));
-        QuickNavigation navigation(nullptr);
-        QQmlEngine engine;
-        QQmlComponent choicesComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
-        const std::unique_ptr<QObject> choices(choicesComponent.create());
-        QVERIFY2(choices, qPrintable(choicesComponent.errorString()));
-        QQmlProperty::write(choices.get(), QStringLiteral("speech"), QStringLiteral("local"));
-        QQmlComponent stepComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/TranscriptionStep.qml")));
-        const std::unique_ptr<QObject> step(stepComponent.beginCreate(engine.rootContext()));
-        QVERIFY2(step, qPrintable(stepComponent.errorString()));
-        step->setProperty("choices", QVariant::fromValue(choices.get()));
-        stepComponent.completeCreate();
-        QObject *download = step->findChild<QObject *>(QStringLiteral("localModelDownload"));
-        QVERIFY(download);
-
-        QVERIFY(download->property("shown").toBool());
-        placeDownloaded(controller, QStringLiteral("parakeet"));
-        QVERIFY(!download->property("shown").toBool());
-    }
-
     // Every runner is listed, those found running with their version and
     // models; Ollama without the suggested cleanup model offers to pull it.
     void runnersAndTheCleanupPull()
     {
         ApplicationController controller(true);
-        QuickModels models(&controller);
+        QuickSettings settings(&controller);
+        QuickModels models(&controller, &settings);
         LocalSetup &local = *controller.localSetup();
         LocalSetupTestAccess::setHardware(local, laptop());
         LocalSetupTestAccess::setRunners(local, {{QStringLiteral("ollama"), QStringLiteral("Ollama"),
@@ -609,13 +524,15 @@ private slots:
     void thePagesLoadOverIt_data()
     {
         QTest::addColumn<QString>("page");
-        QTest::addColumn<QString>("fallback");
-        QTest::addColumn<QString>("fallbacksRow");
-        QTest::newRow("pages/SpeechPage") << QStringLiteral("pages/SpeechPage") << QStringLiteral("endpoint")
-                                          << QStringLiteral("speechFallbackList");
-        QTest::newRow("pages/RefinementPage") << QStringLiteral("pages/RefinementPage") << QStringLiteral("local")
-                                              << QStringLiteral("refinementFallbacks");
-        for (const char *page : {"pages/ModelsPage", "setup/TranscriptionStep", "setup/RefinementStep"}) {
+        QTest::addColumn<QString>("order");
+        QTest::addColumn<QString>("orderRow");
+        QTest::newRow("pages/SpeechPage") << QStringLiteral("pages/SpeechPage") << QStringLiteral("speechServiceOrder")
+                                          << QStringLiteral("speechServices");
+        QTest::newRow("pages/RefinementPage") << QStringLiteral("pages/RefinementPage")
+                                              << QStringLiteral("refinementServiceOrder")
+                                              << QStringLiteral("refinementServices");
+        for (const char *page : {"pages/ServicesPage", "pages/ModelsPage", "setup/TranscriptionStep",
+                                 "setup/RefinementStep"}) {
             QTest::newRow(page) << QString::fromLatin1(page) << QString() << QString();
         }
     }
@@ -623,13 +540,13 @@ private slots:
     void thePagesLoadOverIt()
     {
         QFETCH(QString, page);
-        QFETCH(QString, fallback);
-        QFETCH(QString, fallbacksRow);
+        QFETCH(QString, order);
+        QFETCH(QString, orderRow);
         ApplicationController controller(true);
         // The pages read Library, which works through this controller.
         const QuickLibrary::ControllerScope library(&controller);
         QuickSettings settings(&controller);
-        QuickModels models(&controller);
+        QuickModels models(&controller, &settings);
         // Setup and the pages read System and Audio, as the host always has
         // them.
         test::SystemSingletons system(&controller);
@@ -640,31 +557,41 @@ private slots:
         qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
         const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT"); });
         QuickAccounts accounts(&controller);
-        // Every section the page has, open.
-        settings.set(QStringLiteral("speechFallbackList"), QStringList{QStringLiteral("endpoint")});
-        settings.set(QStringLiteral("refinementFallbacks"), QStringList{QStringLiteral("local")});
+        // Every service a row shows its own choices for.
+        settings.set(QStringLiteral("speechServices"),
+                     test::serviceOrder({QStringLiteral("claude"), QStringLiteral("endpoint"), QStringLiteral("codex")}));
+        settings.set(QStringLiteral("refinementServices"),
+                     test::serviceOrder({QStringLiteral("openai"), QStringLiteral("local"), QStringLiteral("anthropic")}));
         LocalSetupTestAccess::setHardware(*controller.localSetup(), laptop());
         QuickNavigation navigation(nullptr);
         QQmlEngine engine;
-        QQmlComponent choicesComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
-        const std::unique_ptr<QObject> choices(choicesComponent.create());
-        QVERIFY2(choices, qPrintable(choicesComponent.errorString()));
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/%1.qml").arg(page)));
         const std::unique_ptr<QObject> loaded(component.beginCreate(engine.rootContext()));
         QVERIFY2(loaded, qPrintable(component.errorString()));
-        // A setup step reads the choices the assistant hands it.
+        // A setup step reads the choices the assistant hands it, which
+        // draft what the step changes; a page saves as it changes.
+        std::unique_ptr<QObject> choices;
         if (page.startsWith(QLatin1String("setup/"))) {
+            QQmlComponent choicesComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Speecher/App/setup/SetupChoices.qml")));
+            choices.reset(choicesComponent.create());
+            QVERIFY2(choices, qPrintable(choicesComponent.errorString()));
             loaded->setProperty("choices", QVariant::fromValue(choices.get()));
         }
         component.completeCreate();
-        if (fallback.isEmpty()) {
+        if (order.isEmpty()) {
             return;
         }
 
+        // Moving the last service first saves the whole order once, each
+        // service keeping its choice.
+        QObject *list = loaded->findChild<QObject *>(order);
+        QVERIFY(list);
+        const QStringList before = test::servicesOf(settings.values().value(orderRow));
+        const QStringList moved = QStringList{before.last()} + before.mid(0, before.size() - 1);
         QSignalSpy saved(controller.settings(), &SettingsStore::snapshotApplied);
-        QVERIFY(QMetaObject::invokeMethod(loaded.get(), "choose", Q_ARG(QVariant, fallback)));
+        QVERIFY(QMetaObject::invokeMethod(list, "edited", Q_ARG(QVariant, QVariant(moved))));
         QCOMPARE(saved.count(), 1);
-        QCOMPARE(settings.values().value(fallbacksRow).toStringList(), QStringList());
+        QCOMPARE(test::servicesOf(settings.values().value(orderRow)), moved);
     }
 
 private:

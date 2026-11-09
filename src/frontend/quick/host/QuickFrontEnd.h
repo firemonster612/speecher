@@ -3,14 +3,17 @@
 #include "app/AppFrontEnd.h"
 #include "app/VirtualKeyboardSetup.h"
 #include "frontend/quick/host/QuickAccounts.h"
+#include "frontend/quick/host/QuickApps.h"
 #include "frontend/quick/host/QuickAppearance.h"
 #include "frontend/quick/host/QuickAudio.h"
 #include "frontend/quick/host/QuickDictation.h"
 #include "frontend/quick/host/QuickModels.h"
+#include "frontend/quick/host/QuickHistory.h"
 #include "frontend/quick/host/QuickInsights.h"
 #include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickNavigation.h"
 #include "frontend/quick/host/QuickPhone.h"
+#include "frontend/quick/host/QuickRecording.h"
 #include "frontend/quick/host/QuickRemoval.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickUpdates.h"
@@ -44,6 +47,9 @@ class QuickFrontEnd final : public QObject, public AppFrontEnd {
 public:
     // tray must outlive the front end.
     QuickFrontEnd(ApplicationController *controller, TrayIcon *tray, QObject *parent = nullptr);
+    // Sets up the QML engine's process-wide options. Call it before the
+    // first engine exists, as main and the tests do.
+    static void configureQmlEngine();
     ~QuickFrontEnd() override;
 
     void showMainWindow() override;
@@ -84,8 +90,11 @@ private:
     QuickPhone m_phone;
     QuickModels m_models;
     QuickInsights m_insights;
+    QuickHistory m_history;
+    QuickRecording m_recording;
     QuickAccounts m_accounts;
     QuickLibrary::ControllerScope m_library;
+    QuickApps m_apps;
     QuickNavigation m_navigation;
     QQmlEngine m_engine;
     QObject *m_themeSetting = nullptr;

@@ -3,7 +3,7 @@
 #include "app/AccessibilityMonitor.h"
 #include "app/ApplicationController.h"
 #include "core/InsightsExport.h"
-#include "core/InsightsLog.h"
+#include "core/history/HistoryStore.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QmlValues.h"
 
@@ -167,17 +167,17 @@ QuickInsights::QuickInsights(ApplicationController *controller, QObject *parent)
     , m_controller(controller)
 {
     SettingsStore *settings = controller->settings();
-    connect(controller->insightsLog(), &InsightsLog::changed, this, &QuickInsights::refresh);
-    // Summarizing every record is too much for every save: only Keep
-    // insights, and the profile names the apps and profiles go by, change
-    // what shows. The latest dictation's profile goes by its current name.
+    connect(controller->history(), &HistoryStore::changed, this, &QuickInsights::refresh);
+    // After a restart the latest is History's newest.
+    connect(controller->history(), &HistoryStore::changed, this, &QuickInsights::latestChanged);
+    // Summarizing every record is too much for every save: only What
+    // Speecher Keeps, and the profile names the apps and profiles go by,
+    // change what shows, the latest dictation's text and profile name too.
     connect(settings, &SettingsStore::snapshotApplied, this, [this, settings](const AppSettings &previous) {
         const AppSettings current = settings->dictationSnapshot();
-        const bool profilesChanged = current.refinement.writingProfiles != previous.refinement.writingProfiles;
-        if (profilesChanged || current.insightsEnabled != previous.insightsEnabled) {
+        if (current.refinement.writingProfiles != previous.refinement.writingProfiles
+            || current.history.keeps != previous.history.keeps) {
             refresh();
-        }
-        if (profilesChanged) {
             emit latestChanged();
         }
     });
@@ -200,7 +200,7 @@ QString QuickInsights::state() const
     if (!m_enabled) {
         return QStringLiteral("off");
     }
-    return m_controller->insightsLog()->records().isEmpty() ? QStringLiteral("empty") : QStringLiteral("ready");
+    return m_controller->history()->records().isEmpty() ? QStringLiteral("empty") : QStringLiteral("ready");
 }
 
 bool QuickInsights::hasData() const
@@ -210,12 +210,12 @@ bool QuickInsights::hasData() const
 
 int QuickInsights::kept() const
 {
-    return int(m_controller->insightsLog()->records().size());
+    return int(m_controller->history()->records().size());
 }
 
 QVariant QuickInsights::firstDictation() const
 {
-    const QList<DictationRecord> &records = m_controller->insightsLog()->records();
+    const QList<DictationRecord> &records = m_controller->history()->records();
     const auto first = std::min_element(records.begin(), records.end(), [](const auto &a, const auto &b) {
         return a.finishedAt < b.finishedAt;
     });
@@ -306,24 +306,46 @@ QVariant QuickInsights::latest() const
 {
     const QString text = m_controller->lastTranscript().trimmed();
     if (text.isEmpty()) {
-        return {};
+        return newestInHistory();
     }
     QVariantMap latest{{QStringLiteral("text"), text},
                        {QStringLiteral("words"), countWords(text)},
                        {QStringLiteral("app"), QString()},
+                       {QStringLiteral("appId"), QString()},
                        {QStringLiteral("profile"), QString()},
                        {QStringLiteral("date"), QVariant()}};
     if (const std::optional<DictationRecord> &record = m_controller->lastRecord()) {
         latest[QStringLiteral("app")] = record->appName;
+        latest[QStringLiteral("appId")] = record->applicationId;
         latest[QStringLiteral("profile")] = dictationProfileName(*record, m_controller->settings()->dictationSnapshot().refinement.writingProfiles);
         latest[QStringLiteral("date")] = jsDate(record->finishedAt.date());
     }
     return latest;
 }
 
-bool QuickInsights::clear()
+// History's newest dictation that kept its text, as latest has it; null
+// while History keeps no text.
+QVariant QuickInsights::newestInHistory() const
 {
-    return m_controller->clearInsights();
+    const AppSettings settings = m_controller->settings()->dictationSnapshot();
+    if (settings.history.keeps < HistoryKeep::Text) {
+        return {};
+    }
+    HistoryQuery newest;
+    newest.kinds = {HistoryKind::Dictation, HistoryKind::Edit};
+    newest.limit = 1;
+    const QList<HistoryHit> hits = m_controller->history()->search(newest);
+    if (hits.isEmpty()) {
+        return {};
+    }
+    const HistoryEntry &entry = hits.first().entry;
+    const QString text = entry.text.value_or(QString()).trimmed();
+    return QVariantMap{{QStringLiteral("text"), text},
+                       {QStringLiteral("words"), countWords(text)},
+                       {QStringLiteral("app"), entry.stats.appName},
+                       {QStringLiteral("appId"), entry.stats.applicationId},
+                       {QStringLiteral("profile"), dictationProfileName(entry.stats, settings.refinement.writingProfiles)},
+                       {QStringLiteral("date"), jsDate(entry.stats.finishedAt.date())}};
 }
 
 void QuickInsights::copyText(const QString &text)
@@ -355,16 +377,16 @@ bool QuickInsights::saveJson(const QUrl &file)
 
 void QuickInsights::copyLatest()
 {
-    QGuiApplication::clipboard()->setText(m_controller->lastTranscript().trimmed());
+    QGuiApplication::clipboard()->setText(latest().toMap().value(QStringLiteral("text")).toString());
 }
 
 void QuickInsights::refresh()
 {
     const AppSettings settings = m_controller->settings()->dictationSnapshot();
-    m_enabled = settings.insightsEnabled;
+    m_enabled = settings.history.keeps >= HistoryKeep::Stats;
     m_today = m_controller->insightsToday();
     const bool ready = hasData();
-    m_summary = ready ? summarize(m_controller->insightsLog()->records(), m_range, m_today,
+    m_summary = ready ? summarize(m_controller->history()->records(), m_range, m_today,
                                   settings.refinement.writingProfiles)
                       : InsightsSummary{};
     m_summaryMap = ready ? QVariant(summaryMap(m_summary)) : QVariant();
@@ -382,14 +404,16 @@ void QuickInsights::refresh()
 void QuickInsights::refreshCorrections()
 {
     const AppSettings settings = m_controller->settings()->dictationSnapshot();
-    QList<LearnedCorrection> learned = settings.learnedCorrections;
-    std::stable_sort(learned.begin(), learned.end(), [](const LearnedCorrection &a, const LearnedCorrection &b) {
+    QList<VocabularyEntry> learned;
+    std::copy_if(settings.vocabulary.cbegin(), settings.vocabulary.cend(), std::back_inserter(learned),
+                 [](const VocabularyEntry &entry) { return entry.isLearned(); });
+    std::stable_sort(learned.begin(), learned.end(), [](const VocabularyEntry &a, const VocabularyEntry &b) {
         return a.createdAtMs > b.createdAtMs;
     });
     QVariantList recent;
-    for (const LearnedCorrection &correction : learned.mid(0, 3)) {
-        recent.append(QVariantMap{{QStringLiteral("heard"), correction.original},
-                                  {QStringLiteral("fixed"), correction.corrected}});
+    for (const VocabularyEntry &correction : learned.mid(0, 3)) {
+        recent.append(QVariantMap{{QStringLiteral("heard"), correction.term},
+                                  {QStringLiteral("fixed"), correction.replacement}});
     }
     const QVariantMap corrections = {
         {QStringLiteral("count"), int(learned.size())},

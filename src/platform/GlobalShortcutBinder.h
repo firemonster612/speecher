@@ -53,6 +53,16 @@ public:
                     QStringLiteral("Pause or resume dictation"),
                     {},
                     true};
+        case GlobalShortcutRole::PasteAgain:
+            return {GlobalShortcutRole::PasteAgain,
+                    QStringLiteral("paste-again"),
+                    QStringLiteral("Paste the last dictation again"),
+                    {}};
+        case GlobalShortcutRole::Recording:
+            return {GlobalShortcutRole::Recording,
+                    QStringLiteral("toggle-recording"),
+                    QStringLiteral("Start or stop recording a call"),
+                    {}};
         case GlobalShortcutRole::Dictation:
             break;
         }

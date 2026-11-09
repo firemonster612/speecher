@@ -10,13 +10,14 @@
 namespace speecher {
 
 class ApplicationController;
+class QuickSettings;
 
 // The UI's Models singleton: what core knows about the providers that hear
 // and clean up dictation, and about running models on this computer. The
 // speech and refinement providers come from the registry with where each
 // stands (ProviderReadiness) and how each rates (ProviderRatings); the Local
 // Model catalog, downloads and Speed Tests, the hardware, the Local Runners,
-// the Ollama cleanup-model pull and both Custom Endpoints' connection checks
+// the Ollama cleanup-model pull and both servers' connection checks
 // come from the controller's LocalSetup, so they outlive the window. Data
 // only, as plain values; the UI words it (ModelText). Every list but
 // downloads changes through changed(), which fires only when something did.
@@ -91,7 +92,7 @@ class QuickModels final : public QObject, public HostSingleton<QuickModels> {
     // chosen model isn't downloaded.
     Q_PROPERTY(QString inUse READ inUse NOTIFY changed)
 
-    // Each Custom Endpoint's connection check, for the server the settings
+    // Each server's connection check, for the server the settings
     // name now: {checked, checking, ok, status, models}. status is core's
     // verdict; checked is false before the first check of that server.
     Q_PROPERTY(QVariantMap speechEndpoint READ speechEndpoint NOTIFY changed)
@@ -117,13 +118,11 @@ class QuickModels final : public QObject, public HostSingleton<QuickModels> {
     // The rules refinement follows unless a custom prompt replaces them.
     Q_PROPERTY(QString builtInSystemPrompt READ builtInSystemPrompt CONSTANT)
 
-    // The local fallback setup suggests for each role, {modelId, name, joins}
-    // or empty, by role: speech and refinement. joins lists the primaries the
-    // offer would be added behind; behind any other the chain would drop it.
-    Q_PROPERTY(QVariantMap fallbackOffers READ fallbackOffers NOTIFY changed)
-
 public:
-    explicit QuickModels(ApplicationController *controller, QObject *parent = nullptr);
+    // Reads the settings as settings shows them (QuickSettings::shown), so
+    // setup's draft shows in the services' states, as in System's, and
+    // chooses through it, so use waits in that draft too.
+    QuickModels(ApplicationController *controller, QuickSettings *settings, QObject *parent = nullptr);
 
     QVariantList speechServices() const { return m_speechServices; }
     QVariantList refinementProviders() const { return m_refinementProviders; }
@@ -155,7 +154,6 @@ public:
     bool offerPull() const { return m_offerPull; }
     QVariantMap pull() const;
     QString builtInSystemPrompt() const;
-    QVariantMap fallbackOffers() const { return m_fallbackOffers; }
 
     // Probes the hardware the first time: what a page that shows fits,
     // suggestions or ratings asks for when it opens. Probing loads the speech
@@ -175,7 +173,8 @@ public:
     // The Local Model catalog's operations, by model id. A download keeps
     // going with the window closed and resumes at the next start; deleting
     // the model dictation uses moves it to another downloaded one. use
-    // chooses the model and makes Local Model the speech service.
+    // chooses the model and makes Local Model the speech service, through
+    // Settings as its rows do.
     Q_INVOKABLE void download(const QString &id);
     Q_INVOKABLE void cancel(const QString &id);
     Q_INVOKABLE void remove(const QString &id);
@@ -183,7 +182,7 @@ public:
     Q_INVOKABLE void testSpeed(const QString &id);
     Q_INVOKABLE void openModelFolder();
 
-    // Checks the Custom Endpoint the settings name now.
+    // Checks the server the settings name now.
     Q_INVOKABLE void testSpeechEndpoint();
     Q_INVOKABLE void testRefinementEndpoint();
     Q_INVOKABLE void detectRunners();
@@ -191,10 +190,6 @@ public:
     // runner's model once it is there.
     Q_INVOKABLE void pullCleanupModel();
     Q_INVOKABLE void cancelPull();
-    // Adds the local fallback offered for a role, speech or refinement,
-    // behind primary, setup's choice for it, which is saved with it. Another
-    // role changes nothing and is logged.
-    Q_INVOKABLE void acceptFallbackOffer(const QString &role, const QString &primary);
 
 signals:
     void changed();
@@ -206,6 +201,7 @@ private:
     void refreshDownloads();
 
     ApplicationController *m_controller;
+    QuickSettings *m_settings;
     QVariantList m_speechServices;
     QVariantList m_refinementProviders;
     QVariantMap m_speechRatings;
@@ -232,7 +228,6 @@ private:
     bool m_runnersChecked = false;
     QVariantMap m_cleanupSuggestion;
     bool m_offerPull = false;
-    QVariantMap m_fallbackOffers;
 };
 
 } // namespace speecher

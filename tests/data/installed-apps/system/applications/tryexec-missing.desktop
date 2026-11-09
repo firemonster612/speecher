@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=Not installed
+TryExec=speecher-no-such-program
+Exec=speecher-no-such-program

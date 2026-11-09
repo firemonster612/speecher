@@ -6,15 +6,34 @@ import Speecher.Backend
 import Speecher.Wording
 import Speecher.App
 
-// One Writing Profile's settings: where it's used, its cleanup level with a
+// One Writing Profile's settings: where it's used and the vocabulary limited
+// to it, its cleanup level with a
 // preview of what that level does, its tone, output language, instructions,
 // and the services it may pick for itself. Edits go out through edited();
 // the page writes them.
+//
+// In run mode it is what one run (a Transcribe batch) changes of its
+// profile: only cleanup, tone and the services show, each starting "Same as
+// <profile> (…)", and the edits are the run's, by the same keys.
 Column {
     id: editor
 
+    // A profile, or in run mode the run's own changes: { cleanup, tone,
+    // speech, speechModel, refinement, refinementModel }, each "" while it
+    // is the same as the profile's.
     property var profile: ({})
-    property bool isFallback: false
+    property bool runMode: false
+    // Run mode: each value without the run's change and the place it comes
+    // from: { profileName, cleanup, tone, outputLanguage, speech,
+    // speechPlace, speechModel, refinement, refinementPlace,
+    // refinementModel }.
+    property var inherited: ({})
+    property string servicesTitle: Schema.row("profileServices").label
+    // A search for a profile's rows lands on the Writing profiles page,
+    // never on a run's copy of them.
+    function landsOn(rowIds) { return runMode ? [] : rowIds }
+    // The Apps and App Types that write with it, as Library.profileUsers
+    // lists them: [{ id (where it lands in Apps), name, icon, typeIcon }].
     property var apps: []
     // Why the page refused the last edit, under the name; empty after one it saved.
     property string refusal
@@ -23,13 +42,57 @@ Column {
     signal newToneRequested()
 
     readonly property var levels: Library.levelOptions
-    readonly property var level: levels.find(l => l.id === profile.cleanup) || levels[2]
+    readonly property var level: levels.find(l => l.id === (profile.cleanup || inherited.cleanup)) || levels[2]
     readonly property var tones: Library.toneOptions
-    readonly property var tone: tones.find(t => t.id === profile.tone) || tones[0]
+    readonly property var tone: tones.find(t => t.id === (profile.tone || inherited.tone)) || tones[0]
+    readonly property string outputLanguage: runMode ? inherited.outputLanguage || "" : profile.language || ""
     // None with an output language still translates, at Light.
-    readonly property bool skipsRefinement: profile.cleanup === "none" && !profile.language
-    readonly property var refinementModels: profile.refinement === "openai" ? Models.openAiModels
-                                          : profile.refinement === "anthropic" ? Models.anthropicModels : []
+    readonly property bool skipsRefinement: level.id === "none" && !outputLanguage
+    readonly property bool translatesOnly: level.id === "none" && !!outputLanguage
+    // What the profile runs: its own first services, else the pages'
+    // orders'. A speech service the resolver passes over (it can't listen
+    // for the Spoken Language, or this build lacks it) leaves the page's.
+    // With Clean up my words off, nothing refines, unless a run names a
+    // service.
+    readonly property string speechSkipped: runMode ? "" : profile.speechSkipped || ""
+    readonly property var speech: ModelText.service((speechSkipped ? "" : profile.speech)
+                                                    || (runMode ? inherited.speech : ModelText.mainSpeech))
+    readonly property bool refinementOff: !runMode && ModelText.mainRefiner === "none"
+    readonly property var refiner: ModelText.provider(refinementOff ? "none"
+        : profile.refinement || (runMode ? inherited.refinement : ModelText.mainRefiner))
+    readonly property bool refinerOff: refiner.id === "none"
+    // Where a service the profile or run leaves alone comes from, and what
+    // it is there.
+    readonly property string speechPlace: runMode ? inherited.speechPlace : Schema.page("speech").title
+    readonly property string refinementPlace: runMode ? inherited.refinementPlace : Schema.page("refinement").title
+    readonly property string inheritedSpeech: runMode ? inherited.speech : ModelText.mainSpeech
+    readonly property string inheritedRefiner: runMode ? inherited.refinement : ModelText.mainRefiner
+    function speechModelName(model) { return (ModelText.catalogModel(model) || { name: model }).name || Library.profilesText.serviceDefault }
+    // The services whose models the editor chooses: the profile's own, or
+    // in run mode the ones the run hears and refines with.
+    readonly property string modelSpeech: runMode ? speech.id : profile.speech || ""
+    readonly property string modelRefiner: profile.refinement || (runMode ? refiner.id : "")
+    // "Same as …" for a model: the run's inherited service keeps its place's
+    // model; any other service runs its page's entry.
+    readonly property string inheritedSpeechModel: runMode && speech.id === inheritedSpeech
+        ? Words.sameAs(speechPlace, speechModelName(inherited.speechModel))
+        : Words.sameAs(Schema.page("speech").title, speechModelName(ModelText.entry("speech", modelSpeech).model || ""))
+    readonly property string inheritedRefinementModel: runMode && refiner.id === inheritedRefiner
+        ? Words.sameAs(refinementPlace, inherited.refinementModel || Library.profilesText.serviceDefault)
+        : Words.sameAs(Schema.page("refinement").title, ModelText.refinementModel(refiner.id) || Library.profilesText.serviceDefault)
+    // The language the Spoken Language names, for why a service is skipped.
+    readonly property string spokenLanguageName: (Schema.row("spokenLanguage").options.find(o => o.id === Settings.values.spokenLanguage)
+                                                  || { label: "" }).label
+    // "Heard by Claude, cleaned up by gpt-6-luna.", then what stands in the
+    // way of either, so a profile that seems to ignore a change says why.
+    readonly property string pipeline: {
+        const model = profile.refinementModel || ModelText.refinementModel(refiner.id)
+        const used = [speech].concat(skipsRefinement || refinerOff ? [] : [refiner])
+        const said = p => { const status = ModelText.status(p); return (status.includes(p.label) ? status : p.label + ": " + status) + "." }
+        const problems = used.filter(p => p.state !== "ready").map(said)
+        return [Library.pipelineCaption(speech.id, skipsRefinement ? "none" : refiner.id, model) + "."]
+            .concat(runMode || profile.speech || profile.refinement ? [] : [Library.profilesText.everyProfile]).concat(problems).join(" ")
+    }
     property bool confirmingDelete: false
 
     spacing: Theme.space6
@@ -41,7 +104,8 @@ Column {
     property string _shownId: profile.id || ""
     onProfileChanged: {
         confirmingDelete = false
-        if (profile.id === _shownId) return
+        // A run's changes are one run's throughout.
+        if (runMode || profile.id === _shownId) return
         refusal = ""
         _shownId = profile.id
         if (!swapIn.running) { opacity = 0.2; slide.x = 10 * Theme.movement }
@@ -54,14 +118,14 @@ Column {
         Ease { target: slide; property: "x"; to: 0; duration: Theme.page }
     }
 
-    readonly property string usedIn: Library.profileUse(apps, isFallback)
 
     // Header: the name (editable on your own profiles), where it's used, and
     // the question before deleting one.
     Column {
         id: header
+        visible: !editor.runMode
         width: parent.width
-        SearchLanding { rowIds: ["profileApps"]; target: header }
+        SearchLanding { rowIds: editor.landsOn(["profileApps"]); target: header }
         Item {
             width: parent.width
             height: headCol.implicitHeight
@@ -70,7 +134,7 @@ Column {
                 width: parent.width - deleteButton.width - Theme.space4
                 spacing: Theme.space2
                 Txt {
-                    visible: editor.profile.builtIn
+                    visible: !!editor.profile.builtIn
                     text: editor.profile.name || ""
                     variant: "title"
                 }
@@ -86,7 +150,39 @@ Column {
                     open: editor.refusal.length > 0
                     Txt { text: editor.refusal; variant: "small"; tone: "negative"; width: parent.width; wrapMode: Text.WordWrap }
                 }
-                Txt { text: editor.usedIn; variant: "small"; tone: "secondary"; width: parent.width; wrapMode: Text.WordWrap }
+                // Each app or type that uses it opens in Apps.
+                Flow {
+                    width: parent.width
+                    spacing: Theme.space2
+                    Txt {
+                        text: editor.apps.length ? Schema.row("profileApps").label : Library.profilesText.unused
+                        variant: "small"
+                        tone: "secondary"
+                    }
+                    Repeater {
+                        model: editor.apps
+                        TextLink {
+                            required property var modelData
+                            text: modelData.name
+                            iconName: modelData.typeIcon
+                            onActivated: Navigation.follow("apps", modelData.id)
+                        }
+                    }
+                }
+                // The vocabulary limited to it, shown on Vocabulary.
+                LinkedText {
+                    id: vocabularyLink
+                    objectName: "profileVocabulary"
+                    readonly property string limit: "profile/" + (editor.profile.id || "")
+                    width: parent.width
+                    plainText: Schema.vocabulary.limitedHere(Library.limitedCount(limit), "profile") + " " + Schema.vocabulary.showThem
+                    link: Schema.vocabulary.showThem
+                    variant: "small"
+                    tone: "secondary"
+                    wrapMode: Text.WordWrap
+                    onActivated: Navigation.follow("vocabulary", "vocabularyFor:" + limit)
+                }
+                Txt { text: Words.savesAsYouGo; variant: "small"; tone: "tertiary" }
             }
             Button {
                 id: deleteButton
@@ -106,7 +202,7 @@ Column {
             inset: 0
             ruled: false
             text: Library.profileDeleteQuestion(editor.profile.name)
-            detail: Library.profileDeleteDetail(editor.apps, editor.isFallback)
+            detail: Library.profileDeleteDetail(editor.apps)
             confirmText: Words.delete_
             onConfirmed: editor.deleteRequested()
             onCancelled: editor.confirmingDelete = false
@@ -117,16 +213,25 @@ Column {
     FormField {
         id: cleanupField
         label: Schema.row("profileCleanup").label
-        SearchLanding { rowIds: ["profileCleanup"]; target: cleanupField }
-        help: editor.level.help
+        SearchLanding { rowIds: editor.landsOn(["profileCleanup"]); target: cleanupField }
+        help: editor.refinerOff && !editor.skipsRefinement ? Library.profilesText.noRefiner
+            : editor.translatesOnly ? Library.translatesAtLight(editor.refiner.label) : editor.level.help
         Column {
             width: parent.width
             spacing: Theme.space3
             CompactChoice {
+                visible: !editor.runMode
                 width: parent.width
                 stretch: true
                 options: editor.levels
                 currentId: editor.level.id
+                onChosen: id => editor.edited({ cleanup: id })
+            }
+            InheritSelect {
+                visible: editor.runMode
+                inheritedText: Words.sameAs(editor.inherited.profileName || "", Library.levelLabel(editor.inherited.cleanup))
+                choices: editor.levels
+                currentId: editor.profile.cleanup || ""
                 onChosen: id => editor.edited({ cleanup: id })
             }
             // The level's sample sentence, quoted beside a rule.
@@ -150,7 +255,7 @@ Column {
     FormField {
         id: toneField
         label: Schema.row("profileTone").label
-        SearchLanding { rowIds: ["profileTone"]; target: toneField }
+        SearchLanding { rowIds: editor.landsOn(["profileTone"]); target: toneField }
         help: editor.skipsRefinement ? Library.profilesText.toneSkipped : editor.tone.help
         // One tone, from a list that grows with your own, so a menu. Skipped
         // refinement leaves it editable for later; the help says so.
@@ -158,22 +263,24 @@ Column {
             id: toneRow
             width: parent.width
             spacing: Theme.space2
-            Select {
+            InheritSelect {
                 // Narrows rather than push Add tone out of a narrow editor.
-                width: Math.min(implicitWidth, toneRow.width - newTone.width - toneRow.spacing)
-                options: editor.tones
-                currentId: editor.tone.id
+                width: Math.min(implicitWidth, toneRow.width - (newTone.visible ? newTone.width + toneRow.spacing : 0))
+                inheritedText: editor.runMode ? Words.sameAs(editor.inherited.profileName || "", Library.toneLabel(editor.inherited.tone)) : ""
+                choices: editor.tones
+                currentId: editor.runMode ? editor.profile.tone || "" : editor.tone.id
                 onChosen: id => editor.edited({ tone: id })
             }
-            Button { id: newTone; text: Library.profilesText.addTone; iconName: "plus"; onClicked: editor.newToneRequested() }
+            Button { id: newTone; visible: !editor.runMode; text: Library.profilesText.addTone; iconName: "plus"; onClicked: editor.newToneRequested() }
         }
     }
 
     Row {
         id: textFields
+        visible: !editor.runMode
         width: parent.width
         spacing: Theme.space4
-        SearchLanding { rowIds: ["profileLanguage", "profileInstructions"]; target: textFields }
+        SearchLanding { rowIds: editor.landsOn(["profileLanguage", "profileInstructions"]); target: textFields }
         FormField {
             width: (parent.width - parent.spacing) * 0.4
             label: Schema.row("profileLanguage").label
@@ -213,58 +320,72 @@ Column {
         objectName: "profileServices"
         x: -Theme.rowInset
         width: parent.width + Theme.rowInset * 2
-        readonly property bool custom: !!(editor.profile.speech || editor.profile.refinement)
-        title: Schema.row("profileServices").label
-        help: Schema.row("profileServices").help
-        trailingText: custom ? Library.profilesText.custom : Library.profilesText.default_
-        open: custom
+        readonly property int changes: [editor.profile.speech, editor.profile.refinement].filter(s => !!s).length
+        title: editor.servicesTitle
+        help: editor.pipeline
+        // What it inherits while it changes nothing, as an InheritSelect's
+        // first option says it.
+        trailingText: changes ? Words.count(changes, Library.profilesText.change, Library.profilesText.changes)
+                    : editor.runMode ? Library.profilesText.sameAs(editor.inherited.profileName || "")
+                    : Library.profilesText.sameAsOrders
+        open: changes > 0
         SearchLanding {
-            rowIds: ["profileServices"]
+            rowIds: editor.landsOn(["profileServices"])
             target: services
             onLanded: { services.open = true; services.highlight() }
         }
 
         SettingRow {
             title: Library.profilesText.speech
-            help: editor.profile.speech ? Library.profilesText.ownSpeechHelp : Library.profilesText.defaultSpeechHelp
-            Select {
-                options: [{ id: "", label: Library.defaultChoice(Models.service(Settings.values.speechProvider).label) }]
-                         .concat(Models.speechServices.map(s => ({ id: s.id, label: s.label })))
+            help: editor.speechSkipped ? Library.skippedSpeechHelp(editor.speechSkipped, Models.service(editor.profile.speech).label,
+                                                                    editor.spokenLanguageName)
+                : editor.profile.speech ? Library.profilesText.ownSpeechHelp : Library.profilesText.defaultSpeechHelp
+            InheritSelect {
+                inheritedText: Words.sameAs(editor.speechPlace, Models.service(editor.inheritedSpeech).label)
+                choices: Models.speechServices.map(s => ({ id: s.id, label: s.label }))
                 currentId: editor.profile.speech || ""
                 onChosen: id => editor.edited({ speech: id, speechModel: "" })
             }
         }
+        // A model to choose, where the service runs one, as its order row
+        // chooses it.
         SettingRow {
             title: Library.profilesText.speechModel
-            shown: editor.profile.speech === "local"
-            Select {
-                options: [{ id: "", label: Library.defaultChoice((ModelText.catalogModel(Models.localModelChoice) || { name: "" }).name) }]
-                         .concat(ModelText.downloadedModels)
-                currentId: editor.profile.speechModel || ""
-                onChosen: id => editor.edited({ speechModel: id })
+            shown: !!editor.modelSpeech && ModelText.choosesModel("speech", editor.modelSpeech)
+            ServiceModelField {
+                role: "speech"
+                service: editor.modelSpeech
+                value: editor.profile.speechModel || ""
+                inheritedText: editor.inheritedSpeechModel
+                onChosen: model => editor.edited({ speechModel: model })
             }
         }
         SettingRow {
             title: Library.profilesText.refinement
-            help: editor.skipsRefinement ? Library.profilesText.refinementSkipped
+            help: editor.refinementOff ? Schema.row("refinementEnabled").offNote
+                : editor.skipsRefinement ? Library.profilesText.refinementSkipped
                 : editor.profile.refinement ? Library.ownRefinementHelp(ModelText.provider(editor.profile.refinement).label)
                 : Library.profilesText.defaultRefinementHelp
-            Select {
-                enabled: !editor.skipsRefinement
-                options: [{ id: "", label: Library.defaultChoice(ModelText.provider(Settings.values.refinementProvider).label) }]
-                         .concat(Models.refinementProviders.map(p => ({ id: p.id, label: p.label })))
+            InheritSelect {
+                enabled: !editor.skipsRefinement && !editor.refinementOff
+                inheritedText: Words.sameAs(editor.refinementPlace, ModelText.provider(editor.inheritedRefiner).label)
+                // A run may refine with nothing.
+                choices: Models.refinementProviders.map(p => ({ id: p.id, label: p.label }))
+                    .concat(editor.runMode ? [{ id: "none", label: ModelText.provider("none").label }] : [])
                 currentId: editor.profile.refinement || ""
                 onChosen: id => editor.edited({ refinement: id, refinementModel: "" })
             }
         }
         SettingRow {
             title: Library.profilesText.refinementModel
-            shown: editor.refinementModels.length > 0
-            enabled: !editor.skipsRefinement
-            Select {
-                options: [{ id: "", label: Library.profilesText.defaultModel }].concat(editor.refinementModels.map(m => ({ id: m.id, label: m.label })))
-                currentId: editor.profile.refinementModel || ""
-                onChosen: id => editor.edited({ refinementModel: id })
+            shown: !!editor.modelRefiner && editor.modelRefiner !== "none"
+            enabled: !editor.skipsRefinement && !editor.refinementOff
+            ServiceModelField {
+                role: "refinement"
+                service: editor.modelRefiner
+                value: editor.profile.refinementModel || ""
+                inheritedText: editor.inheritedRefinementModel
+                onChosen: model => editor.edited({ refinementModel: model })
             }
         }
     }

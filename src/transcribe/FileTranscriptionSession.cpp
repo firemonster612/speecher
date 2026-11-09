@@ -1,8 +1,8 @@
 #include "transcribe/FileTranscriptionSession.h"
 
+#include "core/ProviderChain.h"
 #include "core/SettingsStore.h"
 #include "core/TranscriptState.h"
-#include "core/WritingProfileProviders.h"
 #include "platform/audio/AudioPcmConverter.h"
 #include "providers/ProviderRegistry.h"
 #include "providers/SpeechAudio.h"
@@ -165,35 +165,6 @@ QString writeTranscript(const QString &path, const QString &text)
     return {};
 }
 
-AppSettings withBatchChoices(AppSettings settings, const ProviderRegistry &providers, const TranscribeOptions &options)
-{
-    if (options.spokenLanguage) {
-        settings.speech.language = *options.spokenLanguage;
-    }
-    // The page's providers start at the profile's. Kept, they run as the
-    // profile has them, with its model and ahead of the saved chain; one the
-    // page or command line changed runs as the settings have it.
-    const AppSettings profiled = providers.withProfileProviders(
-        settings, writingProfileSettingsFor(settings.refinement.writingProfiles,
-                                            writingProfileFromName(options.writingProfile)));
-    if (profiled.speech.providerId == options.speechProviderId) {
-        settings.speech = profiled.speech;
-    }
-    if (profiled.refinement.providerId == options.refinementProviderId) {
-        settings.refinement = profiled.refinement;
-    }
-    settings.speech.providerId = options.speechProviderId;
-    settings.refinement.providerId = options.refinementProviderId;
-    QString *speechModel = speechModelSetting(settings.speech, settings.speech.providerId);
-    if (speechModel && !options.speechModel.isEmpty()) {
-        *speechModel = options.speechModel;
-    }
-    if (!options.refinementModel.isEmpty()) {
-        setRefinementModel(settings.refinement, options.refinementModel);
-    }
-    return settings;
-}
-
 FileTranscriptionSession::FileTranscriptionSession(SettingsStore *settings,
                                                    ProviderRegistry *providers,
                                                    QObject *parent)
@@ -210,7 +181,7 @@ FileTranscriptionSession::FileTranscriptionSession(SettingsStore *settings,
     // The provider starts once the worker reports, never inside start().
     speech->chain()->setOptions({.readyLater = true});
     connect(speech->chain(), &SpeechChain::secretsResolved, this,
-            [this](const AppSettings &settings) { m_batchSettings = settings; });
+            [this](const AppSettings &settings) { m_plan.settings = settings; });
     connect(m_stream, &SpeechStream::startedOver, this, [this] { m_current.segments.clear(); });
     connect(speech, &SpeechAttempts::segments, this, [this](const QList<TranscriptSegment> &segments) {
         for (TranscriptSegment segment : segments) {
@@ -239,7 +210,7 @@ FileTranscriptionSession::FileTranscriptionSession(SettingsStore *settings,
                 m_refinementFailures.append({providerId, failure.message});
             });
     connect(m_refinementChain, &RefinementChain::secretsResolved, this,
-            [this](const AppSettings &settings) { m_batchSettings = settings; });
+            [this](const AppSettings &settings) { m_plan.settings = settings; });
     connect(m_refinementChain, &RefinementChain::ready, this, &FileTranscriptionSession::startRefiner);
     connect(m_refinementChain, &RefinementChain::exhausted, this, &FileTranscriptionSession::completeUnrefined);
     connect(m_transcript, &TranscriptState::changed, this, [this](const QString &text) {
@@ -259,26 +230,31 @@ bool FileTranscriptionSession::isRunning() const
     return m_running;
 }
 
-bool FileTranscriptionSession::start(const QStringList &paths, const TranscribeOptions &options)
+const DictationPlan &FileTranscriptionSession::plan() const
+{
+    return m_plan;
+}
+
+bool FileTranscriptionSession::start(const QStringList &paths,
+                                     const RunOverrides &overrides,
+                                     const TranscribeOptions &options)
 {
     if (m_running || paths.isEmpty()) {
         return false;
     }
     m_input = nullptr;
-    beginBatch(paths, options);
+    beginBatch(paths, overrides, options);
     return true;
 }
 
-bool FileTranscriptionSession::startListening(AudioInput *input, const TranscribeOptions &options)
+bool FileTranscriptionSession::startListening(AudioInput *input, const RunOverrides &overrides)
 {
     if (m_running) {
         return false;
     }
     m_input = input;
     // There is no file to save the transcript beside.
-    TranscribeOptions listening = options;
-    listening.destination = TranscriptDestination::None;
-    beginBatch({QString()}, listening);
+    beginBatch({QString()}, overrides, {TranscriptDestination::None});
     return true;
 }
 
@@ -312,25 +288,18 @@ void FileTranscriptionSession::finishListening()
 void FileTranscriptionSession::listenToNothing()
 {
     m_stream->endInput();
-    m_stream->prepare(m_batchSettings);
+    m_stream->prepare(m_plan.settings);
 }
 
-void FileTranscriptionSession::beginBatch(const QStringList &paths, const TranscribeOptions &options)
+void FileTranscriptionSession::beginBatch(const QStringList &paths,
+                                          const RunOverrides &overrides,
+                                          const TranscribeOptions &options)
 {
     m_paths = paths;
     m_options = options;
     // Never waits for the keyring, so a caller's refusal check still holds
     // when the batch starts; the chains read keys on their worker.
-    m_batchSettings = withBatchChoices(m_settings->dictationSnapshot(), *m_providers, options);
-    // The page's profile stands in for the one a target would have implied,
-    // for the terms that apply as for everything else.
-    m_runChoices = {writingProfileFromName(options.writingProfile), options.addedVocabulary};
-    if (!options.applyVocabulary) {
-        m_batchSettings.vocabulary.clear();
-        m_batchSettings.learnedCorrections.clear();
-        m_batchSettings.bindings.clear();
-    }
-    m_batchSettings.speech.vocabulary = TranscriptPipeline::speechVocabulary(m_batchSettings, m_runChoices, Target{});
+    m_plan = planDictation(m_settings->dictationSnapshot(), Target{}, overrides, m_providers->offersSpeech());
     m_results.clear();
     m_finishBeforeListening = false;
     m_running = true;
@@ -431,7 +400,7 @@ void FileTranscriptionSession::streamFile()
     // next file's now. Its first buffers can report progress, where the
     // batch may be cancelled.
     if (decoding && batch == m_batch) {
-        m_stream->prepare(m_batchSettings);
+        m_stream->prepare(m_plan.settings);
     }
 }
 
@@ -517,7 +486,7 @@ void FileTranscriptionSession::startMicrophone()
     });
     connect(m_input, &AudioInput::started, this, [this] {
         m_microphone = Microphone::Listening;
-        m_stream->prepare(m_batchSettings);
+        m_stream->prepare(m_plan.settings);
     });
     connect(m_input, &AudioInput::stopped, this, [this] {
         m_microphone = Microphone::Off;
@@ -552,18 +521,9 @@ void FileTranscriptionSession::finishTranscription()
 
 void FileTranscriptionSession::refine(const QString &raw)
 {
-    m_pipeline = TranscriptPipeline::prepare(raw, m_batchSettings, m_runChoices, Target{},
-                                             m_stream->speechSettings().language);
-    // The page's choices stand in for what a target app would have implied.
-    m_pipeline.refinementSettings.style = m_options.cleanupStrength;
-    m_pipeline.refinementContext.tone = m_options.tone;
-    TranscriptPipeline::resolveCustomChoices(m_pipeline);
-    // Even a page or command line set to None translates for a profile with
-    // an output language.
-    m_pipeline.refinementSettings.style =
-        refinedCleanupLevel(m_pipeline.refinementSettings.style, m_pipeline.refinementContext.outputLanguage);
+    m_pipeline = TranscriptPipeline::prepare(raw, m_plan, Target{}, m_stream->speechSettings().language);
     const RefinementSettings &refinement = m_pipeline.refinementSettings;
-    if (m_options.refinementProviderId == kNoRefinementProvider || refinement.style == QStringLiteral("none")
+    if (serviceChain(m_plan.settings.refinement).isEmpty() || refinement.style == QStringLiteral("none")
         || m_pipeline.bindingResult.canSkipRefinement) {
         completeFile(m_pipeline.deliveryFallback);
         return;
@@ -577,8 +537,8 @@ void FileTranscriptionSession::refine(const QString &raw)
     if (batch != m_batch) {
         return;
     }
-    m_refinementChain->begin(m_options.refinementProviderId, m_batchSettings.refinement.fallbackProviderIds);
-    m_refinementChain->prepare(m_batchSettings, refinement);
+    m_refinementChain->begin(serviceChain(m_plan.settings.refinement));
+    m_refinementChain->prepare(m_plan.settings, refinement);
 }
 
 // A fresh refiner for each one the file tries, never live dictation's.
@@ -613,7 +573,7 @@ void FileTranscriptionSession::startRefiner()
                       m_pipeline.refinementVocabulary,
                       m_pipeline.refinementContext,
                       m_refinementChain->currentSettings(),
-                      m_batchSettings.accounts);
+                      m_plan.settings.accounts);
 }
 
 // A refiner that fails to answer for want of a service makes way for the
@@ -623,7 +583,7 @@ void FileTranscriptionSession::handleRefinementFailure(const ProviderFailure &fa
 {
     m_refinementFailures.append({m_refinementChain->currentId(), failure.message});
     if (permitsProviderFallback(failure.kind)) {
-        m_refinementChain->prepareNext(m_batchSettings, m_pipeline.refinementSettings);
+        m_refinementChain->prepareNext(m_plan.settings, m_pipeline.refinementSettings);
         return;
     }
     completeUnrefined();

@@ -48,9 +48,7 @@ OpenAiAuthProvider OpenAiAuthProvider::forSpeech(const AccountSettings &accounts
                               accounts.cliproxyOauthDir);
 }
 
-OpenAiAuthProvider OpenAiAuthProvider::forRefinement(SecretStore *secretStore,
-                                                     const AccountSettings &accounts,
-                                                     const RefinementSettings &refinement)
+OpenAiAuthProvider OpenAiAuthProvider::forRefinement(SecretStore *secretStore, const AccountSettings &accounts)
 {
     return OpenAiAuthProvider(secretStore,
                               accounts.openAiAuthMode,
@@ -58,8 +56,8 @@ OpenAiAuthProvider OpenAiAuthProvider::forRefinement(SecretStore *secretStore,
                               accounts.cliproxyOauthDir,
                               {},
                               {},
-                              refinement.cliproxyBaseUrl,
-                              refinement.cliproxyApiKey);
+                              accounts.cliproxyBaseUrl,
+                              accounts.cliproxyApiKey);
 }
 
 struct ApiKeyCandidate {
@@ -408,6 +406,7 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
     if (codexUsesChatGpt) {
         OpenAiAuth oauth = readCodexOauth(storage, refreshExpired);
         if (oauth.ok) {
+            oauth.source = OpenAiAuthMode::CodexOauth;
             return oauth;
         }
         keepRefreshFailure(oauth);
@@ -417,11 +416,13 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
     if (!codexKey.key.isEmpty()) {
         OpenAiAuth auth = authFromCandidate(codexKey, status);
         auth.endpointBase = QStringLiteral("https://api.openai.com/v1");
+        auth.source = OpenAiAuthMode::CodexApiKey;
         return auth;
     }
     if (!codexUsesChatGpt) {
         OpenAiAuth oauth = readCodexOauth(storage, refreshExpired);
         if (oauth.ok) {
+            oauth.source = OpenAiAuthMode::CodexOauth;
             return oauth;
         }
         keepRefreshFailure(oauth);
@@ -430,18 +431,21 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
     if (envKey.key.startsWith(QStringLiteral("sk-"))) {
         OpenAiAuth auth = authFromCandidate(envKey, QStringLiteral("OPENAI_API_KEY found"));
         auth.endpointBase = QStringLiteral("https://api.openai.com/v1");
+        auth.source = OpenAiAuthMode::Env;
         return auth;
     }
     const QString settingsApiKey = m_secretStore ? m_secretStore->apiKey() : m_settingsApiKey;
     if (settingsApiKey.startsWith(QStringLiteral("sk-"))) {
-        return {true,
-                settingsApiKey,
-                m_secretStore ? m_secretStore->status() : m_settingsStatus,
-                {},
-                {},
-                QStringLiteral("https://api.openai.com/v1"),
-                {},
-                false};
+        OpenAiAuth auth{true,
+                        settingsApiKey,
+                        m_secretStore ? m_secretStore->status() : m_settingsStatus,
+                        {},
+                        {},
+                        QStringLiteral("https://api.openai.com/v1"),
+                        {},
+                        false};
+        auth.source = OpenAiAuthMode::Settings;
+        return auth;
     }
     return unresolved;
 }
@@ -515,9 +519,9 @@ OpenAiAuthStatus OpenAiAuthProvider::status() const
 {
     const OpenAiAuth auth = resolve(false);
     if (!auth.status.isEmpty()) {
-        return {auth.status, auth.ok};
+        return {auth.status, auth.ok, auth.source};
     }
-    return {auth.ok ? QStringLiteral("Signed in") : QStringLiteral("Not signed in"), auth.ok};
+    return {auth.ok ? QStringLiteral("Signed in") : QStringLiteral("Not signed in"), auth.ok, auth.source};
 }
 
 } // namespace speecher

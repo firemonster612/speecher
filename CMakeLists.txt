@@ -77,7 +77,8 @@ if(SPEECHER_RELEASE_BUILD AND (NOT SPEECHER_WITH_KDE OR NOT SPEECHER_WITH_QKEYCH
     "SPEECHER_RELEASE_BUILD requires SPEECHER_WITH_KDE=ON and SPEECHER_WITH_QKEYCHAIN=ON.")
 endif()
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Network Multimedia)
+# Sql is History, through its SQLite driver plugin, which packaging ships.
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Network Multimedia Sql)
 
 function(speecher_assert_single_qt_prefix context)
   get_filename_component(qt6_dir_real "${Qt6_DIR}" REALPATH)
@@ -236,37 +237,49 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/ColorSchemes.cpp
   src/core/DictationRecord.cpp
   src/core/InsightsExport.cpp
-  src/core/InsightsLog.cpp
+  src/core/history/HistoryEntry.cpp
+  src/core/history/HistoryImport.cpp
+  src/core/history/HistoryPolicy.cpp
+  src/core/history/HistoryStore.cpp
   src/core/InsightsSummary.cpp
   src/core/LearnedCorrection.cpp
   src/core/EndpointSettings.cpp
   src/core/LocalModelCatalog.cpp
-  src/core/OutputMethod.cpp
   src/core/ProviderChain.cpp
+  src/core/ServiceOrder.cpp
   src/core/ProviderTable.cpp
   src/core/OutputFormat.cpp
-  src/core/PasteRules.cpp
+  src/core/DeliverySteps.cpp
   src/core/ProviderAttemptIssueText.cpp
   src/core/ProviderReadiness.cpp
   src/core/ProviderRatings.cpp
   src/core/ReleaseNotes.cpp
+  src/core/SeenApps.cpp
   src/core/SettingsStore.cpp
   src/core/ShortcutBinding.cpp
   src/core/settings/CorrectionSettingsCodec.cpp
+  src/core/settings/AppsMigration.cpp
+  src/core/settings/AppsSettingsCodec.cpp
+  src/core/settings/ServiceOrderMigration.cpp
+  src/core/settings/ServiceOrderSettingsCodec.cpp
   src/core/settings/SettingsCodecs.cpp
   src/core/settings/SettingsFields.cpp
   src/core/settings/SettingsFile.cpp
   src/core/settings/SpokenLanguages.cpp
+  src/core/settings/VocabularyMigration.cpp
   src/core/settings/VocabularySettingsCodec.cpp
   src/core/SecretStore.cpp
   src/core/TranscriptState.cpp
   src/core/Target.cpp
+  src/core/Apps.cpp
   src/core/VocabularyLimit.cpp
   src/core/Vocabulary.cpp
   src/core/VocabularyEdits.cpp
+  src/core/VocabularyScope.cpp
   src/core/WordPreview.cpp
+  src/core/AppEdits.cpp
   src/core/WritingProfileEdits.cpp
-  src/core/WritingProfileProviders.cpp
+  src/dictation/DictationPlan.cpp
   src/dictation/DictationTypes.cpp
   src/dictation/PopupPresentation.cpp
   src/dictation/SelectionEditPresentation.cpp
@@ -284,44 +297,60 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/DictationRecord.h
   src/core/EchoCanceller.h
   src/core/InsightsExport.h
-  src/core/InsightsLog.h
+  src/core/history/HistoryEntry.h
+  src/core/history/HistoryImport.h
+  src/core/history/HistoryPolicy.h
+  src/core/history/HistoryStore.h
   src/core/InsightsSummary.h
   src/core/LearnedCorrection.h
   src/core/LocalModelCatalog.h
-  src/core/OutputMethod.h
+  src/core/PasteKeys.h
+  src/core/DeliverySteps.h
   src/core/OutputFormat.h
-  src/core/PasteRules.h
   src/core/ProviderAttemptIssue.h
   src/core/ProviderAttemptIssueText.h
   src/core/ProviderReadiness.h
   src/core/ProviderRatings.h
+  src/core/ServiceOrder.h
   src/core/ReleaseNotes.h
+  src/core/SeenApps.h
   src/core/SettingsStore.h
   src/core/ShortcutBinding.h
   src/core/settings/CorrectionSettingsCodec.h
+  src/core/settings/AppsMigration.h
+  src/core/settings/StoredJson.h
+  src/core/settings/AppsSettingsCodec.h
+  src/core/settings/ServiceOrderMigration.h
+  src/core/settings/ServiceOrderSettingsCodec.h
   src/core/settings/SettingsCodecs.h
   src/core/settings/SettingsFile.h
   src/core/settings/SettingsKeys.h
   src/core/settings/SpokenLanguages.h
+  src/core/settings/VocabularyMigration.h
   src/core/settings/VocabularySettingsCodec.h
   src/core/SecretStore.h
   src/core/SettingsEdit.h
   src/core/TranscriptState.h
   src/core/Target.h
+  src/core/Apps.h
   src/core/VocabularyLimit.h
   src/core/Vocabulary.h
   src/core/VocabularyEdits.h
+  src/core/VocabularyScope.h
   src/core/WordPreview.h
   src/core/WordSpacing.h
+  src/core/AppEdits.h
   src/core/WritingProfileEdits.h
-  src/core/WritingProfileProviders.h
+  src/dictation/DictationPlan.h
   src/dictation/DictationTypes.h
   src/dictation/PopupPresentation.h
+  src/dictation/RunOverrides.h
   src/dictation/SelectionEditPresentation.h
   src/recording/SystemAudioPresentation.h
 )
 
 set(SPEECHER_WORKFLOW_SOURCES
+  src/core/history/HistoryAudioWriter.cpp
   src/dictation/DictationSession.cpp
   src/dictation/DictationPorts.cpp
   src/dictation/DictationSpeech.cpp
@@ -336,6 +365,7 @@ set(SPEECHER_WORKFLOW_SOURCES
 )
 
 set(SPEECHER_WORKFLOW_HEADERS
+  src/core/history/HistoryAudioWriter.h
   src/dictation/BetweenAttempts.h
   src/dictation/DictationPorts.h
   src/dictation/DictationSession.h
@@ -426,6 +456,7 @@ set(SPEECHER_PROVIDER_HEADERS
 
 set(SPEECHER_PLATFORM_SOURCES
   src/output/ClipboardDelivery.cpp
+  src/output/DeliveryNeeds.cpp
   src/output/QtClipboardDelivery.cpp
   src/output/TextDelivery.cpp
   src/platform/CorrectionDiff.cpp
@@ -447,6 +478,7 @@ set(SPEECHER_PLATFORM_SOURCES
 
 set(SPEECHER_PLATFORM_HEADERS
   src/output/ClipboardDelivery.h
+  src/output/DeliveryNeeds.h
   src/output/ClipboardSnapshot.h
   src/output/QtClipboardDelivery.h
   src/output/TextDelivery.h
@@ -459,6 +491,7 @@ set(SPEECHER_PLATFORM_HEADERS
   src/platform/FallbackPopupPositioner.h
   src/platform/GlobalShortcutBinder.h
   src/platform/HotKeyShortcutBinder.h
+  src/platform/InstalledApps.h
   src/platform/PopupInputRegion.h
   src/platform/PopupPositioner.h
   src/platform/WindowBackdrop.h
@@ -487,6 +520,7 @@ set(SPEECHER_PLATFORM_LINUX_SOURCES
   src/platform/AtSpiTargetProvider.cpp
   src/platform/KGlobalAccelShortcutBinder.cpp
   src/platform/KWinActiveWindow.cpp
+  src/platform/LinuxInstalledApps.cpp
   src/platform/LinuxSessionKeyGrab.cpp
   src/platform/KeywatchSetup.cpp
   src/platform/KeywatchShortcutBinder.cpp
@@ -556,6 +590,7 @@ set(SPEECHER_PLATFORM_MAC_SOURCES
   src/platform/mac/MacSingleKeyShortcutBinder.mm
   src/platform/mac/MacSystemAudioInput.mm
   src/platform/mac/MacTargetProvider.mm
+  src/platform/mac/MacInstalledApps.mm
 )
 
 set(SPEECHER_PLATFORM_MAC_HEADERS
@@ -591,6 +626,7 @@ set(SPEECHER_PLATFORM_WIN_SOURCES
   src/platform/win/WinSingleKeyShortcutBinder.cpp
   src/platform/win/WinSystemAudioInput.cpp
   src/platform/win/WinTargetProvider.cpp
+  src/platform/win/WinInstalledApps.cpp
   src/platform/win/WinWindowBackdrop.cpp
 )
 set(SPEECHER_PLATFORM_WIN_HEADERS
@@ -617,6 +653,9 @@ set(SPEECHER_APP_SOURCES
   src/app/ApplicationController.cpp
   src/app/LocalSetup.cpp
   src/app/NetworkReachability.cpp
+  src/app/HistoryKeeper.cpp
+  src/app/PasteAgain.cpp
+  src/app/RefineAgain.cpp
   src/app/ProviderAvailability.cpp
   src/app/CliClient.cpp
   src/app/CommandLine.cpp
@@ -638,6 +677,7 @@ set(SPEECHER_APP_SOURCES
   src/app/SpeecherRemoval.cpp
   src/app/VirtualKeyboardSetup.cpp
   src/app/WhatsNewTracker.cpp
+  src/recording/RecordingAudio.cpp
   src/recording/RecordingPresentation.cpp
   src/recording/RecordingSession.cpp
   src/recording/RecordingStatus.cpp
@@ -655,6 +695,9 @@ set(SPEECHER_APP_HEADERS
   src/app/ApplicationController.h
   src/app/LocalSetup.h
   src/app/NetworkReachability.h
+  src/app/HistoryKeeper.h
+  src/app/PasteAgain.h
+  src/app/RefineAgain.h
   src/app/ProviderAvailability.h
   src/app/MicrophoneTest.h
   src/app/CliClient.h
@@ -678,6 +721,7 @@ set(SPEECHER_APP_HEADERS
   src/app/UpdateController.h
   src/app/VirtualKeyboardSetup.h
   src/app/WhatsNewTracker.h
+  src/recording/RecordingAudio.h
   src/recording/RecordingPresentation.h
   src/recording/RecordingSession.h
   src/recording/RecordingStatus.h
@@ -735,14 +779,15 @@ qt_add_resources(speecher_domain release_history
 )
 target_include_directories(speecher_domain PUBLIC src)
 # Gui for QKeySequence, which ShortcutBinding carries for key combinations.
-target_link_libraries(speecher_domain PUBLIC Qt6::Core Qt6::Gui)
+target_link_libraries(speecher_domain PUBLIC Qt6::Core Qt6::Gui Qt6::Sql)
 
 add_library(speecher_workflow STATIC
   ${SPEECHER_WORKFLOW_SOURCES}
   ${SPEECHER_WORKFLOW_HEADERS}
 )
 target_include_directories(speecher_workflow PUBLIC src)
-target_link_libraries(speecher_workflow PUBLIC speecher_domain)
+# Multimedia for History's audio, which a dictation writes as it hears it.
+target_link_libraries(speecher_workflow PUBLIC speecher_domain Qt6::Multimedia)
 
 add_library(speecher_providers STATIC
   ${SPEECHER_PROVIDER_SOURCES}
@@ -905,6 +950,8 @@ if(SPEECHER_WITH_LOCAL_SPEECH)
     src/providers/LocalSpeechEngine.h
     src/providers/LocalSpeechTranscriber.cpp
     src/providers/LocalSpeechTranscriber.h
+    src/providers/LocalSpeechWorker.cpp
+    src/providers/LocalSpeechWorker.h
   )
   target_compile_definitions(speecher_providers PUBLIC SPEECHER_WITH_LOCAL_SPEECH=1)
   target_link_libraries(speecher_providers PRIVATE transcribe)
@@ -1478,6 +1525,8 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_main.cpp
     tests/test_transcript_state.cpp
     tests/test_bindings.cpp
+    tests/test_apps.cpp
+    tests/test_dictation_plan.cpp
     tests/test_settings.cpp
     tests/test_provider_registry.cpp
     tests/test_platform_composition.cpp
@@ -1491,6 +1540,8 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_vocabulary.cpp
     tests/test_phone_transfer.cpp
     tests/test_insights.cpp
+    tests/test_history_store.cpp
+    tests/test_history_import.cpp
     tests/test_provider_auth.cpp
     tests/test_claude_voice.cpp
     tests/test_codex_dictation.cpp
@@ -1538,8 +1589,10 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_quick_updates.cpp
     tests/test_quick_transcription.cpp
     tests/test_quick_system.cpp
+    tests/test_quick_apps.cpp
     tests/test_quick_models.cpp
     tests/test_quick_insights.cpp
+    tests/test_quick_history.cpp
     tests/test_quick_accounts.cpp
     tests/test_quick_audio.cpp
     tests/test_quick_library.cpp
@@ -1575,6 +1628,8 @@ if(SPEECHER_BUILD_TESTS)
   set(SPEECHER_TEST_SUITES
     transcript_state
     bindings
+    apps
+    dictation_plan
     settings
     provider_registry
     platform_composition
@@ -1585,8 +1640,10 @@ if(SPEECHER_BUILD_TESTS)
     quick_updates
     quick_transcription
     quick_system
+    quick_apps
     quick_models
     quick_insights
+    quick_history
     quick_accounts
     quick_audio
     quick_library
@@ -1602,6 +1659,8 @@ if(SPEECHER_BUILD_TESTS)
     vocabulary
     phone_transfer
     insights
+    history_store
+    history_import
     provider_auth
     claude_voice
     codex_dictation
@@ -1637,6 +1696,11 @@ if(SPEECHER_BUILD_TESTS)
     set_tests_properties(speecher_${suite} PROPERTIES
       ENVIRONMENT "${SPEECHER_TEST_ENVIRONMENT}" TIMEOUT 240)
   endforeach()
+  # Every page in both themes, setup and their states: over 200 s on a
+  # Windows runner by itself, more beside the other suites.
+  if(TEST speecher_quick_pages)
+    set_tests_properties(speecher_quick_pages PROPERTIES TIMEOUT 480)
+  endif()
   # Suites run in parallel: test_main.cpp gives each process its own settings
   # and sign-in homes, and each suite its own data folders. These share what
   # the computer has one of.

@@ -21,9 +21,50 @@ FocusScope {
     property real cornerRadius
     property bool shown: false
     property alias query: input.text
-    readonly property var results: query.trim().length ? Schema.search(query, 40, need => System[need]) : _suggestions
+    readonly property var results: query.trim().length
+        ? Schema.search(query, 40, need => System[need], _apps.concat(_vocabulary, _library)).concat(_historyResult)
+        : _suggestions
+    // While History holds words or keeps text, the last result looks for the
+    // query in what was said, landing on History with it typed in its search
+    // ("historyFind:<query>"). Keeping no new text leaves what is kept,
+    // recordings among it, findable.
+    readonly property bool _historySearchable: History.kept > 0 || Schema.keepsText(Settings.values.historyKeeps)
+    readonly property var _historyResult: _historySearchable && query.trim().length
+        ? [{ type: "history", id: "historyFind:" + query.trim(), page: "history", label: Words.shell.searchHistory(query.trim()),
+             icon: Schema.page("history").icon, trail: Schema.trail("history") }]
+        : []
+    // The person's Apps, found by name or what they are recognized by, and
+    // landing on their row on Apps (AppRow's appentry:<id>).
+    readonly property var _apps: Apps.entries.map(e => ({
+        type: "app", id: "appentry:" + e.id, page: "apps", section: Schema.apps.t.yourApps,
+        label: e.name, keywords: e.ids.join(" ") + " app"
+    }))
+    // The Vocabulary's entries, found by what they spell, replace or write,
+    // and landing on their row, which opens them (VocabularyRow's vocab:<id>).
+    readonly property var _vocabulary: Library.vocabulary.map(e => ({
+        type: "vocabulary", id: "vocab:" + e.id, page: "vocabulary", section: Schema.vocabulary.t.yourVocabulary,
+        label: e.term, keywords: [e.replacement, e.context].join(" ")
+    }))
+    // The Writing Profiles and your own tones and cleanup levels, found by
+    // name and landing on them on Writing profiles (profile:<id>, tone:<id>,
+    // level:<id>).
+    readonly property var _library: Library.profiles.map(p => ({
+        type: "profile", id: "profile:" + p.id, page: "profiles", section: Schema.row("writingProfileBehavior").section,
+        label: p.name, keywords: "writing profile " + Library.profileSummary(p)
+    })).concat(Library.customTones.map(t => ({
+        type: "tone", id: "tone:" + t.id, page: "profiles", section: Schema.row("customTones").label,
+        label: t.name, keywords: "tone " + t.instruction
+    })), Library.customCleanupLevels.map(l => ({
+        type: "level", id: "level:" + l.id, page: "profiles", section: Schema.row("customCleanupLevels").label,
+        label: l.name, keywords: "cleanup level " + l.instructions
+    })))
+    // How many results are pages and settings: Search History is an offer
+    // to look elsewhere, not a match, so it is never counted.
+    readonly property int _matches: results.filter(r => r.type !== "history").length
+    readonly property bool _searching: query.trim().length > 0
+    // The suggested rows this computer has, as search offers only those.
     readonly property var _suggestions: Schema.suggestions
-        .map(id => Schema.row(id)).filter(r => r.kind !== "missing")
+        .map(id => Schema.row(id)).filter(r => r.kind !== "missing" && Schema.available(r, need => System[need]))
         .map(r => ({ type: "row", id: r.id, page: r.page, label: r.label, icon: Schema.page(r.page).icon,
                      trail: Schema.rowTrail(r) }))
 
@@ -147,11 +188,13 @@ FocusScope {
             height: root.results.length ? list.anchors.topMargin + 8 + list.rowHeight * Math.min(root.results.length, _fits)
                                         : empty.height
 
+            // Over the suggestions, and over Search History alone when no
+            // setting matches.
             Txt {
-                visible: root.query.trim().length === 0
+                visible: !root._searching || (root._matches === 0 && root.results.length > 0)
                 x: 22
                 y: 12
-                text: Words.shell.suggested
+                text: root._searching ? Words.shell.noSettings : Words.shell.suggested
                 variant: "small"
                 strong: true
                 tone: "tertiary"
@@ -162,7 +205,7 @@ FocusScope {
                 readonly property int rowHeight: 50
                 anchors.fill: parent
                 anchors.margins: 8
-                anchors.topMargin: root.query.trim().length === 0 ? 30 : 8
+                anchors.topMargin: !root._searching || root._matches === 0 ? 30 : 8
                 clip: true
                 model: root.results
                 opacity: root.results.length ? 1 : 0
@@ -221,20 +264,31 @@ FocusScope {
                         anchors.verticalCenter: parent.verticalCenter
                         width: childrenRect.width
                         height: childrenRect.height
-                        // Off and greyed where the row needs blur and nothing
-                        // blurs, as on its page, and greyed while the row
-                        // that turns it on is off.
+                        // Off and greyed where the row can't be used now, as
+                        // on its page, and greyed while the row that turns it
+                        // on is off.
                         Switch {
-                            readonly property bool blurs: !hit.spec?.needsBlur || Appearance.canBlur
+                            readonly property bool usable: !!hit.spec && Usable.usable(hit.spec)
                             visible: !!hit.spec && hit.spec.kind === "toggle"
-                            checked: blurs && !!Settings.values[hit.modelData.id]
-                            enabled: blurs && !!hit.spec && Schema.rowEnabled(hit.spec, Settings.values)
+                            checked: usable && !!Settings.values[hit.modelData.id]
+                            enabled: usable && !!hit.spec && Schema.rowEnabled(hit.spec, Settings.values)
                             onToggled: Settings.set(hit.modelData.id, checked)
                         }
                         KeyCombo {
                             visible: !!hit.spec && hit.spec.kind === "shortcut"
                             keys: hit.spec && hit.spec.kind === "shortcut" ? (Settings.values[hit.modelData.id] || []) : []
                             size: "small"
+                        }
+                        // A delivery step's state, read-only: On or Off, and
+                        // what it waits for while on.
+                        Txt {
+                            readonly property var step: hit.spec && hit.spec.step
+                                ? System.deliverySteps.find(s => s.id === hit.spec.step) || null : null
+                            visible: !!step
+                            text: !step ? "" : !step.on ? Schema.pasting.switchState.off
+                                : Schema.pasting.switchState.on + (step.waiting.length ? ", " + Schema.pasting.waitingFor(step.waiting[0]).toLowerCase() : "")
+                            variant: "small"
+                            tone: "secondary"
                         }
                         // The current value as plain text, as a row's trailing text.
                         Txt {
@@ -285,7 +339,7 @@ FocusScope {
                 anchors.right: parent.right
                 anchors.rightMargin: 18
                 anchors.verticalCenter: parent.verticalCenter
-                text: Words.results(root.results.length)
+                text: Words.results(root._searching ? root._matches : root.results.length)
                 variant: "small"
                 tone: "tertiary"
             }

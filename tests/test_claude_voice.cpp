@@ -239,8 +239,8 @@ private slots:
         SettingsStore settings;
         settings.raw().clear();
         settings.edit([&](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("none");
-            draft.speech.providerId = QStringLiteral("claude");
+            draft.refinement.enabled = false;
+            draft.speech.services.order = {QStringLiteral("claude")};
             draft.accounts.anthropicAuthMode = AnthropicAuthMode::Cliproxy;
             draft.accounts.cliproxyOauthDirConfigured = credentials.path();
             return true;

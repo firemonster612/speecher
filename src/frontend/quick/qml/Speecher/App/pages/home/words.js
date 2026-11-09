@@ -15,24 +15,56 @@ var text = {
     learnedCorrections: "Learned corrections",
     less: "Less",
     more: "More",
-    nothingYet: "Your next dictation appears here.",
     copy: "Copy",
     startDictation: "Start dictation",
+    recordingCall: "Recording a call",
+    stopRecording: "Stop",
+    openRecording: "Open",
     stop: "Stop",
     pressShortcut: "Press the shortcut in any app to dictate into it.",
     noShortcut: "Set a dictation shortcut to dictate from any app.",
     noShortcutHere: "Your desktop gives Speecher no shortcut. Start here, or bind the speecher command to a key.",
     ready: "Ready to dictate",
     notReady: "Not ready to dictate",
-    wordsOnClipboard: "Words stay on the clipboard",
+    checking: "Checking the speech service…",
+    // A speech service nobody has checked yet: dictating tries it.
+    notChecked: "Speech to text isn't checked yet",
+    tryIt: "Start a dictation to try it.",
+    // What the delivery steps that are on wait for, by name.
+    needs: labels => labels.length ? "Needs " + (labels.length > 1 ? labels.slice(0, -1).join(", ") + " and " + labels[labels.length - 1] : labels[0]) + "." : "",
+    // The readiness card: one line while everything passes, else its groups.
+    allWorking: "Everything Speecher checks works",
+    runSetupAgain: "Run setup again",
+    setupAssistant: "Setup assistant",
+    setupAgainHelp: "Goes through each of these with you.",
+    needsThese: "Dictation needs these",
+    worksWithout: "Works without these",
+    takesOver: label => label + " takes over",
+    // What dictation needs, as the caption names it.
+    aMicrophone: "a microphone",
+    yourMicrophone: "the microphone you chose",
+    aSpeechService: "a working speech service",
+    aWayToDeliver: "a way to deliver your words",
 
     setShortcut: "Set shortcut",
     privacyNote: "Insights are stored only on this computer and never sent anywhere.",
-    insightsSettings: "Insights settings",
+    insightsSettings: "Privacy & data",
     offTitle: "Insights are off",
-    offBody: "Speecher isn't counting new dictation. History you already have stays on this computer until you clear it in Insights settings.",
+    offBody: "Speecher keeps nothing about new dictation. What it kept stays on this computer until you clear it in Privacy & data.",
     emptyTitle: "No dictation yet",
-    emptyBody: "Counts, streaks and your busiest hours appear here after your first dictation."
+    emptyBody: "Counts, streaks and your busiest hours appear here after your first dictation.",
+    history: "History"
+}
+
+// "Recording a call, 12:03"
+function recordingLine(ms) { return text.recordingCall + ", " + _words().clock(ms) }
+
+// History's line on Home: "1,284 entries, searchable". Recordings and files
+// count too, so not "dictations".
+function historyLine(kept) { return _count(kept, "entry", "entries") + ", searchable" }
+// What History keeps while it holds no words to search.
+function historyKeeps(keeps) {
+    return keeps === "nothing" ? "Keeping nothing" : keeps === "stats" ? "Keeping stats only" : "Nothing kept yet"
 }
 
 var periods = [
@@ -73,11 +105,6 @@ function _sentence(parts) { return parts.filter(p => p).join(". ") + "." }
 function hourLabel(h) {
     const h12 = h % 12 === 0 ? 12 : h % 12
     return h12 + " " + (h < 12 ? "am" : "pm")
-}
-// "4:52"
-function clockText(ms) {
-    const s = Math.round(ms / 1000)
-    return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0")
 }
 // "45 min", "2 h", "2 h 5 min"
 function minutesText(m) {
@@ -156,7 +183,7 @@ function figures(s, period, today) {
         { label: "Dictations", value: _num(s.dictations),
           note: _sentence([s.dictations ? _num(s.dictationsPerActiveDay, 1) + " a day when you dictate" : "", _delta(s.dictationsDelta, period)]) },
         { label: "Audio", value: audioText(s.audioMs),
-          note: s.dictations ? clockText(s.averageAudioMs) + " a dictation on average." : "" },
+          note: s.dictations ? _words().clock(s.averageAudioMs) + " a dictation on average." : "" },
         { label: "Streak", value: _count(s.streak.current, "day", "days"), note: streakNote(s.streak, today) }
     ]
     if (s.wordsPerMinute > 0) {
@@ -212,7 +239,7 @@ function records(s, today) {
           value: _count(s.streak.best, "day", "days") }
     ]
     return streak.concat([
-        { title: "Longest dictation", value: clockText(s.longest.audioMs),
+        { title: "Longest dictation", value: _words().clock(s.longest.audioMs),
           detail: _count(s.longest.words, "word", "words") + " into " + s.longest.app + ", " + relativeDay(s.longest.date, today) },
         { title: "Busiest day", detail: _capitalized(relativeDay(s.busiestDay.date, today)),
           value: _count(s.busiestDay.dictations, "dictation", "dictations") },
@@ -232,13 +259,10 @@ function milestones(s) {
 }
 function milestoneCaption(s) { return _count(s.allTimeWords, "word", "words") + " dictated in all." }
 
-// What dictation needs of the things Home lists, by their ids, in one
-// plain sentence; the rows name each problem and its fix.
-// Empty where only Pasting is listed: its row says it.
-function readiness(ids) {
-    const needs = [ids.includes("access") ? "microphone access" : "",
-                   ids.includes("microphone") ? "a microphone" : "",
-                   ids.includes("speech") ? "a working speech service" : ""].filter(s => s)
+// What dictation needs and doesn't have, ["microphone access", "a
+// microphone"], in one plain sentence; the rows name each problem and its
+// fix. Empty where it needs nothing.
+function readiness(needs) {
     if (!needs.length) return ""
     return "Dictation needs " + (needs.length > 1 ? needs.slice(0, -1).join(", ") + " and " + needs[needs.length - 1] : needs[0]) + "."
 }
@@ -301,7 +325,7 @@ var _tips = [
       text: "Writing profiles set the tone and cleanup for each app, so Slack stays casual and email stays formal." },
     { page: "vocabulary", action: "Vocabulary",
       text: "Names and terms in Vocabulary are spelled right the first time." },
-    { page: "shortcuts", action: "Shortcuts",
+    { page: "dictation", action: "Dictation shortcuts",
       text: "Pause a dictation while you think, then resume it. Nothing you said is lost." },
     { page: "transcribe", action: "Transcribe files",
       text: "Meetings, voice memos and podcasts can be transcribed with the same cleanup as dictation." }

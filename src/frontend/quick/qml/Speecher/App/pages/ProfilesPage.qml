@@ -9,6 +9,7 @@ import "text"
 
 Page {
     id: page
+    objectName: "profilesPage"
     title: Schema.page("profiles").title
     subtitle: Schema.page("profiles").subtitle
 
@@ -24,11 +25,30 @@ Page {
             selectedId = id
     }
 
+    // A search for a profile shows it in the editor; one for your own tone
+    // or cleanup level opens it to edit.
+    function landOn(rowId) {
+        const at = rowId.indexOf(":")
+        const kind = rowId.slice(0, at)
+        const id = rowId.slice(at + 1)
+        if (kind === "profile") selectedId = id
+        if (kind === "tone") toneForm.startEdit(Library.customTones.findIndex(t => t.id === id))
+        if (kind === "level") levelForm.startEdit(Library.customCleanupLevels.findIndex(l => l.id === id))
+    }
+
     // Profiles on the left, the chosen one's settings on the right, on one
     // card.
     Section {
         id: profilesSection
         SearchLanding { rowIds: ["writingProfileBehavior"]; target: profilesSection }
+        SearchLanding {
+            rowIds: page.profiles.map(p => "profile:" + p.id)
+            target: profilesSection
+            onLanded: rowId => page.landOn(rowId)
+        }
+        // Without app detection, every dictation takes the profile for apps
+        // Speecher doesn't recognize.
+        AccessibilityNotice { shown: !System.identifiesAppsWithoutAccessibility; what: Schema.pasting.accessibilityUses.profiles }
         Item {
             width: parent.width
             height: Math.max(list.implicitHeight + Theme.space2, editorPane.implicitHeight + Theme.space5 * 2)
@@ -85,8 +105,7 @@ Page {
                 y: Theme.space5
                 width: parent.width - x - Theme.space6
                 profile: page.selected
-                isFallback: page.selected.id === Settings.values.defaultWritingProfile
-                apps: Library.profileApps(page.selected.id)
+                apps: Library.profileUsers(page.selected.id)
                 onEdited: patch => refusal = Library.refusalText("profiles", Library.update("profiles", page.selected.id, patch))
                 onDeleteRequested: {
                     Library.removeProfile(page.selected.id)
@@ -98,22 +117,7 @@ Page {
     }
 
     Section {
-        title: Schema.row("defaultWritingProfile").section
-        SchemaRow {
-            rowId: "defaultWritingProfile"
-            Select {
-                options: page.profiles.map(p => ({ id: p.id, label: p.name, icon: Library.profileIcon(p.id) }))
-                currentId: Settings.values.defaultWritingProfile || ""
-                onChosen: id => Settings.set("defaultWritingProfile", id)
-            }
-        }
-        SettingRow {
-            title: Library.profilesText.appMatches
-            help: Library.profilesText.appMatchesHelp
-            clickable: true
-            trailingText: Library.recognitionRulesText
-            onClicked: Navigation.goToRow(Schema.row("appRecognitionRules").page, "appRecognitionRules")
-        }
+        title: Schema.row("additionalInstructions").section
         SchemaRow {
             rowId: "additionalInstructions"
             stacked: true
@@ -128,7 +132,13 @@ Page {
 
     // Your own tones and cleanup levels, side by side.
     Row {
+        id: ownChoices
         width: parent.width
+        SearchLanding {
+            rowIds: Library.customTones.map(t => "tone:" + t.id).concat(Library.customCleanupLevels.map(l => "level:" + l.id))
+            target: ownChoices
+            onLanded: rowId => page.landOn(rowId)
+        }
         spacing: Theme.space4
 
         Section {
@@ -157,6 +167,7 @@ Page {
                 InlineForm {
                     cancelText: Words.cancel
                     id: toneForm
+                    objectName: "toneForm"
                     // The tone being edited, by id, or empty while adding.
                     property string editing
                     function startAdd() { editing = ""; toneName.text = ""; toneText.text = ""; error = ""; open = true }
@@ -170,6 +181,7 @@ Page {
                     }
                     title: editing ? Library.profilesText.editTone : Library.profilesText.newTone
                     saveText: editing ? Words.save : Library.profilesText.addTone
+                    note: Words.savesOnPress(saveText)
                     canSave: toneName.text.trim().length > 0 && toneText.text.trim().length > 0
                     onCancelled: open = false
                     onSaved: {
@@ -232,6 +244,7 @@ Page {
                     }
                     title: editing ? Library.profilesText.editLevel : Library.profilesText.newLevel
                     saveText: editing ? Words.save : Library.profilesText.addLevel
+                    note: Words.savesOnPress(saveText)
                     canSave: levelName.text.trim().length > 0 && (base !== "custom_only" || levelText.text.trim().length > 0)
                     onCancelled: open = false
                     onSaved: {

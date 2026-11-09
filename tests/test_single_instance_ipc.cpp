@@ -478,7 +478,9 @@ private slots:
             << QByteArrayLiteral(R"({"command":"toggle","outputFormat":"html","spokenLanguage":"de",)"
                                  R"("writingProfile":"ai_coding"})" "\n")
             << IpcRequest{IpcCommand::Toggle,
-                          {OutputFormat::Html, QStringLiteral("ai_coding"), QStringLiteral("de")}}
+                          {.writingProfile = QStringLiteral("ai_coding"),
+                           .spokenLanguage = QStringLiteral("de"),
+                           .outputFormat = OutputFormat::Html}}
             << QByteArrayLiteral(R"({"message":null,"ok":true,"spokenLanguage":"de","state":"starting",)"
                                  R"("writingProfile":"ai_coding"})" "\n")
             << echoed;
@@ -599,10 +601,12 @@ private slots:
         SingleInstanceIpc ipc(platform);
         QCOMPARE(ipc.listen(), IpcListenResult::Listening);
         QSignalSpy commands(&ipc, &SingleInstanceIpc::requestReceived);
-        const RecordingStatus reconnecting{
+        RecordingStatus reconnecting{
             true, QStringLiteral("/tmp/call.md"), 3723000,
             {{QStringLiteral("me"), RecordingStreamStatus::State::Reconnecting, QStringLiteral("Connection reset"),
               2000}}};
+        reconnecting.title = QStringLiteral("Weekly sync");
+        reconnecting.historyId = 42;
         const RecordingStatus stoppedIncomplete{true,
                                                 QStringLiteral("/tmp/call.md"),
                                                 3723000,
@@ -630,7 +634,7 @@ private slots:
         IpcResponse response;
         QThread *client = QThread::create([platform, &response] {
             SingleInstanceIpc::sendRequest({IpcCommand::RecordStart, {}, {QStringLiteral("/tmp/call.md")},
-                                            {QStringLiteral("readSharedChoice")}, true},
+                                            {QStringLiteral("readSharedChoice")}, true, QStringLiteral("Weekly sync")},
                                            &response, 2000, platform);
         });
         client->start();
@@ -641,6 +645,7 @@ private slots:
         QCOMPARE(recordStart.files, QStringList{QStringLiteral("/tmp/call.md")});
         QCOMPARE(recordStart.terms, QStringList{QStringLiteral("readSharedChoice")});
         QVERIFY(recordStart.microphoneOnly);
+        QCOMPARE(recordStart.title, QStringLiteral("Weekly sync"));
         QVERIFY(response.recording && response.recording->recording);
 
         std::ostringstream out;
@@ -698,6 +703,8 @@ private slots:
         QCOMPARE(QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object(),
                  QJsonObject({{QStringLiteral("recording"), true},
                               {QStringLiteral("path"), QStringLiteral("/tmp/call.md")},
+                              {QStringLiteral("title"), QStringLiteral("Weekly sync")},
+                              {QStringLiteral("historyId"), 42},
                               {QStringLiteral("durationMs"), 3723000},
                               {QStringLiteral("streams"),
                                QJsonArray{QJsonObject{{QStringLiteral("speaker"), QStringLiteral("me")},
@@ -751,7 +758,7 @@ private slots:
         CommandLineDecision decision;
         decision.mode = LaunchMode::RunCli;
         decision.ipcCommand = IpcCommand::Toggle;
-        decision.sessionOverrides.writingProfile = QStringLiteral("work");
+        decision.overrides.writingProfile = QStringLiteral("work");
 
         int exitCode = -1;
         QThread *client = QThread::create([&exitCode, &decision, platform] {
@@ -814,6 +821,87 @@ private slots:
         QCOMPARE(lastExitCode, exitCode);
         QCOMPARE(QString::fromStdString(out.str()), text.isEmpty() ? QString() : text + QLatin1Char('\n'));
         QCOMPARE(QString::fromStdString(err.str()).contains(QStringLiteral("older")), unknownCommand);
+    }
+
+    // A history search reaches the instance as asked, and its answer comes
+    // back entry by entry.
+    void historyTravelsBothWays()
+    {
+        IpcRequest request{IpcCommand::History};
+        request.history = {QStringLiteral("retry loop"), QStringLiteral("file"), QDate(2026, 11, 1), 5};
+        IpcResponse refusal;
+        QByteArray frame = ipcRequestFrame(request);
+        frame.chop(1);
+        QCOMPARE(ipcRequestFromFrame(frame, &refusal), std::optional<IpcRequest>(request));
+
+        IpcResponse reply{true, QStringLiteral("idle"), {}};
+        reply.history = {QJsonObject{{QStringLiteral("id"), 7}, {QStringLiteral("text"), QStringLiteral("retry")}}};
+        frame = ipcResponseFrame(reply);
+        frame.chop(1);
+        QCOMPARE(ipcResponseFromFrame(frame)->history, reply.history);
+    }
+
+    void historyPrintsALineAnEntry_data()
+    {
+        QTest::addColumn<bool>("json");
+        QTest::addColumn<QString>("printed");
+        QTest::newRow("lines") << false
+                               << QStringLiteral("2026-11-08 14:02  Slack  Send me the deck, please.\n"
+                                                 "2026-11-07 17:20  interview-03.m4a  We spoke about the budget.\n");
+        QTest::newRow("json") << true
+                              << QStringLiteral(R"([{"app":"Slack","finishedAt":"2026-11-08T14:02:00","kind":"dictation",)"
+                                                R"("text":"Send me the deck,\nplease."},{"finishedAt":"2026-11-07T17:20:00",)"
+                                                R"("kind":"file","text":"We spoke about the budget.","title":"interview-03.m4a"}])"
+                                                "\n");
+    }
+
+    void historyPrintsALineAnEntry()
+    {
+        QFETCH(bool, json);
+        QFETCH(QString, printed);
+        IpcResponse reply{true, QStringLiteral("idle"), {}};
+        reply.history = {
+            QJsonObject{{QStringLiteral("kind"), QStringLiteral("dictation")},
+                        {QStringLiteral("finishedAt"), QStringLiteral("2026-11-08T14:02:00")},
+                        {QStringLiteral("app"), QStringLiteral("Slack")},
+                        {QStringLiteral("text"), QStringLiteral("Send me the deck,\nplease.")}},
+            QJsonObject{{QStringLiteral("kind"), QStringLiteral("file")},
+                        {QStringLiteral("finishedAt"), QStringLiteral("2026-11-07T17:20:00")},
+                        {QStringLiteral("title"), QStringLiteral("interview-03.m4a")},
+                        {QStringLiteral("text"), QStringLiteral("We spoke about the budget.")}},
+        };
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
+        SingleInstanceIpc ipc(platform);
+        QCOMPARE(ipc.listen(), IpcListenResult::Listening);
+        HistorySearch asked;
+        connect(&ipc, &SingleInstanceIpc::requestReceived, &ipc,
+                [reply, &asked](const IpcRequest &request, QLocalSocket *socket) {
+                    asked = request.history;
+                    SingleInstanceIpc::writeResponse(socket, reply);
+                });
+        CommandLineDecision decision;
+        decision.mode = LaunchMode::RunCli;
+        decision.ipcCommand = IpcCommand::History;
+        decision.historySearch.text = QStringLiteral("deck");
+        decision.json = json;
+
+        std::ostringstream out;
+        int exitCode = -1;
+        {
+            std::streambuf *const stdoutBuffer = std::cout.rdbuf(out.rdbuf());
+            const auto restore = qScopeGuard([stdoutBuffer] { std::cout.rdbuf(stdoutBuffer); });
+            QThread *client = QThread::create([&exitCode, &decision, platform] {
+                exitCode = runCliCommand(decision, platform);
+            });
+            client->start();
+            QTRY_VERIFY(client->isFinished());
+            delete client;
+        }
+        QCOMPARE(exitCode, 0);
+        QCOMPARE(asked.text, QStringLiteral("deck"));
+        QCOMPARE(QString::fromStdString(out.str()), printed);
     }
 
     void providersAsksTheRunningApp_data()

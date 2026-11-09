@@ -6,19 +6,22 @@ import Speecher.Backend
 import Speecher.Wording
 
 // The offers the popup carries above its capsule: the update while it needs
-// the person (Updates.attention), and What's New after an update, which
-// hides itself a few seconds into each popup and comes back with the next
-// until it is opened or dismissed. Their wording is here (t).
+// the person (Updates.attention), What's New after an update, which hides
+// itself a few seconds into each popup and comes back with the next until it
+// is opened or dismissed, and while a call records, its time with Stop, so a
+// dictation doesn't hide that it still runs. Their wording is here (t).
 Column {
     id: chips
 
     // The popup is up, and not asking about a selection's edit.
     property bool active
-    readonly property bool offering: whatsNewChip.open || updateChip.open
-    // One chip's height, and the height with both open, which the popup keeps
+    // A call is recording.
+    property bool callRecording
+    readonly property bool offering: whatsNewChip.open || updateChip.open || recordingChip.open
+    // One chip's height, and the height with all open, which the popup keeps
     // clear for them however far they have opened.
     readonly property int chipHeight: 40
-    readonly property int fullHeight: chipHeight * 2 + spacing
+    readonly property int fullHeight: chipHeight * 3 + spacing * 2
     spacing: 8
 
     // A browser window or a check now would take focus from the dictation's
@@ -31,7 +34,9 @@ Column {
         downloading: (v, percent) => Words.updates.downloading(v) + " (" + percent + ")",
         dismiss: "Dismiss",
         installed: v => "Speecher " + v + " is installed",
-        seeWhatsNew: "See what's new"
+        seeWhatsNew: "See what's new",
+        recording: ms => "Recording " + Words.clock(ms),
+        stop: "Stop"
     })
 
     // What's New's turn in this popup.
@@ -44,6 +49,16 @@ Column {
         id: whatsNewTime
         interval: Theme.ms(6000)
         onTriggered: chips._whatsNewNow = false
+    }
+
+    OfferChip {
+        id: recordingChip
+        objectName: "recordingChip"
+        open: chips.active && chips.callRecording
+        dot: Theme.negative
+        closable: false
+        text: chips.t.recording(Recording.elapsedMs)
+        Button { text: chips.t.stop; size: "small"; enabled: Recording.state === "recording"; onClicked: Recording.stop() }
     }
 
     OfferChip {

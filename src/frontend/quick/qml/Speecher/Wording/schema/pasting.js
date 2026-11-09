@@ -1,66 +1,169 @@
 .pragma library
 
-// Ids are core's paste methods; inherit is no rule of the row's own.
-// macOS pastes with ⌘V everywhere, terminals included.
-var mac = Qt.platform.os === "osx";
-var pasteMethods = [
-    { id: "standard_paste", label: "Standard paste", help: mac ? "Presses ⌘V." : "Presses Ctrl+V.", icon: "clipboard-paste" },
-    { id: "terminal_paste", label: "Terminal paste", help: mac ? "Presses ⌘V." : "Presses Ctrl+Shift+V.", icon: "square-terminal" },
-    { id: "direct_insert", label: "Direct insertion", help: "Types into the field through desktop accessibility.", icon: "text-cursor-input" },
-    { id: "clipboard_only", label: "Clipboard only", help: "Copies the text for you to paste yourself.", icon: "clipboard" }
-];
-var inherit = { id: "inherit", label: "Default paste", help: "Whatever Default paste on Pasting says." };
+var os = Qt.platform.os;
+var mac = os === "osx";
+var windows = os === "windows";
+var linux = !mac && !windows;
 
-// The app types Speecher sorts apps into; ids are core's category names, and
-// host/QuickSettings saves a rule for each. Library and the App rules page
-// read them from here.
-var categories = [
-    { id: "terminal", label: "Terminals", icon: "square-terminal", examples: "Konsole, Ghostty, Kitty" },
-    { id: "browser", label: "Browsers", icon: "globe", examples: "Firefox, Chrome, Helium" },
-    { id: "email", label: "Email apps", icon: "mail", examples: "Thunderbird, KMail" },
-    { id: "office", label: "Office apps", icon: "file-text", examples: "LibreOffice Writer" },
-    { id: "code_editor", label: "Code editors", icon: "code", examples: "Kate, VS Code, JetBrains" },
-    { id: "ai_coding", label: "AI coding apps", icon: "bot", examples: "Cursor, Claude Code" },
-    { id: "general", label: "Other apps", icon: "app-window", examples: "Everything else" }
+// The paste keys, as each platform presses them, and a terminal's. An App
+// or App Type picks between them by id (core's PasteKeyCombo names); macOS
+// presses ⌘V everywhere, so it has no choice.
+var pasteKeys = mac ? "⌘V" : "Ctrl+V";
+var terminalKeys = "Ctrl+Shift+V";
+var keyChoices = mac ? [] : [
+    { id: "standard", label: pasteKeys, icon: "keyboard" },
+    { id: "terminal", label: terminalKeys, icon: "square-terminal" }
 ];
+function keysLabel(id) { return id === "terminal" && !mac ? terminalKeys : pasteKeys }
 
+// What the delivery steps rely on here, by the need ids System.deliverySteps
+// names: label names it in every status ("Virtual keyboard: Not set up"),
+// check is the System check whose state and fix it shows, and ready and
+// notReady are the state's words where the check's own don't fit or there
+// is no check. grant marks a permission the system gives; repair says how
+// to get a missing tool that has no check to fix it.
+var needs = {
+    accessibility: mac ? { label: "Accessibility", check: "desktopAccessibility", ready: "Granted", notReady: "Not granted",
+                           fix: "Open settings", grant: true }
+                       : { label: "Desktop accessibility", check: "desktopAccessibility", grant: true },
+    virtualKeyboard: { label: "Virtual keyboard", check: "virtualKeyboardHealth" },
+    clipboard: { label: "Clipboard helper or wl-copy", ready: "Available", notReady: "Missing",
+                 repair: "Install wl-clipboard for wl-copy, or reinstall Speecher to bring back its clipboard helper." },
+    clipboardSave: { label: "wl-paste", ready: "Available", notReady: "Missing",
+                     repair: "Install wl-clipboard for wl-paste." }
+};
+// Under the steps where none of them needs anything here.
+var noNeeds = windows ? "Windows does all three itself, with no permission to grant." : "";
+// A step whose need an earlier step shows already, fix and all.
+function sameNeed(need) { return "Needs the same " + needs[need].label + (needs[need].grant ? " permission" : ""); }
+// The needs a step waits for, by id, as one sentence without its stop.
+function waitingFor(ids) {
+    const labels = [].concat(ids).map(id => needs[id].label);
+    return "Waiting for " + (labels.length > 1 ? labels.slice(0, -1).join(", ") + " and " + labels[labels.length - 1] : labels[0]);
+}
+// A step's switch, as search shows it read-only.
+var switchState = { on: "On", off: "Off" };
+
+// Where dictated words end up, by System.pastingOutcome, as Home, setup
+// and the Pasting page say it.
+var outcomes = { delivers: "Works", clipboard: "Your words stay on the clipboard", nothing: "Nothing can deliver your words" };
+
+// The sentence after a step's help about how it works here, where its
+// needs' status lines don't already say it.
+function details(step) {
+    switch (step) {
+    case "insert":
+        return mac ? "Needs Accessibility under Privacy & Security."
+             : windows ? "Fields that don't accept it get the paste keys instead." : "";
+    case "press":
+        return windows ? "Windows presses the keys for Speecher." : "";
+    }
+    return "";
+}
+
+// The row for each step, by step id, and the one short name each step has
+// on the Pasting page, its picture, Apps and search. Setup's Pasting verdict
+// names them its own way (setup.js stepNames).
+var rowOf = { insert: "insertThroughAccessibility", press: "pressPasteKeys", keep: "keepOnClipboard" };
+var stepIds = ["insert", "press", "keep"];
+var stepLabels = { insert: "Insert", press: "Press paste keys", keep: "Keep on clipboard" };
+var stepShort = { insert: "Insert", press: "Press", keep: "Keep" };
+
+// Steps ({ insert, press, keep }) as a short list: "Insert, Press, Keep".
+function stepsText(steps) {
+    return stepIds.filter(id => steps && steps[id]).map(id => stepShort[id]).join(", ");
+}
+
+// What delivering with some steps does here, from System.stepsPlan(steps)
+// (each step {id, on, ready}, in the order delivery tries them), as Apps'
+// editor and Pasting's list say it: the steps that can run on this
+// computer, in order ("Insert, else press Ctrl+V, keep a copy"), then those
+// that can't yet; "No delivery here yet" where none can. keys is the paste
+// keys' id, named on a Press that can't run when they're a terminal's.
+// terminalWins marks an App Type whose apps in a terminal take Terminals'
+// Pasting instead.
+function pastingResult(steps, keys, terminalWins) {
+    const route = steps.filter(s => s.on).map(s => s.id);
+    const usable = steps.filter(s => s.on && s.ready).map(s => s.id);
+    const parts = [];
+    if (usable.includes("insert")) parts.push("Insert");
+    if (usable.includes("press")) parts.push((parts.length ? "else press " : "Press ") + keysLabel(keys));
+    if (usable.includes("keep")) parts.push(parts.length ? "keep a copy" : "Clipboard only");
+    else if (usable.includes("press")) parts.push("then put your clipboard back");
+    // A Press that can't run still names keys of its own, which may be why
+    // the app is listed: "Press (Ctrl+Shift+V)".
+    const waiting = route.filter(id => !usable.includes(id))
+        .map(id => stepShort[id] + (id === "press" && keys === "terminal" && !mac ? " (" + terminalKeys + ")" : ""));
+    const lines = usable.length ? [parts.join(", "), waiting.length ? waiting.join(" and ") + " can't run here yet" : ""]
+                                : ["No delivery here yet: " + waiting.join(" and ") + " can't run"];
+    return lines.concat([terminalWins ? "Apps in a terminal paste like Terminals" : ""]).filter(s => s).join(". ");
+}
+
+// Whether an App Type's apps in a terminal paste like Terminals instead, as
+// pastingResult's terminalWins says: AI coding apps, while Terminals have
+// steps or keys of their own (types is Apps.types).
+function pastesLikeTerminals(typeId, types) {
+    return typeId === "ai_coding" && types.some(o => o.id === "terminal" && (o.steps || o.keys));
+}
+
+// The needs of the steps that are on (System.deliverySteps) which this
+// computer lacks now, each once.
+function waitingNeeds(steps) {
+    return [...new Set([].concat(...steps.filter(s => s.on).map(s => s.waiting)))];
+}
+
+// What desktop accessibility turns on, while it is off, as Home's readiness
+// row for it says. identifiesApps: Speecher can tell apps apart without it
+// (System.identifiesAppsWithoutAccessibility).
+function accessibilityNotice(identifiesApps) {
+    const lost = (mac ? ["press the paste keys"] : ["insert your words"])
+        .concat(identifiesApps ? [] : ["tell which app you're in"])
+        .concat(["read the text around the cursor", "learn your corrections"]);
+    return (mac ? "Accessibility isn't granted" : "Desktop accessibility is off") + ", so Speecher can't "
+        + lost.slice(0, -1).join(", ") + " or " + lost[lost.length - 1] + ".";
+}
+
+// The line a card shows while accessibility is off (reason "off") or this
+// build has none ("unsupported"): what of the card needs it, then the link
+// to Home's row for it, where it can be turned on (linkAbove on Home).
+var accessibilityLink = "Turn it on from Home";
+var accessibilityLinkAbove = "Turn it on above";
+// What each card needs it for, by what the card does.
+var accessibilityUses = { learning: "Learning your corrections", context: "Reading the text around the cursor",
+                          apps: "Telling which app you're in", inserting: "Inserting your words",
+                          profiles: "Picking a profile by app" };
+function accessibilityLine(what, reason, link) {
+    const state = reason === "unsupported" ? "which this build of Speecher doesn't include."
+                : mac ? "which isn't granted. " + link : "which is off. " + link;
+    return what + " needs " + needs.accessibility.label + ", " + state;
+}
+
+// The step rows are custom: the Pasting page draws each one's switch with
+// what it needs, and keeps the last one on.
 var rows = [
-    { id: "outputMethod", page: "pasting", section: "Delivery", kind: "choice", control: "cards",
-      label: "Paste with",
-      help: "Default paste and App rules can still limit it to inserting or copying.",
-      keywords: "delivery output method ydotool automatic insert type",
-      options: [
-          { id: "automatic", label: "Automatic", icon: "route", help: "Inserts directly where it can, then presses the paste keys." },
-          { id: "ydotool", label: "Virtual keyboard only", icon: "keyboard", help: "Always presses the paste keys with the virtual keyboard.",
-            needs: "hasVirtualKeyboard" }
-      ] },
-    { id: "virtualKeyboard", page: "pasting", section: "Delivery", kind: "custom",
-      label: "Virtual keyboard", help: "Lets Speecher press the paste keys in other apps.",
-      keywords: "ydotool uinput service setup permission", needs: "hasVirtualKeyboard" },
-    { id: "globalPasteRule", page: "pasting", section: "Delivery", kind: "choice", control: "select",
-      label: "Default paste", help: "How Speecher pastes unless an app rule says otherwise.",
-      keywords: "paste method ctrl+v terminal direct insertion clipboard only default",
-      options: pasteMethods },
-    { id: "outputFormat", page: "pasting", section: "Delivery", kind: "choice",
-      label: "Paste as", help: "Formatted text keeps lists and emphasis in apps that accept it.",
+    { id: "insertThroughAccessibility", page: "pasting", section: "Steps", kind: "custom", step: "insert",
+      label: stepLabels.insert, icon: "text-cursor-input",
+      help: "Writes your words straight into the field you're in, through accessibility.",
+      keywords: "direct insertion type accessibility at-spi ui automation delivery output" },
+    { id: "pressPasteKeys", page: "pasting", section: "Steps", kind: "custom", step: "press",
+      label: stepLabels.press, icon: "keyboard",
+      help: "Copies your words and presses " + pasteKeys + ". With Keep off, your clipboard goes back to what it was.",
+      keywords: "paste keys ctrl+v cmd+v virtual keyboard ydotool shortcut delivery output" },
+    { id: "keepOnClipboard", page: "pasting", section: "Steps", kind: "custom", step: "keep",
+      label: stepLabels.keep, icon: "clipboard",
+      help: "Leaves your words on the clipboard, so they're there when nothing else delivers.",
+      offHelp: "After a paste, Speecher puts back what was on your clipboard.",
+      keywords: "clipboard copy restore previous keep" },
+    { id: "outputFormat", page: "pasting", section: "Options", kind: "choice",
+      label: "Paste as", help: "Formatted text keeps lists and emphasis in apps that accept it. Inserting through accessibility always writes plain text.",
       keywords: "plain text html rich formatted markdown",
       options: [ { id: "plain", label: "Plain text" }, { id: "html", label: "Formatted" } ] },
-    { id: "restoreClipboardAfterTyping", page: "pasting", section: "Delivery", kind: "toggle",
-      label: "Restore the clipboard after pasting",
-      help: "If Speecher can't confirm the paste, your dictation stays on the clipboard.",
-      keywords: "clipboard restore keep previous copy" },
+    { id: "reviewSelectionEdits", page: "pasting", section: "Options", kind: "toggle",
+      label: "Review edits to selected text", help: "When you dictate over a selection, see what will change and press Replace to apply it.",
+      keywords: "diff selection edit confirm replace review" },
 
-    { id: "applicationPasteRules", page: "appRules", section: "Rules for single apps", kind: "custom",
-      label: "Rules for single apps",
-      help: "Paste differently into one app, named by its exact desktop ID, such as org.kde.konsole.",
-      keywords: "app specific per-app paste rule application id override" },
-    { id: "appRecognitionRules", page: "appRules", section: "Application recognition", kind: "custom",
-      label: "Application recognition",
-      help: "Your matches come first. Each sets the app type for paste rules, the writing profile, or both.",
-      keywords: "recognize identify match app type category writing profile built-in" }
-].concat(categories.map(function (c) {
-    return { id: "categoryPasteRule_" + c.id, page: "appRules", section: "Rules by app type", kind: "choice",
-             control: "select", label: c.label,
-             keywords: "paste rule app type category " + c.label.toLowerCase(),
-             options: [inherit].concat(pasteMethods) };
-}));
+    { id: "appsPasteDifferently", page: "pasting", section: "Apps that paste differently", kind: "custom",
+      label: "Apps that paste differently",
+      help: "Apps and app types with steps or paste keys of their own. Change them in Apps.",
+      keywords: "exception paste rule app type category per-app application override terminal keys ctrl+shift+v own steps clipboard only" }
+];

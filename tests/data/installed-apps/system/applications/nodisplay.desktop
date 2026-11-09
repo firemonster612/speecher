@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=Helper
+NoDisplay=true
+Exec=helper

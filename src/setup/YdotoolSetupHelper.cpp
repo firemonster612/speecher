@@ -194,15 +194,17 @@ bool install(const std::string &user, std::string &error)
     }
     // The group alone grants the device. TAG+="uaccess" would also hand it to
     // whoever holds the seat, which makes the group, and removing the user
-    // from it, pointless.
+    // from it, pointless. := keeps it: ydotool's own 80-uinput.rules, which
+    // the package above brings on newer distributions, runs later and would
+    // hand the device back to the input group.
     if (!writeSetupFile(std::string(udevRulePath),
-                        "KERNEL==\"uinput\", SUBSYSTEM==\"misc\", OPTIONS+=\"static_node=uinput\", GROUP=\"speecher-uinput\", MODE=\"0660\"\n",
+                        "KERNEL==\"uinput\", SUBSYSTEM==\"misc\", OPTIONS+=\"static_node=uinput\", GROUP:=\"speecher-uinput\", MODE:=\"0660\"\n",
                         transaction,
                         error)) {
         return failed();
     }
     run("udevadm", {"control", "--reload-rules"}, error, true, true);
-    run("udevadm", {"trigger", "--subsystem-match=misc", "--attr-match=name=uinput"}, error, true, true);
+    run("udevadm", {"trigger", "--subsystem-match=misc", "--sysname-match=uinput"}, error, true, true);
     const std::string servicePath = serviceFilePath();
     if (!writeSetupFile(servicePath,
                         serviceText(findExecutable("ydotoold").value_or("/usr/bin/ydotoold")),
@@ -283,7 +285,7 @@ bool remove(const std::string &user, std::string &error)
     stepError.clear();
     attempt("could not re-apply the uinput device permissions",
             run("udevadm",
-                {"trigger", "--subsystem-match=misc", "--attr-match=name=uinput"},
+                {"trigger", "--subsystem-match=misc", "--sysname-match=uinput"},
                 stepError),
             stepError);
 

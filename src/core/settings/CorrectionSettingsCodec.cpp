@@ -1,10 +1,12 @@
 #include "core/settings/CorrectionSettingsCodec.h"
+#include "core/VocabularyScope.h"
+#include "core/settings/AppsSettingsCodec.h"
 #include "core/settings/SettingsKeys.h"
+#include "core/settings/VocabularySettingsCodec.h"
 #include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QUuid>
 
 #include <algorithm>
 #include <iterator>
@@ -79,54 +81,6 @@ void storeLearningEnabled(QSettings &settings, bool value)
     settings.setValue(SettingsKeys::CorrectionLearningEnabled, value);
 }
 
-QList<LearnedCorrection> load(const QSettings &settings)
-{
-    const QJsonDocument document = QJsonDocument::fromJson(
-        settings.value(SettingsKeys::LearnedCorrections, QByteArray()).toByteArray());
-    QList<LearnedCorrection> corrections;
-    for (const QJsonValue &value : document.array()) {
-        const QJsonObject object = value.toObject();
-        LearnedCorrection correction;
-        correction.id = object.value(QStringLiteral("id")).toString();
-        correction.original = object.value(QStringLiteral("original")).toString();
-        correction.corrected = object.value(QStringLiteral("corrected")).toString();
-        correction.applicationId = object.value(QStringLiteral("applicationId")).toString();
-        correction.createdAtMs = qint64(object.value(QStringLiteral("createdAtMs")).toDouble());
-        correction.confidence = object.value(QStringLiteral("confidence")).toDouble();
-        correction.enabled = object.value(QStringLiteral("enabled")).toBool(true);
-        correction.evidenceCount = object.value(QStringLiteral("evidenceCount")).toInt(1);
-        correction.lastObservedAtMs = qint64(
-            object.value(QStringLiteral("lastObservedAtMs")).toDouble(correction.createdAtMs));
-        if (!correction.id.isEmpty()
-            && !correction.original.trimmed().isEmpty()
-            && !correction.corrected.trimmed().isEmpty()) {
-            corrections.append(correction);
-        }
-    }
-    return corrections;
-}
-
-void store(QSettings &settings, const QList<LearnedCorrection> &corrections)
-{
-    QJsonArray array;
-    for (const LearnedCorrection &correction : corrections) {
-        array.append(QJsonObject{
-            {QStringLiteral("id"), correction.id},
-            {QStringLiteral("original"), correction.original},
-            {QStringLiteral("corrected"), correction.corrected},
-            {QStringLiteral("applicationId"), correction.applicationId},
-            {QStringLiteral("createdAtMs"), double(correction.createdAtMs)},
-            {QStringLiteral("confidence"), correction.confidence},
-            {QStringLiteral("enabled"), correction.enabled},
-            {QStringLiteral("evidenceCount"), correction.evidenceCount},
-            {QStringLiteral("lastObservedAtMs"), double(correction.lastObservedAtMs)},
-        });
-    }
-    settings.setValue(
-        SettingsKeys::LearnedCorrections,
-        QJsonDocument(array).toJson(QJsonDocument::Compact));
-}
-
 bool recordEvidence(QSettings &settings,
                     const CorrectionEvidence &evidence,
                     const QString &applicationId)
@@ -141,33 +95,43 @@ bool recordEvidence(QSettings &settings,
     }
 
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    QList<LearnedCorrection> corrections = load(settings);
-    for (LearnedCorrection &correction : corrections) {
-        const bool sameOriginal = sameText(correction.original, original);
-        const bool sameScope = sameText(correction.applicationId, application)
-            || correction.applicationId.isEmpty();
-        if (!sameOriginal || !sameScope) {
-            continue;
-        }
-        if (!sameText(correction.corrected, corrected)) {
-            return false;
-        }
+    QList<VocabularyEntry> entries = VocabularySettingsCodec::load(settings);
+    const auto observed = [&](VocabularyEntry &correction) {
         ++correction.evidenceCount;
         correction.lastObservedAtMs = now;
         correction.confidence = std::max(correction.confidence, evidence.confidence);
-        store(settings, corrections);
+        VocabularySettingsCodec::store(settings, entries);
+    };
+    Target target;
+    target.applicationId = application;
+    const AppsSettings apps = AppsSettingsCodec::load(settings);
+    for (VocabularyEntry &correction : entries) {
+        const bool sameOriginal = correction.isLearned() && sameText(correction.term, original);
+        const bool sameScope = correction.apps.isEmpty()
+            || std::any_of(correction.apps.cbegin(), correction.apps.cend(),
+                           [&](const QString &limit) { return appLimitMatches(limit, target, apps); });
+        if (!sameOriginal || !sameScope) {
+            continue;
+        }
+        if (!sameText(correction.replacement, corrected)) {
+            return false;
+        }
+        observed(correction);
         return true;
     }
 
-    for (LearnedCorrection &correction : corrections) {
-        if (sameText(correction.original, original)
-            && sameText(correction.corrected, corrected)
-            && !sameText(correction.applicationId, application)) {
-            correction.applicationId.clear();
-            ++correction.evidenceCount;
-            correction.lastObservedAtMs = now;
-            correction.confidence = std::max(correction.confidence, evidence.confidence);
-            store(settings, corrections);
+    // The same correction learned in another app is one for every app,
+    // unless the person limited it to Apps of theirs: learning limits only
+    // to application ids.
+    for (VocabularyEntry &correction : entries) {
+        if (correction.isLearned() && sameText(correction.term, original)
+            && sameText(correction.replacement, corrected)) {
+            if (std::any_of(correction.apps.cbegin(), correction.apps.cend(),
+                            [](const QString &limit) { return limit.startsWith(QStringLiteral("app:")); })) {
+                return false;
+            }
+            correction.apps.clear();
+            observed(correction);
             return true;
         }
     }
@@ -203,19 +167,21 @@ bool recordEvidence(QSettings &settings,
 
     const PendingEvidence activated = *matching;
     pending.erase(matching);
-    corrections.prepend({
-        QUuid::createUuid().toString(QUuid::WithoutBraces),
-        activated.original,
-        activated.corrected,
-        activated.applicationId,
-        activated.firstObservedAtMs,
-        activated.confidence,
-        true,
-        activated.count,
-        activated.lastObservedAtMs,
-    });
+    VocabularyEntry learned;
+    learned.term = activated.original;
+    learned.replacement = activated.corrected;
+    learned.source = QStringLiteral("learned");
+    if (!activated.applicationId.isEmpty()) {
+        learned.apps = {activated.applicationId};
+    }
+    learned.createdAtMs = activated.firstObservedAtMs;
+    learned.confidence = activated.confidence;
+    learned.evidenceCount = activated.count;
+    learned.lastObservedAtMs = activated.lastObservedAtMs;
+    // Newest first among the replacements, as the page lists them.
+    entries.prepend(learned);
     storePending(settings, pending);
-    store(settings, corrections);
+    VocabularySettingsCodec::store(settings, entries);
     return true;
 }
 

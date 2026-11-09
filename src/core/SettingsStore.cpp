@@ -1,9 +1,12 @@
 #include "core/SettingsStore.h"
 #include "core/EndpointSettings.h"
 #include "core/EndpointUrl.h"
-#include "core/OutputMethod.h"
+#include "core/DeliverySteps.h"
 #include "core/ProviderTable.h"
 #include "core/SecretStore.h"
+#include "core/settings/AppsMigration.h"
+#include "core/settings/ServiceOrderMigration.h"
+#include "core/settings/VocabularyMigration.h"
 #include "core/settings/CorrectionSettingsCodec.h"
 #include "core/settings/SettingsKeys.h"
 
@@ -11,8 +14,10 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QStandardPaths>
 
 #include <memory>
+#include <optional>
 #include <utility>
 
 namespace speecher {
@@ -133,30 +138,43 @@ void migrateRefinementModels(QSettings &settings)
     settings.setValue(SettingsKeys::RefinementModelMigrationVersion, currentMigrationVersion);
 }
 
-void migrateOutputMethod(QSettings &settings)
+// What Speecher Keeps replaces Keep insights, which promised "never text or
+// audio". So an existing install, whether or not it finished setup, keeps
+// stats (nothing where insights were off) until the person chooses text; a
+// new install, which had no settings at all, keeps the default.
+void migrateHistory(QSettings &settings, bool existingInstall)
 {
-    const QString method = OutputMethod::normalized(settings.value(SettingsKeys::OutputMethod).toString());
-    PasteMethod paste;
-    if (method == QString::fromLatin1(OutputMethod::DirectInsert)) {
-        paste = PasteMethod::DirectInsert;
-    } else if (method == QString::fromLatin1(OutputMethod::WlCopy)
-               || method == QString::fromLatin1(OutputMethod::QtClipboard)) {
-        paste = PasteMethod::ClipboardOnly;
-    } else {
+    constexpr int currentMigrationVersion = 1;
+    if (settings.value(SettingsKeys::HistoryMigrationVersion).toInt() >= currentMigrationVersion) {
         return;
     }
-    // Under these methods TextDelivery never pasted: a rule that said to paste
-    // meant inserting only, or copying only. A Direct insertion or Clipboard
-    // only rule already behaved as it does under Automatic. Only methods
-    // change, so the rule that wins for a target is the same one as before.
-    QList<PasteRule> rules = pasteRulesFromJson(settings.value(SettingsKeys::PasteRules).toByteArray());
-    for (PasteRule &rule : rules) {
-        if (rule.method == PasteMethod::StandardPaste || rule.method == PasteMethod::TerminalPaste) {
-            rule.method = paste;
-        }
+    settings.setValue(SettingsKeys::HistoryMigrationVersion, currentMigrationVersion);
+    if (settings.contains(SettingsKeys::HistoryKeeps)) {
+        return;
     }
-    settings.setValue(SettingsKeys::PasteRules, pasteRulesToJson(rules));
-    settings.setValue(SettingsKeys::OutputMethod, QString::fromLatin1(OutputMethod::Automatic));
+    const QVariant insights = settings.value(SettingsKeys::InsightsEnabled);
+    if (insights.isValid() && !insights.toBool()) {
+        settings.setValue(SettingsKeys::HistoryKeeps, historyKeepName(HistoryKeep::Nothing));
+    } else if (existingInstall) {
+        settings.setValue(SettingsKeys::HistoryKeeps, historyKeepName(HistoryKeep::Stats));
+    }
+}
+
+// New installs save recordings in Documents/Speecher. An install that has
+// recorded already keeps them where they went, the data folder's recordings,
+// unless a folder was chosen.
+void migrateRecording(QSettings &settings)
+{
+    constexpr int currentMigrationVersion = 1;
+    if (settings.value(SettingsKeys::RecordingMigrationVersion).toInt() >= currentMigrationVersion) {
+        return;
+    }
+    settings.setValue(SettingsKeys::RecordingMigrationVersion, currentMigrationVersion);
+    const QString older =
+        QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)).filePath(QStringLiteral("recordings"));
+    if (settings.value(SettingsKeys::RecordingFolder).toString().isEmpty() && QFileInfo(older).isDir()) {
+        settings.setValue(SettingsKeys::RecordingFolder, older);
+    }
 }
 
 void migrateSavedSettings()
@@ -172,6 +190,9 @@ void migrateSavedSettings()
         return;
     }
     const std::unique_ptr<QSettings> older = olderSettings();
+    // Before any migration writes its marker: whether an earlier Speecher
+    // left settings at all.
+    const bool existingInstall = !newSettings.allKeys().isEmpty() || !older->allKeys().isEmpty();
     // An older Speecher left its file, keys and all, open to others.
     if (QFile::exists(older->fileName()) && !makeSettingsPrivate(*older, &error)) {
         qWarning().noquote() << "Settings: the older settings stay readable, since" << error;
@@ -180,7 +201,15 @@ void migrateSavedSettings()
         qWarning().noquote() << error;
     }
     migrateRefinementModels(newSettings);
-    migrateOutputMethod(newSettings);
+    // Apps first: their paste rules deliver as they did under the output
+    // settings migrateDeliverySteps removes.
+    migrateApps(newSettings);
+    migrateDeliverySteps(newSettings);
+    migrateVocabulary(newSettings);
+    migrateHistory(newSettings, existingInstall);
+    migrateRecording(newSettings);
+    // After the model renames, which it carries into the orders.
+    migrateServiceOrder(newSettings);
 }
 
 SettingsStore::SettingsStore(QObject *parent)
@@ -287,25 +316,24 @@ QList<ProviderSecret> unreadProviderSecrets(const AppSettings &settings, Provide
     QList<ProviderSecret> secrets;
     // Speech uses local OAuth account files, never the remote proxy API key.
     if (role == ProviderRole::Speech && endpoint) {
-        secrets.append({Secret::SpeechEndpointKey, [](AppSettings &s) -> QString & { return s.speech.endpoint.apiKey; }});
+        secrets.append({Secret::SpeechEndpointKey, [](AppSettings &s) -> QString & { return s.speech.server.apiKey; }});
     }
     const RefinementSettings &refinement = settings.refinement;
     const bool refines = role == ProviderRole::Refinement;
-    const bool custom = endpoint && refinement.endpoint.preset.isEmpty();
     const auto endpointKey = SecretStore::settingsKey(Secret::RefinementEndpointKey);
-    if (refines && custom) {
+    if (refines && endpoint) {
         secrets.append(
-            {Secret::RefinementEndpointKey, [](AppSettings &s) -> QString & { return s.refinement.endpoint.apiKey; }});
+            {Secret::RefinementEndpointKey, [](AppSettings &s) -> QString & { return s.refinement.server.apiKey; }});
     }
-    // A Custom endpoint needs the proxy's key only once its own is known to
-    // be empty, as refinementEndpointKey picks.
-    const bool endpointProxyKey = endpoint
-        && (!custom || (!settings.unreadSecretKeys.contains(endpointKey) && usesProxyKey(refinement)));
-    const bool remoteProxy = !refinement.cliproxyBaseUrl.isEmpty()
+    // The server needs the proxy's key only once its own is known to be
+    // empty, as refinementEndpointKey picks.
+    const bool endpointProxyKey =
+        endpoint && !settings.unreadSecretKeys.contains(endpointKey) && usesProxyKey(refinement, settings.accounts);
+    const bool remoteProxy = !settings.accounts.cliproxyBaseUrl.isEmpty()
         && ((provider == ProviderId::OpenAi && settings.accounts.openAiAuthMode == OpenAiAuthMode::Cliproxy)
             || (provider == ProviderId::Anthropic && settings.accounts.anthropicAuthMode == AnthropicAuthMode::Cliproxy));
     if (refines && (endpointProxyKey || remoteProxy)) {
-        secrets.append({Secret::CliproxyApiKey, [](AppSettings &s) -> QString & { return s.refinement.cliproxyApiKey; }});
+        secrets.append({Secret::CliproxyApiKey, [](AppSettings &s) -> QString & { return s.accounts.cliproxyApiKey; }});
     }
     secrets.removeIf([&settings](const ProviderSecret &secret) {
         return !settings.unreadSecretKeys.contains(SecretStore::settingsKey(secret.secret));
@@ -353,10 +381,9 @@ AppSettings SettingsStore::snapshotReading(bool waitForKeyring) const
         }
         return value;
     };
-    settings.refinement.cliproxyApiKey = read(SecretStore::Secret::CliproxyApiKey);
-    settings.refinement.endpoint.apiKey =
-        read(SecretStore::Secret::RefinementEndpointKey);
-    settings.speech.endpoint.apiKey = read(SecretStore::Secret::SpeechEndpointKey);
+    settings.accounts.cliproxyApiKey = read(SecretStore::Secret::CliproxyApiKey);
+    settings.refinement.server.apiKey = read(SecretStore::Secret::RefinementEndpointKey);
+    settings.speech.server.apiKey = read(SecretStore::Secret::SpeechEndpointKey);
     return settings;
 }
 
@@ -395,11 +422,11 @@ bool SettingsStore::applySnapshot(const AppSettings &draft, const AppSettings &p
         return !QUrl(from.trimmed()).host().isEmpty() && !sameOrigin(from, to);
     };
     const std::tuple<Secret, QString, QString, bool> keys[] = {
-        {Secret::SpeechEndpointKey, draft.speech.endpoint.apiKey, previous.speech.endpoint.apiKey,
-         moved(previous.speech.endpoint.baseUrl, draft.speech.endpoint.baseUrl)},
-        {Secret::CliproxyApiKey, draft.refinement.cliproxyApiKey, previous.refinement.cliproxyApiKey,
-         moved(previous.refinement.cliproxyBaseUrl, draft.refinement.cliproxyBaseUrl)},
-        {Secret::RefinementEndpointKey, draft.refinement.endpoint.apiKey, previous.refinement.endpoint.apiKey, false},
+        {Secret::SpeechEndpointKey, draft.speech.server.apiKey, previous.speech.server.apiKey,
+         moved(previous.speech.server.baseUrl, draft.speech.server.baseUrl)},
+        {Secret::CliproxyApiKey, draft.accounts.cliproxyApiKey, previous.accounts.cliproxyApiKey,
+         moved(previous.accounts.cliproxyBaseUrl, draft.accounts.cliproxyBaseUrl)},
+        {Secret::RefinementEndpointKey, draft.refinement.server.apiKey, previous.refinement.server.apiKey, false},
     };
     QList<std::pair<Secret, QString>> secrets;
     for (const auto &[secret, value, before, movedServer] : keys) {

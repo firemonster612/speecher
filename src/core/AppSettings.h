@@ -1,9 +1,11 @@
 #pragma once
 
+#include "core/DeliverySteps.h"
 #include "core/OutputFormat.h"
-#include "core/PasteRules.h"
-#include "core/LearnedCorrection.h"
+#include "core/Apps.h"
+#include "core/history/HistoryPolicy.h"
 #include "core/ProviderTable.h"
+#include "core/ServiceOrder.h"
 #include "core/Target.h"
 
 #include <QString>
@@ -129,15 +131,18 @@ inline AnthropicAuthMode anthropicAuthModeFromName(const QString &name)
                                               : AnthropicAuthMode::Oauth;
 }
 
-struct BindingRule {
-    QString phrase;
-    QString replacement;
-
-    bool operator==(const BindingRule &other) const = default;
-};
-
+// One Vocabulary Entry. A spelling (no replacement) is a term Speecher keeps
+// spelled its way: the speech service may hear it as a hint, and refinement
+// reads it. A replacement is a spoken phrase and the exact text written in
+// its place, snippets included. A Learned Correction is a replacement
+// Speecher added itself from the person's edits, source "learned", and keeps
+// what it was learned from. Any entry may be limited to some Writing
+// Profiles and some Apps; vocabularyEntryApplies is the one test.
 struct VocabularyEntry {
+    // A spelling's term, or a replacement's spoken phrase.
     QString term;
+    // Where it came from: manual, csv (a terms file), legacy (stored before
+    // entries were records), import (a snippets file) or learned.
     QString source = QStringLiteral("manual");
     // First in line for the speech service among key terms. No longer shown
     // or edited; a term starred before keeps its place.
@@ -146,10 +151,31 @@ struct VocabularyEntry {
     qint64 lastUsedMs = 0;
     // What the term means and when it applies, for refinement. Empty for none.
     QString context;
-    // The Writing Profiles the term is limited to, by id. Empty for every one.
+    // The Writing Profiles it is limited to, by id. Empty for every one.
     QStringList profiles;
-    // Sent to the speech service as a hint. Refinement uses every term.
+    // A spelling sent to the speech service as a hint. Refinement uses every
+    // spelling either way.
     bool keyTerm = true;
+    // The text written in place of the phrase. Empty for a spelling.
+    QString replacement;
+    // The apps it is limited to: an App's id ("app:…"), or the application id
+    // a Learned Correction was learned in. Empty for every app.
+    QStringList apps;
+    // Stable across edits, so the list can find an entry whose text changed.
+    QString id;
+    // Off, it applies nowhere and stays listed.
+    bool enabled = true;
+    // What a Learned Correction was learned from: how sure the edit made
+    // Speecher, how many edits showed it, and when.
+    double confidence = 0.0;
+    int evidenceCount = 0;
+    qint64 createdAtMs = 0;
+    qint64 lastObservedAtMs = 0;
+
+    bool isReplacement() const { return !replacement.isEmpty(); }
+    // A Learned Correction. A spelling an older release learned keeps its
+    // source and is a spelling like any other.
+    bool isLearned() const { return isReplacement() && source == QStringLiteral("learned"); }
 
     bool operator==(const VocabularyEntry &other) const = default;
 };
@@ -230,16 +256,17 @@ inline QString localSpeedTestKey(const QString &modelId, const LocalRunsOn &runs
     return modelId + QLatin1Char('/') + localRunsOnId(runsOn);
 }
 
+// The Local Model is the "local" speech entry's model (ServiceChoice).
 struct LocalSpeechSettings {
-    // A LocalModelCatalog id.
-    QString modelId = QStringLiteral("parakeet");
     LocalRunsOn runsOn;
     // 0 keeps the model loaded until Speecher quits.
     int idleUnloadMinutes = 10;
     // localSpeedTestKey to the Speed Test's measured seconds for the bundled
     // clip, so a result from one Runs on choice never stands for another.
     QMap<QString, double> speedTestSeconds;
-    // False only for an unchosen default; legacy saved model ids are choices.
+    // Whether the "local" entry's model was chosen. False only for an
+    // unchosen default, which the hardware's suggestion replaces; legacy
+    // saved model ids are choices.
     bool modelChosen = false;
 
     bool operator==(const LocalSpeechSettings &other) const = default;
@@ -253,41 +280,54 @@ inline std::optional<double> measuredSpeedTestSeconds(const LocalSpeechSettings 
     return it == local.speedTestSeconds.cend() ? std::nullopt : std::optional<double>(*it);
 }
 
-// The speech Custom Endpoint: an OpenAI-style audio transcriptions server.
-struct SpeechEndpointSettings {
-    // The server's origin, without the path.
+// One of Your servers: a URL the person runs or rents for one job. Speech
+// has one, speaking OpenAI's audio transcriptions API; refinement has one,
+// speaking OpenAI Chat Completions or Anthropic Messages. Its model is the
+// "endpoint" entry's in that job's Service Order.
+struct ServerSettings {
+    // Speech: the server's origin, without the path. Refinement: the API base
+    // the endpoint paths hang off, e.g. http://localhost:11434/v1.
     QString baseUrl;
-    // whisper.cpp's server answers on /inference.
+    // Speech only. whisper.cpp's server answers on /inference.
     QString path = QStringLiteral("/v1/audio/transcriptions");
-    QString model;
+    // Refinement only: "openai" (Chat Completions) or "anthropic" (Messages).
+    QString format = QStringLiteral("openai");
+    // Refinement without one sends the CLI Proxy key while on the proxy's
+    // server (refinementEndpointKey).
     QString apiKey;
 
-    bool operator==(const SpeechEndpointSettings &other) const = default;
+    bool operator==(const ServerSettings &other) const = default;
 };
 
 // The stored Spoken Language that leaves the language to the speech service.
 inline constexpr auto kAutomaticSpokenLanguage = "auto";
 
 struct SpeechSettings {
-    QString providerId = providerKey(ProviderId::Claude);
-    // Up to two providers tried in order when providerId is unavailable;
-    // never providerId itself. See ProviderChain.h.
-    QStringList fallbackProviderIds;
-    // The Spoken Language a person chose for a speech fallback, by provider
-    // id; chainSpeechSettings() picks one for a fallback missing here. Kept
-    // while a provider is out of the fallbacks, for when it comes back.
-    QHash<QString, QString> fallbackLanguages;
+    // The speech services in order, each with its model and, after the
+    // first, its own Spoken Language. See ProviderChain.h.
+    ServiceOrder services = defaultSpeechServices();
     bool codexFinalRetranscribe = true;
-    // The Spoken Language: a language code, or kAutomaticSpokenLanguage.
+    // The Spoken Language the first service listens for: a language code,
+    // or kAutomaticSpokenLanguage.
     QString language = QStringLiteral("en");
     QStringList vocabulary;
     QString claudeEndpointBase;
     QString claudeVoicePath;
     LocalSpeechSettings local;
-    SpeechEndpointSettings endpoint;
+    ServerSettings server;
 
     bool operator==(const SpeechSettings &other) const = default;
 };
+
+// The Local Model the "local" speech entry runs, a LocalModelCatalog id.
+inline QString localModelId(const SpeechSettings &speech)
+{
+    return speech.services.choice(providerKey(ProviderId::Local)).model;
+}
+inline QString &localModelId(SpeechSettings &speech)
+{
+    return speech.services.choice(providerKey(ProviderId::Local)).model;
+}
 
 struct AudioCaptureSettings {
     QString deviceId;
@@ -299,23 +339,6 @@ struct AudioCaptureSettings {
     int vadThresholdPercent = 2;
 
     bool operator==(const AudioCaptureSettings &other) const = default;
-};
-
-// The refinement Custom Endpoint.
-struct RefinementEndpointSettings {
-    // "cliproxy" takes the server and key from the CLI Proxy API settings;
-    // empty uses the fields below.
-    QString preset;
-    // "openai" (Chat Completions) or "anthropic" (Messages).
-    QString format = QStringLiteral("openai");
-    // The API base the endpoint paths hang off, e.g. http://localhost:11434/v1.
-    QString baseUrl;
-    QString model;
-    // Without one, the CLI Proxy key goes to the proxy's own server
-    // (refinementEndpointKey).
-    QString apiKey;
-
-    bool operator==(const RefinementEndpointSettings &other) const = default;
 };
 
 // Ultrafast serves only GPT-6 Astra and GPT-6.1 Sol.
@@ -334,15 +357,15 @@ inline QString effectiveOpenAiSpeed(const QString &speed, const QString &model)
         : speed;
 }
 
-// Refinement through a Local Runner on this computer.
+// Refinement through a Local Runner on This computer. Its cleanup model is
+// the "local" refinement entry's.
 struct LocalRunnerSettings {
     // "ollama", "lmstudio" or "llama-server"; empty until configured.
     QString runner;
-    QString model;
 
     // Every runner but llama-server, which answers with whichever model it
     // loaded, needs a model named.
-    bool lacksModel() const { return model.isEmpty() && runner != QStringLiteral("llama-server"); }
+    bool lacksModel(const QString &model) const { return model.isEmpty() && runner != QStringLiteral("llama-server"); }
 
     bool operator==(const LocalRunnerSettings &other) const = default;
 };
@@ -356,27 +379,16 @@ inline QString localRunnerName(const QString &runnerId)
 }
 
 struct RefinementSettings {
-    QString providerId = providerKey(ProviderId::OpenAi);
-    // As SpeechSettings::fallbackProviderIds; empty while providerId is "none".
-    QStringList fallbackProviderIds;
+    // Clean up my words. Off, no service runs, and the order waits for it to
+    // come back on.
+    bool enabled = true;
+    // The refinement services in order, each with its model, effort and speed.
+    ServiceOrder services = defaultRefinementServices();
     QString style = QStringLiteral("balanced");
-    QString openAiModel = QStringLiteral("gpt-6-luna");
-    QString openAiEffort = QStringLiteral("none");
-    // "standard", "fast" or "ultrafast"; see effectiveOpenAiSpeed.
-    QString openAiSpeed = QStringLiteral("fast");
-    QString anthropicModel = QStringLiteral("claude-opus-5-5");
-    QString anthropicEffort = QStringLiteral("low");
-    bool anthropicFastMode = true;
-    // The CLI Proxy API server refinement goes through in the cliproxy auth
-    // mode, instead of the account files; empty for none.
-    QString cliproxyBaseUrl;
-    QString cliproxyApiKey;
-    RefinementEndpointSettings endpoint;
+    ServerSettings server;
     LocalRunnerSettings localRunner;
     QString anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
-    QString defaultWritingProfile = WritingProfile::Other;
     QList<WritingProfileSettings> writingProfiles = defaultWritingProfileSettings();
-    QList<WritingProfileOverride> writingProfileOverrides;
     bool useTargetContext = true;
     bool includeScreenshotContext = false;
     // Added to every refinement prompt.
@@ -391,10 +403,11 @@ struct RefinementSettings {
     bool operator==(const RefinementSettings &other) const = default;
 };
 
-// How Speecher signs in to each provider family: the Anthropic auth mode
-// covers Claude Voice dictation and Anthropic refinement, the OpenAI auth mode
-// Codex dictation and OpenAI refinement, so the speech and refinement
-// providers of a family share these.
+// How Speecher signs in to ChatGPT and Claude, on the Services page: the
+// Anthropic auth mode covers Claude Voice dictation and Anthropic refinement,
+// the OpenAI auth mode Codex dictation and OpenAI refinement, so a service's
+// speech and refinement share one sign-in. CLI Proxy API is a way to sign in
+// to either.
 struct AccountSettings {
     OpenAiAuthMode openAiAuthMode = OpenAiAuthMode::Auto;
     AnthropicAuthMode anthropicAuthMode = AnthropicAuthMode::Oauth;
@@ -409,18 +422,21 @@ struct AccountSettings {
     // cliproxyOauthDir back would pin a detected path forever, so the
     // settings surface edits this one.
     QString cliproxyOauthDirConfigured;
+    // The CLI Proxy API server ChatGPT and Claude refinement go through in
+    // the cliproxy sign-in, instead of the account files; empty for none.
+    QString cliproxyBaseUrl;
+    QString cliproxyApiKey;
     QString claudeCredentialsPath;
 
     bool operator==(const AccountSettings &other) const = default;
 };
 
 struct OutputSettings {
-    QString method = QStringLiteral("automatic");
+    DeliverySteps steps;
     OutputFormat format = OutputFormat::PlainText;
+    // The virtual keyboard is set up for Linux's Press step.
     bool ydotoolEnabled = false;
-    bool restoreClipboardAfterTyping = false;
     int completionStatusDurationMs = 500;
-    QList<PasteRule> pasteRules = defaultPasteRules();
 
     bool operator==(const OutputSettings &other) const = default;
 };
@@ -441,10 +457,39 @@ struct UpdateSettings {
     bool operator==(const UpdateSettings &other) const = default;
 };
 
+// The file a Recording writes: its lines are the same in both,
+// "[00:01:23] me: …"; only the extension differs.
+enum class RecordingFormat { Markdown, PlainText };
+
+// How a Recording runs when nothing it is started with says otherwise: the
+// Recordings page's settings.
+struct RecordingSettings {
+    // System audio as "them" beside the microphone, where Speecher captures
+    // it; `record start --mic-only` wins over it.
+    bool systemAudio = true;
+    // The speech service a Recording tries first, ahead of the speech Service
+    // Order's that stream final text; unset, the Service Order's.
+    std::optional<ServiceChoice> first;
+    // The Writing Profile whose vocabulary a Recording takes; empty: Other
+    // apps' profile.
+    QString writingProfile;
+    // Where transcripts go; empty: Documents/Speecher (recordingFolder()).
+    QString folder;
+    RecordingFormat format = RecordingFormat::Markdown;
+    // Both sides' audio in one stereo file beside the transcript.
+    bool keepAudio = false;
+    // Stop once neither side has spoken for this long; 0: never.
+    int autoStopMinutes = 30;
+    // The popup's recording pill while a recording runs.
+    bool showPill = true;
+
+    bool operator==(const RecordingSettings &other) const = default;
+};
+
 // SettingsCodecs::fields() says which of these are stored. SettingsStore::edit
 // refuses a change to any other: a snapshot derives or detects those, or
 // their owner writes them. What one run chooses for itself travels apart
-// (RunChoices, SpeechAttemptOptions, RefinementContext).
+// (RunOverrides, SpeechAttemptOptions, RefinementContext).
 struct AppSettings {
     // Empty secret fields in this draft were unread, not cleared by the user.
     QStringList unreadSecretKeys;
@@ -457,17 +502,16 @@ struct AppSettings {
     UiSettings ui;
     SpeechSettings speech;
     AudioCaptureSettings audio;
-    QList<AppRecognitionRule> appRecognitionRules;
+    AppsSettings apps;
     RefinementSettings refinement;
     AccountSettings accounts;
     OutputSettings output;
     UpdateSettings updates;
     ShortcutActivationMode shortcutActivationMode = ShortcutActivationMode::Hybrid;
-    QList<BindingRule> bindings;
     QList<VocabularyEntry> vocabulary;
-    QList<LearnedCorrection> learnedCorrections;
     bool correctionLearningEnabled = true;
-    bool insightsEnabled = true;
+    HistorySettings history;
+    RecordingSettings recording;
 };
 
 } // namespace speecher

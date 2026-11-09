@@ -1,10 +1,10 @@
 #include "common/test_prelude.h"
 #include "core/InsightsExport.h"
-#include "core/InsightsLog.h"
+#include "core/history/HistoryImport.h"
 #include "core/InsightsSummary.h"
+#include "core/SeenApps.h"
 
 #include <QDir>
-#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
@@ -36,19 +36,6 @@ HeatmapDay dayWith(int dictations, int words = 0)
     return {kToday, dictations, words, 0};
 }
 
-QByteArray readAll(const QString &path)
-{
-    QFile file(path);
-    return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
-}
-
-void writeAll(const QString &path, const QByteArray &bytes)
-{
-    QFile file(path);
-    QVERIFY(file.open(QIODevice::WriteOnly));
-    file.write(bytes);
-}
-
 } // namespace
 
 class InsightsTests : public QObject {
@@ -67,177 +54,69 @@ private slots:
         QCOMPARE(countWords(QString()), 0);
     }
 
-    void logAppendsOneLinePerRecordAndReloads()
-    {
-        QTemporaryDir dir;
-        const QString path = dir.filePath(QStringLiteral("insights.jsonl"));
-        const DictationRecord first{QDateTime(QDate(2025, 10, 3), QTime(9, 55)), 38000, 90,
-                                    QStringLiteral("Thunderbird"), WritingProfile::Email};
-        const DictationRecord second{QDateTime(QDate(2025, 10, 3), QTime(10, 12)), 50000, 108,
-                                     QStringLiteral("Claude Code"), WritingProfile::AiCoding};
-        {
-            InsightsLog log(path);
-            QSignalSpy changed(&log, &InsightsLog::changed);
-            log.append(first);
-            log.append(second);
-            QCOMPARE(changed.count(), 2);
-        }
-        QCOMPARE(readAll(path),
-                 QByteArrayLiteral(
-                     R"({"finishedAt":"2025-10-03T09:55:00","audioMs":38000,"words":90,"app":"Thunderbird","profile":"email"})"
-                     "\n"
-                     R"({"finishedAt":"2025-10-03T10:12:00","audioMs":50000,"words":108,"app":"Claude Code","profile":"ai_coding"})"
-                     "\n"));
-
-        const InsightsLog reloaded(path);
-        QCOMPARE(reloaded.records().size(), 2);
-        const DictationRecord &loaded = reloaded.records().at(1);
-        QCOMPARE(loaded.finishedAt, second.finishedAt);
-        QCOMPARE(loaded.audioMs, 50000);
-        QCOMPARE(loaded.words, 108);
-        QCOMPARE(loaded.appName, QStringLiteral("Claude Code"));
-        QCOMPARE(loaded.profile, WritingProfile::AiCoding);
-    }
-
-    // A fallback that stood in shows in the record; a line written before
-    // providers were kept reads as none.
-    void aRecordKeepsTheProvidersThatRanInOrder()
-    {
-        QTemporaryDir dir;
-        const QString path = dir.filePath(QStringLiteral("insights.jsonl"));
-        writeAll(path, R"({"finishedAt":"2026-09-23T10:00:00","audioMs":1000,"words":3,"app":"Slack","profile":"work"})"
-                       "\n");
-        {
-            InsightsLog log(path);
-            DictationRecord record{QDateTime(kToday, QTime(9, 0)), 1000, 5, QStringLiteral("Kate"), WritingProfile::Other};
-            record.speechProviders = {QStringLiteral("codex"), QStringLiteral("local")};
-            record.refinementProviders = {QStringLiteral("openai")};
-            log.append(record);
-        }
-        QVERIFY(readAll(path).endsWith(
-            R"("profile":"other","speechProviders":["codex","local"],"refinementProviders":["openai"]})"
-            "\n"));
-        const InsightsLog log(path);
-        QCOMPARE(log.records().size(), 2);
-        QCOMPARE(log.records().at(0).speechProviders, QStringList());
-        QCOMPARE(log.records().at(0).refinementProviders, QStringList());
-        QCOMPARE(log.records().at(1).speechProviders, (QStringList{QStringLiteral("codex"), QStringLiteral("local")}));
-        QCOMPARE(log.records().at(1).refinementProviders, QStringList{QStringLiteral("openai")});
-    }
-
     // A custom profile's record stores its name; a record from before that
     // has none. Once the profile is gone the first reads by that name and the
     // second has none.
     void aRecordOfADeletedProfileKeepsItsLabel()
     {
-        QTemporaryDir dir;
-        const QString path = dir.filePath(QStringLiteral("insights.jsonl"));
-        {
-            InsightsLog log(path);
-            log.append({QDateTime(kToday, QTime(9, 0)), 1000, 5, QStringLiteral("Zulip"),
-                        QStringLiteral("custom_standup"), QStringLiteral("Standup")});
-        }
-        QFile file(path);
-        QVERIFY(file.open(QIODevice::Append | QIODevice::Text));
-        file.write(R"({"finishedAt":"2026-09-23T10:00:00","audioMs":1000,"words":3,"app":"Slack","profile":"custom_old"})"
-                   "\n");
-        file.close();
-        const InsightsLog log(path);
+        const QList<DictationRecord> records{
+            {QDateTime(kToday, QTime(9, 0)), 1000, 5, QStringLiteral("Zulip"), QStringLiteral("custom_standup"),
+             QStringLiteral("Standup")},
+            {QDateTime(QDate(2026, 9, 23), QTime(10, 0)), 1000, 3, QStringLiteral("Slack"), QStringLiteral("custom_old")},
+        };
         const QList<WritingProfileSettings> kept{{QStringLiteral("custom_standup"), QStringLiteral("balanced"),
                                                   QStringLiteral("none"), QString(), QStringLiteral("Daily")}};
-        QCOMPARE(summarize(log.records(), InsightsRange::AllTime, kToday, kept).apps.at(0).profileName,
+        QCOMPARE(summarize(records, InsightsRange::AllTime, kToday, kept).apps.at(0).profileName,
                  QStringLiteral("Daily"));
-        const InsightsSummary deleted = summarize(log.records(), InsightsRange::AllTime, kToday);
+        const InsightsSummary deleted = summarize(records, InsightsRange::AllTime, kToday);
         QCOMPARE(deleted.apps.at(0).profileName, QStringLiteral("Standup"));
         QVERIFY(deleted.apps.at(1).profileName.isEmpty());
     }
 
-    void logSkipsACorruptLine()
+    // The apps dictated into, most recent first, each counted, kept across
+    // restarts and capped; a record with no app id adds none.
+    void seenAppsKeepTheAppsDictatedInto()
     {
         QTemporaryDir dir;
-        const QString path = dir.filePath(QStringLiteral("insights.jsonl"));
-        writeAll(path,
-                 R"({"finishedAt":"2025-10-03T09:55:00","audioMs":38000,"words":90,"app":"Slack","profile":"work"})"
-                 "\n{\"finishedAt\":\"2025-10-03T1\n"
-                 R"({"finishedAt":"2025-10-04T09:55:00","audioMs":1000,"words":3,"app":"Slack","profile":"work"})"
-                 "\n");
-        QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("insights log skipped")));
-        const InsightsLog log(path);
-        QCOMPARE(log.records().size(), 2);
-        QCOMPARE(log.records().at(1).words, 3);
-    }
-
-    void appendAfterATruncatedLineKeepsTheNewRecord()
-    {
-        QTemporaryDir dir;
-        const QString path = dir.filePath(QStringLiteral("insights.jsonl"));
-        writeAll(path,
-                 R"({"finishedAt":"2025-10-03T09:55:00","audioMs":38000,"words":90,"app":"Slack","profile":"work"})"
-                 "\n{\"finishedAt\":\"2025-10-03T1");
+        const QString path = dir.filePath(QStringLiteral("seen-apps.json"));
+        const auto into = [](const char *id, const char *name, int minute) {
+            DictationRecord record = recordOn(kToday);
+            record.finishedAt = record.finishedAt.addSecs(minute * 60);
+            record.appName = QString::fromUtf8(name);
+            record.applicationId = QString::fromUtf8(id);
+            return record;
+        };
         {
-            QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("insights log skipped")));
-            InsightsLog log(path);
-            log.append(recordOn(kToday, 7));
+            SeenApps seen(path);
+            seen.record(into("org.kde.kate", "Kate", 0));
+            seen.record(into("slack", "Slack", 1));
+            seen.record(into("org.kde.kate", "", 2));
+            seen.record(into("", "Unknown", 3));
+            QCOMPARE(seen.apps().size(), 2);
         }
-        QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("insights log skipped")));
-        const InsightsLog reloaded(path);
-        QCOMPARE(reloaded.records().size(), 2);
-        QCOMPARE(reloaded.records().at(1).words, 7);
-    }
+        SeenApps reloaded(path);
+        QCOMPARE(reloaded.apps(), (QList<SeenApp>{
+                                      {QStringLiteral("org.kde.kate"), QStringLiteral("Kate"),
+                                       QDateTime(kToday, QTime(10, 2)).toMSecsSinceEpoch(), 2},
+                                      {QStringLiteral("slack"), QStringLiteral("Slack"),
+                                       QDateTime(kToday, QTime(10, 1)).toMSecsSinceEpoch(), 1},
+                                  }));
+        for (int i = 0; i < SeenApps::capacity + 5; ++i) {
+            reloaded.record(into(qPrintable(QStringLiteral("app%1").arg(i)), "App", 10 + i));
+        }
+        QCOMPARE(reloaded.apps().size(), SeenApps::capacity);
+        QCOMPARE(reloaded.apps().first().applicationId, QStringLiteral("app104"));
 
-    void clearDeletesTheFile()
-    {
-        QTemporaryDir dir;
-        const QString path = dir.filePath(QStringLiteral("insights.jsonl"));
-        InsightsLog log(path);
-        log.append(recordOn(kToday));
-        QVERIFY(QFile::exists(path));
-        QVERIFY(log.clear());
+        QVERIFY(reloaded.clear());
         QVERIFY(!QFile::exists(path));
-        QVERIFY(log.records().isEmpty());
-    }
-
-    void clearKeepsEverythingWhenTheFileCannotBeDeleted()
-    {
-        // A non-empty directory where the log file should be: QFile::remove
-        // refuses it on every platform, unlike a read-only parent directory,
-        // which Windows ignores.
-        QTemporaryDir dir;
-        const QString path = dir.filePath(QStringLiteral("insights.jsonl"));
-        InsightsLog log(path);
-        log.append(recordOn(kToday));
-        QVERIFY(QFile::remove(path));
-        QVERIFY(QDir(dir.path()).mkpath(QStringLiteral("insights.jsonl/keep")));
-        QSignalSpy changed(&log, &InsightsLog::changed);
-        QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("could not be deleted")));
-        QVERIFY(!log.clear());
-        QVERIFY(QFileInfo(path).isDir());
-        QCOMPARE(log.records().size(), 1);
-        QCOMPARE(changed.count(), 0);
-    }
-
-    void readOnlyLogNeverTouchesItsFile()
-    {
-        QTemporaryDir dir;
-        const QString path = dir.filePath(QStringLiteral("seed.jsonl"));
-        const QByteArray seed =
-            R"({"finishedAt":"2025-10-03T09:55:00","audioMs":38000,"words":90,"app":"Slack","profile":"work"})"
-            "\n";
-        writeAll(path, seed);
-        InsightsLog log(path, InsightsLog::Access::ReadOnly);
-        log.append(recordOn(kToday));
-        QCOMPARE(log.records().size(), 2);
-        QCOMPARE(readAll(path), seed);
-        QVERIFY(log.clear());
-        QVERIFY(log.records().isEmpty());
-        QCOMPARE(readAll(path), seed);
+        QVERIFY(reloaded.apps().isEmpty());
     }
 
     void activeSeedLoads()
     {
         const QString seed = QFINDTESTDATA("data/insights/seed-active.jsonl");
         QVERIFY(!seed.isEmpty());
-        QCOMPARE(InsightsLog(seed, InsightsLog::Access::ReadOnly).records().size(), 2015);
+        QCOMPARE(readInsightsLog(seed).value_or(QList<HistoryEntry>()).size(), 2015);
     }
 
     void bookComparisonNamesTheClosestWork_data()

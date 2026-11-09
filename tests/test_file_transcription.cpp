@@ -11,6 +11,7 @@
 #include "dictation/DictationSession.h"
 #include "providers/EndpointSpeechTranscriber.h"
 #include "providers/SpeechChain.h"
+#include "recording/RecordingAudio.h"
 #include "recording/RecordingPresentation.h"
 #include "recording/RecordingSession.h"
 #include "recording/SystemAudioPresentation.h"
@@ -19,6 +20,7 @@
 #include "transcribe/TranscribePresentation.h"
 #include "transcribe/TranscribeQueue.h"
 
+#include <QAudioBuffer>
 #include <QAudioDecoder>
 #include <QDir>
 #include <QDirIterator>
@@ -478,9 +480,9 @@ private slots:
         SettingsStore settings;
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
-        TranscribeOptions options = speechOnly();
-        options.refinementProviderId = QStringLiteral("openai");
-        options.cleanupStrength = QStringLiteral("strong_polish");
+        RunOverrides options = speechOnly();
+        options.refinement = ServiceChoice{QStringLiteral("openai")};
+        options.cleanupLevel = QStringLiteral("strong_polish");
         options.tone = QStringLiteral("formal");
 
         QVERIFY(session.start({audio}, options));
@@ -525,9 +527,9 @@ private slots:
         connect(&session, &FileTranscriptionSession::fileRefining, this, [&] { seen << QStringLiteral("refining"); });
         connect(&session, &FileTranscriptionSession::fileFinished, this, [&] { seen << QStringLiteral("finished"); });
         connect(&session, &FileTranscriptionSession::batchFinished, this, [&] { seen << QStringLiteral("batch"); });
-        TranscribeOptions options = speechOnly();
-        options.refinementProviderId = QStringLiteral("openai");
-        options.cleanupStrength = QStringLiteral("strong_polish");
+        RunOverrides options = speechOnly();
+        options.refinement = ServiceChoice{QStringLiteral("openai")};
+        options.cleanupLevel = QStringLiteral("strong_polish");
 
         QVERIFY(session.start({audio}, options));
         QTRY_COMPARE_WITH_TIMEOUT(seen.size(), 6, 10000);
@@ -666,14 +668,14 @@ private slots:
         writeWav(audio);
         SettingsStore settings;
         settings.edit([](AppSettings &draft) {
-            draft.refinement.fallbackProviderIds = {QStringLiteral("local")};
+            draft.refinement.services.order = {draft.refinement.services.main(), QStringLiteral("local")};
             return true;
         });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
-        TranscribeOptions options = speechOnly();
-        options.refinementProviderId = QStringLiteral("openai");
-        options.cleanupStrength = QStringLiteral("balanced");
+        RunOverrides options = speechOnly();
+        options.refinement = ServiceChoice{QStringLiteral("openai")};
+        options.cleanupLevel = QStringLiteral("balanced");
 
         QVERIFY(session.start({audio}, options));
         QTRY_COMPARE_WITH_TIMEOUT(primary ? primary->refineCalls : 0, 1, 10000);
@@ -707,14 +709,14 @@ private slots:
         writeWav(audio);
         SettingsStore settings;
         settings.edit([](AppSettings &draft) {
-            draft.refinement.fallbackProviderIds = {QStringLiteral("local")};
+            draft.refinement.services.order = {draft.refinement.services.main(), QStringLiteral("local")};
             return true;
         });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
-        TranscribeOptions options = speechOnly();
-        options.refinementProviderId = QStringLiteral("openai");
-        options.cleanupStrength = QStringLiteral("balanced");
+        RunOverrides options = speechOnly();
+        options.refinement = ServiceChoice{QStringLiteral("openai")};
+        options.cleanupLevel = QStringLiteral("balanced");
 
         QVERIFY(session.start({audio}, options));
         QTRY_COMPARE_WITH_TIMEOUT(primary ? primary->refineCalls : 0, 1, 10000);
@@ -740,11 +742,11 @@ private slots:
         settings.applySnapshot(stored);
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
-        TranscribeOptions options = speechOnly();
-        options.refinementProviderId = QStringLiteral("openai");
-        options.cleanupStrength = QStringLiteral("none");
+        RunOverrides options = speechOnly();
+        options.refinement = ServiceChoice{QStringLiteral("openai")};
+        options.cleanupLevel = QStringLiteral("none");
         options.writingProfile = WritingProfile::Other;
-        QVERIFY(refinesTranscripts(options, settings.snapshot().refinement));
+        QVERIFY(refinesTranscripts(planDictation(settings.snapshot(), Target{}, options)));
 
         QVERIFY(session.start({audio}, options));
         QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
@@ -935,14 +937,12 @@ private slots:
         writeWav(second);
         SettingsStore settings;
         settings.edit([](AppSettings &draft) {
-            draft.speech.providerId = QStringLiteral("endpoint");
-            draft.speech.fallbackProviderIds = {QStringLiteral("codex"), QStringLiteral("claude")};
+            draft.speech.services.order = {QStringLiteral("endpoint"), QStringLiteral("codex"), QStringLiteral("claude")};
             return true;
         });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
-        TranscribeOptions options;
-        options.speechProviderId = QStringLiteral("codex");
+        RunOverrides options = speechOnly(QStringLiteral("codex"));
 
         QVERIFY(session.start({first, second}, options));
         QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
@@ -973,14 +973,12 @@ private slots:
         writeWav(audio);
         SettingsStore settings;
         settings.edit([](AppSettings &draft) {
-            draft.speech.providerId = QStringLiteral("codex");
-            draft.speech.fallbackProviderIds = {QStringLiteral("claude")};
+            draft.speech.services.order = {QStringLiteral("codex"), QStringLiteral("claude")};
             return true;
         });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
-        TranscribeOptions options;
-        options.speechProviderId = QStringLiteral("codex");
+        RunOverrides options = speechOnly(QStringLiteral("codex"));
 
         QVERIFY(session.start({audio}, options));
         QTRY_VERIFY_WITH_TIMEOUT(codex && !codex->audioChunks.isEmpty(), 10000);
@@ -1008,14 +1006,12 @@ private slots:
         writeWav(audio);
         SettingsStore settings;
         settings.edit([](AppSettings &draft) {
-            draft.speech.providerId = QStringLiteral("codex");
-            draft.speech.fallbackProviderIds = {QStringLiteral("claude")};
+            draft.speech.services.order = {QStringLiteral("codex"), QStringLiteral("claude")};
             return true;
         });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
-        TranscribeOptions options;
-        options.speechProviderId = QStringLiteral("codex");
+        RunOverrides options = speechOnly(QStringLiteral("codex"));
 
         QVERIFY(session.start({audio}, options));
         QTRY_VERIFY_WITH_TIMEOUT(codex && !codex->audioChunks.isEmpty(), 10000);
@@ -1041,14 +1037,12 @@ private slots:
         writeWav(audio);
         SettingsStore settings;
         settings.edit([](AppSettings &draft) {
-            draft.speech.providerId = QStringLiteral("codex");
-            draft.speech.fallbackProviderIds = {QStringLiteral("claude")};
+            draft.speech.services.order = {QStringLiteral("codex"), QStringLiteral("claude")};
             return true;
         });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
-        TranscribeOptions options;
-        options.speechProviderId = QStringLiteral("codex");
+        RunOverrides options = speechOnly(QStringLiteral("codex"));
 
         QVERIFY(session.start({audio}, options));
         QTRY_VERIFY_WITH_TIMEOUT(codex && !codex->audioChunks.isEmpty(), 10000);
@@ -1093,22 +1087,20 @@ private slots:
         writeWav(audio);
         SettingsStore settings;
         settings.edit([](AppSettings &draft) {
-            draft.speech.providerId = QStringLiteral("codex");
-            draft.speech.fallbackProviderIds = {QStringLiteral("claude")};
+            draft.speech.services.order = {QStringLiteral("codex"), QStringLiteral("claude")};
             return true;
         });
         if (!chosen.isEmpty()) {
             settings.edit([&](AppSettings &draft) {
-                draft.speech.fallbackLanguages = {{QStringLiteral("claude"), chosen}};
+                draft.speech.services.choice(QStringLiteral("claude")).language = chosen;
                 return true;
             });
         }
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
-        TranscribeOptions options;
-        options.speechProviderId = QStringLiteral("codex");
-        options.refinementProviderId = QStringLiteral("openai");
-        options.cleanupStrength = QStringLiteral("light_cleanup");
+        RunOverrides options = speechOnly(QStringLiteral("codex"));
+        options.refinement = ServiceChoice{QStringLiteral("openai")};
+        options.cleanupLevel = QStringLiteral("light_cleanup");
         if (!batchLanguage.isEmpty()) {
             options.spokenLanguage = batchLanguage;
         }
@@ -1162,16 +1154,14 @@ private slots:
         writeWav(audio);
         SettingsStore settings;
         settings.edit([](AppSettings &draft) {
-            draft.speech.providerId = QStringLiteral("codex");
-            draft.speech.fallbackProviderIds = {QStringLiteral("claude")};
+            draft.speech.services.order = {QStringLiteral("codex"), QStringLiteral("claude")};
             return true;
         });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
-        TranscribeOptions options;
-        options.speechProviderId = QStringLiteral("codex");
-        options.refinementProviderId = QStringLiteral("openai");
-        options.cleanupStrength = QStringLiteral("balanced");
+        RunOverrides options = speechOnly(QStringLiteral("codex"));
+        options.refinement = ServiceChoice{QStringLiteral("openai")};
+        options.cleanupLevel = QStringLiteral("balanced");
         // Read while the file's refiner still exists: it goes once the file is
         // done. A file no speech provider took never makes one.
         int refreshes = -1;
@@ -1204,9 +1194,9 @@ private slots:
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy fileFinished(&session, &FileTranscriptionSession::fileFinished);
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
-        TranscribeOptions options = speechOnly();
-        options.refinementProviderId = QStringLiteral("openai");
-        options.cleanupStrength = QStringLiteral("balanced");
+        RunOverrides options = speechOnly();
+        options.refinement = ServiceChoice{QStringLiteral("openai")};
+        options.cleanupLevel = QStringLiteral("balanced");
 
         QVERIFY(session.start({audio}, options));
         QTRY_COMPARE_WITH_TIMEOUT(refiner ? refiner->refreshRuns() : 0, 1, 10000);
@@ -1239,14 +1229,12 @@ private slots:
         writeWav(audio);
         SettingsStore settings;
         settings.edit([](AppSettings &draft) {
-            draft.speech.providerId = QStringLiteral("codex");
-            draft.speech.fallbackProviderIds = {QStringLiteral("claude")};
+            draft.speech.services.order = {QStringLiteral("codex"), QStringLiteral("claude")};
             return true;
         });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
-        TranscribeOptions options;
-        options.speechProviderId = QStringLiteral("codex");
+        RunOverrides options = speechOnly(QStringLiteral("codex"));
 
         QVERIFY(session.start({audio}, options));
         QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
@@ -1281,14 +1269,12 @@ private slots:
         writeWav(audio);
         SettingsStore settings;
         settings.edit([](AppSettings &draft) {
-            draft.speech.providerId = QStringLiteral("codex");
-            draft.speech.fallbackProviderIds = {QStringLiteral("endpoint")};
+            draft.speech.services.order = {QStringLiteral("codex"), QStringLiteral("endpoint")};
             return true;
         });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
-        TranscribeOptions options;
-        options.speechProviderId = QStringLiteral("codex");
+        RunOverrides options = speechOnly(QStringLiteral("codex"));
 
         QVERIFY(session.start({audio}, options));
         QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
@@ -1312,16 +1298,14 @@ private slots:
                                            });
         SettingsStore settings;
         settings.edit([](AppSettings &draft) {
-            draft.speech.providerId = QStringLiteral("codex");
-            draft.speech.fallbackProviderIds = {QStringLiteral("claude")};
+            draft.speech.services.order = {QStringLiteral("codex"), QStringLiteral("claude")};
             return true;
         });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
         FakeAudioInput microphone;
         microphone.onStart = [&microphone] { microphone.pushAudio(microphoneChunk(8000)); };
-        TranscribeOptions options;
-        options.speechProviderId = QStringLiteral("codex");
+        RunOverrides options = speechOnly(QStringLiteral("codex"));
 
         QVERIFY(session.startListening(&microphone, options));
         QVERIFY(microphone.active);
@@ -1361,25 +1345,26 @@ private slots:
                 stop = true;
             });
         };
+        RunOverrides run;
         HeadlessTranscribeOptions options;
-        options.speechProviderId = QStringLiteral("claude");
-        options.refinementProviderId = QStringLiteral("none");
+        run.speech = ServiceChoice{QStringLiteral("claude")};
+        run.refinement = ServiceChoice{QStringLiteral("none")};
         std::ostringstream out;
         std::ostringstream err;
 
-        QCOMPARE(runHeadlessListen(options, std::nullopt, &microphone, [&] { return stop; }, true, &settings,
+        QCOMPARE(runHeadlessListen(run, options, std::nullopt, &microphone, [&] { return stop; }, true, &settings,
                                    m_registry.get(), out, err),
                  0);
         QCOMPARE(QString::fromStdString(out.str()), QStringLiteral("heard 6400\n"));
         QVERIFY(!microphone.active);
         QVERIFY(QString::fromStdString(err.str()).contains(QStringLiteral("Press Enter or Ctrl-C to stop.")));
 
-        options.refinementProviderId = QStringLiteral("openai");
-        options.cleanupStrength = QStringLiteral("balanced");
+        run.refinement = ServiceChoice{QStringLiteral("openai")};
+        run.cleanupLevel = QStringLiteral("balanced");
         options.json = true;
         stop = false;
         out.str({});
-        QCOMPARE(runHeadlessListen(options, std::nullopt, &microphone, [&] { return stop; }, true, &settings,
+        QCOMPARE(runHeadlessListen(run, options, std::nullopt, &microphone, [&] { return stop; }, true, &settings,
                                    m_registry.get(), out, err),
                  0);
         QCOMPARE(QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object(),
@@ -1402,9 +1387,10 @@ private slots:
                 sinceSpeech.start();
             });
         };
+        RunOverrides run;
         HeadlessTranscribeOptions options;
-        options.speechProviderId = QStringLiteral("claude");
-        options.refinementProviderId = QStringLiteral("none");
+        run.speech = ServiceChoice{QStringLiteral("claude")};
+        run.refinement = ServiceChoice{QStringLiteral("none")};
         std::ostringstream out;
         std::ostringstream err;
         // A run the 0.3 s pause does not end stops here instead, which fails
@@ -1417,7 +1403,7 @@ private slots:
             return stoppedByTest;
         };
 
-        QCOMPARE(runHeadlessListen(options, 300, &microphone, stop, false, &settings, m_registry.get(), out, err), 0);
+        QCOMPARE(runHeadlessListen(run, options, 300, &microphone, stop, false, &settings, m_registry.get(), out, err), 0);
         QVERIFY(!stoppedByTest);
         QCOMPARE(QString::fromStdString(out.str()), QStringLiteral("heard 19200\n"));
         // Enter is not read here, so the hint leaves it out.
@@ -1430,15 +1416,16 @@ private slots:
         FakeAudioInput microphone;
         microphone.startResult = false;
         microphone.startError = QStringLiteral("No microphone was found.");
+        RunOverrides overrides;
         HeadlessTranscribeOptions options;
-        options.speechProviderId = QStringLiteral("claude");
-        options.refinementProviderId = QStringLiteral("none");
+        overrides.speech = ServiceChoice{QStringLiteral("claude")};
+        overrides.refinement = ServiceChoice{QStringLiteral("none")};
         options.json = true;
         std::ostringstream out;
         std::ostringstream err;
         const auto run = [&] {
-            return runHeadlessListen(options, std::nullopt, &microphone, [] { return true; }, false, &settings,
-                                     m_registry.get(), out, err);
+            return runHeadlessListen(overrides, options, std::nullopt, &microphone, [] { return true; }, false,
+                                     &settings, m_registry.get(), out, err);
         };
 
         QCOMPARE(run(), 1);
@@ -1450,7 +1437,7 @@ private slots:
 
         // Refused microphone access, which macOS asks about, fails the same way.
         out.str({});
-        QCOMPARE(runHeadlessListen(options, std::nullopt, nullptr, [] { return true; }, false, &settings,
+        QCOMPARE(runHeadlessListen(overrides, options, std::nullopt, nullptr, [] { return true; }, false, &settings,
                                    m_registry.get(), out, err),
                  1);
         const QJsonObject refused = QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object();
@@ -1459,7 +1446,7 @@ private slots:
             QStringLiteral("Microphone access is off")));
 
         microphone.startResult = true;
-        options.speechProviderId = QStringLiteral("nope");
+        overrides.speech = ServiceChoice{QStringLiteral("nope")};
         out.str({});
         QCOMPARE(run(), 2);
         QVERIFY(!microphone.started);
@@ -1471,8 +1458,14 @@ private slots:
     // that exists is never written to, the next free name is.
     void aRecordingTranscriptAppendsTimedLinesBesideExistingFiles()
     {
-        QCOMPARE(defaultRecordingPath(QStringLiteral("/data"), QDateTime(QDate(2026, 10, 7), QTime(9, 5))),
-                 QStringLiteral("/data/recordings/2026-10-07-0905.md"));
+        const QDateTime startedAt(QDate(2026, 10, 7), QTime(9, 5));
+        QCOMPARE(recordingPath(QStringLiteral("/calls"), {}, RecordingFormat::Markdown, startedAt),
+                 QStringLiteral("/calls/2026-10-07-0905.md"));
+        QCOMPARE(recordingPath(QStringLiteral("/calls"), QStringLiteral(" Weekly sync: Q3/Q4! "), RecordingFormat::PlainText,
+                               startedAt),
+                 QStringLiteral("/calls/weekly-sync-q3-q4-2026-10-07-0905.txt"));
+        QCOMPARE(recordingPath(QStringLiteral("/calls"), QStringLiteral("Café über"), RecordingFormat::Markdown, startedAt),
+                 QStringLiteral("/calls/café-über-2026-10-07-0905.md"));
         const QString path = m_dir.filePath(QStringLiteral("calls/call.md"));
         RecordingTranscript first;
         QString error;
@@ -1502,7 +1495,7 @@ private slots:
         const auto restore = qScopeGuard([] { SpeechAttemptPolicy::setStableAttemptMs(10000); });
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         QPointer<FakeAudioInput> microphone;
         bool microphoneStopped = false;
         RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
@@ -1546,6 +1539,158 @@ private slots:
                                                    QStringLiteral("Bye.")}));
     }
 
+    // Without --to, a recording is named by its name and when it started, in
+    // the folder and format the settings choose, and says so as it starts and
+    // as each line goes in.
+    void aRecordingNamesItsFileAndReportsItsLines()
+    {
+        registerStreamingCodex();
+        SettingsStore settings;
+        const QString folder = m_dir.filePath(QStringLiteral("calls"));
+        settings.edit([&folder](AppSettings &draft) {
+            draft.speech.services.order = {QStringLiteral("codex")};
+            draft.recording.folder = folder;
+            draft.recording.format = RecordingFormat::PlainText;
+            return true;
+        });
+        RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
+            return new FakeAudioInput(parent);
+        });
+        QSignalSpy started(&recording, &RecordingSession::started);
+        QSignalSpy lines(&recording, &RecordingSession::lineWritten);
+        std::optional<QString> outcome;
+        recording.start({{}, QStringLiteral("Weekly sync")}, [&outcome](const QString &error) { outcome = error; });
+        QTRY_VERIFY_WITH_TIMEOUT(outcome.has_value(), 10000);
+        QCOMPARE(*outcome, QString());
+        const QString path = recording.status().path;
+        QVERIFY2(path.startsWith(folder + QStringLiteral("/weekly-sync-")) && path.endsWith(QStringLiteral(".txt")),
+                 qPrintable(path));
+        QCOMPARE(recording.status().title, QStringLiteral("Weekly sync"));
+        QCOMPARE(started.size(), 1);
+        QCOMPARE(started.first(), (QVariantList{path, QStringLiteral("Weekly sync")}));
+
+        m_codex->emitFinalText(QStringLiteral("  Can you\nhear me?  "));
+        QCOMPARE(lines.size(), 1);
+        QCOMPARE(lines.first().at(1).toString(), QStringLiteral("me"));
+        QCOMPARE(lines.first().at(2).toString(), QStringLiteral("Can you hear me?"));
+        QCOMPARE(recordedTexts(path), QStringList{QStringLiteral("Can you hear me?")});
+    }
+
+    // Once neither side has spoken for Stop after silence, the recording
+    // stops itself; speech puts that off.
+    void aRecordingStopsAfterSilence()
+    {
+        RecordingSession::setAutoStopMinuteMs(400);
+        const auto restore = qScopeGuard([] { RecordingSession::setAutoStopMinuteMs(60000); });
+        registerStreamingCodex();
+        SettingsStore settings;
+        settings.edit([](AppSettings &draft) {
+            draft.speech.services.order = {QStringLiteral("codex")};
+            draft.recording.autoStopMinutes = 1;
+            return true;
+        });
+        QPointer<FakeAudioInput> microphone;
+        RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
+            microphone = new FakeAudioInput(parent);
+            return microphone.data();
+        });
+        QSignalSpy stopped(&recording, &RecordingSession::stopped);
+        QString error;
+        QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
+        for (int i = 0; i < 6; ++i) {
+            QTest::qWait(150);
+            microphone->pushAudio(microphoneChunk(8000));
+        }
+        QVERIFY(recording.isRecording());
+        QCOMPARE(stopped.count(), 0);
+        QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 5000);
+        QCOMPARE(recordingEnd(stopped.first().first().value<RecordingStatus>()).reason, RecordingEnd::Reason::Silence);
+    }
+
+    // Each side's chunks land where they ended on the recording's clock: a
+    // gap is silence, a chunk that arrives a little late closes up, and a
+    // side that falls far behind is filled with silence so the other's audio
+    // still goes out.
+    void aRecordingsAudioLaysBothSidesOnOneClock()
+    {
+        const auto samples = [](int count, qint16 value) {
+            QByteArray pcm(count * 2, Qt::Uninitialized);
+            for (int i = 0; i < count; ++i) {
+                qToLittleEndian(value, pcm.data() + 2 * i);
+            }
+            return pcm;
+        };
+        const auto frame = [](const QByteArray &stereo, qint64 ms) {
+            const char *at = stereo.constData() + ms * 16 * 4;
+            return std::pair{qFromLittleEndian<qint16>(at), qFromLittleEndian<qint16>(at + 2)};
+        };
+        StereoTimeline timeline;
+        timeline.place(0, 100, samples(1600, 1));
+        QVERIFY(timeline.take().isEmpty());
+        timeline.place(1, 400, samples(1600, 2));
+        timeline.place(0, 400, samples(4800, 3));
+        // 50 ms late: no gap.
+        timeline.place(0, 550, samples(1600, 4));
+        const QByteArray placed = timeline.take();
+        QCOMPARE(placed.size(), 400 * 16 * 4);
+        QCOMPARE(frame(placed, 50), std::pair(qint16(1), qint16(0)));
+        QCOMPARE(frame(placed, 200), std::pair(qint16(3), qint16(0)));
+        QCOMPARE(frame(placed, 350), std::pair(qint16(3), qint16(2)));
+
+        timeline.place(0, 3500, samples(16 * 3000, 5));
+        QCOMPARE(timeline.take().size(), (3500 - 2000 - 400) * 16 * 4);
+        const QByteArray rest = timeline.takeAll();
+        QCOMPARE(rest.size(), 2000 * 16 * 4);
+        QCOMPARE(frame(rest, 1999), std::pair(qint16(5), qint16(0)));
+
+        // The file holds both sides, as long as the longer.
+        RecordingAudio audio(m_dir.filePath(QStringLiteral("call.md")));
+        for (int chunk = 1; chunk <= 10; ++chunk) {
+            audio.hear(0, chunk * 100, samples(1600, 8000));
+        }
+        audio.hear(1, 1000, samples(1600, 8000));
+        QSignalSpy finished(&audio, &RecordingAudio::finished);
+        audio.finish();
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+        const QString path = finished.first().first().toString();
+        QCOMPARE(finished.first().last().toString(), QString());
+        QVERIFY(path.startsWith(m_dir.filePath(QStringLiteral("call."))));
+        QVERIFY(QFile::exists(path));
+        QAudioDecoder decoder;
+        decoder.setSource(QUrl::fromLocalFile(path));
+        qint64 decodedUs = 0;
+        int channels = 0;
+        connect(&decoder, &QAudioDecoder::bufferReady, &decoder, [&] {
+            const QAudioBuffer buffer = decoder.read();
+            decodedUs += buffer.duration();
+            channels = buffer.format().channelCount();
+        });
+        bool done = false;
+        connect(&decoder, &QAudioDecoder::finished, &decoder, [&done] { done = true; });
+        connect(&decoder, qOverload<QAudioDecoder::Error>(&QAudioDecoder::error), &decoder, [&done] { done = true; });
+        decoder.start();
+        QTRY_VERIFY_WITH_TIMEOUT(done, 10000);
+        QCOMPARE(channels, 2);
+        QVERIFY2(std::abs(decodedUs / 1000 - 1000) < 150, qPrintable(QStringLiteral("decoded %1 ms").arg(decodedUs / 1000)));
+    }
+
+    // Audio that can't take its name says so, rather than a path with no
+    // file there.
+    void aRecordingsAudioSaysWhyItWasntSaved()
+    {
+        for (const QString &taken : {QStringLiteral("taken.m4a"), QStringLiteral("taken.wav")}) {
+            QFile file(m_dir.filePath(taken));
+            QVERIFY(file.open(QIODevice::WriteOnly));
+        }
+        RecordingAudio audio(m_dir.filePath(QStringLiteral("taken.md")));
+        audio.hear(0, 1000, QByteArray(32000, '\1'));
+        QSignalSpy finished(&audio, &RecordingAudio::finished);
+        audio.finish();
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+        QCOMPARE(finished.first().first().toString(), QString());
+        QVERIFY(!finished.first().last().toString().isEmpty());
+    }
+
     // record start --vocab-file's terms reach the speech provider ahead of the
     // saved ones, for this recording only.
     void aRecordingAddsItsTermsToTheVocabulary()
@@ -1553,7 +1698,7 @@ private slots:
         registerStreamingCodex();
         SettingsStore settings;
         settings.edit([](AppSettings &draft) {
-            draft.speech.providerId = QStringLiteral("codex");
+            draft.speech.services.order = {QStringLiteral("codex")};
             draft.vocabulary = {{QStringLiteral("Speecher")}};
             return true;
         });
@@ -1569,35 +1714,35 @@ private slots:
         QCOMPARE(settings.dictationSnapshot().vocabulary, saved);
     }
 
-    // The Other profile's speech model applies where that profile keeps the
-    // recording's provider, as in a Transcribe batch.
-    void aRecordingUsesTheOtherProfilesModel()
+    // A Local Model records as any service does that sends each utterance's
+    // text as it ends.
+    void aRecordingTakesALocalModel()
     {
+        int localStarts = 0;
         QPointer<FakeSpeechTranscriber> local;
         m_registry->registerSpeechProvider({QStringLiteral("local"), QStringLiteral("Local Model")},
-                                           [&local](QObject *parent) {
+                                           [&local, &localStarts](QObject *parent) {
                                                local = new FakeSpeechTranscriber(parent);
                                                local->streamsFinals = true;
-                                               local->onStartAttempt = [&local] { local->emitConnected(); };
+                                               local->onStartAttempt = [&local, &localStarts] {
+                                                   ++localStarts;
+                                                   local->emitConnected();
+                                               };
                                                return local.data();
                                            });
+        registerStreamingCodex();
         SettingsStore settings;
-        AppSettings draft = settings.snapshot();
-        draft.speech.providerId = QStringLiteral("local");
-        for (WritingProfileSettings &profile : draft.refinement.writingProfiles) {
-            if (profile.profile == WritingProfile::Other) {
-                profile.speechProvider = QStringLiteral("local");
-                profile.speechModel = QStringLiteral("moonshine-small");
-            }
-        }
-        settings.applySnapshot(draft);
+        settings.edit([](AppSettings &draft) {
+            draft.speech.services.order = {QStringLiteral("local"), QStringLiteral("codex")};
+            return true;
+        });
         RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
             return new FakeAudioInput(parent);
         });
         QString error;
         QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
-        QCOMPARE(local->startCalls, 1);
-        QCOMPARE(local->lastLocalModel, QStringLiteral("moonshine-small"));
+        QCOMPARE(localStarts, 1);
+        QCOMPARE(m_codex->startCalls, 0);
     }
 
     // A provider that finalizes only when asked, as Codex does, still writes
@@ -1607,7 +1752,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         QPointer<FakeAudioInput> microphone;
         RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
             microphone = new FakeAudioInput(parent);
@@ -1642,7 +1787,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         QPointer<FakeAudioInput> microphone;
         RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
             microphone = new FakeAudioInput(parent);
@@ -1676,7 +1821,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         QPointer<FakeAudioInput> microphone;
         RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
             microphone = new FakeAudioInput(parent);
@@ -1740,6 +1885,10 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 3000);
         QCOMPARE(recordedTexts(path), QStringList({QStringLiteral("Can you look at the retry logic?"),
                                                    QStringLiteral("It drops the last chunk.")}));
+        // The stream recovered, but what it missed stays missed.
+        const RecordingEnd end = recordingEnd(stopped.first().first().value<RecordingStatus>());
+        QCOMPARE(end.missedUtterances, 1);
+        QVERIFY(end.missedSpeech());
         QCOMPARE(server.requests.size(), 3);
         QVERIFY(server.requests.at(2).contains("Can you look at the retry logic?\r\n"));
     }
@@ -1854,7 +2003,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
             return new FakeAudioInput(parent);
         });
@@ -1920,7 +2069,7 @@ private slots:
     void aRecordingRefusesWhatCannotRecordAndReportsAStoppedStream()
     {
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("claude"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("claude")}; return true; });
         bool microphoneStarts = true;
         RecordingSession recording(&settings, m_registry.get(), [&microphoneStarts](QObject *parent) {
             auto *microphone = new FakeAudioInput(parent);
@@ -1932,12 +2081,11 @@ private slots:
         QString error;
         const QString refused = m_dir.filePath(QStringLiteral("refused.md"));
         QVERIFY(startRecording(recording, refused, &error).isEmpty());
-        QCOMPARE(error, QStringLiteral("Recording needs Claude, ChatGPT or the Custom Endpoint. Scripted "
-                                       "can't record yet."));
+        QCOMPARE(error, recordingNoServiceText());
         QVERIFY(!QFileInfo::exists(refused));
 
         registerStreamingCodex();
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         microphoneStarts = false;
         const QString deaf = m_dir.filePath(QStringLiteral("deaf.md"));
         QVERIFY(startRecording(recording, deaf, &error).isEmpty());
@@ -1964,6 +2112,10 @@ private slots:
         QCOMPARE(stopped.count(), 1);
         QVERIFY(!recording.isRecording());
         QCOMPARE(stopped.first().first().value<RecordingStatus>().streams.first().problem, QStringLiteral("Unsupported audio"));
+        const QList<RecordingEnd::StreamStop> stops = recordingEnd(stopped.first().first().value<RecordingStatus>()).streamStops;
+        QCOMPARE(stops.size(), 1);
+        QCOMPARE(stops.first().speaker, QStringLiteral("me"));
+        QCOMPARE(stops.first().problem, QStringLiteral("Unsupported audio"));
         QCOMPARE(recordedTexts(path), QStringList({QStringLiteral("Said before."), QStringLiteral("And then")}));
     }
 
@@ -1974,13 +2126,13 @@ private slots:
     {
         registerStreamingCodex(false);
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
             return new FakeAudioInput(parent);
         });
         const QString path = m_dir.filePath(QStringLiteral("never.md"));
         std::optional<QString> outcome;
-        recording.start(path, {}, m_dir.path(), false, [&outcome](const QString &error) { outcome = error; });
+        recording.start({path}, [&outcome](const QString &error) { outcome = error; });
         QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
         QVERIFY(QFileInfo::exists(path));
         QVERIFY(!outcome);
@@ -1993,6 +2145,38 @@ private slots:
         QVERIFY(!recording.isRecording());
     }
 
+    // Stop while it connects cancels the start: its done hears so once, the
+    // provider is let go and no file is left.
+    void aRecordingCanBeCancelledWhileItConnects()
+    {
+        registerStreamingCodex(false);
+        SettingsStore settings;
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
+        QPointer<FakeAudioInput> microphone;
+        RecordingSession recording(&settings, m_registry.get(), [&microphone](QObject *parent) {
+            microphone = new FakeAudioInput(parent);
+            return microphone.data();
+        });
+        const QString path = m_dir.filePath(QStringLiteral("cancelled.md"));
+        QStringList outcomes;
+        recording.start({path}, [&outcomes](const QString &error) { outcomes << error; });
+        QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
+        int cancels = 0;
+        m_codex->onCancelAttempt = [&cancels](quint64) { ++cancels; };
+        QCOMPARE(recording.phase(), RecordingSession::Phase::Starting);
+
+        recording.stop();
+        QCOMPARE(outcomes, QStringList{recordingCancelledText()});
+        QCOMPARE(recording.phase(), RecordingSession::Phase::Off);
+        QCOMPARE(cancels, 1);
+        QVERIFY(!microphone || !microphone->active);
+        QVERIFY(!QFileInfo::exists(path));
+        if (m_codex) {
+            m_codex->emitConnected();
+        }
+        QCOMPARE(outcomes.size(), 1);
+    }
+
     // A stream that drops keeps reconnecting, after growing pauses, for as
     // long as the microphone runs, even through failed connects. status says
     // it is reconnecting, the partial it left is written, and the words
@@ -2001,7 +2185,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         QPointer<FakeAudioInput> microphone;
         RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
             microphone = new FakeAudioInput(parent);
@@ -2048,7 +2232,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
             return new FakeAudioInput(parent);
         });
@@ -2097,7 +2281,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         QPointer<FakeAudioInput> microphone;
         QPointer<FakeAudioInput> systemAudio;
         RecordingSession recording(
@@ -2144,7 +2328,7 @@ private slots:
         const auto restore = qScopeGuard([] { SpeechAttemptPolicy::setStableAttemptMs(10000); });
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
             return new FakeAudioInput(parent);
         });
@@ -2198,9 +2382,9 @@ private slots:
         QSignalSpy ready(&chain, &SpeechChain::ready);
         QSignalSpy renewed(&chain, &SpeechChain::signInRenewed);
         AppSettings settings;
-        settings.speech.providerId = QStringLiteral("claude");
+        settings.speech.services.order = {QStringLiteral("claude")};
 
-        chain.begin(settings.speech.providerId, {});
+        chain.begin(settings.speech.services.order);
         chain.renewSignIn(&transcriber, settings.speech, settings.accounts);
         chain.prepare(settings);
 
@@ -2214,7 +2398,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
             return new FakeAudioInput(parent);
         });
@@ -2249,8 +2433,7 @@ private slots:
                                            });
         SettingsStore settings;
         settings.edit([](AppSettings &draft) {
-            draft.speech.providerId = QStringLiteral("codex");
-            draft.speech.fallbackProviderIds = {QStringLiteral("claude")};
+            draft.speech.services.order = {QStringLiteral("codex"), QStringLiteral("claude")};
             return true;
         });
         QPointer<FakeAudioInput> microphone;
@@ -2259,7 +2442,7 @@ private slots:
             return microphone.data();
         });
         std::optional<QString> outcome;
-        recording.start(QString(), {}, m_dir.path(), false, [&outcome](const QString &error) { outcome = error; });
+        recording.start({m_dir.filePath(QStringLiteral("recordings/call.md"))}, [&outcome](const QString &error) { outcome = error; });
         QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
         // Two utterances go to Codex while it connects, each ended by the
         // pause after it before the next starts.
@@ -2294,8 +2477,7 @@ private slots:
                                            });
         SettingsStore settings;
         settings.edit([](AppSettings &draft) {
-            draft.speech.providerId = QStringLiteral("codex");
-            draft.speech.fallbackProviderIds = {QStringLiteral("claude")};
+            draft.speech.services.order = {QStringLiteral("codex"), QStringLiteral("claude")};
             return true;
         });
         QPointer<FakeAudioInput> microphone;
@@ -2303,7 +2485,7 @@ private slots:
             microphone = new FakeAudioInput(parent);
             return microphone.data();
         });
-        recording.start(QString(), {}, m_dir.path(), false, [](const QString &) {});
+        recording.start({m_dir.filePath(QStringLiteral("recordings/call.md"))}, [](const QString &) {});
         QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
         // 2 seconds, then 10 minutes, before Codex connects.
         microphone->pushAudio(QByteArray(2 * 32000, '\1'));
@@ -2325,7 +2507,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         QPointer<FakeAudioInput> microphone;
         RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
             microphone = new FakeAudioInput(parent);
@@ -2360,7 +2542,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         QPointer<FakeAudioInput> microphone;
         RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
             microphone = new FakeAudioInput(parent);
@@ -2395,7 +2577,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         QPointer<FakeAudioInput> microphone;
         QPointer<FakeAudioInput> systemAudio;
         RecordingSession recording(
@@ -2435,7 +2617,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         int systemAudioInputs = 0;
         QPointer<FakeAudioInput> microphone;
         EchoCancellerLog log;
@@ -2471,7 +2653,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         QPointer<FakeAudioInput> microphone;
         QPointer<FakeAudioInput> systemAudio;
         RecordingSession recording(
@@ -2525,7 +2707,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
             auto *microphone = new FakeAudioInput(parent);
             microphone->onStart = [microphone] {
@@ -2546,7 +2728,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         QPointer<FakeAudioInput> microphone;
         EchoCancellerLog log;
         RecordingSession recording(
@@ -2578,7 +2760,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         QPointer<FakeAudioInput> microphone;
         QPointer<FakeAudioInput> systemAudio;
         EchoCancellerLog log;
@@ -2626,7 +2808,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         bool systemAudioStarts = false;
         RecordingSession recording(
             &settings, m_registry.get(), [](QObject *parent) { return new FakeAudioInput(parent); },
@@ -2669,7 +2851,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         QPointer<FakeAudioInput> microphone;
         EchoCancellerLog log;
         RecordingSession recording(
@@ -2737,7 +2919,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         QPointer<FakeAudioInput> systemAudio;
         RecordingSession recording(
             &settings, m_registry.get(), [](QObject *parent) { return new FakeAudioInput(parent); },
@@ -2765,7 +2947,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         QPointer<FakeAudioInput> microphone;
         QPointer<FakeAudioInput> systemAudio;
         EchoCancellerLog log;
@@ -2813,7 +2995,7 @@ private slots:
     {
         registerStreamingCodex(false);
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         QPointer<FakeAudioInput> systemAudio;
         EchoCancellerLog log;
         RecordingSession recording(
@@ -2822,7 +3004,7 @@ private slots:
             [&](QString *) { return std::make_unique<FakeEchoCanceller>(&log); });
         QSignalSpy stopped(&recording, &RecordingSession::stopped);
         std::optional<QString> outcome;
-        recording.start(QString(), {}, m_dir.path(), false, [&outcome](const QString &error) { outcome = error; });
+        recording.start({m_dir.filePath(QStringLiteral("recordings/call.md"))}, [&outcome](const QString &error) { outcome = error; });
         QTRY_COMPARE_WITH_TIMEOUT(streamingCodexes().size(), 2, 10000);
         streamingCodexes().at(0)->emitConnected();
         streamingCodexes().at(1)->emitFailure(QStringLiteral("Too many sessions"), false, SpeechPhase::Connect,
@@ -2851,12 +3033,12 @@ private slots:
     {
         registerStreamingCodex(false);
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         RecordingSession recording(
             &settings, m_registry.get(), [](QObject *parent) { return new FakeAudioInput(parent); },
             [](QObject *parent) { return new FakeAudioInput(parent); });
         std::optional<QString> outcome;
-        recording.start(QString(), {}, m_dir.path(), false, [&outcome](const QString &error) { outcome = error; });
+        recording.start({m_dir.filePath(QStringLiteral("recordings/call.md"))}, [&outcome](const QString &error) { outcome = error; });
         QTRY_COMPARE_WITH_TIMEOUT(streamingCodexes().size(), 2, 10000);
         streamingCodexes().at(0)->emitConnected();
         recording.setDictating(true);
@@ -2874,7 +3056,7 @@ private slots:
     {
         registerStreamingCodex(false);
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         RecordingSession recording(
             &settings, m_registry.get(), [](QObject *parent) { return new FakeAudioInput(parent); },
             [](QObject *parent) { return new FakeAudioInput(parent); });
@@ -2883,7 +3065,7 @@ private slots:
         const auto startAndConnect = [&](const QString &path) {
             const qsizetype streams = streamingCodexes().size();
             std::optional<QString> outcome;
-            recording.start(path, {}, m_dir.path(), false, [&outcome](const QString &error) { outcome = error; });
+            recording.start({path}, [&outcome](const QString &error) { outcome = error; });
             QTRY_COMPARE_WITH_TIMEOUT(streamingCodexes().size(), streams + 2, 10000);
             streamingCodexes().at(streams)->emitConnected();
             streamingCodexes().at(streams + 1)->emitConnected();
@@ -2919,7 +3101,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         RecordingSession recording(
             &settings, m_registry.get(), [](QObject *parent) { return new FakeAudioInput(parent); },
             [](QObject *parent) { return new FakeAudioInput(parent); });
@@ -2951,7 +3133,7 @@ private slots:
     {
         registerStreamingCodex();
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         RecordingSession recording(
             &settings, m_registry.get(), [](QObject *parent) { return new FakeAudioInput(parent); },
             [](QObject *parent) { return new FakeAudioInput(parent); });
@@ -2977,13 +3159,13 @@ private slots:
     {
         registerStreamingCodex(false);
         SettingsStore settings;
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("codex"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("codex")}; return true; });
         RecordingSession recording(
             &settings, m_registry.get(), [](QObject *parent) { return new FakeAudioInput(parent); },
             [](QObject *parent) { return new FakeAudioInput(parent); });
         const QString path = m_dir.filePath(QStringLiteral("never.md"));
         std::optional<QString> outcome;
-        recording.start(path, {}, m_dir.path(), false, [&outcome](const QString &error) { outcome = error; });
+        recording.start({path}, [&outcome](const QString &error) { outcome = error; });
         QTRY_COMPARE_WITH_TIMEOUT(streamingCodexes().size(), 2, 10000);
         int themCancels = 0;
         streamingCodexes().at(1)->onCancelAttempt = [&themCancels](quint64) { ++themCancels; };
@@ -3010,11 +3192,12 @@ private slots:
         SettingsStore settings;
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
-        TranscribeOptions options = speechOnly();
-        options.destination = TranscriptDestination::Folder;
-        options.folder = folder;
+        RunOverrides options = speechOnly();
+        TranscribeOptions saving;
+        saving.destination = TranscriptDestination::Folder;
+        saving.folder = folder;
 
-        QVERIFY(session.start({audio}, options));
+        QVERIFY(session.start({audio}, options, saving));
         QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
 
         const auto results = finished.first().first().value<QList<TranscribeFileResult>>();
@@ -3158,15 +3341,14 @@ private slots:
                                            });
         SettingsStore settings;
         settings.edit([](AppSettings &draft) {
-            draft.speech.providerId = QStringLiteral("codex");
-            draft.speech.fallbackProviderIds.clear();
+            draft.speech.services.order = {QStringLiteral("codex")};
+            draft.speech.services.order.mid(1).clear();
             return true;
         });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
         FakeAudioInput microphone;
-        TranscribeOptions options;
-        options.speechProviderId = QStringLiteral("codex");
+        RunOverrides options = speechOnly(QStringLiteral("codex"));
         // Outside the session, which lets go of its own connections first.
         QObject::connect(&microphone, &AudioInput::levelChanged, &microphone, [&](float level) {
             if (level == 0.0f && session.isRunning()) {
@@ -3271,7 +3453,7 @@ private slots:
         QVERIFY(!settings.snapshot().speech.vocabulary.isEmpty());
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
-        TranscribeOptions options = speechOnly();
+        RunOverrides options = speechOnly();
         options.applyVocabulary = false;
 
         QVERIFY(session.start({audio}, options));
@@ -3292,9 +3474,9 @@ private slots:
         const QList<VocabularyEntry> saved = settings.dictationSnapshot().vocabulary;
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
-        TranscribeOptions options = speechOnly();
-        options.refinementProviderId = QStringLiteral("openai");
-        options.cleanupStrength = QStringLiteral("balanced");
+        RunOverrides options = speechOnly();
+        options.refinement = ServiceChoice{QStringLiteral("openai")};
+        options.cleanupLevel = QStringLiteral("balanced");
         options.addedVocabulary = {QStringLiteral("readSharedChoice")};
 
         QVERIFY(session.start({audio}, options));
@@ -3319,9 +3501,9 @@ private slots:
         settings.edit([&](AppSettings &draft) { draft.vocabulary = {favourite}; return true; });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
-        TranscribeOptions options = speechOnly();
-        options.refinementProviderId = QStringLiteral("openai");
-        options.cleanupStrength = QStringLiteral("balanced");
+        RunOverrides options = speechOnly();
+        options.refinement = ServiceChoice{QStringLiteral("openai")};
+        options.cleanupLevel = QStringLiteral("balanced");
         for (int index = 20000; index > 0; --index) {
             options.addedVocabulary.append(QStringLiteral("term%1").arg(index));
         }
@@ -3356,7 +3538,7 @@ private slots:
         settings.edit([&](AppSettings &draft) { draft.vocabulary = {longer, shorter}; return true; });
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
-        TranscribeOptions options = speechOnly();
+        RunOverrides options = speechOnly();
         options.addedVocabulary = {words(QStringLiteral("added"), 201)};
 
         QVERIFY(session.start({audio}, options));
@@ -3380,9 +3562,9 @@ private slots:
             draft.vocabulary = {{QStringLiteral("Speecher")}, elsewhere};
             return true;
         });
-        TranscribeOptions options = speechOnly();
-        options.refinementProviderId = QStringLiteral("openai");
-        options.cleanupStrength = QStringLiteral("balanced");
+        RunOverrides options = speechOnly();
+        options.refinement = ServiceChoice{QStringLiteral("openai")};
+        options.cleanupLevel = QStringLiteral("balanced");
         options.writingProfile = WritingProfile::AiCoding;
         options.addedVocabulary = {QStringLiteral("readSharedChoice")};
 
@@ -3411,10 +3593,11 @@ private slots:
         SettingsStore settings;
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
-        TranscribeOptions options = speechOnly();
-        options.destination = TranscriptDestination::None;
+        RunOverrides options = speechOnly();
+        TranscribeOptions saving;
+        saving.destination = TranscriptDestination::None;
 
-        QVERIFY(session.start({audio}, options));
+        QVERIFY(session.start({audio}, options, saving));
         QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
 
         const auto results = finished.first().first().value<QList<TranscribeFileResult>>();
@@ -3477,16 +3660,17 @@ private slots:
         file.write("not audio at all");
         file.close();
         SettingsStore settings;
+        RunOverrides run;
         HeadlessTranscribeOptions options;
-        options.speechProviderId = QStringLiteral("claude");
-        options.refinementProviderId = QStringLiteral("openai");
-        options.cleanupStrength = QStringLiteral("balanced");
+        run.speech = ServiceChoice{QStringLiteral("claude")};
+        run.refinement = ServiceChoice{QStringLiteral("openai")};
+        run.cleanupLevel = QStringLiteral("balanced");
         options.json = true;
         std::istringstream in;
         std::ostringstream out;
         std::ostringstream err;
 
-        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), in, out, err, false), 0);
+        QCOMPARE(runHeadlessTranscribe({audio}, run, options, &settings, m_registry.get(), in, out, err, false), 0);
         QStringList lines = QString::fromStdString(out.str()).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
         QCOMPARE(lines.size(), 2);
         const QJsonObject result = QJsonDocument::fromJson(lines.at(0).toUtf8()).object();
@@ -3507,7 +3691,7 @@ private slots:
         options.raw = true;
         options.destination = TranscriptDestination::None;
         out.str({});
-        QCOMPARE(runHeadlessTranscribe({broken, audio}, options, &settings, m_registry.get(), in, out, err, false), 1);
+        QCOMPARE(runHeadlessTranscribe({broken, audio}, run, options, &settings, m_registry.get(), in, out, err, false), 1);
         const QString printed = QString::fromStdString(out.str());
         QVERIFY2(printed.startsWith(QStringLiteral("# memo.wav\n\nheard ")), qPrintable(printed));
         QVERIFY(!printed.contains(QStringLiteral("broken.wav")));
@@ -3537,12 +3721,12 @@ private slots:
         writeWav(audio);
         SettingsStore settings;
         AppSettings stored = settings.snapshot();
-        stored.refinement.providerId = QStringLiteral("openai");
-        stored.refinement.writingProfiles[1].refinementProvider = QStringLiteral("anthropic");
-        stored.refinement.writingProfiles[1].refinementModel = QStringLiteral("claude-sonnet-5-5");
+        stored.refinement.services.order = {QStringLiteral("openai")};
+        stored.refinement.writingProfiles[1].refinementFirst = ServiceChoice{QStringLiteral("anthropic"), QStringLiteral("claude-sonnet-5-5")};
         settings.applySnapshot(stored);
+        RunOverrides run;
         HeadlessTranscribeOptions options;
-        options.writingProfile = WritingProfile::Email;
+        run.writingProfile = WritingProfile::Email;
         options.destination = TranscriptDestination::None;
         options.json = true;
         std::istringstream in;
@@ -3553,22 +3737,22 @@ private slots:
             return QJsonDocument::fromJson(first.toUtf8()).object().value(QStringLiteral("text")).toString();
         };
 
-        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), in, out, err, false), 0);
+        QCOMPARE(runHeadlessTranscribe({audio}, run, options, &settings, m_registry.get(), in, out, err, false), 0);
         QCOMPARE(text(), QStringLiteral("Anthropic heard it."));
         QCOMPARE(anthropicModel, QStringLiteral("claude-sonnet-5-5"));
 
-        options.refinementProviderId = QStringLiteral("openai");
+        run.refinement = ServiceChoice{QStringLiteral("openai")};
         out.str({});
-        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), in, out, err, false), 0);
+        QCOMPARE(runHeadlessTranscribe({audio}, run, options, &settings, m_registry.get(), in, out, err, false), 0);
         QCOMPARE(text(), QStringLiteral("Heard it."));
 
         // A profile's speech service this build lacks is passed over for the
         // settings' one, not refused as an unknown --model.
         stored = settings.snapshot();
-        stored.refinement.writingProfiles[1].speechProvider = QStringLiteral("local");
+        stored.refinement.writingProfiles[1].speechFirst = ServiceChoice{QStringLiteral("local")};
         settings.applySnapshot(stored);
         out.str({});
-        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), in, out, err, false), 0);
+        QCOMPARE(runHeadlessTranscribe({audio}, run, options, &settings, m_registry.get(), in, out, err, false), 0);
         QCOMPARE(text(), QStringLiteral("Heard it."));
     }
 
@@ -3580,9 +3764,10 @@ private slots:
         const QString audio = dir.filePath(QStringLiteral("memo.wav"));
         writeWav(audio);
         SettingsStore settings;
+        RunOverrides run;
         HeadlessTranscribeOptions options;
-        options.speechProviderId = QStringLiteral("claude");
-        options.refinementProviderId = QStringLiteral("none");
+        run.speech = ServiceChoice{QStringLiteral("claude")};
+        run.refinement = ServiceChoice{QStringLiteral("none")};
         options.destination = TranscriptDestination::Folder;
         options.folder = dir.filePath(QStringLiteral("gone"));
         options.json = true;
@@ -3590,7 +3775,7 @@ private slots:
         std::ostringstream out;
         std::ostringstream err;
 
-        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), in, out, err, false), 1);
+        QCOMPARE(runHeadlessTranscribe({audio}, run, options, &settings, m_registry.get(), in, out, err, false), 1);
         QStringList lines = QString::fromStdString(out.str()).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
         QCOMPARE(lines.size(), 2);
         const QJsonObject result = QJsonDocument::fromJson(lines.at(0).toUtf8()).object();
@@ -3601,14 +3786,14 @@ private slots:
 
         out.str({});
         err.str({});
-        QCOMPARE(runHeadlessTranscribe({}, options, &settings, m_registry.get(), in, out, err, false), 2);
+        QCOMPARE(runHeadlessTranscribe({}, run, options, &settings, m_registry.get(), in, out, err, false), 2);
         QVERIFY(!err.str().empty());
         QVERIFY(QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object().value(QStringLiteral("summary")).toBool());
 
         // Files a run never reached did not succeed.
         out.str({});
-        options.speechProviderId = QStringLiteral("nonexistent");
-        QCOMPARE(runHeadlessTranscribe({audio, audio}, options, &settings, m_registry.get(), in, out, err, false), 2);
+        run.speech = ServiceChoice{QStringLiteral("nonexistent")};
+        QCOMPARE(runHeadlessTranscribe({audio, audio}, run, options, &settings, m_registry.get(), in, out, err, false), 2);
         QCOMPARE(QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object().value(QStringLiteral("succeeded")).toInt(), 0);
     }
 
@@ -3626,16 +3811,17 @@ private slots:
         SpoolRecordingInput audioInput(wav.readAll().toStdString(), spool.path());
         std::istream in(&audioInput);
         SettingsStore settings;
+        RunOverrides run;
         HeadlessTranscribeOptions options;
-        options.speechProviderId = QStringLiteral("claude");
-        options.refinementProviderId = QStringLiteral("none");
+        run.speech = ServiceChoice{QStringLiteral("claude")};
+        run.refinement = ServiceChoice{QStringLiteral("none")};
         options.destination = TranscriptDestination::Folder;
         options.folder = dir.path();
         options.json = true;
         std::ostringstream out;
         std::ostringstream err;
 
-        QCOMPARE(runHeadlessTranscribe({kStdinFile}, options, &settings, m_registry.get(), in, out, err, false), 0);
+        QCOMPARE(runHeadlessTranscribe({kStdinFile}, run, options, &settings, m_registry.get(), in, out, err, false), 0);
         const QJsonObject result =
             QJsonDocument::fromJson(QByteArray::fromStdString(out.str().substr(0, out.str().find('\n')))).object();
         QCOMPARE(result.value(QStringLiteral("file")).toString(), QStringLiteral("-"));
@@ -3651,7 +3837,7 @@ private slots:
         std::istream empty(&emptyInput);
         out.str({});
         err.str({});
-        QCOMPARE(runHeadlessTranscribe({kStdinFile}, options, &settings, m_registry.get(), empty, out, err, false), 1);
+        QCOMPARE(runHeadlessTranscribe({kStdinFile}, run, options, &settings, m_registry.get(), empty, out, err, false), 1);
         QCOMPARE(QString::fromStdString(err.str()), QStringLiteral("stdin: Reading the audio\u2026\nNo audio on stdin\n"));
         const QJsonObject summary = QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object();
         QCOMPARE(summary.value(QStringLiteral("failed")).toInt(), 1);
@@ -3683,15 +3869,16 @@ private slots:
         SpoolRecordingInput tooLong(std::string(kLimit + 100, 'a'), spool.path());
         std::istream in(&tooLong);
         SettingsStore settings;
+        RunOverrides run;
         HeadlessTranscribeOptions options;
-        options.speechProviderId = QStringLiteral("claude");
-        options.refinementProviderId = QStringLiteral("none");
+        run.speech = ServiceChoice{QStringLiteral("claude")};
+        run.refinement = ServiceChoice{QStringLiteral("none")};
         options.printTranscripts = true;
         options.destination = TranscriptDestination::None;
         std::ostringstream out;
         std::ostringstream err;
 
-        QCOMPARE(runHeadlessTranscribe({kStdinFile}, options, &settings, m_registry.get(), in, out, err, false), 1);
+        QCOMPARE(runHeadlessTranscribe({kStdinFile}, run, options, &settings, m_registry.get(), in, out, err, false), 1);
         QVERIFY2(QString::fromStdString(err.str()).contains(QStringLiteral("\nCould not read stdin: ")),
                  err.str().c_str());
         QVERIFY(out.str().empty());
@@ -3708,10 +3895,11 @@ private slots:
         const QString audio = dir.filePath(QStringLiteral("memo.wav"));
         writeWav(audio);
         SettingsStore settings;
+        RunOverrides run;
         HeadlessTranscribeOptions options;
-        options.speechProviderId = QStringLiteral("claude");
-        options.refinementProviderId = QStringLiteral("openai");
-        options.cleanupStrength = QStringLiteral("balanced");
+        run.speech = ServiceChoice{QStringLiteral("claude")};
+        run.refinement = ServiceChoice{QStringLiteral("openai")};
+        run.cleanupLevel = QStringLiteral("balanced");
         options.format = TranscriptFormat::Srt;
         options.printTranscripts = true;
         m_script.segments = {{0, 1000, QStringLiteral("heard words")}};
@@ -3719,7 +3907,7 @@ private slots:
         std::ostringstream out;
         std::ostringstream err;
 
-        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), in, out, err, false), 0);
+        QCOMPARE(runHeadlessTranscribe({audio}, run, options, &settings, m_registry.get(), in, out, err, false), 0);
         // Subtitles come from the timings, so nothing is refined.
         QVERIFY(m_refinedWith.isEmpty());
         const QString srt = QStringLiteral("1\n00:00:00,000 --> 00:00:01,000\nheard words");
@@ -3732,7 +3920,7 @@ private slots:
         options.printTranscripts = false;
         options.json = true;
         out.str({});
-        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), in, out, err, false), 0);
+        QCOMPARE(runHeadlessTranscribe({audio}, run, options, &settings, m_registry.get(), in, out, err, false), 0);
         const QJsonObject vtt = QJsonDocument::fromJson(out.str().substr(0, out.str().find('\n')).c_str()).object();
         QCOMPARE(vtt.value(QStringLiteral("saved")).toString(), dir.filePath(QStringLiteral("memo-transcribed.vtt")));
         QCOMPARE(vtt.value(QStringLiteral("text")).toString(),
@@ -3744,7 +3932,7 @@ private slots:
         options.printTranscripts = true;
         out.str({});
         err.str({});
-        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), in, out, err, false), 1);
+        QCOMPARE(runHeadlessTranscribe({audio}, run, options, &settings, m_registry.get(), in, out, err, false), 1);
         QVERIFY(out.str().empty());
         QVERIFY2(QString::fromStdString(err.str())
                      .contains(QStringLiteral("memo.wav: failed: Subtitles need timings, and Scripted returned none.")),
@@ -3914,16 +4102,14 @@ private slots:
         ControllerQueue queue(controller);
         useScriptedSpeech(controller);
         queue.addFiles({first, second});
-        queue.setOptions(queueOptions());
+        chooseSpeechOnly(queue);
 
         QVERIFY(queue.start());
         QCOMPARE(queue.step(), TranscribeQueue::Step::Transcribe);
-        TranscribeOptions changed = queueOptions();
-        changed.speechProviderId = QStringLiteral("codex");
-        queue.setOptions(changed);
+        queue.setOverrides(speechOnly(QStringLiteral("codex")));
         QTRY_COMPARE_WITH_TIMEOUT(queue.step(), TranscribeQueue::Step::Export, 10000);
 
-        QCOMPARE(queue.batchOptions().speechProviderId, QStringLiteral("claude"));
+        QCOMPARE(queue.batchOverrides().speech->service, QStringLiteral("claude"));
         QCOMPARE(queue.batchLabels().speech, QStringLiteral("Scripted"));
         QVERIFY(!queue.batchRefines());
         QCOMPARE(queue.results().size(), 2);
@@ -3943,7 +4129,7 @@ private slots:
         ControllerQueue queue(controller);
         useScriptedSpeech(controller);
         queue.addFiles({audio});
-        queue.setOptions(queueOptions());
+        chooseSpeechOnly(queue);
         QVERIFY(queue.start());
 
         QVERIFY(!queue.start());
@@ -4007,7 +4193,7 @@ private slots:
         ControllerQueue queue(controller);
         useScriptedSpeech(controller);
         queue.addFiles({first, second});
-        queue.setOptions(queueOptions());
+        chooseSpeechOnly(queue);
         connect(controller.fileTranscription(), &FileTranscriptionSession::fileStarted, &queue,
                 [&queue](int index) {
                     if (index == 1) {
@@ -4035,7 +4221,7 @@ private slots:
         ControllerQueue queue(controller);
         useScriptedSpeech(controller);
         queue.addFiles({audio});
-        queue.setOptions(queueOptions());
+        chooseSpeechOnly(queue);
         connect(controller.fileTranscription(), &FileTranscriptionSession::fileProgress, &queue,
                 [&queue] { queue.cancel(); });
 
@@ -4063,7 +4249,7 @@ private slots:
         useScriptedSpeech(controller);
         // Listed by name, as a dropped file the decoder may still read.
         queue.addFiles({broken, good});
-        queue.setOptions(queueOptions());
+        chooseSpeechOnly(queue);
         QVERIFY(queue.start());
         QTRY_COMPARE_WITH_TIMEOUT(queue.step(), TranscribeQueue::Step::Export, 10000);
         QCOMPARE(queue.fileState(0), TranscribeQueue::FileState::Failed);
@@ -4088,8 +4274,8 @@ private slots:
         QCOMPARE(queue.results().at(1).path, good);
     }
 
-    // A Writing Profile brings its services, cleanup level and tone, as for
-    // dictation; one that translates refines even when set to None.
+    // A batch's Writing Profile brings its cleanup level and tone, as for
+    // dictation; one that translates refines even at None.
     void aProfileBringsItsCleanupAndTone()
     {
         ApplicationController controller(true);
@@ -4106,66 +4292,70 @@ private slots:
         controller.settings()->applySnapshot(settings);
         ControllerQueue queue(controller);
 
-        queue.chooseProfile(WritingProfile::Work);
-        QCOMPARE(queue.options().cleanupStrength, QStringLiteral("strong_polish"));
-        QCOMPARE(queue.options().tone, QStringLiteral("formal"));
-        QCOMPARE(queue.options().speechProviderId, settings.speech.providerId);
+        RunOverrides run;
+        run.writingProfile = WritingProfile::Work;
+        queue.setOverrides(run);
+        const DictationPlan work = queue.plan(queue.overrides());
+        QCOMPARE(work.profile.cleanupStrength, QStringLiteral("strong_polish"));
+        QCOMPARE(work.profile.tone, QStringLiteral("formal"));
+        QCOMPARE(work.settings.speech.services.main(), settings.speech.services.main());
 
-        queue.chooseProfile(WritingProfile::Personal);
-        QCOMPARE(queue.options().cleanupStrength, QStringLiteral("light_cleanup"));
+        run.writingProfile = WritingProfile::Personal;
+        const DictationPlan personal = queue.plan(run);
+        QCOMPARE(personal.settings.refinement.style, QStringLiteral("light_cleanup"));
+        QVERIFY(refinesTranscripts(personal));
     }
 
     // Models chosen for a batch run it in place of the settings' own, which
-    // keep theirs, and a new profile puts them back.
+    // keep theirs.
     void aBatchsOwnModelsLeaveTheSettingsAlone()
     {
         ApplicationController controller(true);
         AppSettings settings = controller.settings()->snapshot();
-        settings.refinement.providerId = QStringLiteral("anthropic");
-        settings.refinement.anthropicModel = QStringLiteral("claude-sonnet-5-5");
+        settings.refinement.services.order = {QStringLiteral("anthropic")};
+        settings.refinement.services.choice(QStringLiteral("anthropic")).model = QStringLiteral("claude-sonnet-5-5");
         controller.settings()->applySnapshot(settings);
         settings = controller.settings()->snapshot();
         ControllerQueue queue(controller);
 
-        TranscribeOptions chosen = queue.options();
-        chosen.speechProviderId = QStringLiteral("local");
-        chosen.speechModel = QStringLiteral("whisper-small");
-        chosen.refinementProviderId = QStringLiteral("anthropic");
-        chosen.refinementModel = QStringLiteral("claude-opus-5-5");
-        queue.setOptions(chosen);
+        RunOverrides run;
+        run.speech = ServiceChoice{QStringLiteral("local"), QStringLiteral("whisper-small")};
+        run.refinement = ServiceChoice{QStringLiteral("anthropic"), QStringLiteral("claude-opus-5-5")};
+        queue.setOverrides(run);
 
-        QCOMPARE(queue.speechModel(), QStringLiteral("whisper-small"));
-        QCOMPARE(queue.refinementModel(), QStringLiteral("claude-opus-5-5"));
-        QCOMPARE(controller.settings()->snapshot().speech.local.modelId, settings.speech.local.modelId);
-        QCOMPARE(controller.settings()->snapshot().refinement.anthropicModel, QStringLiteral("claude-sonnet-5-5"));
+        const DictationPlan plan = queue.plan(queue.overrides());
+        QCOMPARE(speechModel(plan.settings.speech), QStringLiteral("whisper-small"));
+        QCOMPARE(refinementModel(QStringLiteral("anthropic"), plan.settings.refinement), QStringLiteral("claude-opus-5-5"));
+        QCOMPARE(localModelId(controller.settings()->snapshot().speech), localModelId(settings.speech));
+        QCOMPARE(controller.settings()->snapshot().refinement.services.choice(QStringLiteral("anthropic")).model, QStringLiteral("claude-sonnet-5-5"));
 
-        queue.chooseProfile(WritingProfile::Work);
-        QVERIFY(queue.options().speechModel.isEmpty());
-        QCOMPARE(queue.refinementModel(), QStringLiteral("claude-sonnet-5-5"));
+        run.refinement.reset();
+        QCOMPARE(refinementModel(QStringLiteral("anthropic"), queue.plan(run).settings.refinement),
+                 QStringLiteral("claude-sonnet-5-5"));
     }
 
-    // Choices nobody has made yet follow the settings; once one is made
-    // here, the settings no longer move them.
+    // What a batch hasn't chosen follows the settings, and what it has
+    // chosen stays.
     void untouchedChoicesFollowTheSettings()
     {
         ApplicationController controller(true);
         ControllerQueue queue(controller);
         AppSettings settings = controller.settings()->snapshot();
-        settings.speech.providerId = QStringLiteral("codex");
+        settings.speech.services.order = {QStringLiteral("codex")};
         controller.settings()->applySnapshot(settings);
-        QCOMPARE(queue.options().speechProviderId, QStringLiteral("codex"));
+        QCOMPARE(queue.plan(queue.overrides()).settings.speech.services.main(), QStringLiteral("codex"));
 
-        TranscribeOptions chosen = queue.options();
+        RunOverrides chosen;
         chosen.tone = QStringLiteral("casual");
-        queue.setOptions(chosen);
-        settings.speech.providerId = QStringLiteral("claude");
+        queue.setOverrides(chosen);
+        settings.speech.services.order = {QStringLiteral("claude")};
         controller.settings()->applySnapshot(settings);
-        QCOMPARE(queue.options().speechProviderId, QStringLiteral("codex"));
-        QCOMPARE(queue.options().tone, QStringLiteral("casual"));
+        QCOMPARE(queue.plan(queue.overrides()).settings.speech.services.main(), QStringLiteral("claude"));
+        QCOMPARE(queue.overrides().tone, std::optional(QStringLiteral("casual")));
     }
 
     // A profile, cleanup level or tone deleted after it was chosen gives way
-    // to the profile's own instead of reaching the refiner.
+    // to what the settings give instead of reaching the refiner.
     void aDeletedChoiceFallsBackToTheProfiles()
     {
         ApplicationController controller(true);
@@ -4186,28 +4376,33 @@ private slots:
         }
         controller.settings()->applySnapshot(settings);
         ControllerQueue queue(controller);
-        queue.chooseProfile(WritingProfile::Work);
-        TranscribeOptions chosen = queue.options();
-        chosen.cleanupStrength = QStringLiteral("custom_terse");
+        RunOverrides chosen;
+        chosen.writingProfile = WritingProfile::Work;
+        chosen.cleanupLevel = QStringLiteral("custom_terse");
         chosen.tone = QStringLiteral("custom_pirate");
-        queue.setOptions(chosen);
+        queue.setOverrides(chosen);
 
         settings.refinement.customTones.clear();
         settings.refinement.customCleanupLevels.clear();
         controller.settings()->applySnapshot(settings);
 
-        QCOMPARE(queue.options().writingProfile, WritingProfile::Work);
-        QCOMPARE(queue.options().cleanupStrength, QStringLiteral("light_cleanup"));
-        QCOMPARE(queue.options().tone, QStringLiteral("casual"));
+        QCOMPARE(queue.overrides().writingProfile, std::optional(WritingProfile::Work));
+        QVERIFY(!queue.overrides().cleanupLevel);
+        QVERIFY(!queue.overrides().tone);
+        const DictationPlan work = queue.plan(queue.overrides());
+        QCOMPARE(work.profile.cleanupStrength, QStringLiteral("light_cleanup"));
+        QCOMPARE(work.profile.tone, QStringLiteral("casual"));
 
-        queue.chooseProfile(notes.profile);
+        chosen = queue.overrides();
+        chosen.writingProfile = notes.profile;
+        queue.setOverrides(chosen);
         settings.refinement.writingProfiles.removeLast();
         controller.settings()->applySnapshot(settings);
 
-        QCOMPARE(queue.options().writingProfile, WritingProfile::Other);
+        QVERIFY(!queue.overrides().writingProfile);
         const WritingProfileSettings other =
             writingProfileSettingsFor(settings.refinement.writingProfiles, WritingProfile::Other);
-        QCOMPARE(queue.options().tone, other.tone);
+        QCOMPARE(queue.plan(queue.overrides()).profile.tone, other.tone);
     }
 
 private:
@@ -4219,20 +4414,25 @@ private:
             [this](QObject *parent) { return new ScriptedTranscriber(&m_script, parent); });
     }
 
-    // The queue's choices for a batch that only transcribes.
-    static TranscribeOptions queueOptions()
+    // The queue's choices for a batch that only transcribes and saves
+    // nothing.
+    static void chooseSpeechOnly(TranscribeQueue &queue)
     {
-        TranscribeOptions options = speechOnly();
-        options.refinementProviderId = QStringLiteral("none");
-        options.destination = TranscriptDestination::None;
-        return options;
+        queue.setOverrides(speechOnly());
+        queue.setOptions({TranscriptDestination::None});
     }
 
-    static TranscribeOptions speechOnly()
+    // A batch that hears with service and refines nothing, under the Other
+    // profile with no cleanup level or tone.
+    static RunOverrides speechOnly(const QString &service = QStringLiteral("claude"))
     {
-        TranscribeOptions options;
-        options.speechProviderId = QStringLiteral("claude");
-        return options;
+        RunOverrides run;
+        run.writingProfile = WritingProfile::Other;
+        run.cleanupLevel = QStringLiteral("none");
+        run.tone = QStringLiteral("none");
+        run.speech = ServiceChoice{service};
+        run.refinement = ServiceChoice{kNoRefinementProvider};
+        return run;
     }
 
     // A provider that streams finals as Codex does and, with connects,
@@ -4272,7 +4472,7 @@ private:
     {
         m_registry->registerSpeechProvider({QStringLiteral("endpoint"), QStringLiteral("Custom Endpoint")},
                                            [](QObject *parent) { return new EndpointSpeechTranscriber(parent); });
-        settings.edit([](AppSettings &draft) { draft.speech.providerId = QStringLiteral("endpoint"); return true; });
+        settings.edit([](AppSettings &draft) { draft.speech.services.order = {QStringLiteral("endpoint")}; return true; });
         settings.raw().setValue(SettingsKeys::SpeechEndpointBaseUrl, server.origin());
     }
 
@@ -4285,8 +4485,10 @@ private:
                            bool microphoneOnly = false)
     {
         std::optional<QString> outcome;
-        recording.start(path, vocabulary, m_dir.path(), microphoneOnly,
-                        [&outcome](const QString &failure) { outcome = failure; });
+        const QString file = path.isEmpty() ? recordingPath(m_dir.filePath(QStringLiteral("recordings")), {},
+                                                            RecordingFormat::Markdown, QDateTime::currentDateTime())
+                                            : path;
+        recording.start({file, {}, vocabulary, microphoneOnly}, [&outcome](const QString &failure) { outcome = failure; });
         if (!QTest::qWaitFor([&outcome] { return outcome.has_value(); }, 10000)) {
             *error = QStringLiteral("the start never finished");
             return {};

@@ -6,9 +6,10 @@ import Speecher.Wording
 // files, phases and results.
 QtObject {
     readonly property string audioFiles: "Audio files"
-    readonly property string transcription: "Transcription"
-    readonly property string refinement: "Refinement"
-    readonly property string output: "Output"
+    readonly property string inHistory: "In History"
+    readonly property string changes: "Change for these files"
+    function changesHelp(profile) { return "Cleanup, tone, services and language for these files only. " + profile + " stays as it is everywhere else." }
+    readonly property string services: "Services for these files"
     readonly property string dropToAdd: "Drop audio or video files here, or choose them"
     readonly property string dropMore: "Drop more files here"
     readonly property string mediaHint: "MP3, M4A, WAV, FLAC, OGG, Opus, MP4, MOV and WebM"
@@ -17,33 +18,18 @@ QtObject {
     readonly property string filesDialog: "Choose audio or video files"
     readonly property string mediaFiles: "Audio and video files"
     readonly property string allFiles: "All files"
-    readonly property string serviceHelp: "The speech-to-text service that hears the files."
     readonly property string language: "Spoken language"
     readonly property string languageHelp: "The language the files are spoken in."
     readonly property string vocabulary: "Apply vocabulary"
     readonly property string vocabularyHelp: "Spell your names and terms the way Vocabulary has them."
-    readonly property string refinerHelp: "Cleans up the raw transcripts with a language model."
-    readonly property string model: "Model"
-    readonly property string speechModelHelp: "For these files only. Speech to text keeps its own."
-    readonly property string chooseModel: "Choose a model"
-    readonly property string refinerModelHelp: "For these files only. Refinement keeps its own."
-    readonly property string cleanup: "Cleanup level"
-    readonly property string cleanupHelp: "How much the model may rewrite."
     readonly property string profile: "Writing profile"
-    readonly property string profileHelp: "Starts as your default profile, the one for apps Speecher doesn't recognize. Sets the services, cleanup and tone below; you can still change each."
-    readonly property string tone: "Tone"
-    readonly property string toneHelp: "Overrides the profile's tone, if set."
-    readonly property string needsRefiner: "Choose a provider above to use this."
-    readonly property string saveTranscripts: "Save transcripts"
-    readonly property string folder: "Folder"
-    readonly property string changeFolder: "Change…"
-    readonly property string folderDialog: "Choose the folder for transcripts"
+    readonly property string profileHelp: "How the transcripts read. Its cleanup, tone and services apply unless you change them for these files."
     readonly property string noFilesYet: "Add at least one audio file to start."
     readonly property string partialName: "Transcript so far"
     readonly property string partialPlaceholder: "The transcript appears here as it is heard."
     readonly property string partialHelp: "Each part appears as soon as it is heard."
     readonly property string refined: "Refined"
-    readonly property string raw: "Raw"
+    readonly property string raw: "As spoken"
     readonly property string copyAll: "Copy all"
     readonly property string exportAll: "Export all"
     readonly property string export_: "Export"
@@ -73,8 +59,10 @@ QtObject {
         { id: "beside", label: "Next to each audio file", icon: "file-text" },
         { id: "folder", label: "One folder…", icon: "folder" }
     ]
+    readonly property string plainText: "Plain text"
+    readonly property string formatHelp: "Export makes SRT and WebVTT subtitles once they're done."
     function destinationHint(destination) {
-        return destination === "beside" ? "Each transcript is saved as ⟨name⟩-transcribed.txt"
+        return destination === "beside" ? "For meeting.m4a, the transcript is meeting-transcribed.txt"
              : destination === "none" ? "Copy or export from the results afterwards" : ""
     }
     // Each format with the file type its save dialog names.

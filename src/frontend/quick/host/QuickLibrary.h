@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/SettingsEdit.h"
+#include "frontend/quick/host/QmlValues.h"
 
 #include <QObject>
 #include <QQmlEngine>
@@ -12,8 +12,7 @@ namespace speecher {
 class ApplicationController;
 
 // The UI's LibraryLists: the Writing Profiles with the user's tones and
-// cleanup levels, the vocabulary terms, Learned Corrections, replacements
-// and app matches, as plain values read from and written through the
+// cleanup levels, and the Vocabulary, as plain values read from and written through the
 // daemon's SettingsStore. The Library singleton (Library.qml) builds on it
 // and words it. Edits name a list by its property and an entry by its key
 // there (see update). Core's WritingProfileEdits and VocabularyEdits make
@@ -22,29 +21,28 @@ class QuickLibrary : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(LibraryLists)
     // { id, name, builtIn, cleanup, tone, language, instructions, speech,
-    // speechModel, refinement, refinementModel }: the built-ins, then the
-    // user's in the order added. An empty service or model is the one the
-    // Speech to text or Refinement page chose.
+    // speechModel, speechSkipped, refinement, refinementModel }: the
+    // built-ins, then the user's in the order added. An empty service or
+    // model is the one the Speech to text or Refinement page chose.
+    // speechSkipped says why core's planDictation passes over the profile's
+    // own speech service for Speech to text's order: "language" where it
+    // can't listen for the Spoken Language, "unavailable" where this build
+    // lacks it; empty while the profile's service leads.
     Q_PROPERTY(QVariantList profiles READ profiles NOTIFY listsChanged)
     // { id, name, instruction }
     Q_PROPERTY(QVariantList customTones READ customTones NOTIFY listsChanged)
     // { id, name, base, instructions }; base is light_cleanup, balanced,
     // strong_polish or custom_only.
     Q_PROPERTY(QVariantList customCleanupLevels READ customCleanupLevels NOTIFY listsChanged)
-    // { term, keyTerm, context, profiles, source, uses }, in the order the
-    // speech service is sent them. source is manual, csv or learned; an
-    // empty profiles is every profile.
-    Q_PROPERTY(QVariantList terms READ terms NOTIFY listsChanged)
-    // { id, heard, corrected, app, confidence, enabled }, newest first. app is
-    // the application id it was learned in, empty for one learned in several.
-    Q_PROPERTY(QVariantList corrections READ corrections NOTIFY listsChanged)
-    // { phrase, replacement }
-    Q_PROPERTY(QVariantList replacements READ replacements NOTIFY listsChanged)
-    // { match, category, profile }: the user's app matches, which win over
-    // the built-in ones. An empty category or profile sets none.
-    Q_PROPERTY(QVariantList recognitionRules READ recognitionRules NOTIFY listsChanged)
-    // The same for the matches Speecher ships with.
-    Q_PROPERTY(QVariantList builtInRecognitionRules READ builtInRecognitionRules CONSTANT)
+    // The Vocabulary, spellings in the order the speech service is sent
+    // them, then replacements in the order saved: { id, kind
+    // (spelling or replacement), term (a spelling's term, a replacement's
+    // phrase), replacement, keyTerm, context, profiles, apps, source (manual,
+    // csv, legacy, import or learned), learned, enabled, uses, and what a
+    // Learned Correction was learned from: confidence, evidence (how many
+    // edits), learnedAtMs }. Empty profiles or apps are every one; an app is
+    // an App's id ("app:…") or the application id a correction was learned in.
+    Q_PROPERTY(QVariantList vocabulary READ vocabulary NOTIFY listsChanged)
     // How many key terms a speech service takes at most, and how many terms
     // refinement reads.
     Q_PROPERTY(int keyTermLimit READ keyTermLimit CONSTANT)
@@ -73,11 +71,7 @@ public:
     QVariantList profiles() const { return m_profiles; }
     QVariantList customTones() const { return m_customTones; }
     QVariantList customCleanupLevels() const { return m_customCleanupLevels; }
-    QVariantList terms() const { return m_terms; }
-    QVariantList corrections() const { return m_corrections; }
-    QVariantList replacements() const { return m_replacements; }
-    QVariantList recognitionRules() const { return m_recognitionRules; }
-    QVariantList builtInRecognitionRules() const;
+    QVariantList vocabulary() const { return m_vocabulary; }
     int keyTermLimit() const;
     int refinementTermLimit() const;
     bool speechTakesKeyTerms() const { return m_speechTakesKeyTerms; }
@@ -87,7 +81,7 @@ public:
     // prefix (custom_profile, custom_tone, custom_level).
     Q_INVOKABLE QString newId(const QString &prefix) const;
     // Adds item to the list named (profiles, customTones, customCleanupLevels,
-    // terms, replacements, recognitionRules), with the fields its records
+    // vocabulary), with the fields its records
     // show; one of the first three carries its newId. A tone or level takes
     // builtInNames, the names the page shows the built-in ones by, which it
     // can't be called. Returns why it was refused, as EditRefusal says: blank,
@@ -95,18 +89,17 @@ public:
     // records lack. Empty when saved.
     Q_INVOKABLE QString add(const QString &list, const QVariantMap &item, const QStringList &builtInNames = {});
     // Changes the fields patch names on the entry `key` names in the list
-    // named: a profile's, tone's, level's or correction's id, a term, a
-    // replacement's phrase or a match's app. What the record does not show
+    // named: its id. What the record does not show
     // stays. Returns as add does; missing once the entry is gone.
     Q_INVOKABLE QString update(const QString &list, const QString &key, const QVariantMap &patch,
                                const QStringList &builtInNames = {});
-    // Removes the entry key names from terms, corrections, replacements or
-    // recognitionRules. Returns the token undo takes to put it back, or -1
+    // Removes the vocabulary entry key names.
+    // Returns the token undo takes to put it back, or -1
     // when nothing was removed.
     Q_INVOKABLE int remove(const QString &list, const QString &key);
     // Removes one of the user's profiles, and saving it drops what named it:
-    // app matches lose it, terms limited to it lose the limit, and the
-    // fallback profile becomes Other. No undo: the page asks first.
+    // Apps and App Types follow the wider place instead, and terms limited
+    // to it lose the limit. No undo: the page asks first.
     Q_INVOKABLE void removeProfile(const QString &id);
     // Remove one of the user's tones or cleanup levels, moving the profiles
     // that chose it, and return the undo token, or -1.
@@ -118,11 +111,11 @@ public:
     // its name was added since. Only the newest removal's token works, once:
     // the window's one toast offers only its Undo.
     Q_INVOKABLE void undo(int token);
-    // Merge the terms of a CSV file, or add the snippets of a JSON file that
-    // the list does not hold yet. Returns { added, error }: how many are new,
-    // and why the file could not be read or parsed, empty when it could.
-    Q_INVOKABLE QVariantMap importTerms(const QUrl &file);
-    Q_INVOKABLE QVariantMap importReplacements(const QUrl &file);
+    // Merges the terms of a CSV file, or adds the snippets of a JSON file
+    // (by its .json name) the list would take. Returns { added, error }: how
+    // many are new, and why the file could not be read or parsed, empty when
+    // it could.
+    Q_INVOKABLE QVariantMap importVocabulary(const QUrl &file);
 
 signals:
     void listsChanged();
@@ -130,22 +123,14 @@ signals:
 private:
     // Saves what edit makes of the current settings, when it returns true.
     bool save(const std::function<bool(AppSettings &)> &edit);
-    // Saves what edit makes when it refuses nothing, and names the refusal.
-    QString saveUnlessRefused(const std::function<EditRefusal(AppSettings &)> &edit);
-    int keepUndo(const SettingsEdit &undo);
     void refresh();
 
     ApplicationController *m_controller;
-    // The newest removal's undo, whose token is m_lastUndo.
-    SettingsEdit m_undo;
-    int m_lastUndo = -1;
+    UndoSlot m_undo;
     QVariantList m_profiles;
     QVariantList m_customTones;
     QVariantList m_customCleanupLevels;
-    QVariantList m_terms;
-    QVariantList m_corrections;
-    QVariantList m_replacements;
-    QVariantList m_recognitionRules;
+    QVariantList m_vocabulary;
     bool m_speechTakesKeyTerms = false;
     int m_keyTermsSent = 0;
 };

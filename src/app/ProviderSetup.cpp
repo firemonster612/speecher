@@ -13,6 +13,7 @@
 #include "providers/LocalRunner.h"
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
 #include "providers/LocalSpeechTranscriber.h"
+#include "providers/LocalSpeechWorker.h"
 #endif
 #include "providers/OpenAiTranscriptRefiner.h"
 #include "providers/ProviderRegistry.h"
@@ -44,10 +45,12 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
             return new CodexSpeechTranscriber(parent);
         });
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
+    // Dictation's transcriber and every recording's share one worker, and
+    // with it one loaded model.
     registry.registerSpeechProvider(
-        {providerKey(ProviderId::Local), QStringLiteral("Local Model")},
-        [localModels](QObject *parent) {
-            return new LocalSpeechTranscriber(*localModels, parent);
+        {providerKey(ProviderId::Local), QStringLiteral("This computer")},
+        [localModels, worker = std::make_shared<LocalSpeechWorker>()](QObject *parent) {
+            return new LocalSpeechTranscriber(*localModels, worker, parent);
         });
 #else
     Q_UNUSED(localModels);
@@ -59,13 +62,13 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
         {providerKey(ProviderId::Anthropic), QStringLiteral("Claude"), true},
         [](QObject *parent) { return new AnthropicTranscriptRefiner(parent); });
     registry.registerSpeechProvider(
-        {providerKey(ProviderId::Endpoint), QStringLiteral("Custom Endpoint")},
+        {providerKey(ProviderId::Endpoint), QStringLiteral("Your server")},
         [](QObject *parent) { return new EndpointSpeechTranscriber(parent); });
-    const ProviderDescriptor endpointRefiner{providerKey(ProviderId::Endpoint), QStringLiteral("Custom Endpoint")};
+    const ProviderDescriptor endpointRefiner{providerKey(ProviderId::Endpoint), QStringLiteral("Your server")};
     registry.registerRefinementProvider(endpointRefiner, [label = endpointRefiner.label](QObject *parent) {
         return new EndpointTranscriptRefiner(label, parent);
     });
-    const ProviderDescriptor localRunner{providerKey(ProviderId::Local), QStringLiteral("Local Runner")};
+    const ProviderDescriptor localRunner{providerKey(ProviderId::Local), QStringLiteral("This computer")};
     registry.registerRefinementProvider(localRunner, [label = localRunner.label](QObject *parent) {
         return new LocalRunnerRefiner(label, parent);
     });

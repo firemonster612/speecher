@@ -7,14 +7,19 @@ import Speecher.Theme
 // grows open from the button's corner and each option can carry a line of
 // help; its entries are the same MenuItem a Menu shows, greyed out and not
 // chosen when enabled is false. It shows currentId and only asks for a
-// change through chosen: the caller sets currentId.
+// change through chosen: the caller sets currentId. With wrap, a label too
+// long for the button takes a second line rather than being cut off. With no
+// options, the menu says emptyText.
 T.ComboBox {
     id: control
 
     property var options: []
     property string currentId: options.length ? options[0].id : ""
     property string placeholder
-    property int menuWidth: Math.max(width, 280)
+    property string emptyText
+    // At least as wide as the button, and wide enough for the options.
+    property int menuWidth: menu.fitWidth(options.length ? options : [{ help: emptyText }], width)
+    property bool wrap: false
     signal chosen(string id)
 
     model: options
@@ -30,8 +35,9 @@ T.ComboBox {
         currentIndex = Qt.binding(() => _index)
     }
     onModelChanged: currentIndex = Qt.binding(() => _index)
+    onOptionsChanged: menu.measured = 0
 
-    implicitHeight: Theme.controlHeight
+    implicitHeight: Math.max(Theme.controlHeight, label.implicitHeight + 12)
     implicitWidth: Theme.selectWidth
     hoverEnabled: true
     focusPolicy: Qt.StrongFocus
@@ -61,12 +67,15 @@ T.ComboBox {
             anchors.verticalCenter: parent.verticalCenter
         }
         Txt {
+            id: label
             text: control._current ? control._current.label : control.placeholder
             // A placeholder asks for a choice, so it reads more strongly
             // than a field's hint, apart from a disabled Select.
             tone: control._current ? "primary" : "secondary"
             variant: "label"
             elide: Text.ElideRight
+            wrapMode: control.wrap ? Text.Wrap : Text.NoWrap
+            maximumLineCount: 2
             width: Math.min(implicitWidth, control.availableWidth - 22)
             anchors.verticalCenter: parent.verticalCenter
         }
@@ -90,16 +99,19 @@ T.ComboBox {
         enabled: modelData.enabled !== false
         current: index === control.currentIndex
         highlighted: control.highlightedIndex === index
+        onImplicitWidthChanged: menu.measure(implicitWidth)
+        Component.onCompleted: menu.measure(implicitWidth)
     }
 
     popup: MenuPopup {
+        id: menu
         width: control.menuWidth
-        implicitHeight: Math.min(list.contentHeight + topPadding + bottomPadding, 360)
+        implicitHeight: Math.min(list.implicitHeight + topPadding + bottomPadding, 360)
 
         contentItem: ListView {
             id: list
             clip: true
-            implicitHeight: contentHeight
+            implicitHeight: control.options.length ? contentHeight : emptyLine.implicitHeight
             model: control.delegateModel
             currentIndex: control.highlightedIndex
             spacing: 1
@@ -108,6 +120,18 @@ T.ComboBox {
             acceptedButtons: Qt.NoButton
             WheelScroll {}
             T.ScrollBar.vertical: ScrollBar { id: bar; persistent: true }
+            Txt {
+                id: emptyLine
+                visible: !control.options.length
+                width: list.width
+                padding: Theme.space2
+                leftPadding: 10
+                rightPadding: 10
+                text: control.emptyText
+                variant: "small"
+                tone: "secondary"
+                wrapMode: Text.WordWrap
+            }
         }
     }
 }

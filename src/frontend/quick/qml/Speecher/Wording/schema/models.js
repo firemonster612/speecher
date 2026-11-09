@@ -5,6 +5,11 @@
 var rows = [
     { id: "localModelBrowser", page: "models", section: "Speech models", kind: "custom",
       label: "Speech models", help: "Models run on this computer, with no account and no network once downloaded.",
+      // A build without transcribe.cpp (SPEECHER_WITH_LOCAL_SPEECH off)
+      // has no Local Model service to run them.
+      notInBuild: "This build of Speecher can't run local models",
+      notInBuildHelp: "Speecher's packages and installers include local speech. A build from source needs SPEECHER_WITH_LOCAL_SPEECH turned on.",
+      getBuild: "Download Speecher",
       keywords: "download library whisper parakeet moonshine qwen cohere voxtral delete speed test use model offline" },
 
     { id: "localIdleUnload", page: "models", section: "Performance and storage", kind: "choice", control: "select",

@@ -8,8 +8,14 @@ import Speecher.App
 import Speecher.Popup
 
 Page {
+    id: page
     title: Schema.page("feedback").title
     subtitle: Schema.page("feedback").subtitle
+
+    // The speech service and refinement provider in use, whose text the
+    // live rows show; each row says when its service sends none.
+    readonly property string speech: ModelText.mainSpeech
+    readonly property bool refines: ModelText.refinersInUse().length > 0
 
     // A small stage with the real popup on it, fed by a demo dictation that
     // loops, so each change below shows up straight away.
@@ -68,12 +74,27 @@ Page {
 
     Section {
         title: Schema.row("showLiveText").section
-        SchemaRow { rowId: "showLiveText" }
+        SchemaRow {
+            rowId: "showLiveText"
+            note: ModelText.streams(page.speech) ? spec.help : spec.afterStopHelp.arg(ModelText.service(page.speech).label)
+        }
         SchemaRow { rowId: "previewWords" }
-        SchemaRow { rowId: "showRefinementText" }
+        SchemaRow {
+            rowId: "showRefinementText"
+            note: page.refines ? spec.help : spec.noRefinerHelp
+        }
         SchemaRow { rowId: "resultDuration" }
-        SchemaRow { rowId: "reviewSelectionEdits" }
-        SchemaRow { rowId: "boringMode" }
+        SchemaRow {
+            id: voiceDisplay
+            rowId: "boringMode"
+            SegmentedControl {
+                options: voiceDisplay.spec.options
+                currentId: Settings.values.boringMode ? "bars" : "ribbon"
+                onActivated: id => Settings.set("boringMode", id === "bars")
+            }
+        }
+        // While a recording runs, the popup shows its pill.
+        SchemaRow { rowId: "recordingPill" }
     }
 
     Section {

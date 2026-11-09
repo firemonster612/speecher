@@ -13,12 +13,13 @@
 // that build's history format, also by hand.
 
 #include "common/test_secrets.h"
+#include "common/vocabulary_entries.h"
 #include "common/test_suites.h"
 
 #include "app/ApplicationController.h"
-#include "core/InsightsLog.h"
+#include "core/ProviderChain.h"
+#include "core/history/HistoryStore.h"
 #include "core/LocalModelCatalog.h"
-#include "core/PasteRules.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
@@ -28,6 +29,7 @@
 #include <QDir>
 #include <QFile>
 #include <QSettings>
+#include <QScopeGuard>
 #include <QStandardPaths>
 
 #include <functional>
@@ -98,6 +100,16 @@ void editColorScheme(ApplicationController &controller)
     settings.set(QStringLiteral("colorScheme"), QStringLiteral("fixture-scheme"));
 }
 
+// An App as migration made it, without the random part of its id.
+AppEntry withoutId(AppEntry app)
+{
+    if (!app.id.startsWith(QStringLiteral("app:"))) {
+        return app;
+    }
+    app.id.clear();
+    return app;
+}
+
 const WritingProfileSettings &profile(const AppSettings &settings, const QString &id)
 {
     for (const WritingProfileSettings &entry : settings.refinement.writingProfiles) {
@@ -114,31 +126,34 @@ QVariant readField(ApplicationController &controller, const QString &name)
 {
     SettingsStore &store = *controller.settings();
     const AppSettings settings = store.snapshot();
+    // The steps a delivery to target takes, in order.
     const auto delivery = [&](const Target &target) {
-        return pasteMethodName(resolvePasteRule(settings.output.pasteRules, target).method);
+        return deliveryPlan(settings.output.steps, resolveApp(target, settings.apps).pasting).route().join(u' ');
     };
     Target terminal;
-    terminal.category = AppCategory::Terminal;
+    terminal.terminalHost = true;
     Target kate;
     kate.applicationId = QStringLiteral("org.kde.kate");
     Target unruled;
     unruled.applicationId = QStringLiteral("org.fixture.unruled");
     const std::map<QString, std::function<QVariant()>> fields{
-        {QStringLiteral("openAiSpeed"), [&] { return settings.refinement.openAiSpeed; }},
-        {QStringLiteral("speechProvider"), [&] { return settings.speech.providerId; }},
+        {QStringLiteral("openAiSpeed"), [&] { return settings.refinement.services.choice(QStringLiteral("openai")).speed; }},
+        {QStringLiteral("speechProvider"), [&] { return settings.speech.services.main(); }},
         {QStringLiteral("savedSpeechProvider"), [&] { return store.raw().value(SettingsKeys::SpeechProvider); }},
-        {QStringLiteral("speechFallbacks"), [&] { return settings.speech.fallbackProviderIds.join(QLatin1Char(',')); }},
-        {QStringLiteral("refinementProvider"), [&] { return settings.refinement.providerId; }},
+        {QStringLiteral("speechFallbacks"), [&] { return settings.speech.services.order.mid(1).join(QLatin1Char(',')); }},
+        // "none" once Clean up my words is off.
+        {QStringLiteral("refinementProvider"),
+         [&] { return serviceChain(settings.refinement).value(0, kNoRefinementProvider); }},
         {QStringLiteral("savedRefinementProvider"), [&] { return store.raw().value(SettingsKeys::RefinementProvider); }},
         {QStringLiteral("refinementFallbacks"),
-         [&] { return settings.refinement.fallbackProviderIds.join(QLatin1Char(',')); }},
-        {QStringLiteral("outputMethod"), [&] { return settings.output.method; }},
+         [&] { return settings.refinement.services.order.mid(1).join(QLatin1Char(',')); }},
+        {QStringLiteral("deliverySteps"), [&] { return DeliveryPlan{settings.output.steps}.route().join(u' '); }},
         {QStringLiteral("terminalDelivery"), [&] { return delivery(terminal); }},
         {QStringLiteral("kateDelivery"), [&] { return delivery(kate); }},
         {QStringLiteral("unruledDelivery"), [&] { return delivery(unruled); }},
-        {QStringLiteral("cliproxyBaseUrl"), [&] { return settings.refinement.cliproxyBaseUrl; }},
-        {QStringLiteral("openAiModel"), [&] { return settings.refinement.openAiModel; }},
-        {QStringLiteral("anthropicModel"), [&] { return settings.refinement.anthropicModel; }},
+        {QStringLiteral("cliproxyBaseUrl"), [&] { return settings.accounts.cliproxyBaseUrl; }},
+        {QStringLiteral("openAiModel"), [&] { return settings.refinement.services.choice(QStringLiteral("openai")).model; }},
+        {QStringLiteral("anthropicModel"), [&] { return settings.refinement.services.choice(QStringLiteral("anthropic")).model; }},
         {QStringLiteral("savedShortcut"), [&] { return store.raw().value(SettingsKeys::GlobalShortcut); }},
         {QStringLiteral("shortcut"), [&] { return controller.globalShortcut().toString(); }},
         {QStringLiteral("theme"), [&] { return settings.ui.theme; }},
@@ -175,7 +190,9 @@ private slots:
         removedSecrets(store.secrets());
         store.raw().clear();
         // Only what these tests wrote: other test processes share the folder.
-        for (const QString &file : {QStringLiteral("insights.jsonl"), QStringLiteral("sentinel.txt")}) {
+        for (const QString &file :
+             {QStringLiteral("insights.jsonl"), QStringLiteral("insights.jsonl.imported"), QStringLiteral("sentinel.txt"),
+              QStringLiteral("history.sqlite3"), QStringLiteral("history.sqlite3-wal"), QStringLiteral("history.sqlite3-shm")}) {
             QFile::remove(dataFolder() + QLatin1Char('/') + file);
         }
         for (const QString &id : {QStringLiteral("moonshine-small"), QStringLiteral("moonshine-medium")}) {
@@ -245,26 +262,34 @@ private slots:
                            {QStringLiteral("refinement/fallbackProviders"), QStringList{"endpoint", "local"}}}
             << QVariantMap{{QStringLiteral("speechFallbacks"), QStringLiteral("local,endpoint")},
                            {QStringLiteral("refinementFallbacks"), QStringLiteral("endpoint,local")}};
-        // Pasting rules insert or copy only, as they did under the old method.
+        // The steps the old method never used are off, and no rule turns them
+        // back on. The file restores the clipboard, so Keep is off where
+        // something else delivers. Its rules have no global one, which
+        // copied only.
         QTest::newRow("direct insertion")
             << method("direct_insert")
-            << QVariantMap{{QStringLiteral("outputMethod"), QStringLiteral("automatic")},
-                           {QStringLiteral("terminalDelivery"), QStringLiteral("direct_insert")},
-                           {QStringLiteral("kateDelivery"), QStringLiteral("direct_insert")},
-                           {QStringLiteral("unruledDelivery"), QStringLiteral("clipboard_only")}};
-        // With no rules saved, the default ones, which paste, insert only.
+            << QVariantMap{{QStringLiteral("deliverySteps"), QStringLiteral("keep")},
+                           {QStringLiteral("terminalDelivery"), QStringLiteral("insert")},
+                           {QStringLiteral("kateDelivery"), QStringLiteral("insert")},
+                           {QStringLiteral("unruledDelivery"), QStringLiteral("keep")}};
         QTest::newRow("direct insertion with the default rules")
             << QVariantMap{{QStringLiteral("output/method"), QStringLiteral("direct_insert")},
                            {QStringLiteral("output/pasteRules"), QVariant()}}
-            << QVariantMap{{QStringLiteral("outputMethod"), QStringLiteral("automatic")},
-                           {QStringLiteral("terminalDelivery"), QStringLiteral("direct_insert")},
-                           {QStringLiteral("unruledDelivery"), QStringLiteral("direct_insert")}};
+            << QVariantMap{{QStringLiteral("deliverySteps"), QStringLiteral("insert")},
+                           {QStringLiteral("terminalDelivery"), QStringLiteral("insert")},
+                           {QStringLiteral("unruledDelivery"), QStringLiteral("insert")}};
         QTest::newRow("Qt clipboard")
             << method("qt-clipboard")
-            << QVariantMap{{QStringLiteral("outputMethod"), QStringLiteral("automatic")},
-                           {QStringLiteral("terminalDelivery"), QStringLiteral("clipboard_only")},
-                           {QStringLiteral("kateDelivery"), QStringLiteral("clipboard_only")},
-                           {QStringLiteral("unruledDelivery"), QStringLiteral("clipboard_only")}};
+            << QVariantMap{{QStringLiteral("deliverySteps"), QStringLiteral("keep")},
+                           {QStringLiteral("terminalDelivery"), QStringLiteral("keep")},
+                           {QStringLiteral("kateDelivery"), QStringLiteral("keep")},
+                           {QStringLiteral("unruledDelivery"), QStringLiteral("keep")}};
+        QTest::newRow("automatic")
+            << method("automatic")
+            << QVariantMap{{QStringLiteral("deliverySteps"), QStringLiteral("keep")},
+                           {QStringLiteral("terminalDelivery"), QStringLiteral("insert press")},
+                           {QStringLiteral("kateDelivery"), QStringLiteral("insert press")},
+                           {QStringLiteral("unruledDelivery"), QStringLiteral("keep")}};
         QTest::newRow("proxy URL ending in /v1/")
             << QVariantMap{{QStringLiteral("cliproxy/baseUrl"), QStringLiteral("http://127.0.0.1:8317/v1/")}}
             << QVariantMap{{QStringLiteral("cliproxyBaseUrl"), QStringLiteral("http://127.0.0.1:8317")}};
@@ -309,6 +334,66 @@ private slots:
         checkFields(*controller, expected);
     }
 
+    void whatSpeecherKeepsFollowsKeepInsights_data()
+    {
+        QTest::addColumn<QVariantMap>("saved");
+        QTest::addColumn<HistoryKeep>("keeps");
+        QTest::newRow("insights on") << QVariantMap{{QStringLiteral("insights/enabled"), true}} << HistoryKeep::Stats;
+        QTest::newRow("insights off") << QVariantMap{{QStringLiteral("insights/enabled"), false}} << HistoryKeep::Nothing;
+        QTest::newRow("never set, after setup") << QVariantMap{{QStringLiteral("app/setupCompleted"), true}}
+                                                << HistoryKeep::Stats;
+        // Chose a service and quit before finishing setup.
+        QTest::newRow("never set, setup unfinished")
+            << QVariantMap{{QStringLiteral("app/setupCompleted"), false}, {QStringLiteral("stt/provider"), QStringLiteral("codex")}}
+            << HistoryKeep::Stats;
+        QTest::newRow("new install") << QVariantMap() << HistorySettings().keeps;
+    }
+
+    // An upgrade never starts keeping text behind Keep insights' promise of
+    // "never text or audio", finished setup or not; a new install, with no
+    // settings at all, keeps the default.
+    void whatSpeecherKeepsFollowsKeepInsights()
+    {
+        QFETCH(QVariantMap, saved);
+        QFETCH(HistoryKeep, keeps);
+        {
+            SettingsStore store;
+            store.raw().clear();
+            for (auto it = saved.cbegin(); it != saved.cend(); ++it) {
+                store.raw().setValue(it.key(), it.value());
+            }
+            store.raw().sync();
+        }
+        migrateSavedSettings();
+        QCOMPARE(SettingsStore().snapshot().history.keeps, keeps);
+    }
+
+    // A new install saves recordings in the default, Documents/Speecher; one
+    // that recorded already keeps the data folder's recordings, and a folder
+    // chosen stays chosen.
+    void recordingsStayWhereAnUpgradeKeptThem()
+    {
+        const QString older = dataFolder() + QStringLiteral("/recordings");
+        QDir(older).removeRecursively();
+        const auto migrated = [](const QString &chosen) {
+            {
+                SettingsStore store;
+                store.raw().clear();
+                if (!chosen.isEmpty()) {
+                    store.raw().setValue(QStringLiteral("recording/folder"), chosen);
+                }
+                store.raw().sync();
+            }
+            migrateSavedSettings();
+            return SettingsStore().snapshot().recording.folder;
+        };
+        QCOMPARE(migrated({}), QString());
+        QVERIFY(QDir().mkpath(older));
+        const auto cleanup = qScopeGuard([older] { QDir(older).removeRecursively(); });
+        QCOMPARE(migrated({}), older);
+        QCOMPARE(migrated(QStringLiteral("/calls")), QStringLiteral("/calls"));
+    }
+
     void nativeSettingsHistoryAndModelsSurviveTheUpdate()
     {
         loadSettingsFile(QStringLiteral("native.conf"));
@@ -325,7 +410,7 @@ private slots:
         QVERIFY(writeFile(dataFolder() + QStringLiteral("/sentinel.txt"), "kept"));
 
         const auto checkFiles = [&](ApplicationController &controller) {
-            const QList<DictationRecord> &records = controller.insightsLog()->records();
+            const QList<DictationRecord> &records = controller.history()->records();
             QCOMPARE(records.size(), 3);
             QCOMPARE(records[0].appName, QStringLiteral("Kate"));
             QCOMPARE(records[0].profile, QStringLiteral("work"));
@@ -335,7 +420,9 @@ private slots:
             QCOMPARE(records[1].speechProviders, QStringList{QStringLiteral("local")});
             QCOMPARE(records[1].refinementProviders, QStringList{QStringLiteral("anthropic")});
             QCOMPARE(records[2].audioMs, 2100);
-            QCOMPARE(readAll(dataFolder() + QStringLiteral("/insights.jsonl")), history);
+            // Imported once into History, and kept under another name.
+            QVERIFY(!QFile::exists(dataFolder() + QStringLiteral("/insights.jsonl")));
+            QCOMPARE(readAll(dataFolder() + QStringLiteral("/insights.jsonl.imported")), history);
             QVERIFY(controller.localModelStore()->isDownloaded(*small));
             QCOMPARE(readAll(models + medium->fileName + QStringLiteral(".part")), partial);
             QCOMPARE(readAll(dataFolder() + QStringLiteral("/sentinel.txt")), QByteArray("kept"));
@@ -371,7 +458,7 @@ private:
         // The old window's layout is left alone, unread.
         QVERIFY(store.raw().contains(QStringLiteral("ui/appWindow/a/geometry")));
 
-        QCOMPARE(settings.speech.providerId, QStringLiteral("codex"));
+        QCOMPARE(settings.speech.services.main(), QStringLiteral("codex"));
         QVERIFY(!settings.speech.codexFinalRetranscribe);
         QCOMPARE(settings.accounts.claudeCredentialsPath, QStringLiteral("/tmp/speecher-fixture-claude/.credentials.json"));
         QCOMPARE(settings.speech.claudeEndpointBase, QStringLiteral("https://claude.fixture.test"));
@@ -385,8 +472,10 @@ private:
         QCOMPARE(settings.audio.readinessTimeoutMs, 1200);
         QCOMPARE(settings.audio.vadThresholdPercent, 5);
 
-        // Every term is kept, past what a request carries.
-        QCOMPARE(settings.vocabulary.size(), 262);
+        // Every term is kept, past what a request carries, beside the
+        // replacement and the Learned Correction.
+        QCOMPARE(settings.vocabulary.size(), 264);
+        QCOMPARE(test::spellingEntries(settings.vocabulary).size(), 262);
         QCOMPARE(settings.vocabulary[0].term, QStringLiteral("Speecher"));
         QVERIFY(settings.vocabulary[0].starred);
         QCOMPARE(settings.vocabulary[0].frequency, 7);
@@ -394,65 +483,73 @@ private:
         QCOMPARE(settings.vocabulary[1].source, QStringLiteral("learned"));
         QVERIFY(settings.vocabulary[1].keyTerm);
 
-        QCOMPARE(settings.appRecognitionRules.size(), 2);
-        QCOMPARE(settings.appRecognitionRules[0].match, QStringLiteral("org.kde.konsole"));
-        QCOMPARE(settings.appRecognitionRules[0].category, std::optional(AppCategory::Terminal));
-        QCOMPARE(settings.appRecognitionRules[0].writingProfile, std::optional(QStringLiteral("ai_coding")));
-        QCOMPARE(settings.appRecognitionRules[1].writingProfile, std::optional(QStringLiteral("email")));
-        QCOMPARE(settings.bindings.size(), 1);
-        QCOMPARE(settings.bindings[0].phrase, QStringLiteral("smiley face"));
-        QCOMPARE(settings.bindings[0].replacement, QStringLiteral(":)"));
+        // The override and the paste rule for Kate are one App matched by its
+        // id; the ones turned off are gone. Each recognition rule is an App
+        // matched by name, and by title where it set a profile.
+        QCOMPARE(settings.apps.apps.size(), 3);
+        QCOMPARE(withoutId(settings.apps.apps[0]),
+                 (AppEntry{{}, QStringLiteral("Kate"), {}, {{AppMatchKind::Id, QStringLiteral("org.kde.kate")}},
+                           std::nullopt, QStringLiteral("personal"),
+                           {std::nullopt, terminalKeysDiffer ? std::optional(PasteKeyCombo::Standard) : std::nullopt}}));
+        QCOMPARE(withoutId(settings.apps.apps[1]),
+                 (AppEntry{{}, QStringLiteral("Konsole"), {},
+                           {{AppMatchKind::Name, QStringLiteral("org.kde.konsole")},
+                            {AppMatchKind::WindowTitle, QStringLiteral("org.kde.konsole")}},
+                           AppCategory::Terminal, QStringLiteral("ai_coding"), {}}));
+        QCOMPARE(withoutId(settings.apps.apps[2]),
+                 (AppEntry{{}, QStringLiteral("Thunderbird"), {},
+                           {{AppMatchKind::Name, QStringLiteral("thunderbird")},
+                            {AppMatchKind::WindowTitle, QStringLiteral("thunderbird")}},
+                           std::nullopt, QStringLiteral("email"), {}}));
+        // The default profile is Other apps'.
+        QCOMPARE(fallbackWritingProfile(settings.apps), QStringLiteral("work"));
+        const QList<VocabularyEntry> replacements = test::replacementEntries(settings.vocabulary);
+        QCOMPARE(replacements.size(), 1);
+        QCOMPARE(replacements[0].term, QStringLiteral("smiley face"));
+        QCOMPARE(replacements[0].replacement, QStringLiteral(":)"));
         QCOMPARE(settings.shortcutActivationMode, ShortcutActivationMode::Toggle);
         QVERIFY(!settings.correctionLearningEnabled);
-        QCOMPARE(settings.learnedCorrections.size(), 1);
-        QCOMPARE(settings.learnedCorrections[0].corrected, QStringLiteral("Speecher"));
-        QCOMPARE(settings.learnedCorrections[0].evidenceCount, 3);
-        QCOMPARE(settings.learnedCorrections[0].lastObservedAtMs, 1757100000000);
+        const QList<VocabularyEntry> learned = test::learnedEntries(settings.vocabulary);
+        QCOMPARE(learned.size(), 1);
+        QCOMPARE(learned[0].replacement, QStringLiteral("Speecher"));
+        QCOMPARE(learned[0].evidenceCount, 3);
+        QCOMPARE(learned[0].lastObservedAtMs, 1757100000000);
 
-        QCOMPARE(settings.refinement.providerId, QStringLiteral("anthropic"));
-        QCOMPARE(settings.refinement.defaultWritingProfile, QStringLiteral("work"));
+        QCOMPARE(settings.refinement.services.main(), QStringLiteral("anthropic"));
         QCOMPARE(profile(settings, QStringLiteral("work")).cleanupStrength, QStringLiteral("light_cleanup"));
         QCOMPARE(profile(settings, QStringLiteral("work")).tone, QStringLiteral("formal"));
         QCOMPARE(profile(settings, QStringLiteral("email")).cleanupStrength, QStringLiteral("strong_polish"));
         QCOMPARE(profile(settings, QStringLiteral("personal")).tone, QStringLiteral("gen_z"));
         QCOMPARE(profile(settings, QStringLiteral("ai_coding")).tone, QStringLiteral("formal"));
-        QCOMPARE(settings.refinement.writingProfileOverrides.size(), 2);
-        QCOMPARE(settings.refinement.writingProfileOverrides[0].profile, QStringLiteral("personal"));
-        QVERIFY(!settings.refinement.writingProfileOverrides[1].enabled);
         QVERIFY(!settings.refinement.useTargetContext);
         QVERIFY(settings.refinement.includeScreenshotContext);
 
         // 0.2.0's default models move to the ones that replaced them.
-        QCOMPARE(settings.refinement.openAiModel, QStringLiteral("gpt-6-luna"));
-        QCOMPARE(settings.refinement.anthropicModel, QStringLiteral("claude-opus-5-5"));
+        QCOMPARE(settings.refinement.services.choice(QStringLiteral("openai")).model, QStringLiteral("gpt-6-luna"));
+        QCOMPARE(settings.refinement.services.choice(QStringLiteral("anthropic")).model, QStringLiteral("claude-opus-5-5"));
         QCOMPARE(settings.accounts.openAiAuthMode, OpenAiAuthMode::Settings);
-        QCOMPARE(settings.refinement.openAiEffort, QStringLiteral("medium"));
-        QCOMPARE(settings.refinement.openAiSpeed, QStringLiteral("standard"));
+        QCOMPARE(settings.refinement.services.choice(QStringLiteral("openai")).effort, QStringLiteral("medium"));
+        QCOMPARE(settings.refinement.services.choice(QStringLiteral("openai")).speed, QStringLiteral("standard"));
         QCOMPARE(settings.accounts.openAiCliproxyAccount, QStringLiteral("openai-fixture@example.com"));
         QCOMPARE(settings.accounts.anthropicAuthMode, AnthropicAuthMode::Cliproxy);
-        QCOMPARE(settings.refinement.anthropicEffort, QStringLiteral("high"));
-        QVERIFY(!settings.refinement.anthropicFastMode);
+        QCOMPARE(settings.refinement.services.choice(QStringLiteral("anthropic")).effort, QStringLiteral("high"));
+        QCOMPARE(settings.refinement.services.choice(QStringLiteral("anthropic")).speed, QStringLiteral("standard"));
         QCOMPARE(settings.accounts.anthropicCliproxyAccount, QStringLiteral("claude-fixture@example.com"));
         QCOMPARE(settings.accounts.cliproxyOauthDirConfigured, QStringLiteral("/tmp/speecher-fixture-oauth"));
-        QCOMPARE(settings.refinement.cliproxyBaseUrl, QStringLiteral("http://127.0.0.1:8317"));
+        QCOMPARE(settings.accounts.cliproxyBaseUrl, QStringLiteral("http://127.0.0.1:8317"));
 
-        QCOMPARE(settings.refinement.cliproxyApiKey, QStringLiteral("fixture-proxy-key"));
+        QCOMPARE(settings.accounts.cliproxyApiKey, QStringLiteral("fixture-proxy-key"));
         QCOMPARE(readSecret(store.secrets(), SecretStore::Secret::OpenAiApiKey), openAiKey);
         // A key moves out of the settings file only once the keyring holds it.
         QCOMPARE(store.raw().contains(SettingsKeys::CliproxyApiKey), !keyringExpected());
 
-        // Copying only becomes Automatic with every pasting rule copying only,
-        // and an app with no rule still gets the clipboard.
-        QCOMPARE(settings.output.method, QStringLiteral("automatic"));
-        const QList<PasteRule> rules{
-            {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::ClipboardOnly, true},
-            {PasteRuleScope::Application, QStringLiteral("org.kde.kate"), PasteMethod::ClipboardOnly, true},
-            {PasteRuleScope::Application, QStringLiteral("firefox"), PasteMethod::ClipboardOnly, false},
-        };
-        QCOMPARE(settings.output.pasteRules, rules);
-        QCOMPARE(resolvePasteRule(settings.output.pasteRules, Target{}).method, PasteMethod::ClipboardOnly);
+        // Copying only leaves Keep alone on, which no rule can widen; restoring
+        // the clipboard meant nothing without a paste.
+        QCOMPARE(settings.output.steps, (DeliverySteps{.insert = false, .press = false, .keep = true}));
+        // Terminals' rule is their Pasting choice; macOS has none.
+        QCOMPARE(appTypeSettings(settings.apps, AppCategory::Terminal).pasting,
+                 (terminalKeysDiffer ? PastingChoice{std::nullopt, PasteKeyCombo::Terminal} : PastingChoice{}));
         QCOMPARE(settings.output.format, OutputFormat::Html);
-        QVERIFY(settings.output.restoreClipboardAfterTyping);
         QCOMPARE(settings.output.completionStatusDurationMs, 1500);
 
         QCOMPARE(settings.updates.channel, UpdateChannel::Stable);
@@ -468,10 +565,10 @@ private:
         QVERIFY(settings.setupCompleted);
 
         // Chosen again after the first model migration, Sonnet 5 moves to 5.5.
-        QCOMPARE(settings.refinement.anthropicModel, QStringLiteral("claude-sonnet-5-5"));
-        QCOMPARE(settings.refinement.openAiModel, QStringLiteral("gpt-6-luna"));
+        QCOMPARE(settings.refinement.services.choice(QStringLiteral("anthropic")).model, QStringLiteral("claude-sonnet-5-5"));
+        QCOMPARE(settings.refinement.services.choice(QStringLiteral("openai")).model, QStringLiteral("gpt-6-luna"));
         // A saved speed wins over the old fast-mode switch.
-        QCOMPARE(settings.refinement.openAiSpeed, QStringLiteral("standard"));
+        QCOMPARE(settings.refinement.services.choice(QStringLiteral("openai")).speed, QStringLiteral("standard"));
 
         // What the person never chose stays unchosen.
         QVERIFY(!store.raw().contains(SettingsKeys::RefinementProvider));
@@ -485,10 +582,8 @@ private:
         QCOMPARE(lab.outputLanguage, QStringLiteral("Spanish"));
         QCOMPARE(lab.cleanupStrength, QStringLiteral("custom_level_fixture1"));
         QCOMPARE(lab.tone, QStringLiteral("custom_tone_fixture1"));
-        QCOMPARE(lab.speechProvider, QStringLiteral("local"));
-        QCOMPARE(lab.speechModel, QStringLiteral("moonshine-small"));
-        QCOMPARE(lab.refinementProvider, QStringLiteral("anthropic"));
-        QCOMPARE(lab.refinementModel, QStringLiteral("claude-haiku-5-5"));
+        QCOMPARE(lab.speechFirst, (ServiceChoice{QStringLiteral("local"), QStringLiteral("moonshine-small")}));
+        QCOMPARE(lab.refinementFirst, (ServiceChoice{QStringLiteral("anthropic"), QStringLiteral("claude-haiku-5-5")}));
         QCOMPARE(profile(settings, QStringLiteral("work")).instructions, QStringLiteral("Use the team glossary."));
         QCOMPARE(settings.refinement.customTones,
                  (QList<CustomTone>{{QStringLiteral("custom_tone_fixture1"), QStringLiteral("Pirate"),
@@ -496,30 +591,39 @@ private:
         QCOMPARE(settings.refinement.customCleanupLevels,
                  (QList<CustomCleanupLevel>{{QStringLiteral("custom_level_fixture1"), QStringLiteral("Light plus"),
                                              QStringLiteral("light_cleanup"), QStringLiteral("Keep the filler words.")}}));
-        QCOMPARE(settings.refinement.defaultWritingProfile, customProfile);
-        QCOMPARE(settings.refinement.writingProfileOverrides,
-                 (QList<WritingProfileOverride>{{QStringLiteral("org.kde.kate"), customProfile, true}}));
-        QCOMPARE(settings.appRecognitionRules.size(), 1);
-        QCOMPARE(settings.appRecognitionRules[0].writingProfile, std::optional(customProfile));
+        QCOMPARE(fallbackWritingProfile(settings.apps), customProfile);
+        QCOMPARE(settings.apps.apps.size(), 2);
+        QCOMPARE(withoutId(settings.apps.apps[0]),
+                 (AppEntry{{}, QStringLiteral("Kate"), {}, {{AppMatchKind::Id, QStringLiteral("org.kde.kate")}},
+                           std::nullopt, customProfile, std::nullopt}));
+        QCOMPARE(withoutId(settings.apps.apps[1]),
+                 (AppEntry{{}, QStringLiteral("Obsidian"), {},
+                           {{AppMatchKind::Name, QStringLiteral("obsidian")},
+                            {AppMatchKind::WindowTitle, QStringLiteral("obsidian")}},
+                           std::nullopt, customProfile, std::nullopt}));
 
-        QCOMPARE(settings.speech.providerId, QStringLiteral("local"));
-        QCOMPARE(settings.speech.fallbackProviderIds, QStringList{QStringLiteral("codex")});
+        QCOMPARE(settings.speech.services.main(), QStringLiteral("local"));
+        QCOMPARE(settings.speech.services.order.mid(1), QStringList{QStringLiteral("codex")});
         QCOMPARE(settings.speech.language, QStringLiteral("de"));
-        QCOMPARE(settings.speech.local.modelId, QStringLiteral("moonshine-small"));
+        QCOMPARE(localModelId(settings.speech), QStringLiteral("moonshine-small"));
         QVERIFY(settings.speech.local.modelChosen);
         // Read as native read it: the server, without the /v1 its path adds.
-        QCOMPARE(settings.speech.endpoint.baseUrl, QStringLiteral("http://127.0.0.1:9"));
-        QCOMPARE(settings.speech.endpoint.model, QStringLiteral("whisper-fixture"));
+        QCOMPARE(settings.speech.server.baseUrl, QStringLiteral("http://127.0.0.1:9"));
+        QCOMPARE(settings.speech.services.choice(QStringLiteral("endpoint")).model, QStringLiteral("whisper-fixture"));
         QCOMPARE(store.secrets()->secret(SecretStore::Secret::SpeechEndpointKey), QStringLiteral("fixture-speech-key"));
 
-        QCOMPARE(settings.vocabulary.size(), 262);
+        QCOMPARE(test::spellingEntries(settings.vocabulary).size(), 262);
         QCOMPARE(settings.vocabulary[0].context, QStringLiteral("The app this fixture tests."));
         QCOMPARE(settings.vocabulary[0].profiles, QStringList{customProfile});
         QVERIFY(!settings.vocabulary[1].keyTerm);
 
-        QVERIFY(settings.insightsEnabled);
-        QCOMPARE(settings.output.method, QStringLiteral("automatic"));
-        QCOMPARE(resolvePasteRule(settings.output.pasteRules, Target{}).method, PasteMethod::DirectInsert);
+        // Insights were on, and the upgrade keeps their promise: stats only.
+        QCOMPARE(settings.history.keeps, HistoryKeep::Stats);
+        // A Direct insertion default turns Press off. It copied first and
+        // kept the words when insertion failed, so Keep stays on whatever the
+        // restore switch said. Terminals' own rule still pastes.
+        QCOMPARE(settings.output.steps, (DeliverySteps{.insert = true, .press = false, .keep = true}));
+        QCOMPARE(readField(controller, QStringLiteral("terminalDelivery")).toString(), QStringLiteral("insert press"));
         // 45 days, which the interval now caps at 30.
         QCOMPARE(store.dictationSnapshot().updates.checkIntervalMinutes, 30 * 24 * 60);
     }

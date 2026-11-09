@@ -37,7 +37,7 @@ public:
     static AnthropicAuthProvider forSpeech(const AccountSettings &accounts);
     // Anthropic refinement's, through refinement's CLI Proxy API server when
     // one is set.
-    static AnthropicAuthProvider forRefinement(const AccountSettings &accounts, const RefinementSettings &refinement);
+    static AnthropicAuthProvider forRefinement(const AccountSettings &accounts);
 
     // The access token the sign-in points at. With refreshExpired an expired
     // token is renewed over the network first, so only a worker thread may

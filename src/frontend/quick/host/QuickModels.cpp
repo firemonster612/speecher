@@ -3,11 +3,13 @@
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
 #include "app/ProviderAvailability.h"
+#include "core/EndpointSettings.h"
 #include "core/ProviderRatings.h"
 #include "core/ProviderTable.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SpokenLanguages.h"
 #include "frontend/quick/host/QmlValues.h"
+#include "frontend/quick/host/QuickSettings.h"
 #include "providers/LocalModelStore.h"
 #include "providers/ProviderRegistry.h"
 #include "providers/TranscriptRefinementPrompt.h"
@@ -194,24 +196,6 @@ QVariantMap computerEntry(const LocalSetup &local)
     };
 }
 
-QVariantMap fallbackOffer(const LocalSetup &local, ProviderRole role, const QStringList &primaries,
-                          const AppSettings &settings)
-{
-    const std::optional<SetupFallbackOffer> offer = local.setupFallbackOffer(role, settings);
-    if (!offer) {
-        return {};
-    }
-    QStringList joins;
-    for (const QString &primary : primaries) {
-        if (local.setupFallbackOfferJoins(role, primary, settings)) {
-            joins.append(primary);
-        }
-    }
-    return {{QStringLiteral("modelId"), offer->modelId},
-            {QStringLiteral("name"), offer->name},
-            {QStringLiteral("joins"), joins}};
-}
-
 QVariantList namedModels(const QString &providerId)
 {
     QVariantList models;
@@ -223,9 +207,10 @@ QVariantList namedModels(const QString &providerId)
 
 } // namespace
 
-QuickModels::QuickModels(ApplicationController *controller, QObject *parent)
+QuickModels::QuickModels(ApplicationController *controller, QuickSettings *settings, QObject *parent)
     : QObject(parent)
     , m_controller(controller)
+    , m_settings(settings)
 {
     LocalSetup *local = controller->localSetup();
     connect(local, &LocalSetup::changed, this, &QuickModels::refresh);
@@ -233,6 +218,8 @@ QuickModels::QuickModels(ApplicationController *controller, QObject *parent)
     connect(local, &LocalSetup::changed, this, &QuickModels::pullChanged);
     connect(local, &LocalSetup::pullProgress, this, &QuickModels::pullChanged);
     connect(controller->settings(), &SettingsStore::snapshotApplied, this, &QuickModels::refresh);
+    // A draft edit changes the shown settings without a save.
+    connect(settings, &QuickSettings::valuesChanged, this, &QuickModels::refresh);
     // LocalSetup records the bytes from this signal, so it reads them after.
     connect(controller->localModelStore(), &LocalModelStore::downloadProgress, this, &QuickModels::refreshDownloads,
             Qt::QueuedConnection);
@@ -245,7 +232,7 @@ void QuickModels::refresh()
     const LocalSetup &local = *m_controller->localSetup();
     const ProviderRegistry &registry = *m_controller->providerRegistry();
     const ProviderAvailability &availability = *m_controller->providerAvailability();
-    const AppSettings settings = m_controller->settings()->dictationSnapshot();
+    const AppSettings settings = m_settings->shown();
     const LiveFacts facts = local.liveFacts(settings);
     const HardwareProfile &hardware = local.hardware().profile;
     const QStringList speechIds = providerIds(registry.speechProviders());
@@ -334,7 +321,7 @@ void QuickModels::refresh()
     assign(m_speechRatings, ratings(ProviderRole::Speech, speechIds, hardware, settings));
     assign(m_refinementRatings, ratings(ProviderRole::Refinement, refinementIds, hardware, settings));
     assign(m_spokenLanguageProblem,
-           speecher::spokenLanguageProblem(settings.speech, registry.speechProviderLabel(settings.speech.providerId)));
+           speecher::spokenLanguageProblem(settings.speech, registry.speechProviderLabel(settings.speech.services.main())));
     assign(m_hardwareKnown, local.hardwareKnown());
     assign(m_computer, computerEntry(local));
     assign(m_accelerationOptions, accelerationOptions);
@@ -357,10 +344,6 @@ void QuickModels::refresh()
     assign(m_runnersChecked, facts.runnersChecked);
     assign(m_cleanupSuggestion, cleanupSuggestion);
     assign(m_offerPull, local.runnerChoice(settings).offerPull);
-    assign(m_fallbackOffers,
-           QVariantMap({{QStringLiteral("speech"), fallbackOffer(local, ProviderRole::Speech, speechIds, settings)},
-                        {QStringLiteral("refinement"),
-                         fallbackOffer(local, ProviderRole::Refinement, refinementIds, settings)}}));
     if (dirty) {
         emit changed();
     }
@@ -417,7 +400,7 @@ void QuickModels::checkComputer()
 void QuickModels::checkSignIns()
 {
     m_controller->providerAvailability()->checkSpeechSignIns(*m_controller->providerRegistry(),
-                                                             m_controller->settings()->dictationSnapshot());
+                                                             m_settings->shown());
 }
 
 QVariantMap QuickModels::service(const QString &id) const
@@ -457,7 +440,14 @@ void QuickModels::use(const QString &id)
         qWarning().noquote() << "Models.use:" << id << "is not a Local Model";
         return;
     }
-    m_controller->localSetup()->useSpeechModel(id);
+    // The model first, so no save has Local Model first with the model it
+    // had before.
+    m_settings->set(QStringLiteral("speechLocalModel"), id);
+    QVariantList order;
+    for (const QString &service : m_settings->shown().speech.services.withMain(providerKey(ProviderId::Local)).order) {
+        order.append(QVariantMap{{QStringLiteral("service"), service}});
+    }
+    m_settings->set(QStringLiteral("speechServices"), order);
 }
 
 void QuickModels::testSpeed(const QString &id)
@@ -474,12 +464,13 @@ void QuickModels::openModelFolder()
 
 void QuickModels::testSpeechEndpoint()
 {
-    m_controller->localSetup()->checkSpeechEndpoint(m_controller->settings()->dictationSnapshot().speech.endpoint);
+    m_controller->localSetup()->checkSpeechEndpoint(m_settings->shown().speech.server);
 }
 
 void QuickModels::testRefinementEndpoint()
 {
-    m_controller->localSetup()->checkRefinementEndpoint(m_controller->settings()->dictationSnapshot().refinement);
+    const AppSettings settings = m_settings->shown();
+    m_controller->localSetup()->checkRefinementEndpoint(resolvedRefinementEndpoint(settings.refinement, settings.accounts));
 }
 
 void QuickModels::detectRunners()
@@ -498,16 +489,6 @@ void QuickModels::pullCleanupModel()
 void QuickModels::cancelPull()
 {
     m_controller->localSetup()->cancelPull();
-}
-
-void QuickModels::acceptFallbackOffer(const QString &role, const QString &primary)
-{
-    if (role != u"speech" && role != u"refinement") {
-        qWarning().noquote() << "Models.acceptFallbackOffer: no role" << role;
-        return;
-    }
-    m_controller->localSetup()->acceptSetupFallbackOffer(
-        role == u"refinement" ? ProviderRole::Refinement : ProviderRole::Speech, primary);
 }
 
 } // namespace speecher

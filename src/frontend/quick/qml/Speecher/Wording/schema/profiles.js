@@ -1,7 +1,8 @@
 .pragma library
 
-// The profiles themselves, tones, cleanup levels and the fallback profile live
-// in Library; these rows give them labels, help and search terms.
+// The profiles themselves, tones and cleanup levels live in Library, and the
+// profile for apps Speecher doesn't recognize is Other apps' on Apps; these
+// rows give them labels, help and search terms.
 var rows = [
     { id: "writingProfileBehavior", page: "profiles", section: "Profiles", kind: "custom",
       label: "Profiles",
@@ -21,14 +22,11 @@ var rows = [
       placeholder: "Keep it short and sign off with my first name.", keywords: "instructions rules custom prompt" },
     { id: "profileServices", page: "profiles", section: "Profiles", kind: "custom",
       label: "Services for this profile",
-      help: "Pick a speech service or refinement provider for this profile only. Each falls back to the ones set for every profile.",
+      help: "Pick a speech or refinement service for this profile only. Each falls back to the ones set for every profile.",
       keywords: "speech service refinement provider model override per profile" },
     { id: "profileApps", page: "profiles", section: "Profiles", kind: "custom",
-      label: "Used in", help: "Apps are matched to profiles in Application recognition, under Pasting › App rules.",
-      keywords: "apps applications match recognition" },
-    { id: "defaultWritingProfile", page: "profiles", section: "Every profile", kind: "custom",
-      label: "When the app isn't recognized", help: "The profile for apps Speecher doesn't recognize.",
-      keywords: "fallback default profile unknown app unrecognized" },
+      label: "Used in", help: "Apps and app types pick their profile on Apps.",
+      keywords: "apps applications app type" },
 
     { id: "additionalInstructions", page: "profiles", section: "Every profile", kind: "custom",
       label: "Instructions for every profile",

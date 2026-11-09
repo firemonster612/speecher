@@ -1,6 +1,5 @@
 #include "providers/ProviderRegistry.h"
 
-#include "core/WritingProfileProviders.h"
 
 #include <algorithm>
 
@@ -89,14 +88,9 @@ ProviderLabels ProviderRegistry::labels() const
     };
 }
 
-AppSettings ProviderRegistry::withProfileProviders(const AppSettings &settings,
-                                                  const WritingProfileSettings &profile) const
+std::function<bool(const QString &service)> ProviderRegistry::offersSpeech() const
 {
-    AppSettings resolved = withWritingProfileProviders(settings, profile);
-    if (!m_speech.contains(resolved.speech.providerId)) {
-        resolved.speech = settings.speech;
-    }
-    return resolved;
+    return [this](const QString &service) { return m_speech.contains(service); };
 }
 
 SpeechTranscriber *ProviderRegistry::speechProvider(const QString &id)

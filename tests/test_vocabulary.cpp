@@ -1,11 +1,19 @@
 #include "common/test_suites.h"
+#include "common/vocabulary_entries.h"
 #include "core/Vocabulary.h"
 #include "core/VocabularyLimit.h"
+#include "core/AppEdits.h"
 #include "core/SettingsStore.h"
+#include "core/VocabularyEdits.h"
+#include "core/VocabularyScope.h"
+#include "core/settings/SettingsKeys.h"
+#include "core/settings/VocabularyMigration.h"
+#include "core/settings/VocabularySettingsCodec.h"
 
 #include <QFile>
 #include <QScopeGuard>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 
 using namespace speecher;
 
@@ -117,9 +125,8 @@ private slots:
         }
         settings.edit([&](AppSettings &draft) { draft.vocabulary = manualTerms(terms); return true; });
         settings.edit([](AppSettings &draft) {
-            draft.learnedCorrections = {{QStringLiteral("one"), QStringLiteral("githab"),
-                                             QStringLiteral("GitHub"), QStringLiteral("editor"),
-                                             100, 0.8, true, 1, 100}};
+            draft.vocabulary.append(test::learnedEntry(QStringLiteral("githab"), QStringLiteral("GitHub"),
+                                                       QStringLiteral("editor")));
             return true;
         });
 
@@ -130,7 +137,11 @@ private slots:
         QVERIFY(!sent.contains(QStringLiteral("GitHub")));
 
         // Under the cap the correction rides along.
-        settings.edit([](AppSettings &draft) { draft.vocabulary = {{QStringLiteral("Speecher")}}; return true; });
+        settings.edit([](AppSettings &draft) {
+            draft.vocabulary = {{QStringLiteral("Speecher")}, test::learnedEntry(QStringLiteral("githab"),
+                                                                                 QStringLiteral("GitHub"))};
+            return true;
+        });
         QVERIFY(settings.snapshot().speech.vocabulary.contains(QStringLiteral("GitHub")));
 
         // The token cap holds too: fewer than 100 terms but exactly 500
@@ -360,6 +371,242 @@ private slots:
         };
         QCOMPARE(updatedFrequency(QStringLiteral("cat")), 1);
         QCOMPARE(updatedFrequency(QStringLiteral("go")), 1);
+    }
+
+    // The one scope test, profile by app: an entry limited to profiles, to
+    // apps (an App's id or a correction's application id) or to both applies
+    // only where every limit holds, and a request made before the profile is
+    // known takes every entry that is on.
+    void anEntryAppliesWhereItsLimitsHold_data()
+    {
+        QTest::addColumn<QStringList>("profiles");
+        QTest::addColumn<QStringList>("apps");
+        QTest::addColumn<bool>("enabled");
+        // Where it applies, of: Work in Kate, Personal in Kate, Work in
+        // Firefox, Work in a Gmail tab, and before the profile is known.
+        QTest::addColumn<QList<bool>>("applies");
+
+        const QString kate = QStringLiteral("org.kde.kate");
+        QTest::newRow("anywhere") << QStringList{} << QStringList{} << true << QList<bool>{true, true, true, true, true};
+        QTest::newRow("profile") << QStringList{WritingProfile::Work} << QStringList{} << true
+                                 << QList<bool>{true, false, true, true, true};
+        QTest::newRow("application id") << QStringList{} << QStringList{QStringLiteral("ORG.KDE.KATE")} << true
+                                        << QList<bool>{true, true, false, false, true};
+        QTest::newRow("App by id") << QStringList{} << QStringList{QStringLiteral("app:kate")} << true
+                                   << QList<bool>{true, true, false, false, true};
+        QTest::newRow("App by title") << QStringList{} << QStringList{QStringLiteral("app:gmail")} << true
+                                      << QList<bool>{false, false, false, true, true};
+        QTest::newRow("either app") << QStringList{} << QStringList{QStringLiteral("app:gmail"), kate} << true
+                                    << QList<bool>{true, true, false, true, true};
+        QTest::newRow("profile and app") << QStringList{WritingProfile::Work} << QStringList{kate} << true
+                                         << QList<bool>{true, false, false, false, true};
+        QTest::newRow("removed App") << QStringList{} << QStringList{QStringLiteral("app:gone")} << true
+                                     << QList<bool>{false, false, false, false, true};
+        QTest::newRow("off") << QStringList{} << QStringList{} << false << QList<bool>{false, false, false, false, false};
+    }
+
+    void anEntryAppliesWhereItsLimitsHold()
+    {
+        QFETCH(QStringList, profiles);
+        QFETCH(QStringList, apps);
+        QFETCH(bool, enabled);
+        QFETCH(QList<bool>, applies);
+
+        AppsSettings settings;
+        settings.apps = {
+            {QStringLiteral("app:kate"), QStringLiteral("Kate"), {}, {{AppMatchKind::Id, QStringLiteral("org.kde.kate.desktop")}}},
+            {QStringLiteral("app:gmail"), QStringLiteral("Gmail"), {}, {{AppMatchKind::WindowTitle, QStringLiteral("Gmail")}}},
+        };
+        Target kate;
+        kate.applicationId = QStringLiteral("org.kde.kate");
+        Target firefox;
+        firefox.applicationId = QStringLiteral("org.mozilla.firefox");
+        Target gmail = firefox;
+        gmail.windowTitle = QStringLiteral("Inbox - Gmail - Firefox");
+        const QList<VocabularyScope> scopes{
+            {WritingProfile::Work, kate, settings},
+            {WritingProfile::Personal, kate, settings},
+            {WritingProfile::Work, firefox, settings},
+            {WritingProfile::Work, gmail, settings},
+            {QString(), firefox, settings},
+        };
+
+        VocabularyEntry entry{QStringLiteral("Kubernetes")};
+        entry.profiles = profiles;
+        entry.apps = apps;
+        entry.enabled = enabled;
+        QList<bool> actual;
+        for (const VocabularyScope &scope : scopes) {
+            actual.append(vocabularyEntryApplies(entry, scope));
+        }
+        QCOMPARE(actual, applies);
+    }
+
+    // Of two replacements for one phrase, the person's own wins over a
+    // Learned Correction, and the one limited to the app over the one limited
+    // to the profile over the one for anywhere.
+    void theNarrowerReplacementWins()
+    {
+        Target slack;
+        slack.applicationId = QStringLiteral("com.slack.Slack");
+        const VocabularyScope inSlack{WritingProfile::Work, slack, {}};
+        VocabularyEntry anywhere = test::replacementEntry(QStringLiteral("sig"), QStringLiteral("Best"));
+        VocabularyEntry forWork = test::replacementEntry(QStringLiteral("sig"), QStringLiteral("Regards"));
+        forWork.profiles = {WritingProfile::Work};
+        VocabularyEntry forSlack = test::replacementEntry(QStringLiteral("sig"), QStringLiteral("cheers"));
+        forSlack.apps = {QStringLiteral("com.slack.Slack")};
+        const VocabularyEntry learned = test::learnedEntry(QStringLiteral("SIG"), QStringLiteral("SIG"),
+                                                           QStringLiteral("com.slack.Slack"));
+        const QDateTime now = QDateTime::currentDateTime();
+
+        QCOMPARE(replacementRules({learned, anywhere, forWork, forSlack}, inSlack, now),
+                 (QList<BindingRule>{{QStringLiteral("sig"), QStringLiteral("cheers")}}));
+        QCOMPARE(replacementRules({learned, anywhere, forWork}, inSlack, now),
+                 (QList<BindingRule>{{QStringLiteral("sig"), QStringLiteral("Regards")}}));
+        QCOMPARE(replacementRules({learned, anywhere}, {WritingProfile::Personal, slack, {}}, now),
+                 (QList<BindingRule>{{QStringLiteral("sig"), QStringLiteral("Best")}}));
+        QCOMPARE(replacementRules({learned}, inSlack, now), (QList<BindingRule>{{QStringLiteral("SIG"), QStringLiteral("SIG")}}));
+    }
+
+    // Each old list moves into the one Vocabulary once, as the release before
+    // loaded it, and the old keys stay for a downgrade.
+    void migrationMovesEachOldList()
+    {
+        QTemporaryDir dir;
+        QSettings settings(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
+        settings.setValue(SettingsKeys::VocabularyEntries,
+                          QByteArray(R"([{"term":"Kubernetes","source":"manual","starred":true,"frequency":4,)"
+                                     R"("lastUsedMs":1000,"context":"The platform.","profiles":["work"]},)"
+                                     R"({"term":"Lúcia","source":"csv","keyTerm":false}])"));
+        settings.setValue(SettingsKeys::BindingRules,
+                          QByteArray(R"([{"phrase":"my email","replacement":"efox@example.com"},)"
+                                     R"({"phrase":"MY, email","replacement":"a duplicate"},)"
+                                     R"({"phrase":"...","replacement":"no words"}])"));
+        settings.setValue(SettingsKeys::LearnedCorrections,
+                          QByteArray(R"([{"id":"c1","original":"cute","corrected":"Qt","applicationId":"org.kde.kate",)"
+                                     R"("createdAtMs":10,"confidence":0.75,"enabled":false,"evidenceCount":3,"lastObservedAtMs":20},)"
+                                     R"({"id":"c2","original":"open ai","corrected":"OpenAI","applicationId":"",)"
+                                     R"("createdAtMs":30,"confidence":0.98},)"
+                                     R"({"id":"","original":"no id","corrected":"dropped"}])"));
+
+        migrateVocabulary(settings);
+
+        const QList<VocabularyEntry> migrated = VocabularySettingsCodec::load(settings);
+        QCOMPARE(migrated.size(), 5);
+        VocabularyEntry kubernetes{QStringLiteral("Kubernetes"), QStringLiteral("manual"), true, 4, 1000,
+                                   QStringLiteral("The platform."), {QStringLiteral("work")}};
+        kubernetes.id = migrated[0].id;
+        QCOMPARE(migrated[0], kubernetes);
+        QCOMPARE(migrated[1].term, QStringLiteral("Lúcia"));
+        QCOMPARE(migrated[1].source, QStringLiteral("csv"));
+        QVERIFY(!migrated[1].keyTerm);
+        VocabularyEntry email = test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com"));
+        email.id = migrated[2].id;
+        QCOMPARE(migrated[2], email);
+        VocabularyEntry cute = test::learnedEntry(QStringLiteral("cute"), QStringLiteral("Qt"), QStringLiteral("org.kde.kate"),
+                                                  QStringLiteral("c1"));
+        cute.confidence = 0.75;
+        cute.enabled = false;
+        cute.evidenceCount = 3;
+        cute.createdAtMs = 10;
+        cute.lastObservedAtMs = 20;
+        QCOMPARE(migrated[3], cute);
+        VocabularyEntry openAi = test::learnedEntry(QStringLiteral("open ai"), QStringLiteral("OpenAI"), {}, QStringLiteral("c2"));
+        openAi.confidence = 0.98;
+        openAi.createdAtMs = 30;
+        openAi.lastObservedAtMs = 30;
+        QCOMPARE(migrated[4], openAi);
+        for (const VocabularyEntry &entry : migrated) {
+            QVERIFY(!entry.id.isEmpty());
+        }
+        QVERIFY(settings.contains(SettingsKeys::VocabularyEntries));
+        QVERIFY(settings.contains(SettingsKeys::BindingRules));
+        QVERIFY(settings.contains(SettingsKeys::LearnedCorrections));
+
+        // Once: a list edited since stays as it is.
+        VocabularySettingsCodec::store(settings, {{QStringLiteral("Speecher")}});
+        migrateVocabulary(settings);
+        QCOMPARE(vocabularyTermsOf(VocabularySettingsCodec::load(settings)), QStringList{QStringLiteral("Speecher")});
+    }
+
+    void migrationReadsTheOldestTermsAndStoresNothingWhereThereWereNone()
+    {
+        QTemporaryDir dir;
+        QSettings settings(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
+        migrateVocabulary(settings);
+        QVERIFY(!settings.contains(SettingsKeys::Vocabulary));
+
+        QSettings older(dir.filePath(QStringLiteral("older.ini")), QSettings::IniFormat);
+        older.setValue(SettingsKeys::LegacyVocabulary, QStringList{QStringLiteral("Wayland"), QStringLiteral("KWin")});
+        migrateVocabulary(older);
+        const QList<VocabularyEntry> migrated = VocabularySettingsCodec::load(older);
+        QCOMPARE(vocabularyTermsOf(migrated), (QStringList{QStringLiteral("KWin"), QStringLiteral("Wayland")}));
+        QCOMPARE(migrated.first().source, QStringLiteral("legacy"));
+    }
+
+    // Removing an App keeps a snippet limited to it limited to the ids it
+    // matched, rather than writing it everywhere.
+    void removingAnAppKeepsTheLimitsByItsIds()
+    {
+        AppSettings settings;
+        settings.apps.apps = {
+            {QStringLiteral("app:slack"), QStringLiteral("Slack"), {}, {{AppMatchKind::Id, QStringLiteral("com.slack.Slack")}}},
+            {QStringLiteral("app:gmail"), QStringLiteral("Gmail"), {}, {{AppMatchKind::WindowTitle, QStringLiteral("Gmail")}}},
+        };
+        VocabularyEntry inSlack = test::replacementEntry(QStringLiteral("sig"), QStringLiteral("cheers"));
+        QCOMPARE(addVocabularyEntry(settings, inSlack), EditRefusal::None);
+        settings.vocabulary.first().apps = {QStringLiteral("app:slack"), QStringLiteral("app:gmail")};
+
+        QVERIFY(removeApp(settings, QStringLiteral("app:slack")));
+        QCOMPARE(settings.vocabulary.first().apps, (QStringList{QStringLiteral("app:gmail"), QStringLiteral("com.slack.Slack")}));
+        QVERIFY(removeApp(settings, QStringLiteral("app:gmail")));
+        QCOMPARE(settings.vocabulary.first().apps, QStringList{QStringLiteral("com.slack.Slack")});
+    }
+
+    // An App matched only by window title has no id to keep the limit by:
+    // its words must not start applying everywhere, and Undo brings back
+    // both the App and the limits removing it rewrote.
+    void removingAnAppNeverWidensALimitAndUndoRestoresIt()
+    {
+        AppSettings settings;
+        settings.apps.apps = {
+            {QStringLiteral("app:slack"), QStringLiteral("Slack"), {}, {{AppMatchKind::Id, QStringLiteral("com.slack.Slack")}}},
+            {QStringLiteral("app:bank"), QStringLiteral("Bank"), {}, {{AppMatchKind::WindowTitle, QStringLiteral("My Bank")}}},
+        };
+        QCOMPARE(addVocabularyEntry(settings, test::replacementEntry(QStringLiteral("acct"), QStringLiteral("12345"))),
+                 EditRefusal::None);
+        QCOMPARE(addVocabularyEntry(settings, test::replacementEntry(QStringLiteral("sig"), QStringLiteral("cheers"))),
+                 EditRefusal::None);
+        settings.vocabulary[0].apps = {QStringLiteral("app:bank")};
+        settings.vocabulary[1].apps = {QStringLiteral("app:slack")};
+        const QList<VocabularyEntry> before = settings.vocabulary;
+
+        Target elsewhere;
+        elsewhere.applicationId = QStringLiteral("org.kde.kate");
+        elsewhere.windowTitle = QStringLiteral("notes.txt");
+        const auto appliesElsewhere = [&settings, &elsewhere](int index) {
+            return vocabularyEntryApplies(settings.vocabulary.at(index),
+                                          {WritingProfile::Other, elsewhere, settings.apps});
+        };
+
+        const SettingsEdit undoBank = removeApp(settings, QStringLiteral("app:bank"));
+        QVERIFY(undoBank);
+        QVERIFY(!settings.vocabulary.at(0).apps.isEmpty());
+        QVERIFY(!appliesElsewhere(0));
+        // Still editable with the limit it kept.
+        QCOMPARE(editVocabularyEntry(settings, settings.vocabulary.at(0).id,
+                                     [](VocabularyEntry &entry) { entry.replacement = QStringLiteral("54321"); }),
+                 EditRefusal::None);
+        QCOMPARE(editVocabularyEntry(settings, settings.vocabulary.at(0).id,
+                                     [](VocabularyEntry &entry) { entry.replacement = QStringLiteral("12345"); }),
+                 EditRefusal::None);
+
+        const SettingsEdit undoSlack = removeApp(settings, QStringLiteral("app:slack"));
+        QCOMPARE(settings.vocabulary.at(1).apps, QStringList{QStringLiteral("com.slack.Slack")});
+        undoSlack(settings);
+        undoBank(settings);
+        QCOMPARE(settings.apps.apps.size(), 2);
+        QCOMPARE(settings.vocabulary, before);
     }
 };
 

@@ -379,19 +379,14 @@ def check_after_update(summary, evidence, candidate, csreq):
         update.run('open', '-a', update.APP)
         with contextlib.suppress(TimeoutError):
             update.wait_for(update.speecher_pids, 60, 'the new app did not start')
-    # The new app reads the saved keys when its Accounts page first opens and
+    # The new app reads the saved keys when its Services page first opens and
     # gives up on a Keychain read after 1.5 s, as it does on a prompt nobody
     # answers; the OpenAI API key field reads "Saved" only when the read
     # succeeded. It is the first text field after the row labelled API key;
     # other secrets, such as the CLI Proxy API key, read "Saved" too.
     update.cli('settings')
     time.sleep(3)
-    opened = ui(evidence, 'press', 'Accounts')
-    if not opened:
-        # Accounts sits under General, listed once General is open.
-        ui(evidence, 'press', 'General')
-        time.sleep(2)
-        opened = ui(evidence, 'press', 'Accounts')
+    opened = ui(evidence, 'press', 'Services')
     time.sleep(5)
     saved = opened and ui(evidence, 'field-after', 'API key', 'Saved')
     inspected = run('osascript', '-e', 'tell application "System Events" to if exists process "SecurityAgent" '
@@ -411,9 +406,16 @@ def check_after_update(summary, evidence, candidate, csreq):
     windows = (f'SecurityAgent windows {prompt or 0}' if inspected.returncode == 0
                else f'SecurityAgent not inspected: {inspected.stderr.strip()}')
     summary.check('after.openai_key_without_prompt', saved and no_prompt,
-                  f'Accounts page {"opened" if opened else "not found"}; OpenAI API key field '
+                  f'Services page {"opened" if opened else "not found"}; OpenAI API key field '
                   f'{"reads Saved" if saved else "does not read Saved"}; {windows}'
                   + (f'; it says: {asked}' if asked else ''))
+
+    # The shipped app had no History, so these lines are the candidate's: it
+    # opened History through the bundled SQLite driver, with trigram search.
+    log = LOG.read_text(errors='replace') if LOG.exists() else ''
+    opened = re.findall(r'history store (?:opened|could not open)[^\n]*', log)
+    summary.check('after.history_opens', any('search=trigram' in line for line in opened),
+                  '; '.join(opened[-2:]) or 'speecher.log says nothing about History')
 
     login = update.login_item()
     (evidence / 'login-item-after-gate.txt').write_text(login + '\n')

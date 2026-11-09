@@ -1,0 +1,186 @@
+.pragma library
+.import "pasting.js" as Pasting
+
+// The Apps page's rows and wording: the person's Apps, the App Types, and
+// the picker that adds an app. Type ids are core's category names, paste
+// keys' ids its key names (Pasting.keyChoices), and an empty id is "Same as
+// …".
+
+var mac = Qt.platform.os === "osx";
+var windows = Qt.platform.os === "windows";
+
+// The App Types, Other apps last; Apps.types holds their settings under the
+// same ids. one names a single app of the type. The examples are some of each platform's apps.
+var types = [
+    { id: "terminal", label: "Terminals", one: "Terminal", icon: "square-terminal",
+      examples: mac ? "Terminal, iTerm2, Ghostty" : windows ? "Windows Terminal, PowerShell" : "Konsole, Ghostty, Kitty" },
+    { id: "browser", label: "Browsers", one: "Browser", icon: "globe",
+      examples: mac ? "Safari, Chrome, Firefox" : windows ? "Edge, Chrome, Firefox" : "Firefox, Chrome, Helium" },
+    { id: "email", label: "Email apps", one: "Email app", icon: "mail",
+      examples: mac ? "Mail, Outlook" : windows ? "Outlook, Thunderbird" : "Thunderbird, KMail" },
+    { id: "office", label: "Office apps", one: "Office app", icon: "file-text",
+      examples: mac ? "Pages, Word" : windows ? "Word, Excel" : "LibreOffice Writer" },
+    { id: "code_editor", label: "Code editors", one: "Code editor", icon: "code",
+      examples: mac ? "Xcode, VS Code, JetBrains" : windows ? "VS Code, Visual Studio, JetBrains" : "Kate, VS Code, JetBrains" },
+    { id: "ai_coding", label: "AI coding apps", one: "AI coding app", icon: "bot", examples: "Cursor, Claude Code" },
+    { id: "general", label: "Other apps", one: "Other app", icon: "app-window", examples: "Every app Speecher doesn't recognize" }
+];
+function type(id) { return types.find(t => t.id === id) || types[types.length - 1] }
+// An App Type (of Apps.types) or an App (of Apps.entries) as another page
+// lists it, linking to it in Apps: { id, name, typeIcon, icon }, id being
+// the Apps page's landing id.
+function typeLink(settings) {
+    return { id: "apptype:" + settings.id, name: type(settings.id).label, typeIcon: type(settings.id).icon, icon: "" }
+}
+function appLink(entry) { return { id: "appentry:" + entry.id, name: entry.name, typeIcon: "", icon: entry.icon } }
+// The fallback profile's one name, wherever its place is named rather than
+// the profile it holds.
+var otherAppsProfile = "Other apps' profile";
+
+// The Pasting row's one choice besides "Same as …": steps of its own, the
+// Pasting page's three switches.
+var ownSteps = { id: "own", label: "Its own steps", icon: "list-checks" };
+// What an App's or App Type's own pasting adds to its row, in the editor's
+// words: "its own steps: Insert, Keep", and the keys where they're its own.
+function pastingSummary(settings) {
+    return [settings.steps ? ownSteps.label.toLowerCase() + ": " + Pasting.stepsText(settings.steps) : "",
+            settings.keys ? Pasting.keysLabel(settings.keys) : ""].filter(s => s)
+}
+
+// An App's or App Type's History choice, which can only lower what
+// Privacy & data keeps (General's historyKeeps, whose option ids these
+// share); none is "Same as …".
+var historyChoices = [
+    { id: "stats", label: "Stats only", icon: "chart-no-axes-column" },
+    { id: "nothing", label: "Nothing", icon: "eye-off" }
+];
+function historyLabel(id) { return (historyChoices.find(o => o.id === id) || { label: "" }).label }
+// What History keeps of an app's dictations, for the line under its History
+// row: the lower of its choice (empty for none) and keeps, Privacy & data's
+// level, whose label is keepsLabel.
+var keepOrder = ["nothing", "stats", "text", "audio"];
+function historyResult(choice, keeps, keepsLabel) {
+    const level = keepsLabel.toLowerCase()
+    if (!choice) return "Keeps " + level + ", as Privacy & data does."
+    if (keepOrder.indexOf(keeps) < keepOrder.indexOf(choice)) return "Keeps " + level + ": Privacy & data keeps " + level + "."
+    return choice === "stats" ? "Keeps word counts and times for Home, never the words."
+                              : "Keeps nothing of its dictations, not even for Home."
+}
+
+// The editor's words, an App's and an App Type's alike.
+var t = {
+    addApp: "Add app",
+    yourApps: "Your apps",
+    yourAppsHelp: "Apps you've set something for. Every other app follows its type.",
+    noApps: "No apps of your own yet",
+    noAppsHelp: "Add one to give it its own writing profile or way of pasting.",
+    types: "App types",
+    typesHelp: count => "Speecher knows " + count + " common apps by name and sorts them into these types. Pick one with Add app to change it.",
+    type: "Type",
+    profile: "Writing profile",
+    pasting: "Pasting",
+    history: "History",
+    inHistory: id => historyLabel(id) + " in History",
+    recognizedAs: "Recognized as",
+    byName: "Name contains",
+    byTitle: "Window title contains",
+    titleOnlyType: "A window title says what a window shows, not which app it is, so it doesn't set the type.",
+    titleOnlyFollows: "What it follows depends on the app the window is in. Test it with that app open to see.",
+    precedence: "When several apps match one window, those recognized by id come first, then the rest in list order, and each setting comes from the first that sets it.",
+    editMatching: "Name and recognition",
+    appName: "Name",
+    matchKinds: [
+        { id: "id", label: "App id is" },
+        { id: "name", label: "Name contains" },
+        { id: "title", label: "Window title contains" }
+    ],
+    matchKindsHelp: "Any one matching is enough. A window title never sets the type.",
+    addMatch: "Add a match",
+    terminalsNote: "Anything running in a terminal pastes like Terminals unless its app has its own Pasting.",
+    pasteKeys: "Paste keys",
+    pasteKeysHelp: "What Press paste keys presses.",
+    remove: "Remove app",
+    removeHelp: "It goes back to Automatic everywhere. What Speecher learned in it stays, and so do the words limited to it.",
+    automatic: label => "Automatic (" + label + ")",
+    pastingPage: "Pasting",
+    otherProfileHelp: "The profile for apps Speecher doesn't recognize.",
+    // Test's words.
+    test: "Test",
+    testTitle: "Test an app",
+    testAgain: "Test again",
+    close: "Close",
+    testHelp: "Switch to the app you want to test. Speecher captures it as dictation would, and changes nothing.",
+    testFailed: "Speecher couldn't tell which app that was.",
+    matchedApps: names => "Your apps that match it, in the order they count: " + names.join(", ") + ".",
+    matchedNone: "None of your apps match it, so it follows its type.",
+    from: place => place ? "from " + place : "",
+    builtInList: "the built-in list",
+    historyAsPrivacy: "As Privacy & data keeps",
+    // The picker's words.
+    search: "Search apps",
+    recent: "Recently dictated into",
+    installed: "Installed",
+    scanning: "Looking for installed apps…",
+    noMatch: "No app by that name",
+    hasSettings: "Has settings",
+    sameAppAs: names => "One app with " + names.join(", "),
+    moreInstalled: count => count + " more. Type to narrow the list.",
+    notListed: "Not in the list?",
+    switchToIt: "Switch to it",
+    switchHelp: "Pick the app you're in after you switch to it.",
+    switching: seconds => seconds > 0 ? "Switch to the app now. Capturing in " + seconds + "…" : "Waiting for you to switch…",
+    switchFailed: "Speecher couldn't tell which app that was. Try matching it by name or window title.",
+    matchByText: "Match by name or window title…",
+    matchHelp: "For web apps and programs that run in a terminal.",
+    matchText: "Text",
+    matchPlaceholder: "Gmail",
+    add: "Add",
+    lastSeen: "dictated into"
+};
+
+// Why Apps refused an edit, by core's reason.
+var refusals = {
+    blank: "Type what to match the app by.",
+    incomplete: "Keep one step on.",
+    taken: "Another app is matched by that already.",
+    missing: "It, or the profile it picks, was deleted meanwhile.",
+    invalid: "Speecher couldn't save this."
+};
+
+// What an app's row says it sets: "Email profile, Clipboard only", or
+// "Same as its type" when nothing.
+function summary(entry, profileName) {
+    const parts = []
+    if (entry.type) parts.push(type(entry.type).one)
+    if (entry.profile) parts.push(profileName(entry.profile) + " profile")
+    parts.push(...pastingSummary(entry))
+    if (entry.history) parts.push(t.inHistory(entry.history))
+    return parts.length ? capitalized(parts.join(", ")) : "Same as " + type(entry.effective.type).label
+}
+function capitalized(s) { return s.charAt(0).toUpperCase() + s.slice(1) }
+// What an App Type's row says: its profile, Pasting and History choices.
+function typeSummary(settings, profileName) {
+    const parts = [settings.profile ? profileName(settings.profile) + " profile" : "Same as " + otherAppsProfile]
+    parts.push(...pastingSummary(settings))
+    if (settings.history) parts.push(t.inHistory(settings.history))
+    return capitalized(parts.join(", "))
+}
+
+var rows = [
+    { id: "apps", page: "apps", section: t.yourApps, kind: "custom",
+      label: t.yourApps, help: t.yourAppsHelp,
+      keywords: "app per-app application exception rule recognition recognize match desktop id bundle program window title profile paste" },
+    { id: "addApp", page: "apps", section: t.yourApps, kind: "custom",
+      label: t.addApp, help: "Pick an installed app, or one you dictated into.",
+      keywords: "new app exception single app installed switch match name window title web app" },
+    { id: "appTypes", page: "apps", section: t.types, kind: "custom",
+      label: t.types, help: "Each type has a writing profile and a way of pasting its apps follow.",
+      keywords: "app type category terminal keys built-in " + types.map(c => c.label.toLowerCase()).join(" ") },
+    { id: "appHistory", page: "apps", section: t.yourApps, kind: "custom",
+      label: "History for an app",
+      help: "Keep only stats, or nothing, of what you dictate into an app or a type of app. It never keeps more than Privacy & data.",
+      keywords: "history privacy exclude leave out private password manager incognito keep stats nothing" },
+    { id: "otherAppsProfile", page: "apps", section: t.types, kind: "custom",
+      label: "Profile for apps Speecher doesn't recognize", help: t.otherProfileHelp,
+      keywords: "fallback default profile unknown unrecognized other apps writing profile" }
+];

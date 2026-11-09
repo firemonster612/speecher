@@ -39,8 +39,8 @@ static QString liveRefine(const QString &rawTranscript,
     accounts.anthropicAuthMode = AnthropicAuthMode::Cliproxy;
     accounts.cliproxyOauthDir = qEnvironmentVariable(kLiveCliproxyDir);
     if (accounts.cliproxyOauthDir.isEmpty()) {
-        settings.cliproxyBaseUrl = qEnvironmentVariable(kLiveCliproxyUrl);
-        settings.cliproxyApiKey = qEnvironmentVariable(kLiveCliproxyKey);
+        accounts.cliproxyBaseUrl = qEnvironmentVariable(kLiveCliproxyUrl);
+        accounts.cliproxyApiKey = qEnvironmentVariable(kLiveCliproxyKey);
     }
     RefinementContext context;
     if (!textBeforeCaret.isEmpty()) {
@@ -1882,10 +1882,10 @@ private slots:
         }
 
         RefinementSettings settings;
-        settings.cliproxyBaseUrl = baseUrl;
-        settings.cliproxyApiKey = apiKey;
-        RefinementContext context;
         AccountSettings accounts;
+        accounts.cliproxyBaseUrl = baseUrl;
+        accounts.cliproxyApiKey = apiKey;
+        RefinementContext context;
 
         accounts.anthropicAuthMode = AnthropicAuthMode::Cliproxy;
         AnthropicTranscriptRefiner anthropic;
@@ -1898,7 +1898,7 @@ private slots:
         QVERIFY(!anthropicCompleted.first().first().toString().trimmed().isEmpty());
 
         accounts.openAiAuthMode = OpenAiAuthMode::Cliproxy;
-        settings.openAiModel = qEnvironmentVariable("SPEECHER_TEST_LIVE_CLIPROXY_OPENAI_MODEL",
+        settings.services.choice(QStringLiteral("openai")).model = qEnvironmentVariable("SPEECHER_TEST_LIVE_CLIPROXY_OPENAI_MODEL",
                                                     QStringLiteral("gpt-5.6-luna"));
         OpenAiTranscriptRefiner openAi(nullptr);
         QSignalSpy openAiCompleted(&openAi, &TranscriptRefiner::completed);
@@ -2127,12 +2127,12 @@ private slots:
         };
 
         RefinementSettings settings;
-        settings.cliproxyBaseUrl = baseUrl(claudeServer);
-        settings.cliproxyApiKey = QStringLiteral("proxy-key");
         RefinementContext context;
 
         // No local account files anywhere near these paths: remote mode must not need them.
         AccountSettings accounts;
+        accounts.cliproxyBaseUrl = baseUrl(claudeServer);
+        accounts.cliproxyApiKey = QStringLiteral("proxy-key");
         accounts.cliproxyOauthDir = QStringLiteral("/nonexistent/cliproxy/oauth");
 
         accounts.anthropicAuthMode = AnthropicAuthMode::Cliproxy;
@@ -2147,7 +2147,7 @@ private slots:
         anthropic.cancel();
         claudeSocket->close();
 
-        settings.cliproxyBaseUrl = baseUrl(codexServer);
+        accounts.cliproxyBaseUrl = baseUrl(codexServer);
         accounts.openAiAuthMode = OpenAiAuthMode::Cliproxy;
         OpenAiTranscriptRefiner openAi(nullptr);
         openAi.refine(QStringLiteral("hello there"), {}, context, settings, accounts);
@@ -2340,8 +2340,8 @@ private slots:
     void remoteCliproxyWithoutKeyFailsWithClearMessage()
     {
         RefinementSettings settings;
-        settings.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:1");
         AccountSettings accounts;
+        accounts.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:1");
         accounts.anthropicAuthMode = AnthropicAuthMode::Cliproxy;
         RefinementContext context;
 

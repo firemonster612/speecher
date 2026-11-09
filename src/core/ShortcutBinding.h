@@ -35,18 +35,23 @@ const PhysicalKey *physicalKeyForWin(int win);
 // for it, or nullptr when the vocabulary lacks it or the event carries none.
 const PhysicalKey *physicalKeyOf(const QKeyEvent &event);
 
-// The Global Shortcuts: the one that toggles dictation, and the optional
-// Cancel Shortcut and Pause Shortcut.
+// The Global Shortcuts: the one that toggles dictation, the optional Cancel
+// Shortcut and Pause Shortcut, and the optional Paste Again and Recording
+// ones.
 enum class GlobalShortcutRole {
     Dictation,
     Cancel,
     Pause,
+    PasteAgain,
+    Recording,
 };
 
 inline constexpr GlobalShortcutRole globalShortcutRoles[] = {
     GlobalShortcutRole::Dictation,
     GlobalShortcutRole::Cancel,
     GlobalShortcutRole::Pause,
+    GlobalShortcutRole::PasteAgain,
+    GlobalShortcutRole::Recording,
 };
 
 // The Global Shortcut: a key combination, which every desktop shortcut service

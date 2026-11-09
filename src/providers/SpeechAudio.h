@@ -16,5 +16,8 @@ constexpr qsizetype kSpeechChunkBytes = kSpeechBytesPerSecond / 10;
 // 4 MB; at this rate even its 10 s connection timeout queues only about 83 s
 // of audio (2.7 MB), so the cap is never reached.
 constexpr int kSpeechCatchUpIntervalMs = 12;
+// How much of the quiet before an utterance goes in with it, 300 ms, so a
+// first sound softer than what counts as voice is not cut.
+constexpr qsizetype kUtteranceLeadInBytes = kSpeechBytesPerSecond * 3 / 10;
 
 } // namespace speecher

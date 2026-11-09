@@ -1,0 +1,82 @@
+pragma ComponentBehavior: Bound
+import QtQuick
+import Speecher.Theme
+import Speecher.Controls
+import Speecher.Backend
+import Speecher.Wording
+import Speecher.App
+import "services"
+
+// The services Speecher can use, each connected once: ChatGPT and Claude
+// side by side with their sign-ins, CLI Proxy API's shared rows while either
+// signs in through it, and Your servers, one for speech and one for
+// refinement; This computer, its subpage, is a row at the end saying how it
+// stands. Speech to text and
+// Refinement put them in order and choose their models; each order row's
+// Fix opens the same card in a sheet.
+Page {
+    id: page
+    title: Schema.page("services").title
+    subtitle: Schema.page("services").subtitle
+    headerActions: [
+        Button {
+            text: Words.checkAll
+            iconName: "refresh-cw"
+            onClicked: Accounts.services.forEach(s => Accounts.recheck(s.id))
+        }
+    ]
+
+    Component.onCompleted: {
+        Models.checkComputer()
+        Models.detectRunners()
+    }
+
+    // The two cards end together, and their rows start together; rows that
+    // come and go with the sign-in source ease both cards' height.
+    Row {
+        id: pair
+        width: parent.width
+        spacing: Theme.space4
+        readonly property real _cardWidth: (width - spacing) / 2
+        readonly property real _cardHeight: Math.max(openAi.implicitHeight, anthropic.implicitHeight)
+
+        SignInCard {
+            id: openAi
+            objectName: "chatgptCard"
+            serviceId: "openai"
+            width: pair._cardWidth
+            height: pair._cardHeight
+            minimumHeadHeight: anthropic.naturalHeadHeight
+        }
+        SignInCard {
+            id: anthropic
+            objectName: "claudeCard"
+            serviceId: "anthropic"
+            width: pair._cardWidth
+            height: pair._cardHeight
+            minimumHeadHeight: openAi.naturalHeadHeight
+        }
+    }
+    // CLI Proxy API's shared rows, while a sign-in goes through it; a search
+    // for one while neither does lands on the sign-ins.
+    readonly property bool _cliproxy: Settings.values.openAiAuthMode === Accounts.authModes.openAi.cliproxy
+                                      || Settings.values.anthropicAuthMode === Accounts.authModes.anthropic.cliproxy
+    SearchLanding {
+        rowIds: page._cliproxy ? [] : ["cliproxyOauthDir", "cliproxyBaseUrl", "cliproxyApiKey"]
+        target: pair
+    }
+    Reveal {
+        open: page._cliproxy
+        CliproxySection { objectName: "cliproxySection" }
+    }
+
+    // Your servers: one for speech, one for refinement.
+    ServerSection { role: "speech" }
+    ServerSection { role: "refinement" }
+
+    SubpageRows {
+        objectName: "thisComputer"
+        pageId: "services"
+        lines: ({ models: ModelText.computerSummary })
+    }
+}

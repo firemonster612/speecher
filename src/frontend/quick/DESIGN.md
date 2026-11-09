@@ -18,7 +18,7 @@ data.
 | `qml/Speecher/Wording/` | The UI's wording: `Schema` (pages and settings rows, from `schema/*.js`) and `Words` (shared words and the shell's) |
 | `qml/Speecher/Demo/` | `DemoVoice`: a made-up voice level for illustrations |
 | `qml/Speecher/Backend/` | `Library.qml`, the one QML type of `Speecher.Backend`, which words the C++ `LibraryLists` |
-| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup in `PopupWindowBase`, and the real `Settings`, `Dictation`, `DictationState`, `Navigation`, `Updates`, `Transcription`, `System`, `Phone`, `Removal`, `Models`, `Insights`, `Accounts`, `Audio`, `Appearance` and `LibraryLists` |
+| `host/` | The app's side (C++): `QuickFrontEnd`, which loads the windows in the daemon, `QuickPopupWindow`, which carries the popup in `PopupWindowBase`, and the real `Settings`, `Dictation`, `DictationState`, `Navigation`, `Updates`, `Transcription`, `System`, `Phone`, `Removal`, `Models`, `Insights`, `History`, `Recording`, `Accounts`, `Apps`, `Audio`, `Appearance` and `LibraryLists` |
 | `assets/` | Atkinson Hyperlegible Next, the Lucide icon font (company marks are path data in `qml/Speecher/Controls/brands.js`), and the circle-flags language flags `Flag` draws |
 
 `cmake/QuickUi.cmake` builds each directory under `qml/` (the Backend with
@@ -35,7 +35,9 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   (`host/QuickUpdates`), `Transcription` (`host/QuickTranscription`),
   `System` (`host/QuickSystem`), `Phone` (`host/QuickPhone`), `Removal`
   (`host/QuickRemoval`), `Models` (`host/QuickModels`), `Insights`
-  (`host/QuickInsights`), `Accounts` (`host/QuickAccounts`), `Audio`
+  (`host/QuickInsights`), `History` (`host/QuickHistory`), `Recording`
+  (`host/QuickRecording`), `Accounts` (`host/QuickAccounts`), `Apps`
+  (`host/QuickApps`), `Audio`
   (`host/QuickAudio`), `Appearance` (`host/QuickAppearance`) and `Library`
   (`Library.qml` over `host/QuickLibrary`). No placeholders are left.
 - `Appearance` is what the desktop offers the look: `systemColors`, the
@@ -47,27 +49,45 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   platform's `WindowBackdrop` (Wayland's `ext_background_effect`, or KWin's
   older `org_kde_kwin_blur`; macOS's `NSVisualEffectView`; Windows 11's Mica)
   to blur behind a window.
-- `System.checks` are `{id, state, reason, fix, failures}`; `Health`
+- `System.checks` are `{id, state, reason, fix, needed, failures}`; `Health`
   (health.js) words each by id and reason, and a failed fix by its steps.
+  Each check has a schema row of the same id, which places it and names it.
   Bindings look a check up with `Health.find(System.checks, id)`, so they
-  follow the checks. `System.fix(id)` runs the fix (`fixFromSetup` in the
-  setup assistant). The virtual keyboard turns on only after its typing test
+  follow the checks. `System.fix(id)` runs the fix, in the setup assistant
+  as anywhere. The virtual keyboard turns on only after its typing test
   (`VirtualKeyboardTest`) puts core's test text in the field.
-  `System.pasteRoute` is the steps core's delivery takes (insert, press,
-  copy), `pasteNeed` what they need of the computer and `wordsStayCopied`
-  whether that is missing, so words only reach the clipboard. `Phone`'s code lives from `Phone.start()` to `Phone.stop()`,
+  `System.deliverySteps` is each step, in the order core tries them
+  (insert, press, keep), with whether it is on, whether it can run here,
+  what it relies on here by need id (`output/DeliveryNeeds`, which says it
+  per OS) and which of those are missing (`Schema.pasting.needs` words
+  them, as "<need>: <state>"); `stepsPlan(steps)` is the same list for
+  some other steps (an App's own, say), from which
+  `Schema.pasting.pastingResult` says what they do here;
+  and `pastingOutcome` is where the words end up: `delivers`,
+  `clipboard` or `nothing`. All of them read the settings as `Settings`
+  shows them (`QuickSettings::shown`), so setup's draft shows in them as
+  in the rows. `Phone`'s code lives from `Phone.start()` to `Phone.stop()`,
   and `QrCode` draws it through the host's `image://qr` provider.
   `Removal.start(keepSettings)` reports in `Removal.report` by part and
   outcome, and `RemovalReport` words it: under General's row, and alone in
-  Main once the settings are deleted. The paste rules are Settings rows: `globalPasteRule`,
-  `categoryPasteRule_<type>` (`inherit` is no rule of its own) and
-  `applicationPasteRules`, a list of `{app, method, enabled}`.
+  Main once the settings are deleted. The delivery steps are Settings rows
+  (`insertThroughAccessibility`, `pressPasteKeys`, `keepOnClipboard`), and
+  core keeps one on. An App or App Type may have steps of its own, the same
+  three switches, and its own paste keys; Pasting lists those that do,
+  read-only, by what their steps do here, each opening in Apps, whose
+  editor shows its own steps as the same `DeliveryStepRow`s (`ownSteps`,
+  read through `stepsPlan(steps)`) with the keys on Press paste keys.
+  Every step row shows each need it has here, one status line apiece, and
+  every other page that needs accessibility says what of it needs it in
+  one line linking to Home's row (`AccessibilityNotice`).
 - `Models` is what core knows about the providers and running models here,
   as data: speech services and refinement providers with a `state` and
   core's `problem` sentence, their ratings as `{ measure, value }` bars, the
   Local Model catalog with fits, speeds, downloads and Speed Tests, the
-  hardware, the Local Runners and the Ollama pull, both Custom Endpoints'
-  checks and setup's fallback offers. Each speech service and Local Model
+  hardware, the Local Runners and the Ollama pull, and both servers'
+  checks. It reads the settings as `Settings` shows them
+  (`QuickSettings::shown`), as System does, so setup's draft shows in the
+  services' states and the Spoken Language warning. Each speech service and Local Model
   carries the language codes it listens for, from core's lists
   (`SpokenLanguages`, the catalog). `QuickModels.h` documents each field.
   `ModelText` (in Speecher.App) words all of it and looks entries up by id,
@@ -78,8 +98,87 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   on its own. The Local Runner rows look for runners when they load, and
   setup's Transcription step asks `Models.checkSignIns()` for the speech
   sign-ins.
-- `Insights` carries core's summary for Home's period and the history
-  General clears; `pages/home/words.js` words it.
+- `Insights` carries core's summary of History for Home's period, and the
+  latest dictation (this run's, else History's newest while it keeps
+  text); `pages/home/words.js` words it.
+- `History` is core's `HistoryStore` as the History page shows it:
+  writing `query` ({ text, kind, app, profile, when }) searches once
+  typing pauses, and `results` come a page at a time (`fetchMore()`),
+  newest first, each match in `<b>` over HTML-escaped text, so dictated
+  markup shows as typed; a search first takes each Recording's lines from
+  its file again where that was edited. `entry(id)` reads one whole;
+  `copy`, `pasteAgain`, `play` and `remove`/`undo` act on one; `countIn`
+  and `clear` take a span (hour, today, 7d, all), which History's Clear…
+  and General's Clear history both ask about through `ClearConfirm`, which
+  names the audio files a clear couldn't delete and offers Try again. What
+  History keeps is the `historyKeeps` row; `pages/history/HistoryWords.js`
+  words all of it. A dictation opens in place (`EntryDetail`); a file or a
+  Recording, both long transcripts, opens in `EntryReader` in the list's
+  place (`recording:<id>` lands there), with one row of actions worded the
+  same for both (Play with Stop and the position, Copy, Open transcript,
+  Show in folder, Delete), a file's paragraphs or a Recording's lines in a
+  `TranscriptReader` (Find, words that can be selected, play from a line),
+  which Recordings' live view shares. A Recording's `ending` is worded as
+  what it missed; `exportEntry` writes it as md, txt or JSON and
+  `removeRecording(id, withFiles)` deletes it at once, after its own
+  question, or returns the files that wouldn't go and keeps it. A file
+  shows its name and where its audio is, adds Transcribe again, or Locate…
+  once its audio has moved, and its Delete goes at once with Undo, leaving
+  its files. `historyKind:<kind>` lands filtered to a kind. `recent(kind,
+  limit)` is the newest of a kind whatever the query, which Recent
+  recordings lists in History's rows.
+  `refineAgain(id, profile)` refines an entry's Raw Transcript again, as a
+  dictation into no app (core's `planDictation` with an empty Target),
+  answering with `refined` or `refineFailed`; `keepRefined` keeps it.
+- `Recording` is the recording running, however it started (the page, the
+  tray, the Recording Shortcut, `speecher record`): `state` (off,
+  starting, recording, stopping), its name, file and `elapsedMs`, each
+  stream's state and its `levels`, its `lines` as it started and
+  `lineAdded` after, core's echo and write problems, `problem` (why the
+  last start failed) and `refusal` (why Record can't start now), and
+  `plan`, what Record would run with (core's `planRecording`: the first
+  speech service that sends text as you speak, the sources, the folder
+  and the format). `start(title)`, `stop()` and `confirmConsent()` act;
+  `running` is the plan the recording running started with, which later
+  changes leave alone; `stop()` while starting cancels it.
+  Transcribe files and Recordings share `pages/transcripts/`: `RunWith`
+  (the Writing Profile, "Same as your settings (…)", then what the run
+  changes of it in a fold, saying what its rows follow, then each
+  service's status with its Fix) and `SaveTranscripts` (where, the folder,
+  the file format). Record names each thing in its way with its own fix
+  (the microphone, a speech service that can record); it doesn't wait for
+  the rest of setup.
+  The first recording ever asks the consent question on Recordings,
+  where the tray and the shortcut open it. `pages/recordings/RecordingWords.js`
+  words it. The popup's pill and Home's row read it too.
+- `Apps` is core's Apps and App Types (`core/Apps`) as the Apps page shows
+  them: each App with what it sets (its type, profile, steps, paste keys and
+  History choice), what core makes of it (`effective`) and
+  what each value would be without its own (`inherited`, with where from,
+  from core's `inheritedFor`),
+  so the editor's "Same as …" options agree with dictation; the App Types,
+  Other apps' profile always set; the installed apps the platform's
+  `InstalledApps` lists, scanned off the UI thread once a session
+  (`refresh()`); and the apps dictated into lately (core's `SeenApps`,
+  kept only while History keeps stats). `add`, `update`, `updateType` and
+  `remove`/`undo` save through core's `AppEdits`; `update` also changes an
+  App's name and matches. `captureNext(seconds)` is Switch to it, which
+  captures the app in front as dictation does, and `testNext(seconds)` is
+  Test, which answers `tested` with every App that matches it and where each
+  value comes from. Both wait for the app through the host's `AppCapture`
+  (countdown, another app in front, its window settled); Apps decides what
+  the captured app becomes. Launchers of one program list as one installed app. Icons
+  come from the host's `image://appicon` provider. `schema/apps.js` words
+  all of it and holds the App Types' list.
+- `Settings.values.speechServices` and `refinementServices` are the two
+  Service Orders, `[{ service, model, language, effort, speed }]` first
+  to last, and `refinementEnabled` is Clean up my words; saving an order
+  with an entry that leaves a field out keeps that field's saved value.
+  `ModelText` (`entries`, `order`, `entry`, `mainSpeech`, `mainRefiner`,
+  `refiners`, `withFirst`) is how pages read them; nothing else names a
+  first service. An order's Add service shows each service's ratings
+  (`ModelText.ratingLine`, from `Models`), so they can be compared there. `Settings.act("useCliproxyServer")` points the refinement
+  server at the CLI Proxy API server a sign-in names.
 - `Accounts` shows the daemon's `Accounts` (`app/Accounts`), which runs
   each service's sign-in check on a worker and queues secret writes; a
   secret row is write-only: `Accounts.saveSecret` and `clearSecret` go
@@ -88,7 +187,7 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   `signInInUse`, says whether the settings sign in through it. The speech
   providers' sign-ins (ChatGPT, Claude) have one owner, core's
   `ProviderAvailability`:
-  `Models` shows them, setup checks them, and renewing a sign-in on Accounts
+  `Models` shows them, setup checks them, and renewing a sign-in on Services
   checks them again.
 - `Settings.values[id]` and `Settings.set(id, value)` are the settings store,
   keyed by the schema's row ids. One table in `QuickSettings.cpp` maps each id
@@ -107,24 +206,46 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   time: the row says why in `errors` and keeps listening. Where the desktop
   picks the keys (`Settings.desktopPicksKeys(id)`, the portal), the row
   records nothing and `Settings.act(id)` opens the desktop's chooser.
+- While the setup assistant is open, the rows its steps choose (the two
+  Service Orders, Clean up my words, the Spoken Language and the delivery
+  steps) are drafted: `Settings.startDraft(ids)` opens the draft, and
+  `set` keeps those rows' edits in it, in order, as one `SettingsEdit`
+  rather than saving them. `values` shows the draft over the saved
+  settings, on every page, and a save from anywhere else shows under it.
+  `saveDraft()` saves it in one go (Finish, Skip setup) and
+  `dropDraft()` drops it (the host, when setup closes). Every other row,
+  the microphone, the shortcuts and whatever a Fix sheet changes, saves at
+  once, so the microphone test, the bound keys and the sign-in and server
+  checks test what was chosen.
 - `Settings.errors[id]` says why a row's last save was refused, such as a
   shortcut another app owns. SchemaRow shows it in place of its help; a page
   that gives a shortcut row its own help sets `note`, not `help`.
 - `Library` is `Library.qml` over `LibraryLists` (`host/QuickLibrary`): the
   Writing Profiles, custom tones
-  and cleanup levels, vocabulary terms, Learned Corrections, replacements and
-  app matches, read from and saved through the daemon's `SettingsStore`.
-  `add(list, item)` and `update(list, key, patch)` (a key is the entry's id,
-  term, phrase or app) return why core refused the entry (`blank`, `taken`,
+  and cleanup levels (as choices: `profileOptions`, `levelOptions`,
+  `toneOptions`), and the Vocabulary (`vocabulary`: spellings,
+  replacements and Learned Corrections as one list, each with the profiles
+  and apps it is limited to), read from and saved through the daemon's
+  `SettingsStore`.
+  `add(list, item)` and `update(list, key, patch)` (a key is the entry's id)
+  return why core refused the entry (`blank`, `taken`,
   `incomplete`, `missing`, `builtIn`), empty when saved, and
   `Library.refusalText(list, reason)` words it for the form. `remove(list,
-  key)` returns a token for `undo(token)`, or -1 when nothing went. Imports
-  take the file the page's FileDialog chose. Library.qml words the lists.
+  key)` returns a token for `undo(token)`, or -1 when nothing went.
+  `importVocabulary` takes the file the page's FileDialog chose, CSV
+  spellings or JSON snippets. Library.qml words the lists, and says what an
+  entry is limited to (`limitText`, `limitedTo`, `appName`), so Vocabulary,
+  Writing profiles and Apps count and filter them alike.
 - `Settings.act(id)` runs an action row (`runSetup`), and
   `Settings.completeSetup()` records that the setup assistant finished.
 - `Navigation` is which page Main shows (`current`) and the row a page
   lands on (`pendingRow`); `go(pageId)` and `goToRow(pageId, rowId)` ask for
-  them. The host holds it and opens Main on a page through it.
+  them. A link from one page to another (Open Services, Change in Apps, a fix)
+  calls `follow(pageId, rowId)` instead, which remembers where it came from
+  in `returnTo` until the person goes anywhere else, so the page it opens
+  offers the way back (`goBack()`). A link in the setup assistant follows
+  from `"setup"`, which opens Main and leads back to the assistant. The host
+  holds it and opens Main on a page through it.
 - `Updates` is the updater as `QuickUpdates.h` documents it: the running
   `version`, its state
   (checking through restarting, with check and install failures apart), the
@@ -161,11 +282,15 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   (`errorHoldRequested`). `renewing` says a sign-in is renewing. `DictationState` is the same type with
   nothing behind it, for a page's demo popup.
 - `Transcription` is core's `TranscribeQueue`: the files listed for the next
-  batch, its `options` (seeded from the settings, never saved), the batch as
-  it started (`batch`), its progress and its `results`, whose fields
-  `QuickTranscription.h` documents. Its choice lists come from their owners
-  (`Models`, `Library`, the `spokenLanguage` row), and its
-  wording is the page's (`TranscribeWords`). Choosing files and folders and
+  batch, its `options` (the batch's Run Overrides, each empty while it is
+  the same as the profile or the settings, never saved), its `plan` (core's
+  `planDictation`: what the batch runs with and, in `sources`, which layer
+  each value came from) and `inherited` (the plan without the batch's own
+  changes, which each "Same as …" names), the batch as it started (`batch`),
+  its progress and its `results`, whose fields `QuickTranscription.h`
+  documents. Its choice lists come from their owners (`Models`, `Library`,
+  the `spokenLanguage` row), and its wording is the page's
+  (`TranscribeWords`). Choosing files and folders and
   exporting open the desktop's file dialogs, titled by the page; a start,
   retry or export that fails says why in `problem`.
 - `Schema` is the UI's own: pages and rows with label, help, kind and
@@ -175,8 +300,9 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   and state pages show. Keep their properties plain (strings, numbers, arrays
   of objects).
   Each list has one owner (speech services and refinement providers in `Models`, profiles, tones and
-  levels in `Library`, microphones in `Audio`, app types in the pasting
-  schema); every other place derives from it with the same ids.
+  levels in `Library`, microphones in `Audio`, Apps and App Types in
+  `Apps`, the App Types' names in the apps schema); every other place
+  derives from it with the same ids.
 - The host (`QuickFrontEnd`) opens Main and the setup assistant when the
   daemon asks, at most one of each, and hides a window when it is closed.
   It creates `ThemeSetting` before any window, so every window follows the
@@ -188,7 +314,14 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   (`popupShowRequested(generation)`), answers `popupPresented(generation)`
   after the first frame of that dictation (a later show or a hide drops the
   answer), and hides itself once `PopupWindow.empty`, faded out, so the
-  popup works whether or not Main was ever opened.
+  popup works whether or not Main was ever opened. While a recording runs
+  and Show a pill while recording a call (Popup & sounds) is on, it shows
+  too, for the recording pill (`RecordingPill`), which stands in the
+  capsule's place while no
+  dictation is up: Connecting…, the time with Stop, a stream that needs
+  attention, Finishing…, then Saved with Open for the result's time.
+  During a dictation `OfferChips` carries a chip with the time and Stop
+  instead. The pill opens Main through `Navigation.openInMain`.
 - The popup window is larger than the capsule, so only the capsule (and the
   offers over it while they show) may take the pointer: the host sets the window's input region to
   `PopupWindow.inputRegion` (`QWindow::setMask`, which is the surface's
@@ -198,7 +331,8 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   `SPEECHER_POPUP_CAPTURE_DIR=<dir>` saves the popup's frames while it is up.
 - Wording belongs to the UI. It comes from the schema row, `Words` (shared
   words such as Cancel, Save and Copied, and the shell's: `Words.shell`,
-  `Words.results(count)`) or the page, kept short and in one place per page.
+  `Words.results(count)`, and `Words.clock(ms)`, the one m:ss / h:mm:ss
+  clock) or the page, kept short and in one place per page.
   A C++ Backend type carries data, not wording. The popup words itself
   (`DictationPopup.t`) and Home words the dictation's state; the
   messages core writes (receipts, errors, a review's summary) come through
@@ -292,8 +426,8 @@ follows the same setting.
   action. No tinted icon squares, no icon on every row.
 - No gradients, glows, coloured shadows or decorative washes.
   The popup's scatter ribbon is the one exception: its afterglow and soft
-  glow are part of the level animation. Boring mode (Popup & sounds) shows
-  plain level bars in its place.
+  glow are part of the level animation. Voice display: Level bars (Popup &
+  sounds) shows plain level bars in its place.
 
 ## Consistency rules
 
@@ -302,15 +436,26 @@ shared control or Theme, not in a page.
 
 Choosing:
 
-- A provider or service is chosen with `ServiceCards`, in settings, setup
-  and Transcribe alike: a grid of cards, each with its icon, name, a line of
-  help, its status and its ratings, so they compare before choosing, and a
-  check on the chosen one. A narrow place gets fewer, smaller columns, not
-  another layout. A profile's own override stays a `Select` with an explicit
-  Default option.
+- Speech to text and Refinement put their services in order with
+  `ServiceOrderList`: each service first to last with its status, its own
+  choices under it (`ServiceChoiceRow`) and a Fix while it can't run.
+  Setup's steps show the same lists.
+- A value a narrower place may change (an App's or App Type's, a Writing
+  Profile's first services, one Transcribe batch's) is an `InheritSelect`
+  whose first option is the wider place's value, "Same as <place>
+  (<value>)" (`Words.sameAs`), and choosing it hands the value back. The
+  places, widest first, are the setting's page, the App Type, the App, the
+  Writing Profile and the run; core's `planDictation` resolves them and says
+  where each value came from, so the "Same as …" text and the run agree. A
+  run changes its profile through the profile editor in run mode
+  (`ProfileEditor { runMode }`), the same rows worded the same way.
+- A service is signed in to or set up once, on Services. Elsewhere a
+  service that can't run shows its status and a Fix (`ServiceStatus`, or a
+  row's Fix in the order), which opens that service's Services card in a
+  `FixSheet` over the page; nothing else copies a sign-in control.
 - A provider company has one name everywhere, "ChatGPT" or "Claude", with
   its mark (`Icon { name: "openai" }`, `"claude"`); how it signs in is help
-  or Accounts' business, never part of the name.
+  or Services' business, never part of the name.
 - A check means a committed choice. The editor that is open (a profile in
   the list) is a selected `ListRow`, with no check.
 - Two to four short options are segments; more, or a list that grows, is a
@@ -319,12 +464,38 @@ Choosing:
   search, wherever it is chosen. `Chip`s are for choosing several at once or
   inserting a snippet.
 - A count of languages a service or Local Model listens for is a link
-  (`LinkedText`, or `helpLink` on ServiceCards and SettingRow) that opens
+  (`LinkedText`, or `helpLink` on SettingRow) that opens
   `LanguageList`, the same popover showing only those languages. Following
   it never chooses or opens the card it sits on.
 - Languages are named once, in the `spokenLanguage` row's options (English,
   then the language's own name), which cover every code core knows; lists
   of codes take those names (`ModelText.languageOptions`).
+- An app is chosen from the Apps picker (`AppPicker`: installed apps, apps
+  dictated into, Switch to it, or a name or window title), never by typing
+  its id; Apps adds an App for it. A Vocabulary Entry limited to apps names
+  those Apps.
+- A link to what is limited to a profile or an App (the Vocabulary entries)
+  lands on that page filtered to it (`vocabularyFor:profile/<id>`,
+  `vocabularyFor:app/<id>`), and a search for one entry opens it
+  (`vocab:<id>`).
+- Every choice about what Speecher keeps or shares has one home, and
+  Privacy & data, General's subpage, gathers them: it edits What Speecher Keeps, its
+  days and Clear history itself, lists the Apps and App Types whose
+  History choice keeps less (read-only, each opening in Apps, where the
+  editor's History row changes it, as Pasting lists the apps that paste
+  differently), and links to what refinement sees (Refinement) and to
+  learning from edits (Vocabulary), each saying how it is set there. A
+  link row never copies the control it leads to.
+- Search (`SearchPalette`) finds pages, schema rows (by label, keywords,
+  section, options and help, `Schema.search`), the person's Apps
+  (`appentry:<id>`), Writing Profiles, tones and cleanup levels
+  (`profile:<id>`, `tone:<id>`, `level:<id>`, which select the profile or
+  open the tone or level to edit) and Vocabulary entries (`vocab:<id>`). A
+  `SearchLanding`'s `landed` names the row it landed for. While History
+  keeps text, its last result is Search History for the words, which
+  opens History with them in its search (`historyFind:<words>`). A result
+  lands through `Navigation.goToRow`, so every id it offers is a schema
+  row, one of those prefixes, or a page.
 - `SettingRow` for settings, `ListRow` for data. Rows start their content
   `Theme.rowInset` in from the card and end it the same distance from the
   right.
@@ -335,8 +506,8 @@ Press, hover, selection:
   pointer, `fillStrong` while pressed (`surfaceHover`/`surfacePressed` on
   raised buttons and fields). Nothing grows under the pointer.
 - Only a button or a whole-card choice shrinks when pressed: text buttons
-  and chips to 0.965, icon buttons to 0.92, `ChoiceCard`s (`OptionCards`,
-  `ServiceCards`) and theme thumbnails to 0.98, over `Theme.fast` springy.
+  and chips to 0.965, icon buttons to 0.92, `ChoiceCard`s (`OptionCards`)
+  and theme thumbnails to 0.98, over `Theme.fast` springy.
   Rows, menus, segments, fields and the header of a card that opens never
   shrink.
 - A card that opens is a `Card` whose header has the row wash and a chevron
@@ -354,7 +525,7 @@ Press, hover, selection:
   focus halo while it is being edited. A custom control that acts has Tab,
   Return and Space, and the right `Accessible.role`.
 - Exceptions, named by role: a slider's handle grows while held, a dragged
-  fallback row lifts to 1.02, a switch's knob stretches toward where it is
+  order row lifts to 1.02, a switch's knob stretches toward where it is
   going while held and on a flip, and can be dragged, the popup's round
   buttons never take focus. Do not copy them elsewhere.
 
@@ -389,7 +560,7 @@ Layout:
   List controls never draw their own.
 - Deleting something a person made either asks first with `InlineConfirm`
   (a question, what it costs, Cancel and the action) or happens at once
-  with an Undo in its toast. Removing one of a few chosen fallbacks is
+  with an Undo in its toast. Removing a service from an order is
   immediate.
 - The title strip is `Theme.titleBarHeight` 52. `Brand` puts the mark 12 in
   from the window's top and left and the window buttons sit 12 in from the
@@ -399,14 +570,18 @@ Layout:
   starts under the strip; split, the page's surface reaches the top and the
   strip lies over it; the 14 px shadow room around a framed window goes when it is
   maximized and is not padding.
-- The sidebar is one list with no headings: seven top-level pages (Home,
-  Transcribe files, Dictation, Speech to text, Refinement, Pasting,
-  General), in the order a dictation goes, and their subpages. A page sits
-  under another (`parent` in `schema/pages.js`) when it is a part of that
-  page a person looks for on its own: Shortcuts, Microphone and Popup &
-  sounds under Dictation, Local models under Speech to text, Writing
-  profiles and Vocabulary under Refinement, App rules under Pasting, and
-  Appearance, Accounts, Permissions & health and Updates under General.
+- The sidebar is one list with no headings: eleven top-level pages (Home,
+  Transcribe files, Recordings, Dictation, Speech to text, Refinement,
+  Vocabulary, Apps, Pasting, Services, General), in the order a dictation
+  goes, and their subpages. Recordings sits beside Transcribe files, as
+  both turn audio that isn't being dictated into a transcript. Vocabulary stands alone because speech, refinement and the
+  replacements all read it. A
+  page sits under another (`parent` in `schema/pages.js`) when it is a part
+  of that page a person looks for on its own: History under Home,
+  Microphone and Popup & sounds under Dictation, This computer (the
+  speech models and the cleanup runner) under Services, Writing profiles under Refinement, and Privacy & data,
+  Appearance and Updates under General. Every page has settings of its own; none only lists its
+  subpages.
   Top-level entries have icons; subpages have none, set in past a guide
   line from their parent's icon, with their wash and the pill on them
   starting right of the guide.
@@ -419,13 +594,44 @@ Layout:
   subpage that had keyboard focus hands it to the parent when its group
   closes. Up and Down step through the entries that show, Right and Left
   open and close a parent's subpages.
-- A subpage's title leads with the path to it ("Dictation › Shortcuts"),
+- A subpage's title leads with the path to it ("Dictation › Microphone"),
   each step a quiet link to that page, and search gives a subpage and its
-  rows the same path. A parent lists its subpages in a `SubpageRows` card:
-  at its end, or first where the page is mostly a way into them (General,
-  Dictation). Dictation's rows say how each is set now (the shortcut's
-  keys, the microphone, live text and sounds) in place of the subtitle. A
-  subpage keeps its id, so links to it still land.
+  rows the same path. A parent lists its subpages in a `SubpageRows` card
+  at its end, except Home, whose Your dictation card ends with History, so
+  one card stands for what Speecher kept. Dictation's rows say how each is set now (the microphone,
+  live text and sounds) in place of the subtitle. A subpage keeps its id,
+  so links to it still land.
+- A check (`System.checks`) shows on the page of what it gates, as a
+  `HealthRow` with its fix: microphone access on Microphone, global
+  shortcuts on Dictation, accessibility and the virtual keyboard on
+  Pasting, as the needs of the delivery steps, and Screen Recording (macOS,
+  while screenshots are on) on Refinement. Home's session card lists
+  the checks that apply in its `Readiness` card (`pages/home`), grouped as
+  what dictation needs (a check marked
+  `needed`, a microphone, a working speech service, a way to deliver the
+  words) and what it works without, each row opening its page: a speech
+  service that can't run opens its card (on Services, or This computer)
+  and has a Fix that opens that card in a `FixSheet`. Each permission the
+  delivery steps rely on is a row of its own, saying what it turns on, with
+  its own fix: accessibility always, the virtual keyboard while a step that
+  is on relies on it, both among what dictation needs while nothing else
+  delivers. Pasting is a row only for a missing tool, which has no check,
+  or for words that stay on the clipboard by choice. While all pass the
+  card is one line; Run setup again shows either way.
+- Setup is the pages, in order. After Welcome, each step shows the page's
+  own sections and writes the same settings: Speech to text's Spoken
+  language and Service Order, Microphone's test and Input card, Pasting's
+  Steps, Refinement's sample, Clean up my words and Service Order, and
+  Dictation's shortcut recorder and what pressing it does; Ready shows
+  Home's `Readiness` card over the draft, where a row with a step of its
+  own goes back to that step. A step has no control or wording of its own: the part
+  a page shares with setup lives in `pages/<area>/` (or `App/` when two
+  areas share it, as `ServiceOrderSection` does) and both use it. What the
+  steps choose waits in `Settings`' draft until Finish or Skip setup
+  saves it, so setup, the pages and Home's readiness read one set of
+  values. Speech, the microphone and a delivery that gets the words
+  somewhere are needed; Finish is always there and names what is missing,
+  and no button rewrites a setting to get past a step.
 
 Things to avoid, because they read as generated:
 
@@ -510,18 +716,18 @@ control fades to `Theme.disabledOpacity`.
 
 Layout and rows:
 
-- `Page { title; subtitle; headerActions; path; pathPicked(id) }`: a scrolling page. With no title the page brings its own heading. `path` is the pages above it (`[{ id, title }]`), which lead its title as links; Main sets it from the schema and opens the page a step asks for.
+- `Page { title; subtitle; headerActions; path; pathPicked(id); backText; backPicked() }`: a scrolling page. With no title the page brings its own heading. `path` is the pages above it (`[{ id, title }]`), which lead its title as links; Main sets it from the schema and opens the page a step asks for. `backText` is the way back above the title, which Main sets from `Navigation.returnTo`.
 - `Section { title; caption; actions; plain; cardPadding }`: a heading over a raised card. Two side by side line up with `minimumHeaderHeight`/`minimumCardHeight` set from each other's `naturalHeaderHeight`/`naturalCardHeight`. Sections stacked outside a Page (in a Reveal or a Switcher view) go in a `Column { spacing: Theme.sectionGap }`.
 - `Card`: the raised card on its own. `Surface`: a floating panel (menus, palettes). `Plate`: the recessed panel a page's or setup step's picture sits on.
 - `SettingRow { title; help; helpLink; iconName; stacked; clickable; trailingText; shown; first; highlight() }`: one setting with its control on the right; `helpLink` makes that part of the help a link (`helpLinkActivated(at)`).
 - `SchemaRow { rowId }` (in Speecher.App): a SettingRow built from the schema.
-- `ListRow { title; detail; iconName; titleVariant; titleTone; wrapTitle; detailLines; first; clickable; selected; trailing; actions }`: a data row, not a setting. `trailing` always shows (a value, a status); `actions` are buttons that show on hover or focus. Rows that need more lay out their own content in the default slot.
+- `ListRow { title; detail; iconName; titleVariant; titleTone; wrapTitle; detailLines; first; clickable; selected; trailing; actions }`: a data row, not a setting. `trailing` always shows (a value, a status); `actions` are buttons that show on hover or focus. Rows that need more lay out their own content in the default slot. Return and Space with Ctrl, Alt or Meta held are left to the row's user, as History's rows use Ctrl+Return to paste again.
 - `RowList { values; keyOf; entry(key); first }`: a non-scrolling list of rows that animates adds, removes and moves. Delegates take `required property string key`, read `list.entry(key)` (still there while a row fades out) and set `first: index === 0 && list.first`.
 - `Disclosure { title; help; trailingText; open; highlight() }`: a row that opens to more rows.
 - `Reveal { open; sideways }`: content that opens and closes in place. Rows inside draw their divider unless the Reveal starts its card, so no `first: false` is needed.
 - `Switcher { currentIndex }`: one of several views, sliding between them. `width: implicitWidth` sizes it to the current view, for buttons that swap in a row.
 - `FormField { label; help }`: a label and help around one input in a form.
-- `InlineForm { open; title; saveText; canSave; error }`: an add or edit form in place, instead of a dialog; `error` says why a save was refused.
+- `InlineForm { open; title; saveText; canSave; error; note }`: an add or edit form in place, instead of a dialog; `error` says why a save was refused, and `note` when its changes save (`Words.savesOnPress(saveText)`). An editor that saves each change at once says `Words.savesAsYouGo` instead.
 - `InlineConfirm { open; text; detail; confirmText; variant; leading }`: the question before an action that can't be undone: always a question and what it costs; leading (a check box) goes under them.
 - `EmptyState { iconName; title; text; compact }`: what an empty list says. compact on a card, centred elsewhere.
 
@@ -529,26 +735,26 @@ Choosing:
 
 - `Switch`, `CheckBox`, `Slider { format }`.
 - `SegmentedControl { options; currentId; activated(id) }`: two to four short choices in a row.
-- `Select { options; currentId; placeholder; chosen(id) }`: a dropdown.
-- `LanguageSelect { options; currentId; shownId; placeholder; searchText; clearText; emptyText; chosen(id) }`: the current language's flag and name, opening a `LanguagePopover` to choose from. `shownId` is what the button shows when the checked option stands for another language, as a fallback's "Same as main language" does.
+- `Select { options; currentId; placeholder; emptyText; chosen(id) }`: a dropdown. Its menu, like every menu, is as wide as its widest option (up to `Theme.menuMaxWidth`, past which a label elides before the check); with no options it says `emptyText`.
+- `InheritSelect { inheritedText; choices; currentId; chosen(id) }`: the Select for a value a narrower place may change. Its first option, id "", is `inheritedText`, the wider place's value as `Words.sameAs(place, value)` words it, marked with a link; `choices` follow. Without `inheritedText` it is a plain Select, for the widest place.
+- `LanguageSelect { options; currentId; shownId; placeholder; searchText; clearText; emptyText; chosen(id) }`: the current language's flag and name, opening a `LanguagePopover` to choose from. `shownId` is what the button shows when the checked option stands for another language, as a later speech service's "Same as Spoken language" does.
 - `LanguagePopover { languages; currentId; choosing; searchText; clearText; emptyText; align; openFrom(item); chosen(id) }`: languages with their flags under a search field that filters by English name, own name or code; arrows, Return and Escape. `choosing` checks `currentId` and picks; without it the list only shows. It grows from what opened it, as menus do. An option's `icon` stands in for the flag (Automatic).
 - `CompactChoice { options; currentId; stretch; chosen(id) }`: segments for up to four options, a Select for more.
-- `OptionCards { options; currentId; activated(id) }`: a few choices as cards with help.
-- `ServiceCards { options; currentId; unratedText; helpLinkActivated(id, at) }`: a provider or service as a grid of cards inside a Section's card, each with its icon, help, status, ratings and a note on them, and a check when chosen; an option's `helpLink` makes that part of its help a link. `ChoiceCard` is the card both it and OptionCards use.
+- `OptionCards { options; currentId; activated(id) }`: a few choices as cards with help. `ChoiceCard` is its card.
 - `Chip { text; iconName; checkable }`: small choices or snippet buttons in a Flow.
-- `FallbackList { ids; options; statusOf; rowControl; addLabel; emptyText }`: an ordered list to drag, reorder, add to and remove from; `rowControl` puts a control on each row, such as a speech fallback's Spoken language.
+- `OrderedList { ids; options; statusOf; rowControl; rowDetail; minCount; addLabel; allAddedText; emptyText }`: an ordered list to drag, reorder, add to and remove from; `rowControl` puts a control at each row's end, such as a Fix, and `rowDetail` a line of choices under its name; `minCount` rows always stay. An option's `help` shows under it in the add choices; once every option is listed, the add row says `allAddedText` instead.
 - `EditableList { items; emptyTitle; emptyText; formOpen }`: things a person made, with edit and delete.
 
 Input:
 
 - `TextField { iconName; variant; secret; trailing }`, `SearchField`, `SuggestField { suggestions; committed }`, `TextArea { mono; minHeight }`: all draw `InputFrame`. `variant: "title"` sets a name edited where a title would be. Fields default to `Theme.fieldWidth`, and `Select`, `SuggestField` and `ShortcutField` to `Theme.selectWidth`, so choosers line up in a column of rows; leave them at that in settings rows.
-- `ShortcutField { keys; emptyText; listeningText; clearText; escapeRecords; keyAlone; takesAlone; recorded(keys) }`, and `KeyCombo { keys; size; pressed; lit }` / `KeyCap { text; size }` to show keys.
+- `ShortcutField { keys; size; emptyText; listeningText; clearText; escapeRecords; keyAlone; takesAlone; recorded(keys) }` (`size: "large"` for a page's picture of its shortcut), and `KeyCombo { keys; size; pressed; lit }` / `KeyCap { text; size }` to show keys.
 
 Actions and menus:
 
 - `Button { variant; size; iconName; trailingIcon; trailing; busy; tooltip }`, `IconButton { iconName; tooltip }`, `TextLink { text; iconName; variant; quiet }` for a link in a line of text; `quiet` is secondary ink rather than pencil, for a page's path in its title. `LinkedText { plainText; link; activated() }` is a Txt with one part of it a link (Tab reaches it, and a click goes no further than the link). `trailing` ends the button with an item, such as the `KeyCombo { size: "small" }` of its key.
 - `CopyButton { text; tooltip; copiedText; copied() }`: icon-only without text; the caller copies on `copied`.
-- `Menu { items; currentId; picked(id) }`: a menu declared inside what opens it. `MenuButton { label; items; confirm(text) }` is a Button with one. `MenuItem` (an icon or a language's `flagCode`) and `MenuPopup` are their parts, shared with Select and LanguagePopover.
+- `Menu { items; currentId; minWidth; picked(id) }`: a menu declared inside what opens it, as wide as its items need and at least `minWidth`. `MenuButton { label; items; confirm(text) }` is a Button with one. `MenuItem` (an icon or a language's `flagCode`) and `MenuPopup` are their parts, shared with Select and LanguagePopover.
 
 Status and feedback:
 
@@ -566,7 +772,7 @@ Pictures of speech:
 - `RatingBars { bars; appearance: compact|wide }`: ratings out of ten.
 - `StepNode { number; title; detail; stage }`: one stop in a run of steps; wrappers lay them out and draw the lines.
 - `DiffText { segments; mode: marked|spoken|result }`: an edit marked like a proof; also `html(segments, mode)` for the same marks elsewhere.
-- `AppIcon { name; iconName }`, `Icon { name }` (a Lucide name, or a company's mark from `brands.js`), `BrandMark` (Speecher's own mark), `Flag { code; size }` (a language's round flag, one per code, from the bundled circle-flags SVGs, the same on every platform).
+- `AppIcon { name; iconName; source }` (an installed app's icon from `image://appicon`, the initial until it loads or where there is none), `Icon { name }` (a Lucide name, or a company's mark from `brands.js`), `BrandMark` (Speecher's own mark), `Flag { code; size }` (a language's round flag, one per code, from the bundled circle-flags SVGs, the same on every platform).
 
 Helpers:
 
@@ -578,13 +784,21 @@ Helpers:
 In Speecher.App, besides SchemaRow:
 
 - `SubpageRows { pageId; lines }`: a card of rows leading to a page's subpages, with their titles and subtitles, or a line of `lines` by subpage id, such as how it is set now, in place of the subtitle.
-- `SearchLanding { rowIds; target; landed() }`: where a search for schema rows lands when no SchemaRow stands for them (a custom row, a Disclosure, a card or a section). It scrolls to target and emits landed so the target can flash or open. It opens nothing that hides target: a section folded away until a choice makes it apply opens for a search only where its page says so, as Speech to text's Local Model and Custom Endpoint sections do through the page's `searched`.
-- `AccessibilityNotice { text }`: the note at the top of a card whose rows need desktop accessibility.
-- `HealthRow { rowId; checkId }`: a schema row showing one of `System.checks` with its fix; items inside follow the fix button. `StateText { stateId }` words a sign-in or check state, and `States` (states.js) maps states to tones: a state to sign in to, turn on or set up is `warning`, one that failed or can't be used `negative`.
-- `SignInRow { serviceId }`: under the cards that choose a speech service, while it isn't ready, how to sign in (or why the last check couldn't reach it) and Check again; the card keeps the status.
-- `RefinerSignInRow { providerId }`: under the cards that choose a refinement provider, while its sign-in isn't ready, how to sign in with Open Accounts, or, where Accounts couldn't read the keychain, Check again.
+- `SearchLanding { rowIds; target; landed() }`: where a search for schema rows lands when no SchemaRow stands for them (a custom row, a Disclosure, a card or a section). It scrolls to target and emits landed so the target can flash or open. It opens nothing that hides target: a section folded away until a choice makes it apply opens for a search only where its page says so, as Refinement's Advanced group does when a search lands in it.
+- `AccessibilityNotice { what; shown }`: one line at the top of a card whose rows need desktop accessibility, while it is off, saying what of the card needs it and linking to Home's row for it.
+- `HealthRow { rowId; checkId }`: a schema row showing one of `System.checks` with its fix; items inside follow the fix button. `AccessibilityMenu` is the desktopAccessibility row's menu that stops keeping it on. `StateText { stateId }` words a sign-in or check state, and `States` (states.js) maps states to tones: a state to sign in to, turn on or set up is `warning`, one that failed or can't be used `negative`.
+- `ServiceOrderList { role }`: a job's Service Order, speech or refinement, on an `OrderedList`: each service with its status and a Fix while it can't run, its `ServiceChoiceRow` under it, saving as it changes. `ServiceChoiceRow` is one entry's choices: its model (picked where the service lets you, else named), a later speech service's Spoken language with "Same as Spoken language" first, and ChatGPT's and Claude's thinking and speed.
+- `ServiceOrderSection { role }`: a ServiceOrderList under the order row's label and help, as Speech to text, Refinement and their setup steps show it.
+- `ModelText.hasFix(service, signInInDoubt)`: whether a Fix for the service has a Services card to open, which ServiceStatus, ServiceOrderList and Home's readiness ask alike.
+- `AppLinkRow { entry; detail }` (pages/apps): an App or App Type another page lists (Pasting's own steps, Privacy & data's keep less), opening it in Apps; `Schema.apps.typeLink` and `appLink` make its entry.
+- `ServiceStatus { role; serviceId }`: under Run with (Transcribe files and Recordings), what a service the batch runs with still needs and how to sign in, with Check again and Fix; folded away while it is ready and before the first check answers.
+- `FixSheet { openFor(role, serviceId) }`: the Services card that fixes one service (ChatGPT's or Claude's sign-in, This computer's part for the job, or the job's server) in a modal sheet over the page, with Open Services (Open This computer for its part), which leads back to setup when opened from there.
+- `ErrorDetails { text }`: a failure's own words behind a Details link, under its plain sentence.
+- `ShortcutRecorder { rowId }`: a shortcut setting's ShortcutField wired to Settings, for the shortcut rows and Dictation's hero, which is where the dictation shortcut is set.
+- `Usable.usable(spec)`: whether a row can be used now, by its schema `usableWhen` (blur, accessibility, automaticDownloads, screenshotReader). SchemaRow and search both read it; a page doesn't disable a row by its own logic.
 - `CommandChip { command }`: a command in code type with a copy button.
 - `StartCommandRow`: the `startCommand` row, the command that starts one dictation with a copy button, wherever the desktop gives no shortcut.
+- `CommandsRow { rowId }`: a schema row's `commands`, each with a copy button: the commands that finish, cancel and toggle a dictation and those that record a call, beside the start command on Dictation and setup's Shortcut step.
 - `Sheet { side }`: the page a window shows beside its side column, framed or split as `Theme.split` says.
 - `Brand { title; detail; detailTip }`: the mark and the window's name in the title strip, for the main window and setup.
 - `LanguageList { show(at, codes) }`: a LanguagePopover that only shows the languages a service or model listens for, named and worded.
@@ -629,3 +843,8 @@ With `SPEECHER_GRAB_MAIN_WINDOW=<file.png>` set, the daemon saves the real main
 window a moment after each time it shows it, since a headless compositor lets
 no other client take a screenshot. `packaging/verify-appimage.sh` uses it to
 check that the packaged UI opens.
+
+With `SPEECHER_UI_CAPTURE_DIR=<dir>` set, `everyPageAndSearchLoads` and
+`everySetupStepLoads` save a PNG of the window after each step, the window
+grown to show the whole page, for UX review. `.github/workflows/ui-capture.yml`
+does the same on macOS and Windows for a push to `ui-capture/<name>`.

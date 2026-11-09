@@ -19,26 +19,22 @@ class ProviderAvailability;
 class ProviderRegistry;
 class SettingsStore;
 
+// A Local Runner and the cleanup model it serves: the runner This computer
+// uses, and the model of the "local" refinement entry.
+struct RunnerSelection {
+    QString runner;
+    QString model;
+};
+
 struct RunnerChoice {
-    LocalRunnerSettings selection;
+    RunnerSelection selection;
     std::optional<DetectedRunner> available;
     bool offerPull = false;
     bool showSuggestion = false;
 };
-RunnerChoice resolveRunnerChoice(const LocalRunnerSettings &saved,
+RunnerChoice resolveRunnerChoice(const RunnerSelection &saved,
                                 const QList<DetectedRunner> &runners,
                                 const std::optional<CleanupModel> &suggestion);
-
-// A local fallback this computer can run, which setup suggests adding.
-// LocalSetup::setupFallbackOffer() decides whether there is one;
-// LocalSetup::acceptSetupFallbackOffer() adds it.
-struct SetupFallbackOffer {
-    QString providerId;
-    // The Local Model to download, or the cleanup model the runner serves.
-    QString modelId;
-    // What the suggestion names: "Parakeet 0.6B", or "Ollama".
-    QString name;
-};
 
 // The machine as a model placed by runsOn sees it, for fit: the CPU budgets
 // system RAM, a chosen card its own memory, and Automatic the probe's pick.
@@ -64,7 +60,7 @@ QList<LocalGpu> localGraphicsCardChoices(const QList<LocalGpu> &gpus, const Loca
 LocalRunsOn localRunsOnFor(const QList<LocalGpu> &gpus, const QString &backend);
 
 // Everything a front end shows about running models on this computer beyond
-// the files themselves: the hardware, Local Runners, the Custom Endpoints'
+// the files themselves: the hardware, Local Runners, the servers'
 // connection tests, Speed Tests and cleanup models pulled through Ollama.
 // ApplicationController owns one, so a download, a test or a pull outlives the
 // window that started it. Slow work runs off the GUI thread; every change of
@@ -115,14 +111,11 @@ public:
     // The hardware probe settles deferred initialization for every front end.
     void initializeSpeechModel();
     void chooseSpeechModel(const QString &id);
-    // Makes Local Model the speech service, running this model, in one save,
-    // so no reader sees Local Model with the model it had before.
-    void useSpeechModel(const QString &id);
     const LocalModel &speechModelChoice(const AppSettings &settings) const;
     void initializeRunner();
     RunnerChoice runnerChoice(const AppSettings &settings) const;
 
-    // What the Local models page reads about a model beyond the catalog.
+    // What the This computer page reads about a model beyond the catalog.
     struct ModelState {
         // Downloaded and the speech model dictation uses.
         bool inUse = false;
@@ -153,23 +146,8 @@ public:
     // Also run on their own 800 ms after a saved endpoint in the chain gets a
     // server, or its server, path, key or format changes. A check that lists
     // models while no model is saved saves the first.
-    void checkSpeechEndpoint(const SpeechEndpointSettings &endpoint);
-    void checkRefinementEndpoint(const RefinementSettings &settings);
-
-    // The local fallback setup suggests for a role: the suggested Local Model
-    // once the hardware is known to fit it and it listens for the Spoken
-    // Language, or a running Local Runner with a cleanup model it serves.
-    std::optional<SetupFallbackOffer> setupFallbackOffer(ProviderRole role, const AppSettings &settings) const;
-    // Whether accepting that offer behind primary would add it: not when
-    // there is none, the chain behind primary is full, or the offer is
-    // already primary or one of its fallbacks.
-    bool setupFallbackOfferJoins(ProviderRole role, const QString &primary, const AppSettings &settings) const;
-    // Adds that fallback after the others, behind primary, setup's choice for
-    // the role, which is saved with it: the saved chain is kept in step with
-    // its primary, so a fallback behind a primary not yet saved would be
-    // dropped. A Local Model is chosen and downloaded the way the Local card
-    // does it, a runner and its model are selected.
-    void acceptSetupFallbackOffer(ProviderRole role, const QString &primary);
+    void checkSpeechEndpoint(const ServerSettings &server);
+    void checkRefinementEndpoint(const RefinementEndpoint &endpoint);
 
     // Adds reachability and the sign-ins last seen to liveFacts(), and
     // announces their changes as changed().
@@ -189,10 +167,6 @@ signals:
 
 private:
     friend class LocalSetupTestAccess;
-    // The saved fallbacks behind primary with setup's offer added, or none
-    // where the chain would drop it.
-    std::optional<QStringList> fallbacksWithSetupOffer(ProviderRole role, const QString &primary,
-                                                       const AppSettings &settings) const;
     struct EndpointState {
         quint64 generation = 0;
         bool checking = false;
@@ -223,7 +197,7 @@ private:
     const ProviderAvailability *m_availability = nullptr;
     OllamaPull m_ollamaPull;
     Pull m_pull;
-    std::optional<SpeechEndpointSettings> m_checkedSpeech;
+    std::optional<ServerSettings> m_checkedSpeech;
     std::optional<RefinementEndpoint> m_checkedRefinement;
     EndpointState m_speechEndpoint;
     EndpointState m_refinementEndpoint;

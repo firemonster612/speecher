@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/PasteRules.h"
+#include "core/DeliverySteps.h"
 #include "output/ProcessRunner.h"
 
 #include <QObject>
@@ -25,22 +25,22 @@ public:
     // once: ydotool releases the modifiers first and after, and done runs
     // once at the end, unless this is gone by then. clearToInject is asked
     // after the first release, and the paste keystroke goes out from its
-    // reply; a refusal aborts without sending it.
+    // reply; a refusal aborts without sending it. noInputSent says a
+    // failure sent no paste key: refused, or ydotool never started.
+    using PasteDone = std::function<void(bool pasted, bool noInputSent, const QString &error)>;
     void pasteFromClipboard(const QString &text,
-                            PasteMethod method,
+                            PasteKeyCombo keys,
                             const std::function<void(std::function<void(bool clear)>)> &clearToInject,
-                            std::function<void(bool pasted, const QString &error)> done);
+                            PasteDone done);
     static bool isAvailable();
     static QString socketPath();
     static QStringList commandArguments(const QString &text);
-    static QStringList pasteShortcutArguments(PasteMethod method);
+    static QStringList pasteShortcutArguments(PasteKeyCombo keys);
     static QString withoutTrailingWhitespace(const QString &text);
 
 private:
     // The paste keystroke, then the release after it.
-    void pressPasteKeys(const ProcessCommand &paste,
-                        const ProcessCommand &release,
-                        std::function<void(bool, const QString &)> done);
+    void pressPasteKeys(const ProcessCommand &paste, const ProcessCommand &release, PasteDone done);
     // The paste keystroke under way, and the release that must follow it.
     struct PasteUnderWay {
         std::function<void()> stop;

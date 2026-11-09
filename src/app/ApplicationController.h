@@ -12,6 +12,7 @@
 #include "core/DictationRecord.h"
 #include "core/ShortcutBinding.h"
 #include "dictation/DictationTypes.h"
+#include "dictation/RunOverrides.h"
 #include "platform/GlobalShortcutBinder.h"
 
 namespace speecher {
@@ -27,7 +28,10 @@ class TranscribeQueue;
 class AudioInput;
 class SessionKeyGrab;
 class ShortcutGesture;
-class InsightsLog;
+class HistoryKeeper;
+class HistoryStore;
+class PasteAgain;
+class SeenApps;
 class IpcCommandHandler;
 class LocalModelStore;
 class LocalSetup;
@@ -35,8 +39,10 @@ class NetworkReachability;
 class ProviderAvailability;
 class ProviderRegistry;
 class RecordingSession;
+struct RecordingRequest;
 class SecretStore;
 class SettingsStore;
+class TargetProvider;
 class UpdateController;
 class WhatsNewTracker;
 
@@ -69,17 +75,27 @@ public:
     TranscribeQueue *transcribeQueue();
     // Why a batch cannot start now, or empty when it can.
     QString fileTranscriptionRefusal() const;
-    // A recording, which `speecher record` starts and stops, runs beside
-    // dictation and file transcription with a microphone input of its own.
+    // A recording, started from the Recordings page, the tray, the Recording
+    // Shortcut or `speecher record`, runs beside dictation and file
+    // transcription with a microphone input of its own.
     bool isRecording() const;
+    RecordingSession *recording() const;
     // Starts a recording once setup is complete and the microphone is allowed.
     // done gets why it did not start, or nothing once it records; macOS may
     // ask for the microphone first, and the provider's stream must connect, so
-    // it can come long after.
-    void startRecording(const QString &path,
-                        const QStringList &vocabulary,
-                        bool microphoneOnly,
-                        std::function<void(const QString &error)> done);
+    // it can come long after. recordingStartFinished says the same.
+    void startRecording(const RecordingRequest &request, std::function<void(const QString &error)> done);
+    // Whether a start waits for the microphone, before the session starts:
+    // shown as starting, and stopRecording or toggleRecording cancels it.
+    bool recordingStartPending() const;
+    // Stops the recording running, or cancels a start still waiting.
+    void stopRecording();
+    // The tray's and the Recording Shortcut's: stops the recording running,
+    // or starts one with the saved settings and no name. The first recording
+    // ever asks for recordingConsentNeeded instead.
+    void toggleRecording();
+    // The running or last recording's History Entry, 0 for none.
+    qint64 recordingHistoryId() const;
     // Whether the setup assistant still has to run before dictation, recording
     // or a window opens. Onboarding happens in the front end, so with none
     // attached nothing waits for it; each start still checks its provider and
@@ -94,16 +110,26 @@ public:
     bool popupOnly() const;
     SettingsStore *settings() const;
     UpdateController *updates() const;
-    InsightsLog *insightsLog() const;
+    // Everything kept of dictations and transcribed files, which Home
+    // summarizes and History lists.
+    HistoryStore *history() const;
+    // The apps dictated into lately, recorded while History keeps stats.
+    SeenApps *seenApps() const;
     // The day Home summarizes up to. SPEECHER_INSIGHTS_TODAY pins it for
     // screenshots, so front ends ask here rather than reading the clock.
     QDate insightsToday() const;
-    // What insights recorded of the last delivered transcript: its app and
-    // day. Empty while insights did not record it.
+    // What History recorded of the last delivered transcript: its app and
+    // day. Empty while History did not record it.
     const std::optional<DictationRecord> &lastRecord() const;
-    // The Clear insights history action, once the person has confirmed it.
-    // False when the history file could not be deleted.
-    bool clearInsights();
+    // Clearing History, once the person has confirmed it: the words and audio
+    // of what finished in [from, to) (an invalid bound is open), and with
+    // withStats the entries, and for everything the apps dictated into too.
+    // False when a file refused it.
+    bool clearHistory(const QDateTime &from, const QDateTime &to, bool withStats);
+    // What Paste Again pastes: History's newest dictation while it keeps
+    // text, unless one this run is newer; while it doesn't, the last one
+    // this run. Never one into a password field. Empty when there's none.
+    QString pasteAgainText() const;
     WhatsNewTracker *whatsNew() const;
     SecretStore *secretStore() const;
     ProviderRegistry *providerRegistry() const;
@@ -120,6 +146,9 @@ public:
     // window first asks.
     Accounts *accounts() const;
     const PlatformComposition *platform() const;
+    // What tells which app is in front, as dictation captures it; the Apps
+    // page's Switch to it captures through it too.
+    TargetProvider *targetProvider() const;
     // The Dictation Session's state.
     DictationState dictationState() const;
     // What a status line says about dictation now (dictationStatusLabel);
@@ -186,12 +215,15 @@ public:
     IpcCommandHandler *ipcCommands() const;
 
 public slots:
+    // Pastes text, or pasteAgainText() when it is empty, into the app in
+    // front: Speecher's windows step aside first. Not during a dictation.
+    void pasteAgain(const QString &text = {});
     void toggle();
     // A toggle with the --format, --profile or --language it was given.
-    void toggleWith(const SessionOverrides &overrides);
+    void toggleWith(const RunOverrides &overrides);
     void startListening();
     // A start with the --format, --profile or --language it was given.
-    void startListeningWith(const SessionOverrides &overrides);
+    void startListeningWith(const RunOverrides &overrides);
     void stopListening();
     // Throws away the dictation in progress, or one about to start.
     void cancel();
@@ -208,6 +240,12 @@ signals:
     void lastTranscriptChanged(const QString &text);
     void lastRecordChanged();
     void recordingChanged(bool recording);
+    // A start ended: empty once it records, else why it did not.
+    void recordingStartFinished(const QString &error);
+    void recordingStartPendingChanged();
+    // A start from the tray or the shortcut waits for the person to have
+    // seen the consent notice, which the Recordings page shows.
+    void recordingConsentNeeded();
     // The Transcribe queue's results that aren't saved, exported or dismissed
     // changed, so what an update restart waits for may have too.
     void unsavedTranscriptsChanged();
@@ -216,8 +254,11 @@ signals:
     void globalShortcutSupportChanged();
     void globalShortcutRegistrationFinished(bool bound, const QString &detail, GlobalShortcutRole role);
     void quitRequested();
+    // Paste Again ended: ok, or why not in words for the person.
+    void pasteAgainFinished(bool ok, const QString &message);
 
 private:
+    bool cancelRecordingStart();
     void forgetLastRecord();
     void notifyModelReady(const QString &modelId);
     void startWithMicrophone(std::function<void()> start);
@@ -244,6 +285,7 @@ private:
     ProviderAvailability *m_availability = nullptr;
     Accounts *m_accounts = nullptr;
     AudioInput *m_audio = nullptr;
+    TargetProvider *m_targetProvider = nullptr;
     DictationSession *m_session = nullptr;
     FileTranscriptionSession *m_fileTranscription = nullptr;
     TranscribeQueue *m_transcribeQueue = nullptr;
@@ -254,13 +296,18 @@ private:
     // The main window is up only because a plain launch shows it.
     bool m_mainWindowByDefault = false;
     UpdateController *m_updates = nullptr;
-    InsightsLog *m_insightsLog = nullptr;
+    HistoryStore *m_history = nullptr;
+    HistoryKeeper *m_historyKeeper = nullptr;
+    SeenApps *m_seenApps = nullptr;
     std::optional<DictationRecord> m_lastRecord;
     QString m_lastTranscript;
     QDate m_insightsToday;
     GlobalShortcutBinder *m_shortcutBinder = nullptr;
     GlobalShortcutBinder *m_cancelShortcutBinder = nullptr;
     GlobalShortcutBinder *m_pauseShortcutBinder = nullptr;
+    GlobalShortcutBinder *m_pasteAgainShortcutBinder = nullptr;
+    GlobalShortcutBinder *m_recordingShortcutBinder = nullptr;
+    PasteAgain *m_pasteAgain = nullptr;
     SessionKeyGrab *m_sessionKeyGrab = nullptr;
     int m_shortcutSuspensions = 0;
     IpcCommandHandler *m_ipcCommands = nullptr;
@@ -271,6 +318,9 @@ private:
     bool m_deferredStartupDone = false;
     quint64 m_microphoneStartGeneration = 0;
     bool m_microphoneStartPending = false;
+    // A recording start waiting for the microphone, and which one may go on.
+    std::function<void(const QString &error)> m_pendingRecordingStart;
+    quint64 m_recordingStartGeneration = 0;
     // Set for good once quitApplication() runs; guards its re-entry and
     // blocks new session starts during the shutdown pump.
     bool m_quitting = false;

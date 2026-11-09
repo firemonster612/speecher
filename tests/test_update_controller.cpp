@@ -659,7 +659,7 @@ private slots:
     {
         UpdateTestContext context;
         context.settings.edit([](AppSettings &draft) {
-            draft.refinement.providerId = QStringLiteral("none");
+            draft.refinement.enabled = false;
             return true;
         });
         FakeAudioInput audio;

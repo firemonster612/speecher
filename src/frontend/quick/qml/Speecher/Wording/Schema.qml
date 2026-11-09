@@ -8,10 +8,13 @@ import "schema/feedback.js" as Feedback
 import "schema/refinement.js" as Refinement
 import "schema/profiles.js" as Profiles
 import "schema/vocabulary.js" as Vocabulary
+import "schema/apps.js" as Apps
 import "schema/pasting.js" as Pasting
-import "schema/accounts.js" as Accounts
+import "schema/services.js" as Services
 import "schema/models.js" as Models
 import "schema/general.js" as General
+import "schema/history.js" as History
+import "schema/recordings.js" as Recordings
 import "schema/updates.js" as Updates
 
 // The settings layout and its wording, which belong to the UI: pages, and
@@ -24,13 +27,18 @@ import "schema/updates.js" as Updates
 // [{ id, label, help?, icon? }], control (segmented, select, cards, or
 // language for the Spoken language's LanguageSelect) for choices, min/max/step/unit for sliders, placeholder for text, actionLabel
 // and actionIcon for actions, keywords for search, and enabledWhen
-// { id, equals } to grey a row out until another row has a value, and
-// hiddenWhen { id, equals } to fold it away while another row has a value.
-// needsBlur marks a row that is off and greyed, showing its disabledHelp,
-// where Appearance.canBlur is false; its saved value stays.
+// { id, equals } to grey a row out until another row has a value (a list
+// of them: until any has), and hiddenWhen { id, equals } to fold it away
+// while another row has a value (equals is one value, or a list of them;
+// notEquals in its place is any other value).
+// usableWhen names the condition a row needs to be used now (blur,
+// accessibility, automaticDownloads, screenshotReader; Usable in
+// Speecher.App holds them): without it the row is off and greyed on its page
+// and in search, showing its disabledHelp, and its saved value stays.
 // needs names what a row or an option needs of the computer, a System
-// property such as hasVirtualKeyboard; without it, its page and search leave
-// it out, and a choice left with one option leaves its row out (available,
+// property such as hasVirtualKeyboard, or "!" and one for a row only a
+// computer without it has; without it, its page and search leave it out,
+// and a choice left with one option leaves its row out (available,
 // options).
 // Custom rows may also carry wording for their own controls: emptyText and
 // addLabel for lists, disabledHelp for help shown while the row is greyed
@@ -40,10 +48,18 @@ QtObject {
     // Rows the search palette offers before anything is typed.
     readonly property var suggestions: ["globalShortcut", "shortcutBehavior", "showLiveText", "pauseMedia"]
     readonly property var rows: [].concat(Shortcuts.rows, Microphone.rows, Speech.rows, Feedback.rows,
-                                          Refinement.rows, Profiles.rows, Vocabulary.rows, Pasting.rows,
-                                          Accounts.rows, Models.rows, General.rows, Updates.rows)
-    // The app types Speecher sorts apps into, for paste rules and recognition.
-    readonly property var appCategories: Pasting.categories
+                                          Refinement.rows, Profiles.rows, Vocabulary.rows, Apps.rows, Pasting.rows,
+                                          Services.rows, Models.rows, General.rows, History.rows, Recordings.rows,
+                                          Updates.rows)
+    // The Apps page's wording beyond its rows: the App Types, the Pasting
+    // choices and the editor's and picker's words (schema/apps.js).
+    readonly property var apps: Apps
+    // The Vocabulary page's wording beyond its rows: its filters, editor and
+    // import (schema/vocabulary.js).
+    readonly property var vocabulary: Vocabulary
+    // Delivery's wording beyond its rows: the paste keys, what a Pasting
+    // choice leaves of the steps, and a step's needs (schema/pasting.js).
+    readonly property var pasting: Pasting
     // Each row's Since Version, by row id: { rowId: "0.2.1" }.
     readonly property var since: Updates.since
 
@@ -61,32 +77,46 @@ QtObject {
     function row(id) {
         return _rowsById[id] || { id: id, page: "", label: id, help: "This row is not in the schema yet.", kind: "missing" }
     }
+    // Whether What Speecher Keeps (the historyKeeps row's option id) keeps
+    // the words of new dictations and files: text, or text and audio.
+    function keepsText(keeps) { return keeps === "text" || keeps === "audio" }
     function page(id) { return _pagesById[id] || { id: id, title: id, icon: "circle" } }
     // The pages under a page, in sidebar order.
     function subpages(id) { return pages.filter(p => p.parent === id) }
-    // The pages a page sits under, outermost first: [Refinement] for Vocabulary.
+    // The pages a page sits under, outermost first: [Refinement] for Writing profiles.
     function ancestors(id) {
         const p = page(id)
         return p.parent ? ancestors(p.parent).concat([page(p.parent)]) : []
     }
-    // Where a page is, as words: "Refinement › Vocabulary", or its title.
+    // Where a page is, as words: "Refinement › Writing profiles", or its title.
     function trail(id) { return ancestors(id).concat([page(id)]).map(p => p.title).join(" › ") }
     // Where a row is: its page's trail and its section, if it has one.
     function rowTrail(spec) { return trail(spec.page) + (spec.section ? ", " + spec.section : "") }
 
     // Whether this computer has the row; has(need) answers for a needs.
     function available(spec, has) {
-        if (spec.needs && !has(spec.needs)) return false
+        if (!_met(spec.needs, has)) return false
         return spec.kind !== "choice" || options(spec, has).length > 1
     }
+    function _met(need, has) { return !need || (need[0] === "!" ? !has(need.slice(1)) : !!has(need)) }
     // Whether the row that turns this one on (enabledWhen) is on, by the
     // values Settings holds.
     function rowEnabled(spec, values) {
-        return !spec.enabledWhen || values[spec.enabledWhen.id] === spec.enabledWhen.equals
+        return !spec.enabledWhen || [].concat(spec.enabledWhen).some(when => _holds(when, values))
+    }
+    // Whether hiddenWhen folds the row away now.
+    function rowHidden(spec, values) {
+        return !!spec.hiddenWhen && _holds(spec.hiddenWhen, values)
+    }
+    // Whether a row's value meets { id, equals } or { id, notEquals }.
+    function _holds(when, values) {
+        const value = values[when.id]
+        if ("notEquals" in when) return value !== when.notEquals
+        return Array.isArray(when.equals) ? when.equals.indexOf(value) >= 0 : value === when.equals
     }
     // The row's options this computer has.
     function options(spec, has) {
-        return (spec.options || []).filter(o => !o.needs || has(o.needs))
+        return (spec.options || []).filter(o => _met(o.needs, has))
     }
 
     // Ranks pages and the rows this computer has (available) against query.
@@ -94,7 +124,9 @@ QtObject {
     // then keywords, section and help. A subpage also matches its parent's
     // title, so searching for a page finds the pages under it; a subpage
     // and its rows carry the path to it as their trail.
-    function search(query, limit, has) {
+    // extra are rows that aren't in the schema, such as saved exceptions,
+    // searched the same way; each carries its own type.
+    function search(query, limit, has, extra) {
         const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 0)
         if (!words.length) return []
         const score = (fields) => {
@@ -126,10 +158,10 @@ QtObject {
             if (s > 0) results.push({ type: "page", id: p.id, page: p.id, label: p.title, icon: p.icon,
                                       trail: p.parent ? trail(p.id) : "", score: s + 4 })
         }
-        for (const r of rows) {
+        for (const r of rows.concat(extra || [])) {
             const optionText = options(r, has).map(o => o.label).join(" ")
             const s = score([[r.label, 10], [r.keywords, 6], [r.section, 4], [optionText, 3], [r.help, 2]])
-            if (s > 0 && available(r, has)) results.push({ type: "row", id: r.id, page: r.page, label: r.label, icon: page(r.page).icon,
+            if (s > 0 && !r.opens && available(r, has)) results.push({ type: r.type || "row", id: r.id, page: r.page, label: r.label, icon: page(r.page).icon,
                                       trail: rowTrail(r), score: s })
         }
         results.forEach((r, i) => r.order = i)

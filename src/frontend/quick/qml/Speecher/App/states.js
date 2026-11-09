@@ -16,8 +16,3 @@ var tones = {
 
 function tone(state) { return tones[state] || "neutral"; }
 function busy(state) { return state === "checking" || state === "working"; }
-
-// Service options with the tone ServiceCards colours their status by.
-function withTones(options) {
-    return options.map(o => Object.assign({}, o, { tone: tone(o.state) }));
-}

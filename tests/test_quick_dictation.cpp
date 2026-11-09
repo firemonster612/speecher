@@ -6,6 +6,7 @@
 #include "dictation/PopupPresentation.h"
 #include "dictation/SelectionEditPresentation.h"
 #include "frontend/quick/host/QuickDictation.h"
+#include "frontend/quick/host/QuickRecording.h"
 #include "frontend/quick/host/QuickPopupWindow.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickUpdates.h"
@@ -156,6 +157,7 @@ private slots:
         QFETCH(QString, phase);
         ApplicationController controller(true);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         DictationSession *session = controller.session();
 
         emit session->stateChanged(sessionState);
@@ -180,6 +182,7 @@ private slots:
     {
         ApplicationController controller(true);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         DictationSession *session = controller.session();
 
         emit session->stateChanged(DictationState::Listening);
@@ -211,7 +214,7 @@ private slots:
                                           << "Copied" << "Your selection changed" << "copied";
         QTest::newRow("fallback, with its fix")
             << "Used raw transcript • Sent to the app • Your Claude sign-in has expired." << int(PopupOutcome::Fallback)
-            << "accounts" << "Used raw transcript" << "Sent to the app • Your Claude sign-in has expired." << "fallback";
+            << "services" << "Used raw transcript" << "Sent to the app • Your Claude sign-in has expired." << "fallback";
     }
 
     void receiptsSayWhatHappened()
@@ -224,6 +227,7 @@ private slots:
         QFETCH(QString, outcomeName);
         ApplicationController controller(true);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         DictationSession *session = controller.session();
         const PopupErrorAction fix = fixPage.isEmpty() ? PopupErrorAction{} : PopupErrorAction{ErrorFix::SettingsPage, fixPage};
 
@@ -244,6 +248,7 @@ private slots:
     {
         ApplicationController controller(true);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         DictationSession *session = controller.session();
 
         emit session->stateChanged(DictationState::Listening);
@@ -263,6 +268,7 @@ private slots:
     {
         ApplicationController controller(true);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         QSignalSpy pages(&dictation, &QuickDictation::pageRequested);
 
         dictation.showError(QStringLiteral("No speech service is available. OpenAI couldn't be reached."),
@@ -279,19 +285,21 @@ private slots:
         QCOMPARE(dictation.property("state").toString(), QStringLiteral("idle"));
     }
 
-    // A refused microphone's fix is Permissions & health, on every platform.
-    void aMicrophonePermissionErrorOpensPermissions()
+    // A refused microphone's fix is the Microphone page, whose first row is
+    // microphone access, on every platform.
+    void aMicrophonePermissionErrorOpensTheMicrophonePage()
     {
         ApplicationController controller(true);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         QSignalSpy pages(&dictation, &QuickDictation::pageRequested);
 
         dictation.showError(QStringLiteral("Microphone access is off"), {ErrorFix::MicrophonePermission});
         QCOMPARE(dictation.property("error").toMap().value(QStringLiteral("page")).toString(),
-                 QStringLiteral("permissions"));
+                 QStringLiteral("microphone"));
         emit dictation.errorActionRequested();
         QCOMPARE(pages.count(), 1);
-        QCOMPARE(pages.first().first().toString(), QStringLiteral("permissions"));
+        QCOMPARE(pages.first().first().toString(), QStringLiteral("microphone"));
         QCOMPARE(dictation.property("state").toString(), QStringLiteral("idle"));
     }
 
@@ -300,6 +308,7 @@ private slots:
     {
         ApplicationController controller(true);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         QSignalSpy pages(&dictation, &QuickDictation::pageRequested);
 
         dictation.showError(QStringLiteral("Couldn't start"));
@@ -318,6 +327,7 @@ private slots:
         QuickDictation::setErrorDismissMs(50);
         ApplicationController controller(true);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
 
         dictation.showError(QStringLiteral("Microphone access is off"), {ErrorFix::MicrophonePermission});
         QCOMPARE(dictation.property("error").toMap().value(QStringLiteral("dismissMs")).toInt(), 50);
@@ -332,11 +342,12 @@ private slots:
         QuickDictation::setErrorDismissMs(50);
         // Not built in here, so the dictation cannot start.
         SettingsStore().edit([](AppSettings &draft) {
-            draft.speech.providerId = QStringLiteral("local");
+            draft.speech.services.order = {QStringLiteral("local")};
             return true;
         });
         ApplicationController controller(true);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         DictationSession *session = controller.session();
         QSignalSpy hidden(session, &DictationSession::popupHideRequested);
         // Taken as the error shows, which is up for only 50 ms: polling can
@@ -363,8 +374,9 @@ private slots:
         QuickDictation::setErrorDismissMs(50);
         ApplicationController controller(true);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         DictationSession *session = controller.session();
-        dictation.showError(QStringLiteral("Your Claude sign-in has expired."), {ErrorFix::SettingsPage, QStringLiteral("accounts")});
+        dictation.showError(QStringLiteral("Your Claude sign-in has expired."), {ErrorFix::SettingsPage, QStringLiteral("services")});
         emit dictation.cancelRequested();
 
         emit session->stateChanged(DictationState::Starting);
@@ -384,6 +396,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         // The popup's offers read Updates, as the host always has it.
         QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
@@ -409,6 +422,7 @@ private slots:
         QuickDictation::setErrorDismissMs(60000);
         ApplicationController controller(true);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         const auto state = [&dictation] { return dictation.property("state").toString(); };
         QSignalSpy changed(&dictation, &QuickDictation::errorChanged);
         dictation.showError(QStringLiteral("Dictation is unavailable while files are being transcribed."));
@@ -427,6 +441,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         // The popup's offers read Updates, as the host always has it.
         QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
@@ -482,6 +497,7 @@ private slots:
     {
         ApplicationController controller(true);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         DictationSession *session = controller.session();
         const QString original = QStringLiteral("Can you send me the deck when you get a chance?");
         const QString revised = QStringLiteral("Can you send me the slides when you can?");
@@ -563,6 +579,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         // The popup's offers read Updates, as the host always has it.
         QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
@@ -586,6 +603,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         // The popup's offers read Updates, as the host always has it.
         QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
@@ -612,6 +630,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         // The popup's offers read Updates, as the host always has it.
         QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
@@ -641,6 +660,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         // The popup's offers read Updates, as the host always has it.
         QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
@@ -680,6 +700,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         const QVariantMap idle = dictation.property("review").toMap();
         QCOMPARE(idle.value(QStringLiteral("keepKeys")).toStringList(), QStringList{QStringLiteral("Esc")});
         QCOMPARE(idle.value(QStringLiteral("replaceKeys")).toStringList(), QStringList{replaceKey});
@@ -723,6 +744,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         // The popup's offers read Updates, as the host always has it.
         QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;
@@ -779,6 +801,7 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickDictation dictation(&controller);
+        QuickRecording recording(&controller);
         // The popup's offers read Updates, as the host always has it.
         QuickUpdates updates(&controller, controller.updates());
         QQmlEngine engine;

@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=My Konsole
+Icon=utilities-terminal
+Exec=konsole

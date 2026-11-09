@@ -7,7 +7,7 @@ namespace speecher {
 class AnthropicApiRefiner;
 class ChatCompletionsRefiner;
 
-// Refinement through the refinement Custom Endpoint, in the OpenAI Chat
+// Refinement through the refinement server, in the OpenAI Chat
 // Completions or Anthropic Messages format.
 class EndpointTranscriptRefiner final : public TranscriptRefiner {
     Q_OBJECT

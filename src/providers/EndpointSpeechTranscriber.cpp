@@ -24,9 +24,6 @@ constexpr int sampleRateHz = 16000;
 // How much of the text before an utterance its prompt carries: about a
 // sentence, well inside the 224 tokens Whisper reads of a prompt.
 constexpr qsizetype promptTailChars = 200;
-// How much of the quiet before an utterance goes up with it, 300 ms, so a
-// first sound softer than what counts as voice is not cut.
-constexpr qsizetype leadInBytes = sampleRateHz * 2 * 3 / 10;
 // How long an utterance's upload may take, before the server's silence while
 // it transcribes.
 constexpr int uploadAllowanceMs = 5000;
@@ -96,14 +93,15 @@ QString promptTail(const QString &text)
 
 } // namespace
 
-SpeechEndpointUpload speechEndpointUpload(const SpeechEndpointSettings &endpoint,
+SpeechEndpointUpload speechEndpointUpload(const ServerSettings &server,
+                                          const QString &model,
                                           const QByteArray &pcm16kMono,
                                           const QString &prompt,
                                           const QString &spokenLanguage)
 {
-    QNetworkRequest request = endpointRequest(QUrl(endpoint.baseUrl + endpoint.path));
-    if (!endpoint.apiKey.isEmpty()) {
-        request.setRawHeader("Authorization", "Bearer " + endpoint.apiKey.toUtf8());
+    QNetworkRequest request = endpointRequest(QUrl(server.baseUrl + server.path));
+    if (!server.apiKey.isEmpty()) {
+        request.setRawHeader("Authorization", "Bearer " + server.apiKey.toUtf8());
     }
     auto *parts = new QHttpMultiPart(QHttpMultiPart::FormDataType);
     QHttpPart file;
@@ -112,8 +110,8 @@ SpeechEndpointUpload speechEndpointUpload(const SpeechEndpointSettings &endpoint
                    QStringLiteral("form-data; name=\"file\"; filename=\"dictation.wav\""));
     file.setBody(wavFromPcm16Mono(pcm16kMono, sampleRateHz));
     parts->append(file);
-    if (!endpoint.model.isEmpty()) {
-        parts->append(formField(QStringLiteral("model"), endpoint.model.toUtf8()));
+    if (!model.isEmpty()) {
+        parts->append(formField(QStringLiteral("model"), model.toUtf8()));
     }
     parts->append(formField(QStringLiteral("response_format"), "json"));
     if (const QString language = requestedSpokenLanguage(spokenLanguage); !language.isEmpty()) {
@@ -159,7 +157,7 @@ bool EndpointSpeechTranscriber::requiresRefresh(const SpeechSettings &, const Ac
 std::optional<ProviderFailure> EndpointSpeechTranscriber::prepare(const SpeechSettings &settings,
                                                                   const AccountSettings &)
 {
-    if (settings.endpoint.baseUrl.isEmpty()) {
+    if (settings.server.baseUrl.isEmpty()) {
         return ProviderFailure{ProviderFailureKind::Unavailable,
                                QStringLiteral("Set the speech endpoint's server URL in Settings.")};
     }
@@ -181,7 +179,8 @@ void EndpointSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSett
 {
     cancelAttempt(m_attemptId);
     m_attemptId = attemptId;
-    m_endpoint = settings.endpoint;
+    m_server = settings.server;
+    m_model = settings.services.choice(providerKey(ProviderId::Endpoint)).model;
     m_spokenLanguage = settings.language;
     // The terms Claude Voice would get, in the same priority order.
     m_vocabularyPrompt = VocabularyLimit::limited(settings.vocabulary).join(QStringLiteral(", "));
@@ -202,8 +201,8 @@ void EndpointSpeechTranscriber::sendAudio(quint64 attemptId, const QByteArray &p
         return;
     }
     m_pcm += pcm;
-    if (m_cutIntoUtterances && !m_utteranceOpen && m_pcm.size() > leadInBytes) {
-        m_pcm.remove(0, m_pcm.size() - leadInBytes);
+    if (m_cutIntoUtterances && !m_utteranceOpen && m_pcm.size() > kUtteranceLeadInBytes) {
+        m_pcm.remove(0, m_pcm.size() - kUtteranceLeadInBytes);
     }
 }
 
@@ -287,7 +286,7 @@ void EndpointSpeechTranscriber::uploadNextUtterance()
 void EndpointSpeechTranscriber::postAudio(const QByteArray &pcm, const QString &prompt)
 {
     const quint64 attemptId = m_attemptId;
-    const SpeechEndpointUpload upload = speechEndpointUpload(m_endpoint, pcm, prompt, m_spokenLanguage);
+    const SpeechEndpointUpload upload = speechEndpointUpload(m_server, m_model, pcm, prompt, m_spokenLanguage);
     m_sseBuffer.clear();
     m_streamedText.clear();
     m_doneText.clear();

@@ -48,14 +48,6 @@ public:
         FilesLeft,
     };
 
-    // What the output method becomes once setUp has installed the keyboard.
-    // The setup assistant pastes Automatically: insert where it can, then the
-    // virtual keyboard.
-    enum class AfterSetUp {
-        KeepOutputMethod,
-        PasteAutomatically,
-    };
-
     // What the setup touches outside the process, so tests can stand in for
     // ydotool, pkexec and systemd. Each runs off the calling thread except
     // probe.
@@ -87,7 +79,7 @@ public:
     void refresh();
     // Installs the setup through the helper and starts its service. A setup
     // that comes up ready goes on to the typing test.
-    void setUp(AfterSetUp after = AfterSetUp::KeepOutputMethod);
+    void setUp();
     void startService();
     // Opens the typing test for a keyboard that is ready but off in Speecher.
     void beginTest();

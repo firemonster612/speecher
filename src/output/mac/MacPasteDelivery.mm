@@ -65,7 +65,7 @@ bool MacPasteDelivery::paste(const std::function<bool()> &clearToInject, QString
         return false;
     }
     // macOS has one paste chord: Terminal.app and every other terminal take
-    // Cmd+V, so PasteMethod::TerminalPaste needs no keystroke of its own here.
+    // Cmd+V, so PasteKeyCombo::Terminal needs no keystroke of its own here.
     const auto keyCode = mac::keyCodeForCharacter(QLatin1Char('V'), Qt::ControlModifier);
     if (!keyCode) {
         if (error) *error = QStringLiteral("Could not find the paste key in the current keyboard layout");

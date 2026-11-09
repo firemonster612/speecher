@@ -4,7 +4,11 @@
 #include "app/ApplicationController.h"
 #include "core/ColorSchemes.h"
 #include "core/SettingsStore.h"
+#include "frontend/quick/host/QuickApps.h"
 #include "frontend/quick/host/QuickAppearance.h"
+#include "frontend/quick/host/QuickHistory.h"
+#include "frontend/quick/host/QuickLibrary.h"
+#include "frontend/quick/host/QuickModels.h"
 #include "frontend/quick/host/QuickSettings.h"
 
 #include <QAccessible>
@@ -905,8 +909,15 @@ private slots:
         ApplicationController controller(true);
         QuickSettings settings(&controller);
         QuickAppearance appearance(&controller);
-        // Search asks System what the computer has, as the host always can.
+        // Search lists the Apps saved and the Vocabulary's entries.
+        QuickApps apps(&controller);
+        const QuickLibrary::ControllerScope library(&controller);
+        // Library words its key terms by Models' speech service.
+        QuickModels models(&controller, &settings);
+        // Search asks System what the computer has, as the host always can,
+        // and History whether it has anything to search.
         test::SystemSingletons system(&controller);
+        QuickHistory history(&controller);
         // On Linux no test runs under a compositor that blurs; macOS, and
         // Windows with transparency on, blur any window.
         if (appearance.canBlur()) {

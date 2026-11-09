@@ -12,18 +12,18 @@ SettingRow {
 
     required property string rowId
     readonly property var spec: Schema.row(rowId)
-    // A row that needs the desktop to blur behind windows shows off, greyed
-    // and with why where it can't; the saved value comes back when it can.
-    readonly property bool _blurs: !spec.needsBlur || Appearance.canBlur
+    // A row that can't be used now (usableWhen) shows off, greyed and with
+    // why; the saved value comes back when it can.
+    readonly property bool _usable: Usable.usable(spec)
     // What the control shows: the saved value, unless a page shows what is
     // in effect instead.
-    property var value: _blurs ? Settings.values[rowId] : false
+    property var value: _usable ? Settings.values[rowId] : false
 
     // Whether the row that turns this one on is on (enabledWhen).
     readonly property bool _turnedOn: Schema.rowEnabled(spec, Settings.values)
     // The row's help; a page may give its own. Why the row's last save was
     // refused shows in its place.
-    property string note: (!_blurs || !_turnedOn ? spec.disabledHelp || spec.help : spec.help) || ""
+    property string note: (!_usable || !_turnedOn ? spec.disabledHelp || spec.help : spec.help) || ""
     readonly property string _secretError: spec.kind === "secret" && rowId in Accounts.secretErrors
                                            ? Words.secretError(Accounts.secretErrors[rowId]) : ""
 
@@ -32,12 +32,12 @@ SettingRow {
     iconName: spec.icon || ""
     // _turnedOn reads Settings.values in its binding, so the row
     // follows that value.
-    enabled: _blurs && _turnedOn
+    enabled: _usable && _turnedOn
     // The options this computer has; a row it doesn't have, or one whose
     // schema entry says hiddenWhen, folds away rather than greying.
     readonly property var _options: Schema.options(spec, need => System[need])
     shown: Schema.available(spec, need => System[need])
-           && (!spec.hiddenWhen || Settings.values[spec.hiddenWhen.id] !== spec.hiddenWhen.equals)
+           && !Schema.rowHidden(spec, Settings.values)
     stacked: spec.kind === "choice" && spec.control === "cards"
 
     Loader {
@@ -157,23 +157,7 @@ SettingRow {
     }
     Component {
         id: shortcut
-        ShortcutField {
-            emptyText: Words.notSet; listeningText: Words.pressShortcut; clearText: Words.clearShortcut
-            // The keys that act while dictating may be Escape itself.
-            escapeRecords: root.rowId === "cancelShortcut" || root.rowId === "pauseShortcut"
-            keys: root.value || []
-            // Where the desktop picks the keys (the portal), clicking opens its
-            // chooser, and nothing records or lets go here.
-            recordsKeys: !Settings.desktopPicksKeys(root.rowId)
-            onClicked: if (!recordsKeys) Settings.act(root.rowId)
-            // The bound shortcuts let go while it listens, so pressing them
-            // records them; every way listening ends takes them back.
-            onListeningChanged: listening ? Settings.startRecordingShortcut(root.rowId) : Settings.stopRecordingShortcut(root.rowId)
-            Component.onDestruction: if (listening) Settings.stopRecordingShortcut(root.rowId)
-            keyAlone: () => Settings.lastKeyAlone()
-            takesAlone: keys => Settings.takesKeyAlone(root.rowId, keys)
-            onRecorded: keys => Settings.set(root.rowId, keys)
-        }
+        ShortcutRecorder { rowId: root.rowId; keys: root.value || [] }
     }
     Component {
         id: action

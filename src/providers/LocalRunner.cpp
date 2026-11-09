@@ -161,7 +161,7 @@ LocalRunnerRefiner::LocalRunnerRefiner(const QString &label, QObject *parent)
 
 std::optional<ProviderFailure> LocalRunnerRefiner::prepare(const RefinementSettings &settings, const AccountSettings &)
 {
-    if (settings.localRunner.lacksModel()) {
+    if (settings.localRunner.lacksModel(settings.services.choice(providerKey(ProviderId::Local)).model)) {
         return ProviderFailure{
             ProviderFailureKind::Unavailable,
             QStringLiteral("Choose a cleanup model for %1.").arg(runnerName(settings.localRunner.runner))};
@@ -180,11 +180,12 @@ void LocalRunnerRefiner::refine(const QString &rawTranscript,
         return;
     }
     const LocalRunnerSettings &runner = settings.localRunner;
+    const QString model = settings.services.choice(providerKey(ProviderId::Local)).model;
     if (runner.runner == QStringLiteral("ollama")) {
-        keepOllamaModelLoaded(runner.model);
+        keepOllamaModelLoaded(model);
     }
     m_chat->refine(rawTranscript, vocabulary, {},
-                   localRunnerOrigin(runner.runner) + QStringLiteral("/v1"), runner.model,
+                   localRunnerOrigin(runner.runner) + QStringLiteral("/v1"), model,
                    settings.style, context);
 }
 

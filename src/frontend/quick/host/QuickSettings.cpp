@@ -4,8 +4,6 @@
 #include "app/LocalSetup.h"
 #include "core/EndpointSettings.h"
 #include "core/EndpointUrl.h"
-#include "core/PasteRules.h"
-#include "core/ProviderChain.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QmlValues.h"
 
@@ -14,7 +12,9 @@
 #include <QKeyEvent>
 
 #include <algorithm>
+#include <iterator>
 #include <type_traits>
+#include <utility>
 
 namespace speecher {
 
@@ -56,54 +56,79 @@ QString checkIntervalUnit(const UpdateSettings &updates)
     return QStringLiteral("minutes");
 }
 
-// What a paste rule row holds where no rule of its own is stored, so the
-// wider rule decides.
-const QString inheritPasteRule = QStringLiteral("inherit");
-
-// The method of the rule for scope and match, as the schema's option id. A
-// rule turned off counts as none.
-QVariant pasteRuleValue(const AppSettings &s, PasteRuleScope scope, const QString &match)
+// A Service Order as QML holds it: [{service, model, language, effort,
+// speed}], the first service first.
+QVariant serviceOrderValue(const ServiceOrder &services)
 {
-    const PasteRule *rule = findPasteRule(s.output.pasteRules, scope, match);
-    return rule && rule->enabled ? pasteMethodName(rule->method) : inheritPasteRule;
-}
-
-void setPasteRuleValue(AppSettings &s, PasteRuleScope scope, const QString &match, const QVariant &v)
-{
-    const QString method = v.toString();
-    if (method == inheritPasteRule) {
-        removePasteRule(s.output.pasteRules, scope, match);
-        return;
+    QVariantList entries;
+    for (const QString &id : services.order) {
+        const ServiceChoice choice = services.choice(id);
+        entries.append(QVariantMap{{QStringLiteral("service"), id},
+                                   {QStringLiteral("model"), choice.model},
+                                   {QStringLiteral("language"), choice.language},
+                                   {QStringLiteral("effort"), choice.effort},
+                                   {QStringLiteral("speed"), choice.speed}});
     }
-    setPasteRule(s.output.pasteRules, scope, match, pasteMethodFromName(method));
+    return entries;
 }
 
-// The rules for single apps as the UI lists them, {app, method, enabled}; an
-// entry naming no app is dropped.
-QList<PasteRule> applicationPasteRules(const QVariant &v)
+// An order as v sets it, each entry keeping only the fields that differ from
+// the same service's in shown: an order hands back every field as it was
+// read, and replaying those would undo a model saved since by other means.
+QVariant changedFields(const QVariant &shown, const QVariant &v)
 {
-    QList<PasteRule> rules;
-    for (const QVariant &entry : v.toList()) {
-        const QVariantMap rule = entry.toMap();
-        const QString app = rule.value(QStringLiteral("app")).toString().trimmed();
-        if (app.isEmpty()) {
-            continue;
+    QVariantList entries;
+    const QVariantList before = shown.toList();
+    for (const QVariant &value : v.toList()) {
+        QVariantMap entry = value.toMap();
+        const auto same = std::find_if(before.cbegin(), before.cend(), [&entry](const QVariant &old) {
+            return old.toMap().value(QStringLiteral("service")) == entry.value(QStringLiteral("service"));
+        });
+        if (same != before.cend()) {
+            const QVariantMap old = same->toMap();
+            for (auto it = entry.begin(); it != entry.end();) {
+                it = it.key() != u"service" && old.value(it.key()) == it.value() ? entry.erase(it) : std::next(it);
+            }
         }
-        rules.append({PasteRuleScope::Application, app, pasteMethodFromName(rule.value(QStringLiteral("method")).toString()),
-                      rule.value(QStringLiteral("enabled"), true).toBool()});
+        entries.append(entry);
     }
-    return rules;
+    return entries;
 }
+
+// The order QML hands back. A field an entry leaves out keeps the stored
+// choice's, and a service left out of the order keeps its choice for when
+// it comes back.
+void setServiceOrder(ServiceOrder &services, const QVariant &v)
+{
+    services.order.clear();
+    for (const QVariant &value : v.toList()) {
+        const QVariantMap entry = value.toMap();
+        const QString id = entry.value(QStringLiteral("service")).toString();
+        services.order.append(id);
+        ServiceChoice &choice = services.choice(id);
+        for (const auto &[name, field] : {std::pair{"model", &ServiceChoice::model},
+                                          std::pair{"language", &ServiceChoice::language},
+                                          std::pair{"effort", &ServiceChoice::effort},
+                                          std::pair{"speed", &ServiceChoice::speed}}) {
+            if (entry.contains(QLatin1String(name))) {
+                choice.*field = entry.value(QLatin1String(name)).toString();
+            }
+        }
+    }
+}
+
+// A delivery step's row: its switch, which can't turn off the last step on.
+#define DELIVERY_STEP_ROW(rowId, step)                                                       \
+    {rowId, [](const AppSettings &s) { return QVariant(s.output.steps.has(step)); },        \
+     [](AppSettings &s, const QVariant &v) { s.output.steps = s.output.steps.withStep(step, v.toBool()); }}
 
 // One schema row the UI saves, as reads and writes of the settings. Values
 // are what QML holds: strings, numbers, booleans, lists and plain objects,
-// with choice values being the option ids the schema lists. refuse, where a
-// row has one, says why a value can't be saved (core's words), or nothing.
+// with choice values being the option ids the schema lists.
 struct SettingRow {
     const char *id;
     QVariant (*read)(const AppSettings &);
     void (*write)(AppSettings &, const QVariant &);
-    QString (*refuse)(const QVariant &) = nullptr;
     // In place of write, for a row whose saved value depends on this
     // computer, such as which graphics cards it has.
     void (*writeHere)(AppSettings &, const QVariant &, const LiveFacts &) = nullptr;
@@ -113,14 +138,6 @@ struct SettingRow {
 #define FIELD_ROW(rowId, field)                                                     \
     {rowId, [](const AppSettings &s) { return QVariant::fromValue(s.field); },      \
      [](AppSettings &s, const QVariant &v) { s.field = v.value<std::remove_cvref_t<decltype(s.field)>>(); }}
-
-// The paste rule for one app type, by its stored category name.
-#define CATEGORY_PASTE_ROW(category)                                                                              \
-    {"categoryPasteRule_" category,                                                                               \
-     [](const AppSettings &s) { return pasteRuleValue(s, PasteRuleScope::Category, QStringLiteral(category)); }, \
-     [](AppSettings &s, const QVariant &v) {                                                                      \
-         setPasteRuleValue(s, PasteRuleScope::Category, QStringLiteral(category), v);                             \
-     }}
 
 // Every row the UI saves, by the schema's row id. Secrets are Accounts' to
 // save.
@@ -137,47 +154,22 @@ const SettingRow settingRows[] = {
     FIELD_ROW("vadEnabled", audio.vadEnabled),
     FIELD_ROW("vadThresholdPercent", audio.vadThresholdPercent),
 
-    // A new primary keeps the fallbacks that are not it.
-    {"speechProvider", [](const AppSettings &s) { return QVariant(s.speech.providerId); },
-     [](AppSettings &s, const QVariant &v) {
-         s.speech.providerId = v.toString();
-         s.speech.fallbackProviderIds =
-             normalizedFallbackProviders(ProviderRole::Speech, s.speech.providerId, s.speech.fallbackProviderIds);
-     }},
-    {"speechFallbackList", [](const AppSettings &s) { return QVariant(s.speech.fallbackProviderIds); },
-     [](AppSettings &s, const QVariant &v) {
-         s.speech.fallbackProviderIds =
-             normalizedFallbackProviders(ProviderRole::Speech, s.speech.providerId, v.toStringList());
-     }},
-    // The Spoken Languages a person chose for speech fallbacks, by provider
-    // id: { local: "en" }. Models' speech services say what each runs with.
-    {"speechFallbackLanguages",
-     [](const AppSettings &s) {
-         QVariantMap languages;
-         for (auto it = s.speech.fallbackLanguages.cbegin(); it != s.speech.fallbackLanguages.cend(); ++it) {
-             languages.insert(it.key(), it.value());
-         }
-         return QVariant(languages);
-     },
-     [](AppSettings &s, const QVariant &v) {
-         const QVariantMap languages = v.toMap();
-         s.speech.fallbackLanguages.clear();
-         for (auto it = languages.cbegin(); it != languages.cend(); ++it) {
-             s.speech.fallbackLanguages.insert(it.key(), it.value().toString());
-         }
-     }},
+    // [{service, model, language}], the first service first.
+    {"speechServices", [](const AppSettings &s) { return serviceOrderValue(s.speech.services); },
+     [](AppSettings &s, const QVariant &v) { setServiceOrder(s.speech.services, v); }},
     FIELD_ROW("spokenLanguage", speech.language),
     FIELD_ROW("codexFinalRetranscribe", speech.codexFinalRetranscribe),
-    // Choosing a model marks it chosen, so the hardware default stops
-    // replacing it.
-    {"speechLocalModel", [](const AppSettings &s) { return QVariant(s.speech.local.modelId); },
+    // The "local" entry's model, in the order or out of it. Choosing one
+    // marks it chosen, so the hardware default stops replacing it.
+    {"speechLocalModel", [](const AppSettings &s) { return QVariant(localModelId(s.speech)); },
      [](AppSettings &s, const QVariant &v) {
-         s.speech.local.modelId = v.toString();
+         localModelId(s.speech) = v.toString();
          s.speech.local.modelChosen = true;
      }},
-    FIELD_ROW("speechEndpointUrl", speech.endpoint.baseUrl),
-    FIELD_ROW("speechEndpointPath", speech.endpoint.path),
-    FIELD_ROW("speechEndpointModel", speech.endpoint.model),
+    // The speech server among Your servers; its model is the "endpoint"
+    // entry's in the order.
+    FIELD_ROW("speechEndpointUrl", speech.server.baseUrl),
+    FIELD_ROW("speechEndpointPath", speech.server.path),
 
     FIELD_ROW("showLiveText", ui.transcriptionPreviewEnabled),
     FIELD_ROW("showRefinementText", ui.refinementPreviewEnabled),
@@ -187,94 +179,35 @@ const SettingRow settingRows[] = {
     FIELD_ROW("playSounds", ui.soundsEnabled),
     FIELD_ROW("pauseMedia", ui.pauseMediaDuringTranscription),
 
-    // None clears the fallbacks.
-    {"refinementProvider", [](const AppSettings &s) { return QVariant(s.refinement.providerId); },
-     [](AppSettings &s, const QVariant &v) {
-         s.refinement.providerId = v.toString();
-         s.refinement.fallbackProviderIds = normalizedFallbackProviders(
-             ProviderRole::Refinement, s.refinement.providerId, s.refinement.fallbackProviderIds);
-     }},
-    {"refinementFallbacks", [](const AppSettings &s) { return QVariant(s.refinement.fallbackProviderIds); },
-     [](AppSettings &s, const QVariant &v) {
-         s.refinement.fallbackProviderIds =
-             normalizedFallbackProviders(ProviderRole::Refinement, s.refinement.providerId, v.toStringList());
-     }},
-    FIELD_ROW("openAiModel", refinement.openAiModel),
-    FIELD_ROW("openAiEffort", refinement.openAiEffort),
-    FIELD_ROW("openAiSpeed", refinement.openAiSpeed),
-    FIELD_ROW("anthropicModel", refinement.anthropicModel),
-    FIELD_ROW("anthropicEffort", refinement.anthropicEffort),
-    {"anthropicFastMode",
-     [](const AppSettings &s) {
-         return QVariant(s.refinement.anthropicFastMode ? QStringLiteral("fast") : QStringLiteral("standard"));
-     },
-     [](AppSettings &s, const QVariant &v) { s.refinement.anthropicFastMode = v.toString() == QLatin1String("fast"); }},
+    // Clean up my words.
+    FIELD_ROW("refinementEnabled", refinement.enabled),
+    // [{service, model, effort, speed}], the first service first.
+    {"refinementServices", [](const AppSettings &s) { return serviceOrderValue(s.refinement.services); },
+     [](AppSettings &s, const QVariant &v) { setServiceOrder(s.refinement.services, v); }},
+    // This computer's Local Runner; its cleanup model is the "local" entry's
+    // in the order.
     FIELD_ROW("localRunner", refinement.localRunner.runner),
-    FIELD_ROW("localRunnerModel", refinement.localRunner.model),
-    // Core stores the custom server as no preset.
-    {"refinementEndpointServer",
-     [](const AppSettings &s) {
-         const QString preset = s.refinement.endpoint.preset;
-         return QVariant(preset.isEmpty() ? QStringLiteral("custom") : preset);
-     },
-     [](AppSettings &s, const QVariant &v) {
-         const QString server = v.toString();
-         editRefinementEndpoint(s, {.preset = server == QLatin1String("custom") ? QString() : server});
-     }},
-    {"refinementEndpointFormat",
-     [](const AppSettings &s) { return QVariant(resolvedRefinementEndpoint(s.refinement).format); },
+    // The refinement server among Your servers; its model is the "endpoint"
+    // entry's in the order.
+    {"refinementEndpointFormat", [](const AppSettings &s) { return QVariant(s.refinement.server.format); },
      [](AppSettings &s, const QVariant &v) { editRefinementEndpoint(s, {.format = v.toString()}); }},
-    {"refinementEndpointUrl",
-     [](const AppSettings &s) { return QVariant(resolvedRefinementEndpoint(s.refinement).apiBase); },
+    {"refinementEndpointUrl", [](const AppSettings &s) { return QVariant(s.refinement.server.baseUrl); },
      [](AppSettings &s, const QVariant &v) { editRefinementEndpoint(s, {.baseUrl = v.toString()}); }},
-    {"refinementEndpointModel",
-     [](const AppSettings &s) { return QVariant(resolvedRefinementEndpoint(s.refinement).model); },
-     [](AppSettings &s, const QVariant &v) { editRefinementEndpoint(s, {.model = v.toString()}); }},
     FIELD_ROW("targetContextControl", refinement.useTargetContext),
     FIELD_ROW("includeScreenshotContext", refinement.includeScreenshotContext),
     FIELD_ROW("customSystemPromptEnabled", refinement.customSystemPromptEnabled),
     FIELD_ROW("customSystemPrompt", refinement.customSystemPrompt),
-    FIELD_ROW("defaultWritingProfile", refinement.defaultWritingProfile),
     FIELD_ROW("additionalInstructions", refinement.additionalInstructions),
 
     FIELD_ROW("correctionLearningControl", correctionLearningEnabled),
 
-    FIELD_ROW("outputMethod", output.method),
+    DELIVERY_STEP_ROW("insertThroughAccessibility", DeliveryStep::Insert),
+    DELIVERY_STEP_ROW("pressPasteKeys", DeliveryStep::Press),
+    DELIVERY_STEP_ROW("keepOnClipboard", DeliveryStep::Keep),
     {"outputFormat", [](const AppSettings &s) { return QVariant(outputFormatName(s.output.format)); },
      [](AppSettings &s, const QVariant &v) {
          s.output.format = outputFormatFromString(v.toString()).value_or(OutputFormat::PlainText);
      }},
-    FIELD_ROW("restoreClipboardAfterTyping", output.restoreClipboardAfterTyping),
-    // The default paste never inherits: without a rule of its own, core only
-    // copies.
-    {"globalPasteRule",
-     [](const AppSettings &s) { return QVariant(pasteMethodName(globalPasteMethod(s.output.pasteRules))); },
-     [](AppSettings &s, const QVariant &v) { setPasteRuleValue(s, PasteRuleScope::Global, QString(), v); }},
-    CATEGORY_PASTE_ROW("terminal"),
-    CATEGORY_PASTE_ROW("browser"),
-    CATEGORY_PASTE_ROW("email"),
-    CATEGORY_PASTE_ROW("office"),
-    CATEGORY_PASTE_ROW("code_editor"),
-    CATEGORY_PASTE_ROW("ai_coding"),
-    CATEGORY_PASTE_ROW("general"),
-    // Saving the list replaces the rules for single apps and keeps the rest.
-    {"applicationPasteRules",
-     [](const AppSettings &s) {
-         QVariantList rules;
-         for (const PasteRule &rule : s.output.pasteRules) {
-             if (rule.scope == PasteRuleScope::Application) {
-                 rules.append(QVariantMap{{QStringLiteral("app"), rule.match},
-                                          {QStringLiteral("method"), pasteMethodName(rule.method)},
-                                          {QStringLiteral("enabled"), rule.enabled}});
-             }
-         }
-         return QVariant(rules);
-     },
-     [](AppSettings &s, const QVariant &v) {
-         s.output.pasteRules.removeIf([](const PasteRule &rule) { return rule.scope == PasteRuleScope::Application; });
-         s.output.pasteRules = applicationPasteRules(v) + s.output.pasteRules;
-     },
-     [](const QVariant &v) { return validatePasteRules(applicationPasteRules(v)).join(QLatin1Char(' ')); }},
 
     {"openAiAuthMode", [](const AppSettings &s) { return QVariant(openAiAuthModeName(s.accounts.openAiAuthMode)); },
      [](AppSettings &s, const QVariant &v) { s.accounts.openAiAuthMode = openAiAuthModeFromName(v.toString()); }},
@@ -287,8 +220,8 @@ const SettingRow settingRows[] = {
     // What was typed, not the directory detected from it.
     {"cliproxyOauthDir", [](const AppSettings &s) { return QVariant(s.accounts.cliproxyOauthDirConfigured); },
      [](AppSettings &s, const QVariant &v) { s.accounts.cliproxyOauthDirConfigured = v.toString().trimmed(); }},
-    {"cliproxyBaseUrl", [](const AppSettings &s) { return QVariant(s.refinement.cliproxyBaseUrl); },
-     [](AppSettings &s, const QVariant &v) { s.refinement.cliproxyBaseUrl = endpointServerBase(v.toString()); }},
+    {"cliproxyBaseUrl", [](const AppSettings &s) { return QVariant(s.accounts.cliproxyBaseUrl); },
+     [](AppSettings &s, const QVariant &v) { s.accounts.cliproxyBaseUrl = endpointServerBase(v.toString()); }},
 
     {"localIdleUnload", [](const AppSettings &s) { return QVariant(QString::number(s.speech.local.idleUnloadMinutes)); },
      [](AppSettings &s, const QVariant &v) { s.speech.local.idleUnloadMinutes = v.toString().toInt(); }},
@@ -308,7 +241,43 @@ const SettingRow settingRows[] = {
     // General shows it only where Speecher can start at login
     // (System.canLaunchAtLogin).
     FIELD_ROW("launchAtLogin", launchAtLogin),
-    FIELD_ROW("insightsEnabled", insightsEnabled),
+    // What Speecher Keeps, by historyKeepName; the days as option ids.
+    {"historyKeeps", [](const AppSettings &s) { return QVariant(historyKeepName(s.history.keeps)); },
+     [](AppSettings &s, const QVariant &v) {
+         s.history.keeps = historyKeepFromName(v.toString()).value_or(s.history.keeps);
+     }},
+    {"historyTextDays", [](const AppSettings &s) { return QVariant(QString::number(s.history.textDays)); },
+     [](AppSettings &s, const QVariant &v) { s.history.textDays = qMax(0, v.toInt()); }},
+    {"historyAudioDays", [](const AppSettings &s) { return QVariant(QString::number(s.history.audioDays)); },
+     [](AppSettings &s, const QVariant &v) { s.history.audioDays = qMax(-1, v.toInt()); }},
+    // The Recordings page's rows. The service is { service, model }, or
+    // empty for the Service Order's; minutes are option ids.
+    {"recordingSources", [](const AppSettings &s) { return QVariant(s.recording.systemAudio ? "both" : "mic"); },
+     [](AppSettings &s, const QVariant &v) { s.recording.systemAudio = v.toString() != QLatin1String("mic"); }},
+    {"recordingService",
+     [](const AppSettings &s) {
+         return s.recording.first ? QVariant(QVariantMap{{QStringLiteral("service"), s.recording.first->service},
+                                                         {QStringLiteral("model"), s.recording.first->model}})
+                                  : QVariant(QVariantMap());
+     },
+     [](AppSettings &s, const QVariant &v) {
+         const QVariantMap first = v.toMap();
+         const QString service = first.value(QStringLiteral("service")).toString();
+         s.recording.first = service.isEmpty()
+             ? std::nullopt
+             : std::optional(ServiceChoice{service, first.value(QStringLiteral("model")).toString()});
+     }},
+    FIELD_ROW("recordingProfile", recording.writingProfile),
+    FIELD_ROW("recordingFolder", recording.folder),
+    {"recordingFormat",
+     [](const AppSettings &s) { return QVariant(s.recording.format == RecordingFormat::PlainText ? "txt" : "md"); },
+     [](AppSettings &s, const QVariant &v) {
+         s.recording.format = v.toString() == QLatin1String("txt") ? RecordingFormat::PlainText : RecordingFormat::Markdown;
+     }},
+    FIELD_ROW("recordingKeepAudio", recording.keepAudio),
+    {"recordingAutoStop", [](const AppSettings &s) { return QVariant(QString::number(s.recording.autoStopMinutes)); },
+     [](AppSettings &s, const QVariant &v) { s.recording.autoStopMinutes = qMax(0, v.toInt()); }},
+    FIELD_ROW("recordingPill", recording.showPill),
 
     {"updateChannel", [](const AppSettings &s) { return QVariant(updateChannelName(s.updates.channel)); },
      [](AppSettings &s, const QVariant &v) { s.updates.channel = updateChannelFromName(v.toString()); }},
@@ -361,8 +330,8 @@ const SettingRow settingRows[] = {
      }},
 };
 
-#undef CATEGORY_PASTE_ROW
 #undef FIELD_ROW
+#undef DELIVERY_STEP_ROW
 
 // The Global Shortcuts, which the controller binds and keeps.
 const struct ShortcutRow {
@@ -372,9 +341,13 @@ const struct ShortcutRow {
     {"globalShortcut", GlobalShortcutRole::Dictation},
     {"cancelShortcut", GlobalShortcutRole::Cancel},
     {"pauseShortcut", GlobalShortcutRole::Pause},
+    {"pasteAgainShortcut", GlobalShortcutRole::PasteAgain},
+    {"recordingShortcut", GlobalShortcutRole::Recording},
 };
 
 const QString runSetupAction = QStringLiteral("runSetup");
+// Points the refinement server at the CLI Proxy API server the sign-in names.
+const QString useCliproxyServerAction = QStringLiteral("useCliproxyServer");
 
 // The id of the shortcut row for role.
 QString shortcutRowId(GlobalShortcutRole role)
@@ -447,27 +420,87 @@ void QuickSettings::set(const QString &id, const QVariant &value)
         qWarning().noquote() << "Settings.set:" << id << "is not saved from the UI yet";
         return;
     }
-    if (row->refuse) {
-        const QString refusal = row->refuse(value);
-        setError(id, refusal);
-        if (!refusal.isEmpty()) {
-            return;
+    const SettingsEdit write = [this, row, value](AppSettings &settings) {
+        if (row->writeHere) {
+            row->writeHere(settings, value, m_controller->localSetup()->liveFacts(settings));
+        } else {
+            row->write(settings, value);
         }
+    };
+    if (m_draftRows.contains(id)) {
+        // A Service Order waits with only what this edit changed, so a model
+        // saved meanwhile (a download, a runner's pull, a Fix sheet) stays.
+        const bool order = id == u"speechServices" || id == u"refinementServices";
+        const SettingsEdit drafted = order ? SettingsEdit([row, value = changedFields(row->read(shown()), value)](
+                                                              AppSettings &settings) { row->write(settings, value); })
+                                           : write;
+        m_draft = [before = m_draft, drafted](AppSettings &settings) {
+            if (before) {
+                before(settings);
+            }
+            drafted(settings);
+        };
+        refresh();
+        return;
     }
     m_controller->settings()->edit([&](AppSettings &draft) {
-        if (row->writeHere) {
-            row->writeHere(draft, value, m_controller->localSetup()->liveFacts(draft));
-        } else {
-            row->write(draft, value);
-        }
+        write(draft);
         return true;
     });
+}
+
+void QuickSettings::startDraft(const QStringList &ids)
+{
+    for (const QString &id : ids) {
+        if (!findRow(settingRows, id)) {
+            qWarning().noquote() << "Settings.startDraft:" << id << "is not a row the UI saves";
+        }
+    }
+    m_draftRows = ids;
+    m_draft = {};
+    refresh();
+}
+
+void QuickSettings::saveDraft()
+{
+    const SettingsEdit draft = std::exchange(m_draft, {});
+    m_draftRows.clear();
+    if (draft) {
+        m_controller->settings()->edit([&draft](AppSettings &settings) {
+            draft(settings);
+            return true;
+        });
+    }
+    refresh();
+}
+
+void QuickSettings::dropDraft()
+{
+    m_draftRows.clear();
+    m_draft = {};
+    refresh();
+}
+
+AppSettings QuickSettings::shown() const
+{
+    AppSettings settings = m_controller->settings()->dictationSnapshot();
+    if (m_draft) {
+        m_draft(settings);
+    }
+    return settings;
 }
 
 void QuickSettings::act(const QString &id)
 {
     if (id == runSetupAction) {
         m_controller->showSetup();
+        return;
+    }
+    if (id == useCliproxyServerAction) {
+        m_controller->settings()->edit([](AppSettings &draft) {
+            useCliproxyServer(draft);
+            return true;
+        });
         return;
     }
     if (desktopPicksKeys(id)) {
@@ -570,7 +603,7 @@ void QuickSettings::setError(const QString &id, const QString &error)
 
 void QuickSettings::refresh()
 {
-    const AppSettings settings = m_controller->settings()->dictationSnapshot();
+    const AppSettings settings = shown();
     QVariantMap values;
     for (const SettingRow &row : settingRows) {
         values.insert(QLatin1String(row.id), row.read(settings));

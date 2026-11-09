@@ -3,12 +3,10 @@ import QtQuick
 import Speecher.Wording
 
 // What the Text pages show. Writing Profiles with their tones and cleanup
-// levels, the three word lists and the app matches are LibraryLists
-// (host/QuickLibrary); this words them and derives what the pages show from
-// them. Each list has one owner: speech services, refinement
-// providers and runners are Models', paste rules are Settings rows, the
-// fallback profile is the defaultWritingProfile setting, and app types are
-// the pasting schema's.
+// levels and the Vocabulary are LibraryLists (host/QuickLibrary);
+// this words them and derives what the pages show from them. Each list has
+// one owner: speech services, refinement providers and runners are Models',
+// and the Apps and App Types that pick a profile are Apps'.
 LibraryLists {
     id: library
 
@@ -59,6 +57,8 @@ LibraryLists {
         id: l.id, label: l.name, base: l.base,
         help: l.base === "custom_only" ? "Your instructions only." : levelLabel(l.base) + ", plus your own instructions." })))
     readonly property var toneOptions: tones.concat(customTones.map(t => ({ id: t.id, label: t.name, help: t.instruction })))
+    // The profiles as one choice each, with their icons.
+    readonly property var profileOptions: profiles.map(p => ({ id: p.id, label: p.name, icon: profileIcon(p.id) }))
     function levelLabel(id) {
         const builtIn = cleanupLevels.find(l => l.id === id)
         if (builtIn) return builtIn.label
@@ -88,26 +88,21 @@ LibraryLists {
         if (p.cleanup === "none" && !p.language) return "No cleanup"
         return [levelLabel(p.cleanup) + " cleanup", p.tone === "none" ? "" : toneLabel(p.tone), p.language].filter(s => s).join(", ")
     }
-    // The apps matched to a profile: your matches, then the built-in ones
-    // yours don't override.
-    function profileApps(id) {
-        const own = recognitionRules
-        const builtIn = builtInRecognitionRules.filter(b => !own.some(r => r.match === b.match))
-        return own.concat(builtIn).filter(r => r.profile === id).map(r => r.match)
-    }
-    // Where a profile is used, given its apps and whether it is the one for
-    // apps no match names: "Used in 22 apps." Matches are desktop IDs, not
-    // names, so the line counts them rather than listing them.
-    function profileUse(apps, isFallback) {
-        const used = apps.length === 0 ? "" : "Used in " + Words.count(apps.length, "app", "apps") + "."
-        if (isFallback) return used.length ? used + " Also used for apps Speecher doesn't recognize." : "Used for every app Speecher doesn't recognize."
-        return used.length ? used : "No apps use it yet."
+    // The Apps and App Types that write with a profile, for its "Used in":
+    // App Types whose own profile it is (Other apps' profile always counts), then
+    // Apps that write with it now. Each lands on its row in Apps.
+    function profileUsers(id) {
+        const types = Apps.types.filter(o => o.profile === id).map(o => ({
+            id: "apptype:" + o.id, name: Schema.apps.type(o.id).label, icon: "", typeIcon: Schema.apps.type(o.id).icon }))
+        const apps = Apps.entries.filter(e => e.effective.profile === id).map(e => ({
+            id: "appentry:" + e.id, name: e.name, icon: e.icon, typeIcon: "" }))
+        return types.concat(apps)
     }
     // The question before deleting a profile, and what deleting it changes.
     function profileDeleteQuestion(name) { return "Delete " + name + "?" }
-    function profileDeleteDetail(apps, isFallback) {
-        return (apps.length ? Words.count(apps.length, "app match uses", "app matches use") + " it and will lose it."
-                            : "No app matches use it.") + (isFallback ? " Unrecognized apps will use Other." : "")
+    function profileDeleteDetail(users) {
+        return users.length ? users.map(u => u.name).join(", ") + " will follow their type's profile, or " + Schema.apps.otherAppsProfile + "."
+                            : "No app or app type uses it."
     }
 
     // The Writing Profiles page's fixed wording, its forms' and the profile
@@ -115,8 +110,7 @@ LibraryLists {
     readonly property var profilesText: ({
         addProfile: "Add profile",
         newProfile: "New profile",
-        appMatches: "App matches",
-        appMatchesHelp: "Which apps use which profile. Your own matches come first.",
+        unused: "No app or app type uses it yet.",
         name: "Name",
         newTone: "New tone",
         editTone: "Edit tone",
@@ -138,142 +132,118 @@ LibraryLists {
         noLevels: "No cleanup levels of your own",
         levelsEmpty: "Start from Light, Medium or High and add your own rules, such as keeping bullet points.",
         toneSkipped: "Cleanup None skips refinement, so tone has no effect.",
-        languageHelp: "Translates what you say. Pick one or type any language, regional varieties too.",
+        languageHelp: "Writes in this language, whatever you speak. Pick one or type any language, regional varieties too.",
+        noRefiner: "Clean up my words is off on Refinement, so this profile's cleanup and output language have no effect.",
+        everyProfile: "As for every profile.",
+        // The services disclosure's trailing text: what it changes, or what
+        // it is the same as.
+        change: "change",
+        changes: "changes",
+        sameAsOrders: "Same as every profile",
+        sameAs: place => "Same as " + place,
+        // A model nobody chose: the one the service picks.
+        serviceDefault: "its default",
         custom: "Custom",
         default_: "Default",
         speech: "Speech",
-        ownSpeechHelp: "Falls back to the services under Speech to text.",
-        defaultSpeechHelp: "Set under Speech to text, with its fallbacks.",
+        ownSpeechHelp: "Tried first, then the services under Speech to text.",
+        defaultSpeechHelp: "The services under Speech to text, in their order.",
         speechModel: "Speech model",
         refinement: "Refinement",
         refinementSkipped: "Cleanup None skips refinement for this profile.",
-        defaultRefinementHelp: "Set under Refinement, with its fallbacks.",
-        refinementModel: "Refinement model",
-        defaultModel: "Default model"
+        defaultRefinementHelp: "The services under Refinement, in their order.",
+        refinementModel: "Refinement model"
     })
-    // "Default (Claude)": a profile's choice that follows the app's.
-    function defaultChoice(label) { return "Default (" + label + ")" }
-    // A profile's own refinement provider, whose settings live on Refinement.
-    function ownRefinementHelp(provider) { return "Thinking and speed are " + provider + "'s settings under Refinement." }
+    // Cleanup None with an output language still translates, which takes
+    // Light cleanup from the profile's provider.
+    function translatesAtLight(provider) { return "None still translates, at Light cleanup, with " + provider + "." }
+    // Why a dictation with the profile skips its own speech service, by
+    // Library.profiles' speechSkipped.
+    function skippedSpeechHelp(reason, service, language) {
+        return (reason === "unavailable" ? service + " isn't in this build of Speecher" : service + " can't listen for " + language)
+             + ", so this profile uses the services under Speech to text."
+    }
+    // A profile's own refinement service, whose thinking and speed are its
+    // entry's in Refinement's order.
+    function ownRefinementHelp(provider) { return "Thinking and speed are " + provider + "'s, as Refinement's order sets them." }
 
     // Vocabulary ---------------------------------------------------------
 
-    // "3 of 100 key terms go to Claude. Refinement uses all 7 terms."
+    readonly property var spellings: vocabulary.filter(e => e.kind === "spelling")
+    // "3 of 100 key terms go to Claude. Refinement uses all 7 spellings."
     readonly property string keyTermsText: {
-        const service = Models.service(Settings.values.speechProvider).label
+        const service = Models.service(((Settings.values.speechServices || [])[0] || { service: "" }).service).label
         const speech = speechTakesKeyTerms ? keyTermsSent + " of " + keyTermLimit + " key terms go to " + service + "."
                                            : service + " takes no key terms."
-        const refinement = terms.length > refinementTermLimit ? "Refinement uses the first " + Words.num(refinementTermLimit) + "."
-                                                              : "Refinement uses all " + Words.count(terms.length, "term", "terms") + "."
+        const refinement = spellings.length > refinementTermLimit ? "Refinement uses the first " + Words.num(refinementTermLimit) + "."
+                                                                  : "Refinement uses all " + Words.count(spellings.length, "spelling", "spellings") + "."
         return speech + " " + refinement
     }
-    // "3 of 5 in use.", or nothing without corrections.
-    readonly property string correctionsInUseText: corrections.length
-        ? corrections.filter(c => c.enabled).length + " of " + corrections.length + " in use." : ""
+    // Vocabulary's row on Speech to text, which the speech service reads too.
+    readonly property string speechVocabularyText: spellings.length ? keyTermsText
+        : "Names and words you say often. Key terms go to the speech service as hints, so it hears them."
+    readonly property string openVocabulary: "Open Vocabulary"
 
-    // The Vocabulary page's fixed wording: its tabs' buttons, forms and
-    // empty lists.
-    readonly property var vocabularyText: ({
-        addTerm: "Add term",
-        importTerms: "Import CSV",
-        importTermsTitle: "Import terms from a CSV file",
-        importReplacementsTitle: "Import snippets from a JSON file",
-        termsFiles: ["CSV files (*.csv)", "All files (*)"],
-        replacementsFiles: ["JSON files (*.json)", "All files (*)"],
-        noNewTerms: "That file has no terms you don't have.",
-        noNewReplacements: "That file has no phrases you don't have.",
-        newTerm: "New term",
-        editTerm: "Edit term",
-        term: "Term",
-        everyProfile: "Every profile",
-        searchTerms: "Search terms",
-        keyTermTip: "Key term: sent to the speech service as a hint.",
-        noTermsMatch: "No terms match",
-        noTermsMatchHelp: "Try another spelling, or add it as a new term.",
-        noTerms: "No vocabulary terms",
-        noTermsHelp: "Add a name or product you say often, or import a list from a CSV file.",
-        undoCorrection: "Undo last correction",
-        editCorrection: "Edit correction",
-        heard: "Heard",
-        corrected: "Corrected",
-        correctionsNeedAccessibility: "Turn on desktop accessibility to learn corrections after pasting.",
-        noCorrections: "No learned corrections yet",
-        noCorrectionsHelp: "When you fix a dictated word the same way more than once, the correction appears here.",
-        addReplacement: "Add replacement",
-        importReplacements: "Import snippets",
-        newReplacement: "New replacement",
-        editReplacement: "Edit replacement",
-        whenYouSay: "When you say",
-        speecherWrites: "Speecher writes",
-        speecherWritesHelp: "Several lines are fine. {date} and {time} become today's date and the time.",
-        replacementPlaceholder: "Sent on {date} at {time}",
-        noReplacements: "No replacements or snippets",
-        noReplacementsHelp: "Add a spoken phrase and the exact text to put in its place, or import snippets from JSON."
-    })
-    // The tabs: the list's name, then how many it holds once it holds any:
-    // "Terms (7)", "Learned corrections", "Replacements (4)".
-    function _tab(name, n) { return n ? name + " (" + Words.num(n) + ")" : name }
-    readonly property string termsCount: _tab("Terms", terms.length)
-    readonly property string correctionsCount: _tab("Learned corrections", corrections.length)
-    readonly property string replacementsCount: _tab("Replacements", replacements.length)
-    readonly property string replacementsCaption: Schema.row("bindingRules").help + " Matching ignores case and treats punctuation as spaces."
-    // A term's context, then where it came from: "Our dashboards. Imported.",
-    // with nothing said for one you added.
-    function termDetail(term) {
-        const context = term.context && !/[.!?]$/.test(term.context) ? term.context + "." : term.context
-        const source = term.source === "learned" ? "Learned from your edits." : term.source === "csv" ? "Imported." : ""
+    // An app an entry is limited to, by name: an App's own, else the
+    // installed or recently dictated-into app with that id, else the id.
+    function appName(limit) {
+        if (limit.startsWith("app:")) return (Apps.entries.find(e => e.id === limit) || { name: Schema.vocabulary.t.aRemovedApp }).name
+        const id = limit.toLowerCase()
+        const named = Apps.entries.find(e => e.ids.some(i => i.toLowerCase() === id))
+            || Apps.installed.find(a => a.ids.some(i => i.toLowerCase() === id))
+            || Apps.recent.find(a => a.appId.toLowerCase() === id)
+        return named ? named.name : limit
+    }
+    // Whether the entry is limited to App `app` (an entry of Apps.entries):
+    // by its id, or by an id it is recognized by, as a correction learned in
+    // it is.
+    function limitedToApp(entry, app) {
+        return entry.apps.some(a => a === app.id || app.ids.some(i => i.toLowerCase() === a.toLowerCase()))
+    }
+    // Whether the entry is limited to what a filter names: "profile/<id>" or
+    // "app/<an App's id or an app id>"; "" is any.
+    function limitedTo(entry, limit) {
+        if (!limit) return true
+        if (limit.startsWith("profile/")) return entry.profiles.includes(limit.slice(8))
+        const id = limit.slice(4)
+        const app = Apps.entries.find(e => e.id === id)
+        return app ? limitedToApp(entry, app) : entry.apps.some(a => a.toLowerCase() === id.toLowerCase())
+    }
+    function limitedCount(limit) { return vocabulary.filter(e => limitedTo(e, limit)).length }
+    // The filters "Limited to" offers: each profile and app some entry is
+    // limited to, an app as the App that recognizes it where there is one,
+    // and `also`, the one a link asked for. [{ id, label }]
+    function limitChoices(also) {
+        const profiles = new Set()
+        const apps = new Set()
+        for (const e of vocabulary) {
+            e.profiles.forEach(p => profiles.add(p))
+            e.apps.forEach(a => apps.add(a.startsWith("app:") ? a
+                : (Apps.entries.find(app => app.ids.some(i => i.toLowerCase() === a.toLowerCase())) || { id: a }).id))
+        }
+        const choices = [...profiles].map(p => ({ id: "profile/" + p, label: profileName(p) + " profile", icon: profileIcon(p) }))
+            .concat([...apps].map(a => ({ id: "app/" + a, label: appName(a), icon: "app-window" })))
+        if (also && !choices.some(c => c.id === also))
+            choices.push(also.startsWith("profile/") ? { id: also, label: profileName(also.slice(8)) + " profile", icon: profileIcon(also.slice(8)) }
+                                                     : { id: also, label: appName(also.slice(4)), icon: "app-window" })
+        return choices
+    }
+    // "Only with Work and Email", "Only in Slack", "Only with Work, in
+    // Slack": the entry's limits, profiles and apps in one form, or nothing
+    // for one that applies everywhere.
+    function limitText(entry) {
+        const profiles = entry.profiles.length ? "with " + Words.list(entry.profiles.map(profileName)) : ""
+        const apps = entry.apps.length ? "in " + Words.list(entry.apps.map(appName)) : ""
+        const limits = [profiles, apps].filter(s => s).join(", ")
+        return limits ? "Only " + limits : ""
+    }
+    // A spelling's context, then where it came from: "Our dashboards.
+    // Imported.", with nothing said for one you added.
+    function entryDetail(entry) {
+        if (entry.learned) return Schema.vocabulary.evidenceText(entry)
+        const context = entry.context && !/[.!?]$/.test(entry.context) ? entry.context + "." : entry.context
+        const source = entry.source === "csv" || entry.source === "import" ? "Imported." : entry.source === "learned" ? "Learned from your edits." : ""
         return [context, source].filter(s => s).join(" ")
-    }
-    // After importing the list named: "Imported 2 terms.", or that nothing was new.
-    function importedText(list, added) {
-        const terms = list === "terms"
-        if (!added) return terms ? vocabularyText.noNewTerms : vocabularyText.noNewReplacements
-        return "Imported " + (terms ? Words.count(added, "term", "terms") : Words.count(added, "replacement", "replacements")) + "."
-    }
-    function importFailedText(error) { return "Nothing imported. " + error }
-    // "Work and Chat only": the profiles a term is limited to.
-    function termProfilesText(ids) { return Words.list(ids.map(profileName)) + " only" }
-    function termUsesText(uses) { return Words.count(uses, "use", "uses") }
-    // "Learned in org.kde.konsole, 92% sure", by its app's id, or in several apps
-    // for one learned in more than one.
-    function correctionSource(c) {
-        return "Learned in " + (c.app || "several apps") + ", " + Math.round(c.confidence * 100) + "% sure"
-    }
-
-    // Pasting ------------------------------------------------------------
-
-    readonly property var appCategories: Schema.appCategories
-    function categoryLabel(id) { const c = appCategories.find(o => o.id === id); return c ? c.label : pastingText.automatic }
-
-    // Application recognition's wording, on the App rules page.
-    readonly property var pastingText: ({
-        automatic: "Automatic",
-        addMatch: "Add match",
-        newMatch: "New app match",
-        editMatch: "Edit app match",
-        matchApp: "App name or ID",
-        matchAppHelp: "Matches the application ID, application name, process name or accessible role.",
-        app: "App",
-        appType: "App type",
-        appTypeHelp: "Picks the paste rule.",
-        profile: "Writing profile",
-        profileHelp: "Picks how the text is cleaned up.",
-        deleteMatch: "Delete match",
-        noMatches: "No matches of your own",
-        noMatchesHelp: "The built-in matches below cover common apps. Add one for an app they miss.",
-        builtInMatches: "Built-in matches",
-        builtInMatchesHelp: "Common apps Speecher already knows. Yours above win when both match.",
-        searchBuiltIn: "Search built-in matches",
-        builtInMatchTip: "Click to add your own match for it."
-    })
-
-    // "2 of yours, 14 built in"
-    readonly property string recognitionRulesText: recognitionRules.length + " of yours, " + builtInRecognitionRules.length + " built in"
-    readonly property string builtInMatchesCount: Words.count(builtInRecognitionRules.length, "app", "apps")
-    // What a built-in match sets: "Chat, Work profile".
-    function builtInMatchSummary(rule) {
-        return [rule.category ? categoryLabel(rule.category) : "",
-                rule.profile ? profileName(rule.profile) + " profile" : ""].filter(s => s).join(", ")
     }
 
     // Refused edits ---------------------------------------------------------
@@ -286,13 +256,10 @@ LibraryLists {
                        incomplete: "Add the instruction the tone follows." },
         customCleanupLevels: { blank: "Give the level a name.", taken: "Another cleanup level has that name.",
                                incomplete: "A Custom only level needs instructions." },
-        terms: { blank: "Type the term.", taken: "That term is in the list already." },
-        corrections: { blank: "Type what was heard.", taken: "Another correction fixes those words in that app.",
-                       incomplete: "Type what it's corrected to." },
-        replacements: { blank: "The phrase needs a letter or a number.", taken: "Another replacement has that phrase.",
-                        incomplete: "Type what Speecher writes." },
-        recognitionRules: { blank: "Type the app's name or ID.", taken: "You have a match for that app already.",
-                            incomplete: "Choose an app type, a profile or both." },
+        vocabulary: { blank: "Type the words. A phrase to replace needs a letter or a number.",
+                      taken: "That's in the list already, with the same limits.",
+                      incomplete: "A learned correction needs something to write.",
+                      missing: "It, or an app it's limited to, was removed meanwhile." },
         any: { missing: "It, or something it uses, was deleted meanwhile.", builtIn: "Built-in profiles keep their names.",
                invalid: "Speecher couldn't save this." }
     })

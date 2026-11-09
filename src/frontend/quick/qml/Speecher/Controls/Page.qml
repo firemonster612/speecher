@@ -6,7 +6,8 @@ import Speecher.Theme
 // A scrolling page: the title and a line of explanation, then sections of
 // grouped rows. A page with no title brings its own heading. A page under
 // others leads its title with the path to it, each step a link that asks
-// for its page through pathPicked.
+// for its page through pathPicked. A page a link opened has the way back
+// above its title while backText says where to (backPicked).
 Item {
     id: page
 
@@ -15,6 +16,14 @@ Item {
     // The pages above this one, outermost first: [{ id, title }].
     property var path: []
     signal pathPicked(string pageId)
+    property string backText
+    signal backPicked()
+    // The page's own search field while it shows one, or null: Ctrl+F puts
+    // the cursor there, and opens the search palette without one.
+    property Item findField: null
+    // Kept while the link folds away, so its words don't vanish first.
+    property string _shownBack
+    onBackTextChanged: if (backText.length) _shownBack = backText
     default property alias content: body.data
     property alias headerActions: actions.data
     property alias flickable: flick
@@ -59,6 +68,16 @@ Item {
                     id: headText
                     width: parent.width - actions.childrenRect.width - 16
                     spacing: 4
+                    Reveal {
+                        open: page.backText.length > 0
+                        TextLink {
+                            objectName: "backLink"
+                            text: page._shownBack
+                            iconName: "arrow-left"
+                            onActivated: page.backPicked()
+                        }
+                        Item { width: 1; height: Theme.space2 }
+                    }
                     Flow {
                         width: parent.width
                         spacing: Theme.space2

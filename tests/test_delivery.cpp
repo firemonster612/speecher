@@ -1,9 +1,16 @@
 #include "common/test_prelude.h"
 #include "common/test_doubles.h"
 #include "common/delivery_waits.h"
+#include "common/apps_fixtures.h"
+#include "common/legacy_settings.h"
+#include "common/vocabulary_entries.h"
+#include "core/settings/AppsMigration.h"
+#include "core/settings/AppsSettingsCodec.h"
+#include "output/DeliveryNeeds.h"
 #include "output/HelperPath.h"
 #ifdef SPEECHER_WITH_WAYLAND
 #include "output/WaylandClipboardOwner.h"
+#include "output/WaylandClipboardProcess.h"
 #endif
 #include "platform/ScreenshotImage.h"
 #include "setup/YdotoolSetupTransaction.h"
@@ -16,9 +23,31 @@
 
 #ifdef Q_OS_UNIX
 #include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 using namespace speecher::test;
+using Scope = speecher::test::LegacyPasteRule::Scope;
+
+namespace {
+
+// The pipeline for a dictation into target, planned as a session plans it.
+TranscriptPipelineResult prepared(const QString &raw,
+                                  const AppSettings &settings,
+                                  const RunOverrides &run,
+                                  const Target &target,
+                                  const QString &spokenLanguage)
+{
+    return TranscriptPipeline::prepare(raw, planDictation(settings, target, run), target, spokenLanguage);
+}
+
+// The terms the speech request carries for a dictation into target.
+QStringList speechTerms(const AppSettings &settings, const RunOverrides &run, const Target &target)
+{
+    return planDictation(settings, target, run).settings.speech.vocabulary;
+}
+
+} // namespace
 
 class FakeBackend final : public DeliveryBackend {
 public:
@@ -35,8 +64,8 @@ public:
     {
         m_attempts->append(m_method);
         const bool ok = m_results->value(m_method, false);
-        done({ok, content.html.has_value() && m_method == QString::fromLatin1(OutputMethod::QtClipboard),
-              ok ? QString() : m_method + QStringLiteral(" failed")});
+        Q_UNUSED(content)
+        done({ok, false, ok ? QString() : m_method + QStringLiteral(" failed")});
     }
 
 private:
@@ -46,17 +75,16 @@ private:
 };
 
 
-// The synthetic-input method TextDelivery::orderedMethods emits first on this
-// platform. The fake backend factory serves whichever name it is handed, so
+// The paste keys backend TextDelivery::pressMethod names on this platform. The fake backend factory serves whichever name it is handed, so
 // the delivery-flow tests only need the right name in expectations.
 static QString virtualKeyboardMethod()
 {
 #ifdef Q_OS_MACOS
-    return QString::fromLatin1(OutputMethod::MacPaste);
+    return QString::fromLatin1(PasteKeys::MacPaste);
 #elif defined(Q_OS_WIN)
-    return QString::fromLatin1(OutputMethod::WinPaste);
+    return QString::fromLatin1(PasteKeys::WinPaste);
 #else
-    return QString::fromLatin1(OutputMethod::Ydotool);
+    return QString::fromLatin1(PasteKeys::Ydotool);
 #endif
 }
 
@@ -115,7 +143,8 @@ private slots:
     void waylandClipboardFailures_data()
     {
         QTest::addColumn<QString>("scenario");
-        for (const char *scenario : {"new copy", "snapshot failure", "copy failure", "both fail", "slow snapshot", "clipboard gone"}) {
+        for (const char *scenario : {"new copy", "snapshot failure", "copy failure", "both fail", "slow snapshot", "clipboard gone",
+                                     "several formats"}) {
             QTest::newRow(scenario) << QString::fromLatin1(scenario);
         }
     }
@@ -124,9 +153,21 @@ private slots:
     {
         QFETCH(QString, scenario);
         if (QCoreApplication::instance()) {
+            // Speecher's clipboard helper is found beside the program, so a
+            // run without it is a hard link to this one in a folder of its
+            // own, on the same file system.
+            std::optional<QTemporaryDir> helperless;
+            QString program = QCoreApplication::applicationFilePath();
+            if (scenario == "several formats") {
+                helperless.emplace(QCoreApplication::applicationDirPath() + QStringLiteral("/t4-helperless-XXXXXX"));
+                QVERIFY(helperless->isValid());
+                const QString linked = helperless->filePath(QStringLiteral("speecher_tests"));
+                QVERIFY(::link(QFile::encodeName(program).constData(), QFile::encodeName(linked).constData()) == 0);
+                program = linked;
+            }
             QProcess child;
             child.setProcessChannelMode(QProcess::MergedChannels);
-            child.start(QCoreApplication::applicationFilePath(),
+            child.start(program,
                         {QStringLiteral("--t4-wayland"),
                          QStringLiteral("waylandClipboardFailures:") + scenario});
             QVERIFY(child.waitForFinished(10000));
@@ -173,7 +214,12 @@ if [ "$T4_SCENARIO" = "snapshot failure" ]; then
     echo 'snapshot read failed' >&2
     exit 1
 fi
-if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD"; fi
+if [ "$1" = "--list-types" ]; then
+    echo text/plain
+    if [ "$T4_SCENARIO" = "several formats" ]; then echo text/html; fi
+else
+    /bin/cat "$T4_CLIPBOARD"
+fi
 )"));
         const auto writeClipboard = [&](const QByteArray &text) {
             QFile file(dir.filePath("clipboard"));
@@ -201,14 +247,24 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             QTest::qWait(300);
             QVERIFY(!answered);
         } else {
+            // The snapshot scenarios press the keys, which borrow the
+            // clipboard; the copy scenarios insert, with Keep copying first.
+            const bool presses = scenario == "snapshot failure" || scenario == "slow snapshot" || scenario == "several formats";
+            if (scenario == "several formats" && !WaylandClipboardProcess::helperExecutable().isEmpty()) {
+                QSKIP("Speecher's clipboard helper is installed on this computer");
+            }
             FakeTargetProvider provider;
-            provider.directInsertionAvailable = true;
+            provider.directInsertionAvailable = !presses;
             provider.inserted = scenario != "both fail";
             provider.verified = true;
-            TextDelivery delivery(&provider);
+            QList<QString> attempts;
+            QHash<QString, bool> results{{virtualKeyboardMethod(), true}};
+            TextDelivery delivery([&attempts, &results](const QString &method, const OutputSettings &, PasteKeyCombo) {
+                return std::make_unique<FakeBackend>(method, &attempts, &results);
+            }, &provider);
             OutputSettings settings;
-            settings.method = QString::fromLatin1(OutputMethod::DirectInsert);
-            settings.restoreClipboardAfterTyping = true;
+            settings.ydotoolEnabled = true;
+            settings.steps = presses ? DeliverySteps{.insert = false, .press = true, .keep = false} : DeliverySteps{};
             Target target;
             target.applicationId = "test.editor";
             // The helpers run in the background: the event loop keeps turning
@@ -222,17 +278,26 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             if (scenario == "slow snapshot") {
                 QVERIFY2(turns >= 5, qPrintable(QString::number(turns)));
             }
-            QCOMPARE(provider.insertCalls, 1);
-            QCOMPARE(result.ok, scenario != "both fail");
+            QCOMPARE(provider.insertCalls, presses ? 0 : 1);
+            // A failed copy stops the keys, which would paste something else,
+            // and so does a clipboard Speecher could not save to put back.
+            QCOMPARE(result.ok, !presses && scenario != "both fail");
             if (scenario == "snapshot failure") {
-                QVERIFY(result.message.contains("Previous clipboard could not be saved"));
-                QVERIFY(!result.message.contains("could not be restored"));
+                QVERIFY2(result.message.startsWith("Not delivered: your clipboard could not be saved first"),
+                         qPrintable(result.message));
+                QVERIFY(attempts.isEmpty());
+            }
+            // wl-copy could put back only one of the two formats, so the
+            // words never go on the clipboard and no keys follow.
+            if (scenario == "several formats") {
+                QVERIFY2(result.message.contains("putting them back needs Speecher's clipboard helper"),
+                         qPrintable(result.message));
+                QVERIFY(attempts.isEmpty());
             }
         }
         QFile clipboard(dir.filePath("clipboard"));
         QVERIFY(clipboard.open(QIODevice::ReadOnly));
-        QCOMPARE(clipboard.readAll(), scenario == "new copy" ? QByteArray("someone else's copy")
-                 : scenario == "snapshot failure" ? QByteArray("dictation") : QByteArray("previous"));
+        QCOMPARE(clipboard.readAll(), scenario == "new copy" ? QByteArray("someone else's copy") : QByteArray("previous"));
     }
 #endif
 
@@ -350,234 +415,81 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
     }
 #endif
 
-    void outputDeliverySelection()
+    // The Press step has one backend per platform; Linux has it once the
+    // virtual keyboard is set up.
+    void pressMethodIsThePlatformsPasteKeys()
     {
         OutputSettings settings;
-        settings.method = QString::fromLatin1(OutputMethod::Automatic);
         settings.ydotoolEnabled = true;
 #ifdef Q_OS_MACOS
-        QCOMPARE(TextDelivery::orderedMethods(settings),
-                 QStringList({QString::fromLatin1(OutputMethod::MacPaste),
-                              QString::fromLatin1(OutputMethod::QtClipboard)}));
-
-        // The ydotool toggle is a Linux setting; it has no mac effect.
+        QCOMPARE(TextDelivery::pressMethod(settings), QString::fromLatin1(PasteKeys::MacPaste));
         settings.ydotoolEnabled = false;
-        QCOMPARE(TextDelivery::orderedMethods(settings),
-                 QStringList({QString::fromLatin1(OutputMethod::MacPaste),
-                              QString::fromLatin1(OutputMethod::QtClipboard)}));
-
-        settings.method = QString::fromLatin1(OutputMethod::MacPaste);
-        QCOMPARE(TextDelivery::orderedMethods(settings),
-                 QStringList({QString::fromLatin1(OutputMethod::MacPaste)}));
+        QCOMPARE(TextDelivery::pressMethod(settings), QString::fromLatin1(PasteKeys::MacPaste));
 #elif defined(Q_OS_WIN)
-        QCOMPARE(TextDelivery::orderedMethods(settings),
-                 QStringList({QString::fromLatin1(OutputMethod::WinPaste),
-                              QString::fromLatin1(OutputMethod::QtClipboard)}));
+        QCOMPARE(TextDelivery::pressMethod(settings), QString::fromLatin1(PasteKeys::WinPaste));
         settings.ydotoolEnabled = false;
-        QCOMPARE(TextDelivery::orderedMethods(settings),
-                 QStringList({QString::fromLatin1(OutputMethod::WinPaste),
-                              QString::fromLatin1(OutputMethod::QtClipboard)}));
-        settings.method = QString::fromLatin1(OutputMethod::WinPaste);
-        QCOMPARE(TextDelivery::orderedMethods(settings),
-                 QStringList({QString::fromLatin1(OutputMethod::WinPaste)}));
+        QCOMPARE(TextDelivery::pressMethod(settings), QString::fromLatin1(PasteKeys::WinPaste));
 #else
-        QCOMPARE(TextDelivery::orderedMethods(settings),
-                 QStringList({QString::fromLatin1(OutputMethod::Ydotool),
-                              QString::fromLatin1(OutputMethod::WlCopy),
-                              QString::fromLatin1(OutputMethod::QtClipboard)}));
-
+        QCOMPARE(TextDelivery::pressMethod(settings), QString::fromLatin1(PasteKeys::Ydotool));
         settings.ydotoolEnabled = false;
-        QCOMPARE(TextDelivery::orderedMethods(settings),
-                 QStringList({QString::fromLatin1(OutputMethod::WlCopy),
-                              QString::fromLatin1(OutputMethod::QtClipboard)}));
-
-        settings.method = QString::fromLatin1(OutputMethod::Ydotool);
-        QCOMPARE(TextDelivery::orderedMethods(settings),
-                 QStringList({
-                     QString::fromLatin1(OutputMethod::WlCopy),
-                     QString::fromLatin1(OutputMethod::QtClipboard),
-                 }));
-        settings.ydotoolEnabled = true;
-        QCOMPARE(TextDelivery::orderedMethods(settings), QStringList({QString::fromLatin1(OutputMethod::Ydotool)}));
-#endif
-
-        settings.method = QString::fromLatin1(OutputMethod::QtClipboard);
-        QCOMPARE(TextDelivery::orderedMethods(settings), QStringList({QString::fromLatin1(OutputMethod::QtClipboard)}));
-    }
-
-    // The route the Pasting page draws is the one deliver takes.
-    void pasteRouteFollowsDelivery()
-    {
-        OutputSettings settings;
-        settings.method = QString::fromLatin1(OutputMethod::Automatic);
-        settings.ydotoolEnabled = true;
-        const auto route = [&settings](PasteMethod method) { return TextDelivery::pasteRoute(settings, method).join(u' '); };
-        QCOMPARE(route(PasteMethod::ClipboardOnly), QStringLiteral("copy"));
-        QCOMPARE(route(PasteMethod::DirectInsert), QStringLiteral("insert copy"));
-#if !defined(Q_OS_MACOS) && !defined(Q_OS_WIN)
-        QCOMPARE(route(PasteMethod::StandardPaste), QStringLiteral("insert press copy"));
-        settings.ydotoolEnabled = false;
-        QCOMPARE(route(PasteMethod::TerminalPaste), QStringLiteral("insert copy"));
-        settings.method = QString::fromLatin1(OutputMethod::Ydotool);
-        settings.ydotoolEnabled = true;
-        QCOMPARE(route(PasteMethod::StandardPaste), QStringLiteral("press"));
+        QCOMPARE(TextDelivery::pressMethod(settings), QString());
 #endif
     }
 
-    // Words stay on the clipboard only when what delivery needs is missing
-    // and that wasn't the choice: direct insertion needs accessibility (on
-    // for the session counts), the virtual keyboard only its keys, and
-    // otherwise either does.
-    void wordsStayCopiedOnlyWithNoWayIn()
+    // An App's own steps replace the Pasting page's, and its keys are the
+    // ones Press presses; what it leaves unset is the page's and Ctrl+V.
+    void anAppsPastingChoiceSetsTheStepsAndKeys()
     {
-        const auto staysCopied = [](const char *outputMethod, PasteMethod pasteMethod, bool accessibility,
-                                    bool keyboard) {
-            OutputSettings settings;
-            settings.method = QString::fromLatin1(outputMethod);
-            return TextDelivery::wordsStayCopied(TextDelivery::pasteNeed(settings, pasteMethod), accessibility,
-                                                 keyboard);
-        };
-        const char *automatic = OutputMethod::Automatic;
-        QVERIFY(!staysCopied(automatic, PasteMethod::ClipboardOnly, false, false));
-        QVERIFY(!staysCopied(automatic, PasteMethod::StandardPaste, true, false));
-        QVERIFY(staysCopied(automatic, PasteMethod::DirectInsert, false, true));
-#ifdef Q_OS_MACOS
-        // macOS presses ⌘V only with accessibility, so keys alone don't get
-        // words in.
-        QVERIFY(staysCopied(automatic, PasteMethod::StandardPaste, false, true));
-#elif defined(Q_OS_WIN)
-        // Windows presses Ctrl+V itself.
-        QVERIFY(!staysCopied(automatic, PasteMethod::StandardPaste, false, false));
-#else
-        QVERIFY(staysCopied(automatic, PasteMethod::StandardPaste, false, false));
-        QVERIFY(!staysCopied(automatic, PasteMethod::StandardPaste, false, true));
-        QVERIFY(staysCopied(OutputMethod::Ydotool, PasteMethod::StandardPaste, true, false));
-#endif
+        const DeliverySteps all;
+        // The owner's "only press Ctrl+V".
+        const DeliverySteps pressOnly{.insert = false, .press = true, .keep = false};
+        QCOMPARE(deliveryPlan(all, {}), (DeliveryPlan{all, PasteKeyCombo::Standard}));
+        QCOMPARE(deliveryPlan(all, {pressOnly, std::nullopt}), (DeliveryPlan{pressOnly, PasteKeyCombo::Standard}));
+        QCOMPARE(deliveryPlan(pressOnly, {std::nullopt, PasteKeyCombo::Terminal}),
+                 (DeliveryPlan{pressOnly, PasteKeyCombo::Terminal}));
+        QCOMPARE(DeliveryPlan{pressOnly}.route(), QStringList{QStringLiteral("press")});
+        QCOMPARE(DeliveryPlan{all}.route(), (QStringList{QStringLiteral("insert"), QStringLiteral("press"), QStringLiteral("keep")}));
+        QVERIFY(!PastingChoice{}.isSet());
+        QVERIFY((PastingChoice{std::nullopt, PasteKeyCombo::Standard}.isSet()));
     }
 
-    // The default paste is the first global rule that is on, as delivery
-    // resolves it.
-    void theDefaultPasteIsTheFirstGlobalRuleThatIsOn()
+    // The last step on stays on.
+    void theLastDeliveryStepStaysOn()
     {
-        const QList<PasteRule> rules{
-            {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, false},
-            {PasteRuleScope::Global, QString(), PasteMethod::DirectInsert, true},
-        };
-        QCOMPARE(globalPasteMethod(rules), PasteMethod::DirectInsert);
-        QCOMPARE(resolvePasteRule(rules, Target{}).method, PasteMethod::DirectInsert);
-    }
-
-    void pasteRulesPreferApplicationThenCategoryThenGlobal()
-    {
-        const QList<PasteRule> rules{
-            {PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly, true},
-            {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true},
-            {PasteRuleScope::Application, QStringLiteral("org.kde.konsole"), PasteMethod::StandardPaste, true},
-        };
-        Target target;
-        target.applicationId = QStringLiteral("ORG.KDE.KONSOLE");
-        target.category = AppCategory::Terminal;
-        QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::StandardPaste);
-
-        target.applicationId = QStringLiteral("dev.warp.Warp");
-        QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::TerminalPaste);
-
-        target.category = AppCategory::General;
-        QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::ClipboardOnly);
-    }
-
-    void pasteRulesAreEditedByScopeAndMatch()
-    {
-        QList<PasteRule> rules = defaultPasteRules();
-        const QString terminal = QStringLiteral("terminal");
-        const QString browser = QStringLiteral("browser");
-
-        rules[0].enabled = false;
-        setPasteRule(rules, PasteRuleScope::Category, terminal, PasteMethod::DirectInsert);
-        setPasteRule(rules, PasteRuleScope::Category, browser, PasteMethod::ClipboardOnly);
-        QCOMPARE(rules.size(), 3);
-        QCOMPARE(*findPasteRule(rules, PasteRuleScope::Category, terminal),
-                 (PasteRule{PasteRuleScope::Category, terminal, PasteMethod::DirectInsert, true}));
-        QCOMPARE(findPasteRule(rules, PasteRuleScope::Category, browser)->method, PasteMethod::ClipboardOnly);
-        // An application named like a category is a rule of its own.
-        QCOMPARE(findPasteRule(rules, PasteRuleScope::Application, browser), nullptr);
-
-        removePasteRule(rules, PasteRuleScope::Category, terminal);
-        QCOMPARE(findPasteRule(rules, PasteRuleScope::Category, terminal), nullptr);
-        QCOMPARE(findPasteRule(rules, PasteRuleScope::Global, QString())->method, PasteMethod::StandardPaste);
-        QCOMPARE(rules.size(), 2);
-    }
-
-    // A stored rule that differs only in case or spaces is the same rule to
-    // every edit, as it is when a paste resolves it.
-    void pasteRuleEditsMatchAsResolvingDoes()
-    {
-        QList<PasteRule> rules{
-            {PasteRuleScope::Application, QStringLiteral(" Org.KDE.Konsole "), PasteMethod::TerminalPaste, true},
-            {PasteRuleScope::Category, QStringLiteral("Browser"), PasteMethod::DirectInsert, true},
-        };
-        Target target;
-        target.applicationId = QStringLiteral("org.kde.konsole");
-        QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::TerminalPaste);
-
-        QCOMPARE(findPasteRule(rules, PasteRuleScope::Application, QStringLiteral("org.kde.konsole")), &rules[0]);
-        QCOMPARE(findPasteRule(rules, PasteRuleScope::Category, QStringLiteral("browser")), &rules[1]);
-        setPasteRule(rules, PasteRuleScope::Application, QStringLiteral("org.kde.konsole"), PasteMethod::ClipboardOnly);
-        QCOMPARE(rules.size(), 2);
-        QCOMPARE(rules[0].method, PasteMethod::ClipboardOnly);
-        removePasteRule(rules, PasteRuleScope::Category, QStringLiteral("browser"));
-        QCOMPARE(rules.size(), 1);
-        QCOMPARE(validatePasteRules(rules + QList{PasteRule{PasteRuleScope::Application, QStringLiteral("org.kde.konsole")}}).size(), 1);
+        const DeliverySteps keepOnly{.insert = false, .press = false, .keep = true};
+        QCOMPARE(keepOnly.withStep(DeliveryStep::Keep, false), keepOnly);
+        QCOMPARE(keepOnly.withStep(DeliveryStep::Press, true),
+                 (DeliverySteps{.insert = false, .press = true, .keep = true}));
+        QCOMPARE(DeliverySteps{}.withStep(DeliveryStep::Insert, false),
+                 (DeliverySteps{.insert = false, .press = true, .keep = true}));
     }
 
     void accessibleTerminalWithoutApplicationIdUsesTerminalPaste()
     {
-        PasteMethod attemptedMethod = PasteMethod::ClipboardOnly;
+        std::optional<PasteKeyCombo> attemptedKeys;
         QList<QString> attempts;
-        QHash<QString, bool> results{{QString::fromLatin1(OutputMethod::Ydotool), true}};
+        QHash<QString, bool> results{{QString::fromLatin1(PasteKeys::Ydotool), true}};
         FakeTargetProvider targetProvider;
         TextDelivery delivery(
-            [&attemptedMethod, &attempts, &results](const QString &method,
-                                                   const OutputSettings &,
-                                                   PasteMethod pasteMethod) {
-                attemptedMethod = pasteMethod;
+            [&attemptedKeys, &attempts, &results](const QString &method,
+                                                 const OutputSettings &,
+                                                 PasteKeyCombo keys) {
+                attemptedKeys = keys;
                 return std::make_unique<FakeBackend>(method, &attempts, &results);
             },
             &targetProvider);
         OutputSettings settings;
-        settings.method = QString::fromLatin1(OutputMethod::Ydotool);
+        settings.steps.insert = false;
         settings.ydotoolEnabled = true;
-        settings.pasteRules = defaultPasteRules();
         Target target;
         target.accessible = true;
         target.role = QStringLiteral("terminal");
-        target.category = classifyTarget(target);
 
-        deliverAndWait(delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+        deliverAndWait(delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target,
+                       resolveApp(target, {}).pasting);
 
-        QCOMPARE(attemptedMethod, PasteMethod::TerminalPaste);
-    }
-
-    void aiCodingAgentInTerminalKeepsTerminalPasteBehavior()
-    {
-        const QList<PasteRule> rules{
-            {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true},
-            {PasteRuleScope::Category, QStringLiteral("ai_coding"), PasteMethod::StandardPaste, true},
-            {PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly, true},
-        };
-        Target target;
-        target.terminalHost = true;
-        target.aiCodingToolActive = true;
-        target.category = classifyTarget(target);
-
-        QCOMPARE(target.category, AppCategory::AiCoding);
-        QVERIFY(isTerminalTarget(target));
-        QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::TerminalPaste);
-
-        target.aiCodingToolActive = false;
-        target.category = AppCategory::General;
-        QVERIFY(isTerminalTarget(target));
-        QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::TerminalPaste);
+        // macOS terminals take Cmd+V like everything else.
+        QCOMPARE(attemptedKeys, terminalKeysDiffer ? PasteKeyCombo::Terminal : PasteKeyCombo::Standard);
     }
 
     void aiCodingProcessesAreRecognizedByNameOrCommandLine()
@@ -588,22 +500,6 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                                   {QStringLiteral("node"),
                                    QStringLiteral("/usr/lib/node_modules/@openai/codex/bin/codex.js")}));
         QVERIFY(!isAiCodingProcess(QStringLiteral("zsh"), {QStringLiteral("-zsh")}));
-    }
-
-    void recognitionRulesRejectEmptyMatchesAndRespectBuiltInBoundaries()
-    {
-        Target target;
-        target.applicationId = QStringLiteral("org.example.barcode");
-        QCOMPARE(classifyTarget(target), AppCategory::General);
-
-        target.applicationId = QStringLiteral("org.example.!!!");
-        const QList<AppRecognitionRule> punctuationRule{
-            {QStringLiteral("!!!"), AppCategory::Terminal, WritingProfile::Work},
-        };
-        QCOMPARE(classifyTarget(target, punctuationRule), AppCategory::General);
-
-        target.applicationId = QStringLiteral("code");
-        QCOMPARE(classifyTarget(target), AppCategory::CodeEditor);
     }
 
     // The text after a selection starts where the selection ends, however
@@ -644,7 +540,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         target.selectionStart = 6;
         target.selectionEnd = 10;
         target.nearbyTextRead = true;
-        QCOMPARE(inferWritingProfile(target), WritingProfile::Email);
+        QCOMPARE(resolveApp(target, {}).writingProfile, WritingProfile::Email);
 
         // A detected coding agent inside a named terminal takes the AI coding
         // profile; the terminal's own built-in Work rule must not win.
@@ -653,9 +549,8 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         agentInTerminal.windowTitle = QStringLiteral("claude — ~/project");
         agentInTerminal.role = QStringLiteral("terminal");
         agentInTerminal.aiCodingToolActive = true;
-        agentInTerminal.category = classifyTarget(agentInTerminal, {});
-        QCOMPARE(agentInTerminal.category, AppCategory::AiCoding);
-        QCOMPARE(inferWritingProfile(agentInTerminal), WritingProfile::AiCoding);
+        QCOMPARE(resolveApp(agentInTerminal, {}).type, AppCategory::AiCoding);
+        QCOMPARE(resolveApp(agentInTerminal, {}).writingProfile, WritingProfile::AiCoding);
 
         // How a terminal outside accessibility, known only by its window,
         // finds the coding agent in it.
@@ -728,7 +623,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         target.selectionEnd = 27;
 
         const QString instructions = QStringLiteral("Make this more confident and add a greeting");
-        const TranscriptPipelineResult pipeline = TranscriptPipeline::prepare(
+        const TranscriptPipelineResult pipeline = prepared(
             instructions,
             settings, {},
             target,
@@ -791,12 +686,10 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         }
         settings.vocabulary.append({QStringLiteral("Starred"), QStringLiteral("manual"), true});
         settings.speech.vocabulary = {QStringLiteral("only speech")};
-        settings.learnedCorrections = {
-            {QStringLiteral("0"), QStringLiteral("cute"), QStringLiteral("Qt"), QString(), 1, 0.98, true, 1, 1},
-        };
+        settings.vocabulary.append(test::learnedEntry(QStringLiteral("cute"), QStringLiteral("Qt")));
 
         const QStringList refinement =
-            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language).refinementVocabulary;
+            prepared(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language).refinementVocabulary;
         // Read from the stored list in priority order, not from the capped speech
         // request, and cut at the refinement ceiling.
         // Corrections lead, so a full list cannot push them out.
@@ -813,24 +706,22 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
     void vocabularyFollowsTheDictationsWritingProfile()
     {
         AppSettings settings;
-        settings.refinement.defaultWritingProfile = WritingProfile::Work;
+        setOtherAppsProfile(settings.apps, WritingProfile::Work);
         VocabularyEntry kubernetes{QStringLiteral("Kubernetes")};
         kubernetes.context = QStringLiteral("The container platform.");
         kubernetes.profiles = {WritingProfile::Work, WritingProfile::AiCoding};
         VocabularyEntry lucia{QStringLiteral("Lúcia")};
         lucia.profiles = {WritingProfile::Personal};
         settings.vocabulary = {kubernetes, lucia, {QStringLiteral("Speecher")}};
-        settings.learnedCorrections = {
-            {QStringLiteral("0"), QStringLiteral("cute"), QStringLiteral("Qt"), QString(), 1, 0.98, true, 1, 1},
-        };
+        settings.vocabulary.append(test::learnedEntry(QStringLiteral("cute"), QStringLiteral("Qt")));
 
         const TranscriptPipelineResult work =
-            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language);
+            prepared(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language);
         QCOMPARE(work.refinementVocabulary,
                  (QStringList{QStringLiteral("Qt"), QStringLiteral("Kubernetes"), QStringLiteral("Speecher")}));
         QCOMPARE(work.refinementContext.vocabularyContext,
                  (QHash<QString, QString>{{QStringLiteral("Kubernetes"), QStringLiteral("The container platform.")}}));
-        QCOMPARE(TranscriptPipeline::speechVocabulary(settings, {}, Target{}),
+        QCOMPARE(speechTerms(settings, {}, Target{}),
                  (QStringList{QStringLiteral("Kubernetes"), QStringLiteral("Speecher"), QStringLiteral("Qt")}));
 
         // A correction that writes a term limited elsewhere stays out with it,
@@ -840,43 +731,44 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         pr.context = QStringLiteral("Pull request.");
         pr.profiles = {WritingProfile::AiCoding};
         settings.vocabulary.append(pr);
-        settings.learnedCorrections.append(
-            {QStringLiteral("1"), QStringLiteral("pee are"), QStringLiteral("pr"), QString(), 1, 0.98, true, 1, 1});
-        QVERIFY(!TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language)
+        settings.vocabulary.append(
+            test::learnedEntry(QStringLiteral("pee are"), QStringLiteral("pr")));
+        QVERIFY(!prepared(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language)
                      .refinementVocabulary.contains(QStringLiteral("pr")));
-        QVERIFY(!TranscriptPipeline::speechVocabulary(settings, {}, Target{}).contains(QStringLiteral("pr")));
-        const RunChoices aiCoding{WritingProfile::AiCoding};
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("pee are"), settings, {}, Target{}, settings.speech.language)
+        QVERIFY(!speechTerms(settings, {}, Target{}).contains(QStringLiteral("pr")));
+        const RunOverrides aiCoding{WritingProfile::AiCoding};
+        QCOMPARE(prepared(QStringLiteral("pee are"), settings, {}, Target{}, settings.speech.language)
                      .bindingResult.boundText,
                  QStringLiteral("pee are"));
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("pee are"), settings, aiCoding, Target{}, settings.speech.language)
+        QCOMPARE(prepared(QStringLiteral("pee are"), settings, aiCoding, Target{}, settings.speech.language)
                      .bindingResult.boundText,
                  QStringLiteral("pr"));
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, aiCoding, Target{}, settings.speech.language)
+        QCOMPARE(prepared(QStringLiteral("hello"), settings, aiCoding, Target{}, settings.speech.language)
                      .refinementContext.vocabularyContext.value(QStringLiteral("pr")),
                  QStringLiteral("Pull request."));
         settings.vocabulary.removeLast();
-        settings.learnedCorrections.removeLast();
+        settings.vocabulary.removeLast();
 
         // A term that is not a key term goes to refinement only, even when a
         // correction writes it.
+        settings.vocabulary = normalizeVocabularyEntries(settings.vocabulary);
         settings.vocabulary[2].keyTerm = false;
-        settings.learnedCorrections.append(
-            {QStringLiteral("2"), QStringLiteral("speaker"), QStringLiteral("speecher"), QString(), 1, 0.98, true, 1, 1});
-        QVERIFY(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language)
+        settings.vocabulary.append(
+            test::learnedEntry(QStringLiteral("speaker"), QStringLiteral("speecher")));
+        QVERIFY(prepared(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language)
                     .refinementVocabulary.contains(QStringLiteral("Speecher"), Qt::CaseInsensitive));
-        QVERIFY(!TranscriptPipeline::speechVocabulary(settings, {}, Target{}).contains(QStringLiteral("Speecher"),
+        QVERIFY(!speechTerms(settings, {}, Target{}).contains(QStringLiteral("Speecher"),
                                                                                    Qt::CaseInsensitive));
         settings.vocabulary[2].keyTerm = true;
-        settings.learnedCorrections.removeLast();
+        settings.vocabulary.removeLast();
 
-        const RunChoices personalProfile{WritingProfile::Personal};
+        const RunOverrides personalProfile{WritingProfile::Personal};
         const TranscriptPipelineResult personal =
-            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, personalProfile, Target{}, settings.speech.language);
+            prepared(QStringLiteral("hello"), settings, personalProfile, Target{}, settings.speech.language);
         QCOMPARE(personal.refinementVocabulary,
                  (QStringList{QStringLiteral("Qt"), QStringLiteral("Lúcia"), QStringLiteral("Speecher")}));
         QVERIFY(personal.refinementContext.vocabularyContext.isEmpty());
-        QCOMPARE(TranscriptPipeline::speechVocabulary(settings, personalProfile, Target{}),
+        QCOMPARE(speechTerms(settings, personalProfile, Target{}),
                  (QStringList{QStringLiteral("Lúcia"), QStringLiteral("Speecher"), QStringLiteral("Qt")}));
     }
 
@@ -888,11 +780,11 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         settings.refinement.writingProfiles.append({QStringLiteral("custom_standup"),
                                                     QStringLiteral("strong_polish"), QStringLiteral("formal"),
                                                     QStringLiteral("Bullets."), QStringLiteral("Standup")});
-        settings.appRecognitionRules = {{QStringLiteral("zulip"), std::nullopt, QStringLiteral("custom_standup")}};
+        settings.apps.apps = {textApp(QStringLiteral("zulip"), std::nullopt, QStringLiteral("custom_standup"))};
         Target target;
         target.applicationId = QStringLiteral("org.zulip.Zulip");
         const TranscriptPipelineResult pipeline =
-            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, target, settings.speech.language);
+            prepared(QStringLiteral("hello"), settings, {}, target, settings.speech.language);
         QCOMPARE(pipeline.refinementContext.writingProfile, QStringLiteral("custom_standup"));
         QCOMPARE(pipeline.refinementSettings.style, QStringLiteral("strong_polish"));
         QCOMPARE(pipeline.refinementContext.tone, QStringLiteral("formal"));
@@ -914,7 +806,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             {WritingProfile::Other, notes.id, terse.id},
         };
         const TranscriptPipelineResult pipeline =
-            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language);
+            prepared(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language);
         QCOMPARE(pipeline.refinementSettings.style, QStringLiteral("custom_only"));
         QCOMPARE(pipeline.refinementContext.cleanupLevel, std::optional(notes));
         QCOMPARE(pipeline.refinementContext.customTone, std::optional(terse));
@@ -924,7 +816,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
     {
         AppSettings settings;
         settings.speech.language = QStringLiteral("de");
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hallo"), settings, {}, Target{}, settings.speech.language).refinementContext.spokenLanguage,
+        QCOMPARE(prepared(QStringLiteral("hallo"), settings, {}, Target{}, settings.speech.language).refinementContext.spokenLanguage,
                  QStringLiteral("de"));
     }
 
@@ -938,7 +830,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
              QStringLiteral("Spanish")},
         };
         const TranscriptPipelineResult dictation =
-            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language);
+            prepared(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language);
         QCOMPARE(dictation.refinementContext.outputLanguage, QStringLiteral("Spanish"));
         QCOMPARE(dictation.refinementSettings.style, QStringLiteral("light_cleanup"));
 
@@ -946,30 +838,24 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         selection.selectedText = QStringLiteral("hola");
         selection.selectionStart = 0;
         selection.selectionEnd = 4;
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("shorter"), settings, {}, selection, settings.speech.language).refinementSettings.style,
+        QCOMPARE(prepared(QStringLiteral("shorter"), settings, {}, selection, settings.speech.language).refinementSettings.style,
                  QStringLiteral("light_cleanup"));
     }
 
     void transcriptPipelineScopesLearnedCorrectionsAndPreservesUserBindingPrecedence()
     {
         AppSettings settings;
-        settings.bindings = {
-            {QStringLiteral("cute"), QStringLiteral("user choice")},
-        };
-        settings.learnedCorrections = {
-            {QStringLiteral("0"), QStringLiteral("post grass"), QStringLiteral("global choice"),
-             QString(), 1, 0.98, true, 1, 1},
-            {QStringLiteral("1"), QStringLiteral("cute"), QStringLiteral("Qt"),
-             QStringLiteral("org.kde.kate"), 1, 0.98, true, 1, 1},
-            {QStringLiteral("2"), QStringLiteral("post grass"), QStringLiteral("Postgres"),
-             QStringLiteral("org.kde.kate"), 1, 0.75, true, 2, 2},
-            {QStringLiteral("3"), QStringLiteral("open ai"), QStringLiteral("OpenAI"),
-             QString(), 1, 0.98, true, 2, 2},
+        settings.vocabulary = {
+            test::replacementEntry(QStringLiteral("cute"), QStringLiteral("user choice")),
+            test::learnedEntry(QStringLiteral("post grass"), QStringLiteral("global choice")),
+            test::learnedEntry(QStringLiteral("cute"), QStringLiteral("Qt"), QStringLiteral("org.kde.kate")),
+            test::learnedEntry(QStringLiteral("post grass"), QStringLiteral("Postgres"), QStringLiteral("org.kde.kate")),
+            test::learnedEntry(QStringLiteral("open ai"), QStringLiteral("OpenAI")),
         };
 
         Target kate;
         kate.applicationId = QStringLiteral("ORG.KDE.KATE");
-        const TranscriptPipelineResult inKate = TranscriptPipeline::prepare(
+        const TranscriptPipelineResult inKate = prepared(
             QStringLiteral("cute uses post grass and open ai"), settings, {}, kate, settings.speech.language);
         QCOMPARE(inKate.bindingResult.boundText,
                  QStringLiteral("user choice uses Postgres and OpenAI"));
@@ -979,17 +865,21 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
 
         Target firefox;
         firefox.applicationId = QStringLiteral("org.mozilla.firefox");
-        const TranscriptPipelineResult inFirefox = TranscriptPipeline::prepare(
+        const TranscriptPipelineResult inFirefox = prepared(
             QStringLiteral("cute uses post grass and open ai"), settings, {}, firefox, settings.speech.language);
         QCOMPARE(inFirefox.bindingResult.boundText,
                  QStringLiteral("user choice uses global choice and OpenAI"));
+        // A correction learned in Kate is limited to Kate, as a hint too.
+        QVERIFY(!inFirefox.refinementVocabulary.contains(QStringLiteral("Postgres")));
+        QVERIFY(!speechTerms(settings, {}, firefox).contains(QStringLiteral("Postgres")));
+        QVERIFY(speechTerms(settings, {}, kate).contains(QStringLiteral("Postgres")));
     }
 
     void snippetDateAndTimeAreFilledAndSurviveRefinement()
     {
         AppSettings settings;
-        settings.bindings = {
-            {QStringLiteral("sign off"), QStringLiteral("Sent {date} at {time} {clipboard} {date")},
+        settings.vocabulary = {
+            test::replacementEntry(QStringLiteral("sign off"), QStringLiteral("Sent {date} at {time} {clipboard} {date")),
         };
         const auto expansionAt = [](const QDateTime &now) {
             return QStringLiteral("Sent %1 at %2 {clipboard} {date")
@@ -998,7 +888,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         };
 
         const QString before = expansionAt(QDateTime::currentDateTime());
-        const TranscriptPipelineResult pipeline = TranscriptPipeline::prepare(
+        const TranscriptPipelineResult pipeline = prepared(
             QStringLiteral("thanks sign off"), settings, {}, Target{}, settings.speech.language);
         const QString after = expansionAt(QDateTime::currentDateTime());
         const QString bound = pipeline.bindingResult.boundText;
@@ -1017,11 +907,8 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                  std::optional<QString>(expansion + QStringLiteral(".")));
 
         // A Learned Correction is not a Snippet: its braces stay as typed.
-        settings.learnedCorrections = {
-            {QStringLiteral("0"), QStringLiteral("stamp"), QStringLiteral("{date}"),
-             QString(), 1, 0.98, true, 1, 1},
-        };
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("stamp"), settings, {}, Target{}, settings.speech.language)
+        settings.vocabulary = {test::learnedEntry(QStringLiteral("stamp"), QStringLiteral("{date}"))};
+        QCOMPARE(prepared(QStringLiteral("stamp"), settings, {}, Target{}, settings.speech.language)
                      .bindingResult.boundText,
                  QStringLiteral("{date}"));
     }
@@ -1033,12 +920,12 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         selection.selectedText = QStringLiteral("return x;");
         selection.selectionStart = 0;
         selection.selectionEnd = 9;
-        const TranscriptPipelineResult edit = TranscriptPipeline::prepare(
+        const TranscriptPipelineResult edit = prepared(
             QStringLiteral("rename x to value"), settings, {}, selection, settings.speech.language);
         QCOMPARE(TranscriptPipeline::restoreRefinedResult(edit, QStringLiteral("\n \n\t    return value;\n  \n")),
                  std::optional<QString>(QStringLiteral("\t    return value;")));
 
-        const TranscriptPipelineResult dictation = TranscriptPipeline::prepare(
+        const TranscriptPipelineResult dictation = prepared(
             QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language);
         QCOMPARE(TranscriptPipeline::restoreRefinedResult(dictation, QStringLiteral("\n    Hello.\n")),
                  std::optional<QString>(QStringLiteral("Hello.")));
@@ -1051,7 +938,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         selection.selectedText = QStringLiteral("const auto token = \"SPEECHER_BINDING_0\";");
         selection.selectionStart = 0;
         selection.selectionEnd = selection.selectedText.size();
-        const TranscriptPipelineResult edit = TranscriptPipeline::prepare(
+        const TranscriptPipelineResult edit = prepared(
             QStringLiteral("make it constexpr"), settings, {}, selection, settings.speech.language);
         QCOMPARE(TranscriptPipeline::restoreRefinedResult(
                      edit, QStringLiteral("constexpr auto token = \"SPEECHER_BINDING_0\";")),
@@ -1070,10 +957,10 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         // A binding's placeholder that is also the document's text could be
         // restored over the document's literal, so the edit is refused.
         AppSettings withBinding;
-        withBinding.bindings = {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}};
+        withBinding.vocabulary = {test::replacementEntry(QStringLiteral("my email"), QStringLiteral("efox@example.com"))};
         selection.selectedText = QStringLiteral("\"SPEECHER_BINDING_0 SPEECHER_BINDING_1\"");
         selection.selectionEnd = selection.selectedText.size();
-        const TranscriptPipelineResult colliding = TranscriptPipeline::prepare(
+        const TranscriptPipelineResult colliding = prepared(
             QStringLiteral("add my email above it"), withBinding, {}, selection, withBinding.speech.language);
         QCOMPARE(colliding.refinementInput, QStringLiteral("add SPEECHER_BINDING_0 above it"));
         QCOMPARE(TranscriptPipeline::restoreRefinedResult(
@@ -1084,7 +971,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
     void dictationAboutPlaceholdersKeepsThem()
     {
         const AppSettings settings;
-        const TranscriptPipelineResult dictation = TranscriptPipeline::prepare(
+        const TranscriptPipelineResult dictation = prepared(
             QStringLiteral("rename the speecher binding zero placeholder"), settings, {}, Target{},
             settings.speech.language);
         QCOMPARE(TranscriptPipeline::restoreRefinedResult(
@@ -1095,88 +982,18 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                  std::nullopt);
     }
 
-    void aSessionWritingProfileBeatsTheAppOverride()
+    void aSessionWritingProfileBeatsTheApp()
     {
         AppSettings settings;
-        settings.refinement.writingProfileOverrides = {{QStringLiteral("org.kde.kate"), WritingProfile::Email}};
+        settings.apps.apps = {{QStringLiteral("app:kate"), QStringLiteral("Kate"), {},
+                               {{AppMatchKind::Id, QStringLiteral("org.kde.kate")}}, {}, WritingProfile::Email, {}}};
         Target kate;
         kate.applicationId = QStringLiteral("org.kde.kate");
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {}, kate, settings.speech.language).refinementContext.writingProfile,
+        QCOMPARE(prepared(QStringLiteral("hello"), settings, {}, kate, settings.speech.language).refinementContext.writingProfile,
                  WritingProfile::Email);
 
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, {WritingProfile::Personal}, kate, settings.speech.language).refinementContext.writingProfile,
+        QCOMPARE(prepared(QStringLiteral("hello"), settings, {WritingProfile::Personal}, kate, settings.speech.language).refinementContext.writingProfile,
                  WritingProfile::Personal);
-    }
-
-    void applicationMatrixClassifiesWritingProfiles()
-    {
-        const auto classified = [](const QString &applicationId) {
-            Target target;
-            target.applicationId = applicationId;
-            target.category = classifyTarget(target);
-            return target;
-        };
-
-        QCOMPARE(classified(QStringLiteral("kate")).category, AppCategory::CodeEditor);
-        QCOMPARE(classified(QStringLiteral("konsole")).category, AppCategory::Terminal);
-        QCOMPARE(classified(QStringLiteral("com.mitchellh.ghostty")).category, AppCategory::Terminal);
-        QCOMPARE(classified(QStringLiteral("firefox")).category, AppCategory::Browser);
-        QCOMPARE(classified(QStringLiteral("google-chrome")).category, AppCategory::Browser);
-        QCOMPARE(classified(QStringLiteral("org.chromium.Chromium")).category, AppCategory::Browser);
-        QCOMPARE(classified(QStringLiteral("helium")).category, AppCategory::Browser);
-        QCOMPARE(classified(QStringLiteral("thunderbird")).category, AppCategory::Email);
-        QCOMPARE(classified(QStringLiteral("soffice.bin")).category, AppCategory::Office);
-        for (const QString &application : {
-                 QStringLiteral("t3-code"),
-                 QStringLiteral("chatgpt"),
-                 QStringLiteral("codex"),
-                 QStringLiteral("cursor"),
-                 QStringLiteral("windsurf"),
-                 QStringLiteral("kiro"),
-                 QStringLiteral("opencode"),
-                 QStringLiteral("aider"),
-                 QStringLiteral("goose"),
-                 QStringLiteral("qwen-code"),
-                 QStringLiteral("mistral-vibe"),
-                 QStringLiteral("cline"),
-             }) {
-            QCOMPARE(classified(application).category, AppCategory::AiCoding);
-        }
-
-        QCOMPARE(inferWritingProfile(classified(QStringLiteral("kate"))), WritingProfile::Work);
-        QCOMPARE(inferWritingProfile(classified(QStringLiteral("konsole"))), WritingProfile::Work);
-        QCOMPARE(inferWritingProfile(classified(QStringLiteral("thunderbird"))), WritingProfile::Email);
-        QCOMPARE(inferWritingProfile(classified(QStringLiteral("t3-code"))), WritingProfile::AiCoding);
-        QCOMPARE(inferWritingProfile(classified(QStringLiteral("libreoffice"))), WritingProfile::Work);
-        QCOMPARE(inferWritingProfile(classified(QStringLiteral("org.signal.Signal"))), WritingProfile::Personal);
-        QCOMPARE(inferWritingProfile(classified(QStringLiteral("firefox")), WritingProfile::Other), WritingProfile::Other);
-
-        const QList<WritingProfileOverride> overrides{
-            {QStringLiteral("firefox"), WritingProfile::Personal, true},
-            {QStringLiteral("kate"), WritingProfile::Other, false},
-        };
-        QCOMPARE(resolveWritingProfile(classified(QStringLiteral("firefox")), overrides, WritingProfile::Other),
-                 WritingProfile::Personal);
-        QCOMPARE(resolveWritingProfile(classified(QStringLiteral("kate")), overrides, WritingProfile::Other),
-                 WritingProfile::Work);
-
-        const QList<AppRecognitionRule> recognitionRules{
-            {QStringLiteral("com.acme.shell"), AppCategory::Terminal, WritingProfile::Work},
-        };
-        Target customTerminal;
-        customTerminal.applicationId = QStringLiteral("com.acme.shell-nightly");
-        customTerminal.category = classifyTarget(customTerminal, recognitionRules);
-        QCOMPARE(customTerminal.category, AppCategory::Terminal);
-        QCOMPARE(resolveWritingProfile(customTerminal,
-                                       {},
-                                       recognitionRules,
-                                       WritingProfile::Other),
-                 WritingProfile::Work);
-        QCOMPARE(writingProfileFromName(QStringLiteral("technical")), WritingProfile::Work);
-        QCOMPARE(writingProfileFromName(QStringLiteral("ai_coding")), WritingProfile::AiCoding);
-        QCOMPARE(writingProfileFromName(QStringLiteral("general")), WritingProfile::Other);
-        QCOMPARE(appCategoryFromName(QStringLiteral("ai_coding")), AppCategory::AiCoding);
-        QCOMPARE(appCategoryName(AppCategory::AiCoding), QStringLiteral("ai_coding"));
     }
 
     void aiCodingRefinementProducesAgentPromptsInsteadOfAnsweringThem()
@@ -1212,20 +1029,33 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QVERIFY(editingPrompt.contains(section));
     }
 
-    void outputUsesClipboardOnlyForMissingOrSecureTargets()
+    // A secure field gets neither insertion nor keys: only Keep, and with
+    // Keep off nothing at all.
+    void secureTargetsOnlyKeepTheWords()
     {
-        OutputSettings settings;
-        settings.method = QString::fromLatin1(OutputMethod::Automatic);
-        settings.ydotoolEnabled = true;
-#ifdef Q_OS_MACOS
-        const QStringList expected{QString::fromLatin1(OutputMethod::QtClipboard)};
-#elif defined(Q_OS_WIN)
-        const QStringList expected{QString::fromLatin1(OutputMethod::QtClipboard)};
-#else
-        const QStringList expected{QString::fromLatin1(OutputMethod::WlCopy),
-                                   QString::fromLatin1(OutputMethod::QtClipboard)};
-#endif
-        QCOMPARE(TextDelivery::orderedMethods(settings, PasteMethod::ClipboardOnly), expected);
+        for (const bool keep : {true, false}) {
+            QApplication::clipboard()->setText(QStringLiteral("previous clipboard"));
+            QList<QString> attempts;
+            QHash<QString, bool> results{{virtualKeyboardMethod(), true}};
+            FakeTargetProvider targetProvider;
+            targetProvider.directInsertionAvailable = true;
+            TextDelivery delivery([&attempts, &results](const QString &method, const OutputSettings &, PasteKeyCombo) {
+                return std::make_unique<FakeBackend>(method, &attempts, &results);
+            }, &targetProvider);
+            OutputSettings settings;
+            settings.ydotoolEnabled = true;
+            settings.steps.keep = keep;
+            Target target;
+            target.applicationId = QStringLiteral("org.kde.kate");
+            target.secure = true;
+            const DeliveryResult result = deliverAndWait(
+                delivery, settings, makeDeliveryContent(QStringLiteral("hunter2"), OutputFormat::PlainText), target);
+            QCOMPARE(targetProvider.insertCalls, 0);
+            QVERIFY(attempts.isEmpty());
+            QCOMPARE(result.ok, keep);
+            QCOMPARE(result.receipt, keep ? DeliveryReceipt::Copied : DeliveryReceipt::None);
+            QCOMPARE(QApplication::clipboard()->text(), keep ? QStringLiteral("hunter2") : QStringLiteral("previous clipboard"));
+        }
     }
 
     void outputContentBuildsSafeDualMimeRepresentations()
@@ -1264,11 +1094,11 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             }
             bool &prepared;
         };
-        TextDelivery delivery([&](const QString &, const OutputSettings &, PasteMethod) {
+        TextDelivery delivery([&](const QString &, const OutputSettings &, PasteKeyCombo) {
             return std::make_unique<PasteBackend>(targetProvider.prepared);
         }, &targetProvider);
         OutputSettings settings;
-        settings.method = virtualKeyboardMethod();
+        settings.steps.insert = false;
         settings.ydotoolEnabled = true;
         Target target;
         target.applicationId = QStringLiteral("editor");
@@ -1304,7 +1134,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             }
             std::function<void(const Outcome &)> &held;
         };
-        TextDelivery delivery([&held](const QString &, const OutputSettings &, PasteMethod) {
+        TextDelivery delivery([&held](const QString &, const OutputSettings &, PasteKeyCombo) {
             return std::make_unique<Backend>(held);
         }, &targetProvider);
         delivery.setAnswerDeadlineMs(50);
@@ -1312,14 +1142,14 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         connect(&delivery, &TextDeliveryAdapter::delivered, this,
                 [&answers](const DeliveryResult &result) { answers << result; });
         OutputSettings settings;
-        settings.method = virtualKeyboardMethod();
+        settings.steps.insert = false;
         settings.ydotoolEnabled = true;
         Target target;
         target.applicationId = QStringLiteral("editor");
         const DeliveryContent content = makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText);
 
-        delivery.deliver(settings, content, target);
-        delivery.deliver(settings, content, target);
+        delivery.deliver(settings, content, target, {});
+        delivery.deliver(settings, content, target, {});
         QTRY_COMPARE(answers.size(), 2);
         QVERIFY(!answers.at(0).ok);
         QCOMPARE(answers.at(0).message, QStringLiteral("Delivery did not finish in time"));
@@ -1354,16 +1184,16 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             bool &gone;
         };
         auto delivery = std::make_unique<TextDelivery>(
-            [&](const QString &, const OutputSettings &, PasteMethod) {
+            [&](const QString &, const OutputSettings &, PasteKeyCombo) {
                 return std::make_unique<Backend>(waiting, backendGone);
             },
             &targetProvider);
         OutputSettings settings;
-        settings.method = virtualKeyboardMethod();
+        settings.steps.insert = false;
         settings.ydotoolEnabled = true;
         Target target;
         target.applicationId = QStringLiteral("editor");
-        delivery->deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+        delivery->deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target, {});
         QTRY_VERIFY(waiting);
 
         delivery.reset();
@@ -1425,7 +1255,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             }
             int &pressed;
         };
-        TextDelivery delivery([&pressed](const QString &, const OutputSettings &, PasteMethod) {
+        TextDelivery delivery([&pressed](const QString &, const OutputSettings &, PasteKeyCombo) {
             return std::make_unique<GatedBackend>(pressed);
         }, &targetProvider);
         delivery.setAnswerDeadlineMs(20);
@@ -1433,12 +1263,12 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         connect(&delivery, &TextDeliveryAdapter::delivered, this,
                 [&answers](const DeliveryResult &result) { answers << result; });
         OutputSettings settings;
-        settings.method = virtualKeyboardMethod();
+        settings.steps.insert = false;
         settings.ydotoolEnabled = true;
         Target target;
         target.applicationId = QStringLiteral("editor");
 
-        delivery.deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+        delivery.deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target, {});
         QTRY_COMPARE(answers.size(), 1);
         QCOMPARE(answers.first().message, QStringLiteral("Delivery did not finish in time"));
         QVERIFY(targetProvider.held);
@@ -1458,9 +1288,9 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
     }
 
     // The deadline can come while the insertion check waits for the app to
-    // show the words. When the check then confirms them, they stay on the
-    // clipboard: the previous clipboard comes back only for a delivery still
-    // waiting for its answer, and nothing is answered twice.
+    // show the words. When the check then confirms a paste, the words stay on
+    // the clipboard: the previous clipboard comes back only for a delivery
+    // still waiting for its answer, and nothing is answered twice.
     void aDeadlineWhileTheInsertionCheckWaitsLeavesTheClipboard()
     {
         QFETCH(bool, insertsDirectly);
@@ -1484,29 +1314,30 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         targetProvider.insertsDirectly = insertsDirectly;
         QList<QString> attempts;
         QHash<QString, bool> results{{virtualKeyboardMethod(), true}};
-        TextDelivery delivery([&attempts, &results](const QString &method, const OutputSettings &, PasteMethod) {
+        TextDelivery delivery([&attempts, &results](const QString &method, const OutputSettings &, PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
         delivery.setAnswerDeadlineMs(20);
         QApplication::clipboard()->setText(QStringLiteral("previous clipboard"));
         OutputSettings settings;
-        settings.method = insertsDirectly ? QString::fromLatin1(OutputMethod::DirectInsert) : virtualKeyboardMethod();
+        settings.steps = {.insert = insertsDirectly, .press = !insertsDirectly, .keep = false};
         settings.ydotoolEnabled = true;
-        settings.restoreClipboardAfterTyping = true;
         Target target;
         target.applicationId = QStringLiteral("editor");
         QStringList answers;
         connect(&delivery, &TextDeliveryAdapter::delivered, this,
                 [&answers](const DeliveryResult &result) { answers << result.message; });
 
-        delivery.deliver(settings, makeDeliveryContent(QStringLiteral("dictation"), OutputFormat::PlainText), target);
+        delivery.deliver(settings, makeDeliveryContent(QStringLiteral("dictation"), OutputFormat::PlainText), target, {});
         QTRY_COMPARE(answers.size(), 1);
         QCOMPARE(answers.first(), QStringLiteral("Delivery did not finish in time"));
         QVERIFY(targetProvider.held);
         targetProvider.held();
         QTest::qWait(20);
         QCOMPARE(answers.size(), 1);
-        QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("dictation"));
+        // Inserting never borrows the clipboard.
+        QCOMPARE(QApplication::clipboard()->text(),
+                 insertsDirectly ? QStringLiteral("previous clipboard") : QStringLiteral("dictation"));
     }
 
     // The delivery can go while its run is still on the stack: from inside a
@@ -1564,7 +1395,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             }
             int &pressed;
         };
-        auto *delivery = new TextDelivery([&pressed](const QString &, const OutputSettings &, PasteMethod) {
+        auto *delivery = new TextDelivery([&pressed](const QString &, const OutputSettings &, PasteKeyCombo) {
             return std::make_unique<Backend>(pressed);
         }, &targetProvider);
         int answers = 0;
@@ -1576,12 +1407,12 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             targetProvider.duringFirstCheck = [&delivery] { delete std::exchange(delivery, nullptr); };
         }
         OutputSettings settings;
-        settings.method = virtualKeyboardMethod();
+        settings.steps.insert = false;
         settings.ydotoolEnabled = true;
         Target target;
         target.applicationId = QStringLiteral("editor");
 
-        delivery->deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+        delivery->deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target, {});
         QTRY_VERIFY(!delivery);
         QTest::qWait(100);
         QCOMPARE(answers, goesMidCheck ? 0 : 1);
@@ -1612,12 +1443,12 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         qsizetype callsAtGate = -1;
         std::optional<bool> pasted;
         delivery.pasteFromClipboard(
-            QStringLiteral("hello"), PasteMethod::StandardPaste,
+            QStringLiteral("hello"), PasteKeyCombo::Standard,
             [&](std::function<void(bool)> reply) {
                 callsAtGate = ydotool.calls().size();
                 reply(clear);
             },
-            [&pasted](bool ok, const QString &) { pasted = ok; });
+            [&pasted](bool ok, bool, const QString &) { pasted = ok; });
         QTRY_VERIFY(pasted.has_value());
         ticker.stop();
 
@@ -1647,7 +1478,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         TextDelivery delivery(&targetProvider);
         delivery.setAnswerDeadlineMs(50);
         OutputSettings settings;
-        settings.method = QString::fromLatin1(OutputMethod::Ydotool);
+        settings.steps.insert = false;
         settings.ydotoolEnabled = true;
         Target target;
         target.applicationId = QStringLiteral("editor");
@@ -1684,9 +1515,9 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         const FakeYdotool ydotool("0.1", "5");
         QVERIFY(ydotool.ready());
         auto *delivery = new YdotoolDelivery;
-        delivery->pasteFromClipboard(QStringLiteral("hello"), PasteMethod::StandardPaste,
+        delivery->pasteFromClipboard(QStringLiteral("hello"), PasteKeyCombo::Standard,
                                      [](std::function<void(bool)> reply) { reply(true); },
-                                     [](bool, const QString &) {});
+                                     [](bool, bool, const QString &) {});
         // The paste keys are going out.
         QTRY_COMPARE(ydotool.calls().size(), 2);
         delete delivery;
@@ -1710,7 +1541,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         TextDelivery delivery(&targetProvider);
         delivery.setAnswerDeadlineMs(300);
         OutputSettings settings;
-        settings.method = QString::fromLatin1(OutputMethod::Ydotool);
+        settings.steps.insert = false;
         settings.ydotoolEnabled = true;
         Target target;
         target.applicationId = QStringLiteral("editor");
@@ -1825,11 +1656,11 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             }
             int &pressed;
         };
-        TextDelivery delivery([&pressed](const QString &, const OutputSettings &, PasteMethod) {
+        TextDelivery delivery([&pressed](const QString &, const OutputSettings &, PasteKeyCombo) {
             return std::make_unique<GatedBackend>(pressed);
         }, &targetProvider);
         OutputSettings settings;
-        settings.method = virtualKeyboardMethod();
+        settings.steps.insert = false;
         settings.ydotoolEnabled = true;
         Target target;
         target.applicationId = QStringLiteral("editor");
@@ -1868,13 +1699,13 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         connect(&delivery, &TextDeliveryAdapter::delivered, this,
                 [&receipts](const DeliveryResult &result) { receipts << result.receipt; });
         OutputSettings settings;
-        settings.method = QString::fromLatin1(OutputMethod::DirectInsert);
+        settings.steps.press = false;
         Target editor;
         editor.applicationId = QStringLiteral("editor");
         const DeliveryContent content = makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText);
-        provider.duringVerification = [&] { delivery.deliver(settings, content, editor); };
+        provider.duringVerification = [&] { delivery.deliver(settings, content, editor, {}); };
 
-        delivery.deliver(settings, content, editor);
+        delivery.deliver(settings, content, editor, {});
         QVERIFY(receipts.isEmpty());
         QTRY_COMPARE(receipts.size(), 2);
         QCOMPARE(receipts, (QList<DeliveryReceipt>{DeliveryReceipt::AcceptedByTarget, DeliveryReceipt::VerifiedInTarget}));
@@ -1915,12 +1746,12 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             }
             bool &pasted;
         };
-        TextDelivery delivery([&](const QString &, const OutputSettings &, PasteMethod) {
+        TextDelivery delivery([&](const QString &, const OutputSettings &, PasteKeyCombo) {
             return std::make_unique<GatedBackend>(pasted);
         }, &targetProvider);
 
         OutputSettings settings;
-        settings.method = virtualKeyboardMethod();
+        settings.steps.insert = false;
         settings.ydotoolEnabled = true;
         Target target;
         target.applicationId = QStringLiteral("org.kde.kate");
@@ -1938,27 +1769,22 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QApplication::clipboard()->setText(QStringLiteral("previous clipboard"));
 
         QList<QString> attempts;
-        QList<bool> restoreFlags;
         QHash<QString, bool> results;
         results.insert(virtualKeyboardMethod(), false);
-        results.insert(QString::fromLatin1(OutputMethod::WlCopy), true);
-        results.insert(QString::fromLatin1(OutputMethod::QtClipboard), true);
 
         FakeTargetProvider targetProvider;
         targetProvider.directInsertionAvailable = true;
         targetProvider.inserted = false;
-        TextDelivery delivery([&attempts, &restoreFlags, &results](
+        TextDelivery delivery([&attempts, &results](
                                   const QString &method,
-                                  const OutputSettings &settings,
-                                  PasteMethod) {
-            restoreFlags.append(settings.restoreClipboardAfterTyping);
+                                  const OutputSettings &,
+                                  PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
 
         OutputSettings settings;
-        settings.method = QString::fromLatin1(OutputMethod::Automatic);
         settings.ydotoolEnabled = true;
-        settings.restoreClipboardAfterTyping = true;
+        settings.steps.keep = false;
         Target target;
         target.applicationId = QStringLiteral("org.kde.kate");
         target.category = AppCategory::CodeEditor;
@@ -1966,19 +1792,79 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             delivery, settings,
             makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
             target);
-        QVERIFY(result.ok);
-        QCOMPARE(result.receipt, DeliveryReceipt::Copied);
+        // The keys failed before the backend asked to send them, so the
+        // borrowed clipboard goes back.
+        QVERIFY(!result.ok);
+        QCOMPARE(result.receipt, DeliveryReceipt::None);
         QCOMPARE(targetProvider.insertCalls, 1);
         QCOMPARE(attempts, QList<QString>({virtualKeyboardMethod()}));
-        QCOMPARE(restoreFlags, QList<bool>({true}));
-        QCOMPARE(result.receipt, DeliveryReceipt::Copied);
-        QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("hello"));
+        QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("previous clipboard"));
+    }
+
+    // With Keep off, a paste that fails gives the borrowed clipboard back
+    // when the backend never got as far as the keys; once they may have
+    // gone out, the words stay where the paste can find them.
+    void aFailedPasteGivesTheClipboardBackOnlyWhenNoKeysWentOut_data()
+    {
+        QTest::addColumn<bool>("askGate");
+        QTest::addColumn<bool>("noInputSent");
+        QTest::addColumn<bool>("keysMayHaveGone");
+        QTest::newRow("before the gate") << false << false << false;
+        QTest::newRow("after the gate, none sent") << true << true << false;
+        QTest::newRow("after the gate, some may have gone") << true << false << true;
+    }
+
+    void aFailedPasteGivesTheClipboardBackOnlyWhenNoKeysWentOut()
+    {
+        QFETCH(bool, askGate);
+        QFETCH(bool, noInputSent);
+        QFETCH(bool, keysMayHaveGone);
+        {
+            QApplication::clipboard()->setText(QStringLiteral("previous clipboard"));
+            struct FailingBackend final : DeliveryBackend {
+                FailingBackend(bool askGate, bool noInputSent) : askGate(askGate), noInputSent(noInputSent) {}
+                void deliver(const DeliveryContent &, const PasteGate &clearToInject,
+                             std::function<void(const Outcome &)> done) override
+                {
+                    if (!askGate) {
+                        done({false, false, QStringLiteral("Release the held keys before pasting")});
+                        return;
+                    }
+                    clearToInject([this, done](bool) {
+                        done({false, noInputSent,
+                              noInputSent ? QStringLiteral("Could not create the paste keystroke") : QStringLiteral("SendInput failed")});
+                    });
+                }
+                bool askGate;
+                bool noInputSent;
+            };
+            FakeTargetProvider targetProvider;
+            TextDelivery delivery([askGate, noInputSent](const QString &, const OutputSettings &, PasteKeyCombo) {
+                return std::make_unique<FailingBackend>(askGate, noInputSent);
+            }, &targetProvider);
+            OutputSettings settings;
+            settings.ydotoolEnabled = true;
+            settings.steps = {.insert = false, .press = true, .keep = false};
+            Target target;
+            target.applicationId = QStringLiteral("org.kde.kate");
+
+            const DeliveryResult result = deliverAndWait(
+                delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+
+            QCOMPARE(result.ok, keysMayHaveGone);
+            QCOMPARE(QApplication::clipboard()->text(),
+                     keysMayHaveGone ? QStringLiteral("hello") : QStringLiteral("previous clipboard"));
+            if (!keysMayHaveGone) {
+                QCOMPARE(result.message, askGate ? QStringLiteral("Not delivered: could not create the paste keystroke")
+                                                 : QStringLiteral("Not delivered: release the held keys before pasting"));
+            }
+        }
     }
 
     void outputAutomaticAndExplicitAccessibilityUseDirectInsertion()
     {
-        for (const QString &method : {QStringLiteral("automatic"),
-                                      QStringLiteral("direct_insert")}) {
+        // With Press on, and with Insert the only way in.
+        for (const bool press : {true, false}) {
             QList<QString> attempts;
             QHash<QString, bool> results{{virtualKeyboardMethod(), true}};
             FakeTargetProvider targetProvider;
@@ -1988,12 +1874,12 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             TextDelivery delivery([&attempts, &results](
                                       const QString &backend,
                                       const OutputSettings &,
-                                      PasteMethod) {
+                                      PasteKeyCombo) {
                 return std::make_unique<FakeBackend>(backend, &attempts, &results);
             }, &targetProvider);
 
             OutputSettings settings;
-            settings.method = method;
+            settings.steps.press = press;
             settings.ydotoolEnabled = true;
             Target target;
             target.applicationId = QStringLiteral("org.kde.kate");
@@ -2020,16 +1906,12 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         TextDelivery delivery([&attempts, &results](
                                   const QString &method,
                                   const OutputSettings &,
-                                  PasteMethod) {
+                                  PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
 
         OutputSettings settings;
-        settings.method = QString::fromLatin1(OutputMethod::Automatic);
         settings.ydotoolEnabled = true;
-        settings.pasteRules = {
-            {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true},
-        };
 
         const DeliveryResult result = deliverAndWait(
             delivery, settings,
@@ -2041,117 +1923,259 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(result.message, QStringLiteral("Could not confirm the paste. Your dictation is on the clipboard."));
     }
 
-    void outputExplicitMethodDoesNotFallback()
+    // The owner's "only press Ctrl+V": no insertion is tried, the words are
+    // copied just for the paste, and the previous clipboard comes back once
+    // the paste is confirmed.
+    void pressOnlyBorrowsTheClipboardForThePaste()
     {
+        QApplication::clipboard()->setText(QStringLiteral("previous clipboard"));
         QList<QString> attempts;
-        QHash<QString, bool> results;
-        results.insert(QString::fromLatin1(OutputMethod::WlCopy), false);
-        results.insert(QString::fromLatin1(OutputMethod::QtClipboard), true);
-
-        TextDelivery delivery([&attempts, &results](
-                                  const QString &method,
-                                  const OutputSettings &,
-                                  PasteMethod) {
+        QHash<QString, bool> results{{virtualKeyboardMethod(), true}};
+        FakeTargetProvider targetProvider;
+        targetProvider.directInsertionAvailable = true;
+        targetProvider.verified = true;
+        TextDelivery delivery([&attempts, &results](const QString &method, const OutputSettings &, PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
-        });
-
+        }, &targetProvider);
         OutputSettings settings;
-        settings.method = QString::fromLatin1(OutputMethod::WlCopy);
         settings.ydotoolEnabled = true;
+        settings.steps = {.insert = false, .press = true, .keep = false};
+        Target target;
+        target.applicationId = QStringLiteral("org.kde.kate");
+
         const DeliveryResult result = deliverAndWait(
-            delivery, settings,
-            makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
-            {});
-        QVERIFY(result.ok);
-        QCOMPARE(result.receipt, DeliveryReceipt::Copied);
-        QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::WlCopy)}));
+            delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+
+        QCOMPARE(targetProvider.insertCalls, 0);
+        QCOMPARE(attempts, QList<QString>({virtualKeyboardMethod()}));
+        QCOMPARE(result.receipt, DeliveryReceipt::VerifiedInTarget);
+        QCOMPARE(result.message, QStringLiteral("Sent to the app"));
+        QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("previous clipboard"));
     }
 
-    // A stored direct_insert, wl-copy or qt-clipboard method becomes Automatic
-    // with its rules migrated, and every target must get what it got before:
-    // an insertion attempt only where there was one, and never a paste, though
-    // Automatic could paste with the virtual keyboard. Insertion always fails
-    // here, since that is when Automatic goes on to paste.
-    void outputMethodMigrationKeepsEveryTargetDeliveringAsBefore()
+    // With Keep off, a step that can't run leaves nothing behind: no copy,
+    // and an answer that says nothing was delivered.
+    void withKeepOffAStepThatCantRunDeliversNothing()
     {
-        using Scope = PasteRuleScope;
-        using Method = PasteMethod;
-        Target editor;
-        editor.applicationId = QStringLiteral("org.kde.kate");
-        editor.category = AppCategory::CodeEditor;
-        editor.accessible = true;
-        Target terminal = editor;
-        terminal.applicationId = QStringLiteral("org.kde.konsole");
-        terminal.category = AppCategory::Terminal;
-        Target password = editor;
-        password.secure = true;
-        const Target unknown;
-        const QList<PasteRule> pasteEverywhere{{Scope::Global, QString(), Method::StandardPaste, true}};
-        const QList<PasteRule> pasteInTerminals{
-            {Scope::Category, QStringLiteral("terminal"), Method::TerminalPaste, true},
-            {Scope::Global, QString(), Method::ClipboardOnly, true},
-        };
-        const QList<PasteRule> insertIntoKate{
-            {Scope::Application, QStringLiteral("org.kde.kate"), Method::DirectInsert, true},
-            {Scope::Global, QString(), Method::StandardPaste, true},
-        };
-        const struct {
-            const char *name;
-            const char *method;
-            QList<PasteRule> rules;
-            Target target;
-            bool inserts;
-        } cases[] = {
-            {"editor", "direct_insert", pasteEverywhere, editor, true},
-            {"terminal rule", "direct_insert", pasteInTerminals, terminal, true},
-            {"copy-only default", "direct_insert", pasteInTerminals, editor, false},
-            {"unknown target", "direct_insert", pasteEverywhere, unknown, false},
-            {"secure target", "direct_insert", pasteEverywhere, password, false},
-            {"editor", "wl-copy", pasteEverywhere, editor, false},
-            {"unknown target", "wl-copy", pasteEverywhere, unknown, false},
-            {"app rule inserts", "wl-copy", insertIntoKate, editor, true},
-            {"terminal rule", "qt-clipboard", pasteInTerminals, terminal, false},
-        };
+        QApplication::clipboard()->setText(QStringLiteral("previous clipboard"));
+        FakeTargetProvider targetProvider;
+        targetProvider.directInsertionAvailable = false;
+        TextDelivery delivery([](const QString &, const OutputSettings &, PasteKeyCombo) {
+            return std::unique_ptr<DeliveryBackend>();
+        }, &targetProvider);
+        OutputSettings settings;
+        settings.steps = {.insert = true, .press = true, .keep = false};
+        Target target;
+        target.applicationId = QStringLiteral("org.kde.kate");
 
+        const DeliveryResult result = deliverAndWait(
+            delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+
+        QVERIFY(!result.ok);
+        QCOMPARE(result.receipt, DeliveryReceipt::None);
+        QVERIFY2(result.message.startsWith(QStringLiteral("Not delivered")), qPrintable(result.message));
+        QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("previous clipboard"));
+    }
+
+    // An App's own keys leave it the Pasting page's steps, here Keep alone;
+    // steps of its own are its steps, even one the page has off.
+    void anAppsOwnStepsReplaceThePagesAndItsKeysAloneDont()
+    {
+        QList<QString> attempts;
+        QHash<QString, bool> results{{virtualKeyboardMethod(), true}};
+        FakeTargetProvider targetProvider;
+        targetProvider.directInsertionAvailable = true;
+        targetProvider.inserted = true;
+        TextDelivery delivery([&attempts, &results](const QString &method, const OutputSettings &, PasteKeyCombo) {
+            return std::make_unique<FakeBackend>(method, &attempts, &results);
+        }, &targetProvider);
+        OutputSettings settings;
+        settings.ydotoolEnabled = true;
+        settings.steps = {.insert = false, .press = false, .keep = true};
+        Target kate;
+        kate.applicationId = QStringLiteral("org.kde.kate");
+        Target konsole;
+        konsole.applicationId = QStringLiteral("org.kde.konsole");
+        const DeliveryResult copied = deliverAndWait(
+            delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), konsole,
+            {std::nullopt, PasteKeyCombo::Terminal});
+        QCOMPARE(copied.receipt, DeliveryReceipt::Copied);
+        QCOMPARE(targetProvider.insertCalls, 0);
+        const DeliveryResult inserted = deliverAndWait(
+            delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), kate,
+            {DeliverySteps{.insert = true, .press = false, .keep = true}, std::nullopt});
+        QCOMPARE(inserted.receipt, DeliveryReceipt::AcceptedByTarget);
+        QCOMPARE(targetProvider.insertCalls, 1);
+        QVERIFY(attempts.isEmpty());
+    }
+
+    // What each step needs on this OS, and where the clipboard needs
+    // helpers, what it needs of them: Keep off borrows the clipboard, so
+    // Press saves it and Keep has only the saved one to put back.
+    void eachStepNeedsWhatThisComputerDeliversWith()
+    {
+        using namespace speecher::DeliveryNeed;
+        const DeliverySteps all;
+        const DeliverySteps keepOff{.insert = true, .press = true, .keep = false};
+        for (const bool wayland : {false, true}) {
+            QStringList clipboardPress;
+            QStringList clipboardPressKeepOff;
+            if (wayland) {
+                clipboardPress = {Clipboard};
+                clipboardPressKeepOff = {Clipboard, ClipboardSave};
+            }
+#if defined(Q_OS_MACOS)
+            const QStringList insert{Accessibility};
+            const QStringList press{Accessibility};
+#elif defined(Q_OS_WIN)
+            const QStringList insert;
+            const QStringList press;
+#else
+            const QStringList insert{Accessibility};
+            const QStringList press{VirtualKeyboard};
+#endif
+            QCOMPARE(deliveryNeeds(DeliveryStep::Insert, all, wayland), insert);
+            QCOMPARE(deliveryNeeds(DeliveryStep::Press, all, wayland), press + clipboardPress);
+            QCOMPARE(deliveryNeeds(DeliveryStep::Press, keepOff, wayland), press + clipboardPressKeepOff);
+            QCOMPARE(deliveryNeeds(DeliveryStep::Keep, all, wayland), wayland ? QStringList{Clipboard} : QStringList());
+            QCOMPARE(deliveryNeeds(DeliveryStep::Keep, keepOff, wayland),
+                     wayland ? QStringList{ClipboardSave} : QStringList());
+        }
+        // Outside a Wayland session Qt's clipboard does it all.
+        if (!clipboardNeedsHelpers()) {
+            QCOMPARE(deliveryNeeds(DeliveryStep::Keep, all), QStringList());
+            QVERIFY(clipboardCopiesFormatted());
+        }
+    }
+
+    // Each stored delivery choice turns off the steps it never used.
+    void deliveryStepsMigrateFromTheStoredMethod_data()
+    {
+        QTest::addColumn<QString>("method");
+        QTest::addColumn<QString>("globalRule");
+        QTest::addColumn<bool>("restore");
+        QTest::addColumn<QString>("route");
+        QTest::newRow("automatic") << "automatic" << "standard_paste" << false << "insert press keep";
+        QTest::newRow("automatic, restoring") << "automatic" << "standard_paste" << true << "insert press";
+        QTest::newRow("virtual keyboard only") << "ydotool" << "standard_paste" << false << "press keep";
+        QTest::newRow("macOS keys only") << "mac-paste" << "standard_paste" << true << "press";
+        QTest::newRow("direct insertion") << "direct_insert" << "standard_paste" << false << "insert keep";
+        QTest::newRow("wl-copy") << "wl-copy" << "standard_paste" << true << "keep";
+        QTest::newRow("qt clipboard") << "qt-clipboard" << "standard_paste" << false << "keep";
+        QTest::newRow("direct insertion rule") << "automatic" << "direct_insert" << false << "insert keep";
+        QTest::newRow("clipboard only rule") << "automatic" << "clipboard_only" << true << "keep";
+        QTest::newRow("standard paste rule") << "automatic" << "standard_paste" << false << "insert press keep";
+        QTest::newRow("global rule off") << "automatic" << "off" << false << "keep";
+        QTest::newRow("only the restore switch") << "" << "standard_paste" << true << "insert press";
+        // A list without a global rule copied only.
+        QTest::newRow("no global rule") << "automatic" << "" << false << "keep";
+    }
+
+    void deliveryStepsMigrateFromTheStoredMethod()
+    {
+        QFETCH(QString, method);
+        QFETCH(QString, globalRule);
+        QFETCH(bool, restore);
+        QFETCH(QString, route);
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
         QSettings stored(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
-        for (const auto &row : cases) {
-            stored.setValue(QStringLiteral("output/method"), QString::fromLatin1(row.method));
-            stored.setValue(QStringLiteral("output/pasteRules"), pasteRulesToJson(row.rules));
-            migrateOutputMethod(stored);
-            OutputSettings before;
-            before.method = QString::fromLatin1(row.method);
-            before.pasteRules = row.rules;
-            OutputSettings after;
-            after.method = stored.value(QStringLiteral("output/method")).toString();
-            after.pasteRules =
-                pasteRulesFromJson(stored.value(QStringLiteral("output/pasteRules")).toByteArray());
-            QCOMPARE(after.method, QStringLiteral("automatic"));
-
-            for (OutputSettings settings : {before, after}) {
-                settings.ydotoolEnabled = true;
-                QList<QString> attempts;
-                QHash<QString, bool> results{{virtualKeyboardMethod(), true},
-                                             {QString::fromLatin1(OutputMethod::WlCopy), true},
-                                             {QString::fromLatin1(OutputMethod::QtClipboard), true}};
-                FakeTargetProvider provider;
-                // Only an accessible target can take inserted text.
-                provider.directInsertionAvailable = row.target.accessible;
-                TextDelivery delivery([&attempts, &results](const QString &method,
-                                                            const OutputSettings &,
-                                                            PasteMethod) {
-                    return std::make_unique<FakeBackend>(method, &attempts, &results);
-                }, &provider);
-
-                const DeliveryResult result = deliverAndWait(
-                    delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), row.target);
-                const QByteArray where = QByteArray(row.method) + ", " + row.name + ", as " + settings.method.toUtf8();
-                QVERIFY2(result.receipt == DeliveryReceipt::Copied, where.constData());
-                QVERIFY2((provider.insertCalls == 1) == row.inserts, where.constData());
-                QVERIFY2(!attempts.contains(virtualKeyboardMethod()), where.constData());
-            }
+        if (!method.isEmpty()) {
+            stored.setValue(QStringLiteral("output/method"), method);
         }
+        stored.setValue(QStringLiteral("output/restoreClipboardAfterTyping"), restore);
+        QList<LegacyPasteRule> rules{
+            {Scope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true},
+            {Scope::Application, QStringLiteral("org.kde.kate"), PasteMethod::TerminalPaste, true},
+        };
+        if (!globalRule.isEmpty()) {
+            rules.append({Scope::Global, QString(), globalRule == u"off" ? PasteMethod::StandardPaste : globalRule,
+                          globalRule != u"off"});
+        }
+        storeLegacyPasteRules(stored, rules);
+        const QVariant storedRules = stored.value(SettingsKeys::PasteRules);
+
+        migrateDeliverySteps(stored);
+
+        const DeliverySteps steps{stored.value(QStringLiteral("output/insertThroughAccessibility")).toBool(),
+                                  stored.value(QStringLiteral("output/pressPasteKeys")).toBool(),
+                                  stored.value(QStringLiteral("output/keepOnClipboard")).toBool()};
+        QCOMPARE(DeliveryPlan{steps}.route().join(u' '), route);
+        QVERIFY(!stored.contains(QStringLiteral("output/method")));
+        QVERIFY(!stored.contains(QStringLiteral("output/restoreClipboardAfterTyping")));
+        // The rules stay as they were, for a downgrade.
+        QCOMPARE(stored.value(SettingsKeys::PasteRules), storedRules);
+
+        // Once migrated, it leaves the steps alone.
+        stored.setValue(QStringLiteral("output/pressPasteKeys"), !steps.press);
+        migrateDeliverySteps(stored);
+        QCOMPARE(stored.value(QStringLiteral("output/pressPasteKeys")).toBool(), !steps.press);
+    }
+
+    // A file that stored only a global rule, with neither the old method nor
+    // the restore switch, still migrates it.
+    void deliveryStepsMigrateAGlobalRuleStoredAlone()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings stored(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
+        storeLegacyPasteRules(stored, {{Scope::Global, QString(), PasteMethod::ClipboardOnly, true}});
+
+        migrateDeliverySteps(stored);
+
+        QVERIFY(!stored.value(QStringLiteral("output/insertThroughAccessibility")).toBool());
+        QVERIFY(!stored.value(QStringLiteral("output/pressPasteKeys")).toBool());
+        QVERIFY(stored.value(QStringLiteral("output/keepOnClipboard")).toBool());
+    }
+
+    // A global Terminal paste rule becomes one for every app type that had
+    // none of its own, where terminals' keys differ; on macOS it is Standard
+    // paste, which is no rule.
+    void deliveryStepsMigrateAGlobalTerminalRule()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings stored(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
+        stored.setValue(QStringLiteral("output/restoreClipboardAfterTyping"), false);
+        storeLegacyPasteRules(stored, {
+            {Scope::Category, QStringLiteral("browser"), PasteMethod::ClipboardOnly, true},
+            {Scope::Category, QStringLiteral("email"), PasteMethod::DirectInsert, false},
+            {Scope::Global, QString(), PasteMethod::TerminalPaste, true},
+        });
+
+        migrateApps(stored);
+        migrateDeliverySteps(stored);
+
+        const DeliverySteps steps{stored.value(QStringLiteral("output/insertThroughAccessibility")).toBool(),
+                                  stored.value(QStringLiteral("output/pressPasteKeys")).toBool(),
+                                  stored.value(QStringLiteral("output/keepOnClipboard")).toBool()};
+        QCOMPARE(steps, DeliverySteps{});
+        // As the App Types' paste keys.
+        const AppsSettings apps = AppsSettingsCodec::load(stored);
+        for (const AppCategory category : {AppCategory::General, AppCategory::Email, AppCategory::Office,
+                                           AppCategory::CodeEditor, AppCategory::AiCoding}) {
+            QCOMPARE(appTypeSettings(apps, category).pasting,
+                     (terminalKeysDiffer ? PastingChoice{std::nullopt, PasteKeyCombo::Terminal} : PastingChoice{}));
+        }
+        // The browsers' own rule stays, as Keep alone.
+        QCOMPARE(appTypeSettings(apps, AppCategory::Browser).pasting,
+                 (PastingChoice{DeliverySteps{.insert = false, .press = false, .keep = true}, std::nullopt}));
+    }
+
+    // Without anything from an older Speecher there is nothing to migrate,
+    // and the steps a person sets afterwards stay.
+    void deliveryStepsMigrateOnce()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings stored(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
+        migrateDeliverySteps(stored);
+        QVERIFY(!stored.contains(QStringLiteral("output/pressPasteKeys")));
+
+        stored.setValue(QStringLiteral("output/pressPasteKeys"), false);
+        stored.setValue(QStringLiteral("output/restoreClipboardAfterTyping"), false);
+        migrateDeliverySteps(stored);
+        QVERIFY(!stored.value(QStringLiteral("output/pressPasteKeys")).toBool());
     }
 
     void outputVerifiedYdotoolReportsVirtualKeyboardOutcome_data()
@@ -2178,13 +2202,13 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         TextDelivery delivery([&attempts, &results](
                                   const QString &method,
                                   const OutputSettings &,
-                                  PasteMethod) {
+                                  PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
 
         OutputSettings settings;
         settings.ydotoolEnabled = true;
-        settings.restoreClipboardAfterTyping = restoreClipboard;
+        settings.steps.keep = !restoreClipboard;
         Target target;
         target.applicationId = QStringLiteral("org.kde.kate");
         target.category = AppCategory::CodeEditor;
@@ -2203,15 +2227,14 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
     {
         QList<QString> attempts;
         QHash<QString, bool> results{
-            {QString::fromLatin1(OutputMethod::Ydotool), true},
-            {QString::fromLatin1(OutputMethod::WlCopy), true},
+            {QString::fromLatin1(PasteKeys::Ydotool), true},
         };
         FakeTargetProvider targetProvider;
         targetProvider.focused = false;
         TextDelivery delivery([&attempts, &results](
                                   const QString &method,
                                   const OutputSettings &,
-                                  PasteMethod) {
+                                  PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
 
@@ -2305,17 +2328,12 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         TextDelivery delivery([&attempts, &results](
                                   const QString &method,
                                   const OutputSettings &,
-                                  PasteMethod) {
+                                  PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
 
         OutputSettings settings;
-        settings.method = QString::fromLatin1(OutputMethod::Automatic);
         settings.ydotoolEnabled = true;
-        settings.pasteRules = {
-            {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true},
-            {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true},
-        };
         Target target;
         target.applicationId = QStringLiteral("com.mitchellh.ghostty");
         target.category = AppCategory::Terminal;
@@ -2325,7 +2343,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         const DeliveryResult result = deliverAndWait(
             delivery, settings,
             makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
-            target);
+            target, {std::nullopt, PasteKeyCombo::Terminal});
 
         QVERIFY(attempts.isEmpty());
         QCOMPARE(result.receipt, DeliveryReceipt::Copied);
@@ -2344,25 +2362,18 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         TextDelivery delivery([&attempts, &results](
                                   const QString &method,
                                   const OutputSettings &,
-                                  PasteMethod) {
+                                  PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
 
         OutputSettings settings;
-        settings.pasteRules = {
-            {PasteRuleScope::Application,
-             QStringLiteral("org.kde.kate"),
-             PasteMethod::DirectInsert,
-             true},
-            {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true},
-        };
         Target target;
         target.applicationId = QStringLiteral("org.kde.kate");
         target.category = AppCategory::CodeEditor;
         const DeliveryResult result = deliverAndWait(
             delivery, settings,
             makeDeliveryContent(QStringLiteral("insert me"), OutputFormat::PlainText),
-            target);
+            target, {DeliverySteps{.insert = true, .press = false, .keep = true}, std::nullopt});
 
         QCOMPARE(result.receipt, DeliveryReceipt::VerifiedInTarget);
         QCOMPARE(result.message, QStringLiteral("Pasted"));
@@ -2382,24 +2393,17 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         TextDelivery delivery([&attempts, &results](
                                   const QString &method,
                                   const OutputSettings &,
-                                  PasteMethod) {
+                                  PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
 
         OutputSettings settings;
-        settings.pasteRules = {
-            {PasteRuleScope::Application,
-             QStringLiteral("org.kde.kate"),
-             PasteMethod::DirectInsert,
-             true},
-            {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true},
-        };
         Target target;
         target.applicationId = QStringLiteral("org.kde.kate");
         const DeliveryResult result = deliverAndWait(
             delivery, settings,
             makeDeliveryContent(QStringLiteral("keep copied"), OutputFormat::PlainText),
-            target);
+            target, {DeliverySteps{.insert = true, .press = false, .keep = true}, std::nullopt});
 
         QCOMPARE(result.receipt, DeliveryReceipt::Copied);
         QCOMPARE(targetProvider.insertCalls, 1);
@@ -2421,13 +2425,13 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         TextDelivery delivery([&attempts, &results](
                                   const QString &method,
                                   const OutputSettings &,
-                                  PasteMethod) {
+                                  PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
 
         OutputSettings settings;
         settings.ydotoolEnabled = true;
-        settings.restoreClipboardAfterTyping = true;
+        settings.steps.keep = false;
         Target target;
         target.applicationId = QStringLiteral("org.kde.kate");
         target.category = AppCategory::CodeEditor;
@@ -2464,18 +2468,13 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         TextDelivery delivery([&attempts, &results](
                                   const QString &method,
                                   const OutputSettings &,
-                                  PasteMethod) {
+                                  PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
 
+        // Keep leaves the words on the clipboard, since insertion can't be
+        // confirmed and no keys follow it.
         OutputSettings settings;
-        settings.restoreClipboardAfterTyping = true;
-        settings.pasteRules = {
-            {PasteRuleScope::Application,
-             QStringLiteral("org.kde.kate"),
-             PasteMethod::DirectInsert,
-             true},
-        };
         Target target;
         target.applicationId = QStringLiteral("org.kde.kate");
 
@@ -2508,8 +2507,20 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("new user copy"));
     }
 
-    void outputKeepsTranscriptWhenVirtualKeyboardInputCannotBeVerified()
+    void anUnconfirmedPasteGivesTheClipboardBackAfterAWhile_data()
     {
+        QTest::addColumn<bool>("copyMeanwhile");
+        QTest::newRow("nothing copied meanwhile") << false;
+        QTest::newRow("a newer copy meanwhile") << true;
+    }
+
+    // With Keep off, a paste the target can't confirm still borrows the
+    // clipboard only for the paste: the words are there for the keys, and
+    // the previous clipboard, every format of it, comes back once the target
+    // has had time to read them. A copy the person made meanwhile stays.
+    void anUnconfirmedPasteGivesTheClipboardBackAfterAWhile()
+    {
+        QFETCH(bool, copyMeanwhile);
         auto *previous = new QMimeData;
         previous->setText(QStringLiteral("previous clipboard"));
         previous->setHtml(QStringLiteral("<b>previous clipboard</b>"));
@@ -2523,30 +2534,109 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         TextDelivery delivery([&attempts, &results](
                                   const QString &method,
                                   const OutputSettings &,
-                                  PasteMethod) {
+                                  PasteKeyCombo) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
 
         OutputSettings settings;
         settings.ydotoolEnabled = true;
-        settings.restoreClipboardAfterTyping = true;
+        settings.steps = {.insert = false, .press = true, .keep = false};
         Target target;
         target.applicationId = QStringLiteral("org.kde.kate");
         target.category = AppCategory::CodeEditor;
 
-        QString consumedText;
-        connect(&delivery, &TextDeliveryAdapter::delivered, this, [&consumedText] {
-            consumedText = QApplication::clipboard()->text();
+        QStringList seen;
+        connect(QApplication::clipboard(), &QClipboard::dataChanged, this, [&seen, copyMeanwhile] {
+            seen.append(QApplication::clipboard()->text());
+            if (copyMeanwhile && seen.last() == QStringLiteral("new text")) {
+                QTimer::singleShot(100, [] { QApplication::clipboard()->setText(QStringLiteral("new user copy")); });
+            }
         });
         const DeliveryResult result = deliverAndWait(
             delivery, settings,
             makeDeliveryContent(QStringLiteral("new text"), OutputFormat::Html),
             target);
-        QCoreApplication::processEvents();
+        disconnect(QApplication::clipboard(), nullptr, this, nullptr);
+
+        QCOMPARE(attempts, QList<QString>({virtualKeyboardMethod()}));
         QCOMPARE(result.receipt, DeliveryReceipt::InputSent);
-        QVERIFY(result.message.contains(QStringLiteral("Could not confirm the paste")));
-        QCOMPARE(consumedText, QStringLiteral("new text"));
-        QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("new text"));
+        QVERIFY(seen.contains(QStringLiteral("new text")));
+        if (copyMeanwhile) {
+            QCOMPARE(result.message, QStringLiteral("Could not confirm the paste. Previous clipboard kept as-is."));
+            QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("new user copy"));
+            return;
+        }
+        QCOMPARE(result.message, QStringLiteral("Could not confirm the paste."));
+        const QMimeData *restored = QApplication::clipboard()->mimeData();
+        QCOMPARE(restored->text(), QStringLiteral("previous clipboard"));
+        QCOMPARE(restored->html(), QStringLiteral("<b>previous clipboard</b>"));
+        QCOMPARE(restored->data(QStringLiteral("application/x-speecher-test")), QByteArrayLiteral("custom-data"));
+    }
+
+    // Two pastes that overlap, a dictation's and Paste Again's say, each
+    // borrow the clipboard in turn: the second saves only once the first has
+    // put the clipboard back, so what the person had copied is what stays.
+    void overlappingPastesGiveBackTheOriginalClipboard()
+    {
+        QApplication::clipboard()->setText(QStringLiteral("original user clipboard"));
+        QList<QString> attempts;
+        QHash<QString, bool> results{{virtualKeyboardMethod(), true}};
+        const auto backend = [&attempts, &results](const QString &method, const OutputSettings &, PasteKeyCombo) {
+            return std::make_unique<FakeBackend>(method, &attempts, &results);
+        };
+        FakeTargetProvider targetProvider;
+        targetProvider.verified = false;
+        TextDelivery first(backend, &targetProvider);
+        TextDelivery second(backend, &targetProvider);
+        OutputSettings settings;
+        settings.ydotoolEnabled = true;
+        settings.steps = {.insert = false, .press = true, .keep = false};
+        Target target;
+        target.applicationId = QStringLiteral("org.kde.kate");
+
+        QSignalSpy firstDone(&first, &TextDelivery::delivered);
+        QSignalSpy secondDone(&second, &TextDelivery::delivered);
+        first.deliver(settings, makeDeliveryContent(QStringLiteral("dictation A"), OutputFormat::PlainText), target, {});
+        QTimer::singleShot(100, &second, [&] {
+            second.deliver(settings, makeDeliveryContent(QStringLiteral("paste again B"), OutputFormat::PlainText), target, {});
+        });
+        QTRY_COMPARE_WITH_TIMEOUT(secondDone.count(), 1, 5000);
+        QCOMPARE(firstDone.count(), 1);
+        QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("original user clipboard"));
+    }
+
+    // A paste waiting for the clipboard that goes before its turn comes
+    // passes the turn on, so the pastes after it still run.
+    void aWaitingPasteThatGoesPassesTheClipboardOn()
+    {
+        QApplication::clipboard()->setText(QStringLiteral("original"));
+        QList<QString> attempts;
+        QHash<QString, bool> results{{virtualKeyboardMethod(), true}};
+        const auto backend = [&attempts, &results](const QString &method, const OutputSettings &, PasteKeyCombo) {
+            return std::make_unique<FakeBackend>(method, &attempts, &results);
+        };
+        FakeTargetProvider targetProvider;
+        OutputSettings settings;
+        settings.ydotoolEnabled = true;
+        settings.steps = {.insert = false, .press = true, .keep = false};
+        Target target;
+        target.applicationId = QStringLiteral("org.kde.kate");
+
+        auto first = std::make_unique<TextDelivery>(backend, &targetProvider);
+        auto second = std::make_unique<TextDelivery>(backend, &targetProvider);
+        first->deliver(settings, makeDeliveryContent(QStringLiteral("A"), OutputFormat::PlainText), target, {});
+        second->deliver(settings, makeDeliveryContent(QStringLiteral("B"), OutputFormat::PlainText), target, {});
+        QCoreApplication::processEvents();
+        // The first goes, handing the turn to the second, which goes too
+        // before it takes it.
+        first.reset();
+        second.reset();
+
+        TextDelivery third(backend, &targetProvider);
+        third.setAnswerDeadlineMs(2000);
+        const DeliveryResult result = deliverAndWait(
+            third, settings, makeDeliveryContent(QStringLiteral("C"), OutputFormat::PlainText), target);
+        QVERIFY2(result.ok, qPrintable(result.message));
     }
 
     void clipboardSnapshotCapturesAndRestoresEveryMimeType()
@@ -2656,7 +2746,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             return arg.startsWith(QStringLiteral("--file="));
         }));
 
-        QCOMPARE(YdotoolDelivery::pasteShortcutArguments(PasteMethod::TerminalPaste),
+        QCOMPARE(YdotoolDelivery::pasteShortcutArguments(PasteKeyCombo::Terminal),
                  QStringList({QStringLiteral("key"),
                               QStringLiteral("--key-delay=2"),
                               QStringLiteral("29:1"),
@@ -2665,7 +2755,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                               QStringLiteral("47:0"),
                               QStringLiteral("42:0"),
                               QStringLiteral("29:0")}));
-        QCOMPARE(YdotoolDelivery::pasteShortcutArguments(PasteMethod::StandardPaste),
+        QCOMPARE(YdotoolDelivery::pasteShortcutArguments(PasteKeyCombo::Standard),
                  QStringList({QStringLiteral("key"),
                               QStringLiteral("--key-delay=2"),
                               QStringLiteral("29:1"),
@@ -2731,7 +2821,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         targetProvider.verified = true;
         TextDelivery delivery(&targetProvider);
         OutputSettings settings;
-        settings.method = QString::fromLatin1(OutputMethod::Ydotool);
+        settings.steps.insert = false;
         settings.ydotoolEnabled = true;
         Target target;
         target.applicationId = QStringLiteral("org.kde.kate");

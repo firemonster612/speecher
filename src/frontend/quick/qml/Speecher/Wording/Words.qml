@@ -10,10 +10,20 @@ QtObject {
     function num(n, decimals) { return Number(n).toLocaleString(Qt.locale(), "f", decimals || 0) }
     // "1 term", "128 terms"
     function count(n, one, many) { return num(n) + " " + (n === 1 ? one : many) }
+    // A length or a running time, to the second: "4:52", or "1:02:03" past
+    // an hour.
+    function clock(ms) {
+        const s = Math.floor(ms / 1000)
+        const mmss = Math.floor(s / 60) % 60 + ":" + String(s % 60).padStart(2, "0")
+        return s < 3600 ? mmss : Math.floor(s / 3600) + ":" + mmss.padStart(5, "0")
+    }
     // "42%", from 0.42
     function percent(fraction) { return Math.round(fraction * 100) + "%" }
     // "Slack, Linear and Notion"
     function list(names) { return names.length < 2 ? names.join("") : names.slice(0, -1).join(", ") + " and " + names[names.length - 1] }
+    // The first option of every control a narrower place may change
+    // (InheritSelect): "Same as Email apps (Email)".
+    function sameAs(place, value) { return "Same as " + place + " (" + value + ")" }
 
     readonly property string cancel: "Cancel"
     readonly property string save: "Save"
@@ -21,7 +31,6 @@ QtObject {
     readonly property string delete_: "Delete"
     readonly property string remove: "Remove"
     readonly property string undo: "Undo"
-    readonly property string cantUndo: "This can't be undone."
     readonly property string moveUp: "Move up"
     readonly property string moveDown: "Move down"
     readonly property string copy: "Copy"
@@ -31,8 +40,11 @@ QtObject {
     readonly property string clear: "Clear"
     readonly property string choose: "Choose…"
     readonly property string suggestions: "Suggestions"
-    readonly property string turnOn: "Turn on"
     readonly property string checkAgain: "Check again"
+    // A service that can't run, wherever it shows (an order, Run with,
+    // Home's readiness): opens its Services card.
+    readonly property string fix: "Fix"
+    readonly property string use: "Use"
     // The language picker's search, and what it says when nothing matches.
     readonly property string searchLanguages: "Search languages"
     readonly property string noLanguage: "No language matches."
@@ -41,8 +53,8 @@ QtObject {
     readonly property string resume: "Resume"
     // A shortcut field: unset, listening for keys, and its clear button.
     readonly property string notSet: "Not set"
-    // A shortcut row where the desktop gives Speecher no shortcut.
-    readonly property string noShortcutHere: "Your desktop gives Speecher no shortcut."
+    // Where the desktop gives Speecher no shortcut, and why.
+    readonly property string noShortcutHere: "Your desktop has no global shortcut service for apps, so start a dictation with the speecher command."
     readonly property string pressShortcut: "Press a shortcut…"
     readonly property string clearShortcut: "Clear shortcut"
     // A secret field: what it shows once a key is saved, and why a save or
@@ -52,17 +64,17 @@ QtObject {
         const what = error.action === "clear" ? "Not cleared" : "Not saved"
         return error.reason ? what + ": " + error.reason : what
     }
-    // A sign-in's state, on Accounts and in setup.
+    // A sign-in's state, on Services and in setup.
     readonly property var signInStates: ({
         signedIn: "Signed in", expired: "Expired", missing: "Not signed in", unknown: "Unknown",
         disabled: "Disabled", unusable: "Unusable", checking: "Checking"
     })
-    // A service's line on Accounts: what to do when the keyring didn't
+    // A service's line on Services: what to do when the keyring didn't
     // answer or, signing in through the Codex app or Claude Code (oauth),
     // a sign-in is missing or expired; else core's own words, else where
     // its last check found the sign-in (Accounts.services).
     function signInDetail(service, oauth) {
-        if (service.state === "unknown") return "Speecher couldn't read the system keychain. Check again in a moment."
+        if (service.state === "unknown") return keychainUnreadable(service)
         const fix = oauth && ({
             openai: { missing: "No ChatGPT sign-in found. Sign in with the Codex app, or choose another sign-in below.",
                       expired: "Your ChatGPT sign-in has expired. Sign in again in the Codex app." },
@@ -79,18 +91,29 @@ QtObject {
                         missing: "No CLI Proxy API accounts found in %1" }[service.found]
         return found ? found.arg(service.directory) : ""
     }
+    // The keyring didn't answer for the key a sign-in needs: which key and
+    // how to get it answering here; a locked keyring is the usual cause. The
+    // keyring's own reason (core's detail) goes behind Details.
+    function keychainUnreadable(service) {
+        const key = service.id === "cliproxy" ? "the CLI Proxy API server key" : "the OpenAI API key"
+        const unlock = ({ osx: "Unlock your login keychain", windows: "Check Windows Credential Manager" })[Qt.platform.os]
+                       || "Unlock your keyring (GNOME Keyring or KWallet)"
+        return "Couldn't read " + key + " from the system keychain. " + unlock + ", then check again or choose another sign-in."
+    }
+    // The link to a failure's own words, under its plain sentence.
+    readonly property string details: "Details"
     readonly property string disabledInCliproxy: "Disabled in CLI Proxy API"
     readonly property string checkAll: "Check all"
     readonly property string signInAgain: "Sign in again"
-    readonly property string openAccounts: "Open Accounts"
-    // A row that says how to sign in to a service: "Sign in to Claude".
-    function signInTo(name) { return "Sign in to " + name }
-    function signInUnknownFor(name) { return name + " sign-in unknown" }
-    // What each service on Accounts is used for, by its id.
+    readonly property string openServices: "Open Services"
+    // When a record editor's changes save, said the same way in each: one
+    // that saves each change at once, and a form that saves on its button.
+    readonly property string savesAsYouGo: "Changes save as you make them."
+    function savesOnPress(button) { return "Saves when you press " + button + "." }
+    // What each service on Services is used for, by its id.
     readonly property var serviceUses: ({
-        openai: "Used for dictation and cleanup.",
-        anthropic: "Used for dictation and cleanup.",
-        cliproxy: "Only needed when a service above signs in through it, or cleanup goes through its server."
+        openai: "Speech to text and Refinement.",
+        anthropic: "Speech to text and Refinement."
     })
 
     readonly property var shell: ({
@@ -98,10 +121,14 @@ QtObject {
         searchSettings: "Search settings",
         searchPlaceholder: "Search settings and pages",
         suggested: "Suggested",
+        // Over Search History when no page or setting matches the words.
+        noSettings: "No settings match",
         page: "Page",
         showSubpages: "Show subpages",
         hideSubpages: "Hide subpages",
         searchTip: "Try a setting's name, a service such as Claude, or a word like hotkey.",
+        // The search result that looks for the words in History.
+        searchHistory: query => "Search History for “" + query + "”",
         moveHint: "Move",
         openHint: "Open",
         closeHint: "Close",
@@ -109,7 +136,10 @@ QtObject {
         maximize: "Maximize",
         restore: "Restore",
         zoom: "Zoom",
-        close: "Close"
+        close: "Close",
+        // Above a page a link opened, the way back.
+        backTo: title => "Back to " + title,
+        backToSetup: "Back to setup"
     })
     // The updater's states and actions, as the Updates page and the popup's
     // update offer both word them. restart and restarting are keyed by what

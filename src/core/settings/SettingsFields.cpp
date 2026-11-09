@@ -5,7 +5,7 @@
 #include "core/settings/SettingsCodecs.h"
 
 #include "core/ProviderChain.h"
-#include "core/Vocabulary.h"
+#include "core/VocabularyScope.h"
 #include "core/settings/SettingsKeys.h"
 
 #include <QDebug>
@@ -65,9 +65,9 @@ std::function<bool(const AppSettings &, const AppSettings &)> sameValue(Member m
 
 } // namespace
 
-// In the order the setters need: a provider before its fallbacks, custom
+// In the order the setters need: custom
 // tones and levels before the profiles that fall back from a deleted one,
-// and the profiles before the rules, terms and default that name them.
+// and the profiles before the apps and terms that name them.
 // SettingsStore keeps the keyring keys and unreadSecretKeys itself.
 const std::vector<SettingsCodecs::Field> &SettingsCodecs::fields()
 {
@@ -108,49 +108,31 @@ const std::vector<SettingsCodecs::Field> &SettingsCodecs::fields()
                &C::selectionEditReviewEnabled, &C::setSelectionEditReviewEnabled),
         stored("ui.previewWords", member(&A::ui, &UiSettings::previewWords), &C::previewWords, &C::setPreviewWords),
 
-        stored("speech.providerId", member(&A::speech, &SpeechSettings::providerId), &C::speechProvider,
-               &C::setSpeechProvider),
-        stored("speech.fallbackProviderIds", member(&A::speech, &SpeechSettings::fallbackProviderIds),
-               &C::speechFallbackProviders, &C::setSpeechFallbackProviders),
-        stored("speech.fallbackLanguages", member(&A::speech, &SpeechSettings::fallbackLanguages),
-               &C::speechFallbackLanguages, &C::setSpeechFallbackLanguages),
+        stored("speech.services", member(&A::speech, &SpeechSettings::services), &C::speechServices,
+               &C::setSpeechServices),
         stored("speech.codexFinalRetranscribe", member(&A::speech, &SpeechSettings::codexFinalRetranscribe),
                &C::codexFinalRetranscribe, &C::setCodexFinalRetranscribe),
         stored("speech.language", member(&A::speech, &SpeechSettings::language), &C::spokenLanguage,
                &C::setSpokenLanguage),
         stored("speech.local", member(&A::speech, &SpeechSettings::local), &C::localSpeechSettings,
                &C::setLocalSpeechSettings),
-        stored("speech.endpoint", member(&A::speech, &SpeechSettings::endpoint), &C::speechEndpointSettings,
-               &C::setSpeechEndpointSettings),
+        stored("speech.server", member(&A::speech, &SpeechSettings::server), &C::speechServer, &C::setSpeechServer),
         readOnly("speech.claudeEndpointBase", member(&A::speech, &SpeechSettings::claudeEndpointBase),
                  &C::claudeEndpointBase),
         readOnly("speech.claudeVoicePath", member(&A::speech, &SpeechSettings::claudeVoicePath), &C::claudeVoicePath),
         stored("audio", member(&A::audio), &C::audioCaptureSettings, &C::setAudioCaptureSettings),
 
-        stored("refinement.providerId", member(&A::refinement, &RefinementSettings::providerId),
-               &C::refinementProvider, &C::setRefinementProvider),
-        // Against the provider just read, which refinementFallbackProviders()
-        // would look up again, finding installed CLIs when none was chosen.
-        stored("refinement.fallbackProviderIds", member(&A::refinement, &RefinementSettings::fallbackProviderIds),
-               [](const C &codecs, const A &settings) {
-                   return normalizedFallbackProviders(
-                       ProviderRole::Refinement, settings.refinement.providerId,
-                       codecs.value(SettingsKeys::RefinementFallbackProviders, QStringList()).toStringList());
-               },
-               &C::setRefinementFallbackProviders),
+        stored("refinement.enabled", member(&A::refinement, &RefinementSettings::enabled), &C::refinementEnabled,
+               &C::setRefinementEnabled),
+        stored("refinement.services", member(&A::refinement, &RefinementSettings::services),
+               &C::refinementServices, &C::setRefinementServices),
         stored("refinement.customTones", member(&A::refinement, &RefinementSettings::customTones), &C::customTones,
                &C::setCustomTones),
         stored("refinement.customCleanupLevels", member(&A::refinement, &RefinementSettings::customCleanupLevels),
                &C::customCleanupLevels, &C::setCustomCleanupLevels),
         stored("refinement.writingProfiles", member(&A::refinement, &RefinementSettings::writingProfiles),
                &C::writingProfileSettings, &C::setWritingProfileSettings),
-        stored("appRecognitionRules", member(&A::appRecognitionRules), &C::appRecognitionRules,
-               &C::setAppRecognitionRules),
-        stored("refinement.defaultWritingProfile", member(&A::refinement, &RefinementSettings::defaultWritingProfile),
-               &C::defaultWritingProfile, &C::setDefaultWritingProfile),
-        stored("refinement.writingProfileOverrides",
-               member(&A::refinement, &RefinementSettings::writingProfileOverrides), &C::writingProfileOverrides,
-               &C::setWritingProfileOverrides),
+        stored("apps", member(&A::apps), &C::apps, &C::setApps),
         stored("refinement.useTargetContext", member(&A::refinement, &RefinementSettings::useTargetContext),
                &C::useTargetContext, &C::setUseTargetContext),
         stored("refinement.includeScreenshotContext",
@@ -164,18 +146,6 @@ const std::vector<SettingsCodecs::Field> &SettingsCodecs::fields()
                &C::setCustomSystemPromptEnabled),
         stored("refinement.customSystemPrompt", member(&A::refinement, &RefinementSettings::customSystemPrompt),
                &C::customSystemPrompt, &C::setCustomSystemPrompt),
-        stored("refinement.openAiModel", member(&A::refinement, &RefinementSettings::openAiModel), &C::openAiModel,
-               &C::setOpenAiModel),
-        stored("refinement.openAiEffort", member(&A::refinement, &RefinementSettings::openAiEffort), &C::openAiEffort,
-               &C::setOpenAiEffort),
-        stored("refinement.openAiSpeed", member(&A::refinement, &RefinementSettings::openAiSpeed), &C::openAiSpeed,
-               &C::setOpenAiSpeed),
-        stored("refinement.anthropicModel", member(&A::refinement, &RefinementSettings::anthropicModel),
-               &C::anthropicModel, &C::setAnthropicModel),
-        stored("refinement.anthropicEffort", member(&A::refinement, &RefinementSettings::anthropicEffort),
-               &C::anthropicEffort, &C::setAnthropicEffort),
-        stored("refinement.anthropicFastMode", member(&A::refinement, &RefinementSettings::anthropicFastMode),
-               &C::anthropicFastMode, &C::setAnthropicFastMode),
         // The cleanup level saved before Writing Profiles, which seeds them
         // until they are saved. Each run takes its own from its profile.
         readOnly("refinement.style", member(&A::refinement, &RefinementSettings::style), &C::refinementStyle),
@@ -197,18 +167,15 @@ const std::vector<SettingsCodecs::Field> &SettingsCodecs::fields()
                  &C::cliproxyOauthDir),
         readOnly("accounts.claudeCredentialsPath", member(&A::accounts, &AccountSettings::claudeCredentialsPath),
                  &C::claudeCredentialsPath),
-        stored("refinement.cliproxyBaseUrl", member(&A::refinement, &RefinementSettings::cliproxyBaseUrl),
+        stored("accounts.cliproxyBaseUrl", member(&A::accounts, &AccountSettings::cliproxyBaseUrl),
                &C::cliproxyBaseUrl, &C::setCliproxyBaseUrl),
-        stored("refinement.endpoint", member(&A::refinement, &RefinementSettings::endpoint),
-               &C::refinementEndpointSettings, &C::setRefinementEndpointSettings),
+        stored("refinement.server", member(&A::refinement, &RefinementSettings::server), &C::refinementServer,
+               &C::setRefinementServer),
         stored("refinement.localRunner", member(&A::refinement, &RefinementSettings::localRunner),
                &C::localRunnerSettings, &C::setLocalRunnerSettings),
 
-        stored("output.method", member(&A::output, &OutputSettings::method), &C::outputMethod, &C::setOutputMethod),
+        stored("output.steps", member(&A::output, &OutputSettings::steps), &C::deliverySteps, &C::setDeliverySteps),
         stored("output.format", member(&A::output, &OutputSettings::format), &C::outputFormat, &C::setOutputFormat),
-        stored("output.pasteRules", member(&A::output, &OutputSettings::pasteRules), &C::pasteRules, &C::setPasteRules),
-        stored("output.restoreClipboardAfterTyping", member(&A::output, &OutputSettings::restoreClipboardAfterTyping),
-               &C::restoreClipboardAfterTyping, &C::setRestoreClipboardAfterTyping),
         stored("output.completionStatusDurationMs", member(&A::output, &OutputSettings::completionStatusDurationMs),
                &C::completionStatusDurationMs, &C::setCompletionStatusDurationMs),
         // VirtualKeyboardSetup sets it once ydotool is set up.
@@ -228,24 +195,15 @@ const std::vector<SettingsCodecs::Field> &SettingsCodecs::fields()
                &C::updateCheckIntervalUnit, &C::setUpdateCheckIntervalUnit),
 
         stored("vocabulary", member(&A::vocabulary), &C::vocabularyEntries, &C::setVocabularyEntries),
-        stored("learnedCorrections", member(&A::learnedCorrections), &C::learnedCorrections, &C::setLearnedCorrections),
         // A dictation narrows this to its Writing Profile once it knows the target.
         readOnly("speech.vocabulary", member(&A::speech, &SpeechSettings::vocabulary),
                  [](const C &, const A &settings) {
-                     return speechVocabulary(settings.vocabulary, settings.learnedCorrections, QString());
+                     return speechVocabulary(settings.vocabulary, VocabularyScope{});
                  }),
         stored("correctionLearningEnabled", member(&A::correctionLearningEnabled), &C::correctionLearningEnabled,
                &C::setCorrectionLearningEnabled),
-        stored("insightsEnabled", member(&A::insightsEnabled), &C::insightsEnabled, &C::setInsightsEnabled),
-        // The settings surface refuses invalid replacements before it saves,
-        // so a rejection here is a bug rather than something a person typed.
-        stored("bindings", member(&A::bindings), &C::bindingRules,
-               [](C &codecs, const QList<BindingRule> &rules) {
-                   QString error;
-                   if (!codecs.setBindingRules(rules, &error)) {
-                       qWarning("dropped invalid replacement rules: %s", qPrintable(error));
-                   }
-               }),
+        stored("history", member(&A::history), &C::historySettings, &C::setHistorySettings),
+        stored("recording", member(&A::recording), &C::recordingSettings, &C::setRecordingSettings),
     };
     return table;
 }

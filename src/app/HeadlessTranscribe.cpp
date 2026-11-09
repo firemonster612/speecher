@@ -1,5 +1,6 @@
 #include "app/HeadlessTranscribe.h"
 
+#include "core/ProviderChain.h"
 #include "core/ProviderTable.h"
 #include "core/SettingsStore.h"
 #include "core/Target.h"
@@ -56,42 +57,27 @@ bool offers(const QList<ProviderDescriptor> &providers, const QString &id)
                        [&id](const ProviderDescriptor &provider) { return provider.id == id; });
 }
 
-// The same seeding as the Transcribe page: the user's settings, with the
-// profile's services, cleanup and tone underneath anything given explicitly.
-TranscribeOptions resolveOptions(const HeadlessTranscribeOptions &options,
-                                 AppSettings settings,
-                                 const ProviderRegistry &providers)
+// The refiner a headless run starts with, or kNoRefinementProvider: the one
+// the command line names, as named, so one this build lacks is refused rather
+// than skipped, otherwise the first its Service Order runs.
+QString firstRefiner(const DictationPlan &plan, const RunOverrides &overrides)
 {
-    TranscribeOptions resolved;
-    resolved.writingProfile = options.writingProfile.value_or(settings.refinement.defaultWritingProfile);
-    const WritingProfileSettings profile = writingProfileSettingsFor(
-        settings.refinement.writingProfiles, writingProfileFromName(resolved.writingProfile));
-    if (options.spokenLanguage) {
-        settings.speech.language = *options.spokenLanguage;
+    if (overrides.refinement) {
+        return overrides.refinement->service;
     }
-    settings = providers.withProfileProviders(settings, profile);
-    resolved.speechProviderId = options.speechProviderId.value_or(settings.speech.providerId);
-    resolved.applyVocabulary = options.applyVocabulary;
-    resolved.addedVocabulary = options.addedVocabulary;
-    resolved.refinementProviderId = options.refinementProviderId.value_or(settings.refinement.providerId);
-    resolved.cleanupStrength = options.cleanupStrength.value_or(profile.cleanupStrength);
-    resolved.tone = options.tone.value_or(profile.tone);
-    resolved.spokenLanguage = options.spokenLanguage;
-    resolved.destination = options.destination;
-    resolved.folder = options.folder;
-    return resolved;
+    return serviceChain(plan.settings.refinement).value(0, kNoRefinementProvider);
 }
 
-// Why a run cannot use the providers it resolved to, or empty when it can.
-QString unofferedProviderError(const TranscribeOptions &resolved, ProviderRegistry *providers)
+// Why a run cannot use the providers it planned, or empty when it can.
+QString unofferedProviderError(const DictationPlan &plan, const RunOverrides &overrides, ProviderRegistry *providers)
 {
-    if (!offers(providers->speechProviders(), resolved.speechProviderId)) {
-        return QStringLiteral("Unknown speech provider: %1 (see speecher --help)").arg(resolved.speechProviderId);
+    const QString speech = plan.settings.speech.services.main();
+    if (!offers(providers->speechProviders(), speech)) {
+        return QStringLiteral("Unknown speech provider: %1 (see speecher --help)").arg(speech);
     }
-    if (resolved.refinementProviderId != kNoRefinementProvider
-        && !offers(providers->refinementProviders(), resolved.refinementProviderId)) {
-        return QStringLiteral("Unknown refinement provider: %1 (see speecher --help)")
-            .arg(resolved.refinementProviderId);
+    const QString refiner = firstRefiner(plan, overrides);
+    if (refiner != kNoRefinementProvider && !offers(providers->refinementProviders(), refiner)) {
+        return QStringLiteral("Unknown refinement provider: %1 (see speecher --help)").arg(refiner);
     }
     return {};
 }
@@ -202,6 +188,7 @@ void removeStdinSpool()
 }
 
 int runHeadlessTranscribe(const QStringList &files,
+                          const RunOverrides &overrides,
                           const HeadlessTranscribeOptions &options,
                           SettingsStore *settings,
                           ProviderRegistry *providers,
@@ -232,10 +219,19 @@ int runHeadlessTranscribe(const QStringList &files,
     if (files.isEmpty()) {
         return finish(2, QStringLiteral("No audio files to transcribe"));
     }
-    const TranscribeOptions resolved = resolveOptions(options, settings->dictationSnapshot(), *providers);
-    if (const QString error = unofferedProviderError(resolved, providers); !error.isEmpty()) {
+    const AppSettings saved = settings->dictationSnapshot();
+    if (const QString error = unofferedProviderError(
+            planDictation(saved, Target{}, overrides, providers->offersSpeech()), overrides, providers);
+        !error.isEmpty()) {
         return finish(2, error);
     }
+    // Subtitles come from the timed Raw Transcript, so refining would be a
+    // call whose text nobody sees.
+    RunOverrides run = overrides;
+    if (options.format != TranscriptFormat::Text) {
+        run.refinement = ServiceChoice{kNoRefinementProvider};
+    }
+    const DictationPlan plan = planDictation(saved, Target{}, run, providers->offersSpeech());
     // Removes the spooled audio on every return.
     std::optional<QTemporaryDir> stdinDir;
     // Declared after it, so it runs first.
@@ -261,17 +257,8 @@ int runHeadlessTranscribe(const QStringList &files,
         }
     }
     const QStringList inputs = stdinPath.isEmpty() ? files : QStringList{stdinPath};
-    // Saving happens here rather than in the session, so --raw can save what
-    // it prints.
-    TranscribeOptions sessionOptions = resolved;
-    sessionOptions.destination = TranscriptDestination::None;
-    // Subtitles come from the timed Raw Transcript, so refining would be a
-    // call whose text nobody sees.
-    if (options.format != TranscriptFormat::Text) {
-        sessionOptions.refinementProviderId = kNoRefinementProvider;
-    }
-    const bool refines = refinesTranscripts(sessionOptions, settings->dictationSnapshot().refinement);
-    const QString speechProvider = batchLabels(resolved, *providers, settings->dictationSnapshot().refinement).speech;
+    const bool refines = refinesTranscripts(plan);
+    const QString speechProvider = batchLabels(plan, *providers).speech;
 
     FileTranscriptionSession session(settings, providers);
     QEventLoop loop;
@@ -345,9 +332,9 @@ int runHeadlessTranscribe(const QStringList &files,
                          // A transcript that was asked to be saved and was not
                          // fails the file, though it still prints.
                          bool ok = exportable;
-                         if (ok && resolved.destination != TranscriptDestination::None) {
-                             const QString folder = resolved.destination == TranscriptDestination::Folder
-                                 ? resolved.folder
+                         if (ok && options.destination != TranscriptDestination::None) {
+                             const QString folder = options.destination == TranscriptDestination::Folder
+                                 ? options.folder
                                  : QFileInfo(result.path).absolutePath();
                              QString error;
                              result.savedPath = saveTranscript(result.path, folder, text, options.format, &error);
@@ -405,8 +392,9 @@ int runHeadlessTranscribe(const QStringList &files,
     });
     tick.start();
     // The session is this run's own and the files are there, so a refusal
-    // would mean a batch already under way.
-    if (!session.start(inputs, sessionOptions)) {
+    // would mean a batch already under way. It saves nothing: saving happens
+    // here, so --raw can save what it prints.
+    if (!session.start(inputs, run, {TranscriptDestination::None})) {
         return finish(1, QStringLiteral("Could not start: a transcription is already running"));
     }
     if (session.isRunning()) {
@@ -415,7 +403,8 @@ int runHeadlessTranscribe(const QStringList &files,
     return finish(failed > 0 ? 1 : 0);
 }
 
-int runHeadlessListen(const HeadlessTranscribeOptions &options,
+int runHeadlessListen(const RunOverrides &overrides,
+                      const HeadlessTranscribeOptions &options,
                       std::optional<int> untilSilenceMs,
                       AudioInput *microphone,
                       const std::function<bool()> &stopRequested,
@@ -442,8 +431,9 @@ int runHeadlessListen(const HeadlessTranscribeOptions &options,
         }
         return exitCode;
     };
-    const TranscribeOptions resolved = resolveOptions(options, settings->dictationSnapshot(), *providers);
-    if (const QString error = unofferedProviderError(resolved, providers); !error.isEmpty()) {
+    const DictationPlan plan =
+        planDictation(settings->dictationSnapshot(), Target{}, overrides, providers->offersSpeech());
+    if (const QString error = unofferedProviderError(plan, overrides, providers); !error.isEmpty()) {
         return finish(2, {}, error);
     }
     if (!microphone) {
@@ -496,7 +486,7 @@ int runHeadlessListen(const HeadlessTranscribeOptions &options,
             << std::flush;
         poll.start();
     }, Qt::SingleShotConnection);
-    session.startListening(microphone, resolved);
+    session.startListening(microphone, overrides);
     if (session.isRunning()) {
         loop.exec();
     }

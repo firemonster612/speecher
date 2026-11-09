@@ -1,5 +1,6 @@
 #include "transcribe/TranscribeQueue.h"
 
+#include "core/ProviderChain.h"
 #include "core/SettingsStore.h"
 #include "providers/ProviderRegistry.h"
 
@@ -26,14 +27,6 @@ bool toneOffered(const QString &tone, const QList<CustomTone> &custom)
         || std::any_of(custom.cbegin(), custom.cend(), [&tone](const CustomTone &c) { return c.id == tone; });
 }
 
-// The cleanup level a profile brings, or the middle one for a stored level
-// this build does not offer.
-QString profileCleanupLevel(const WritingProfileSettings &profile, const QList<CustomCleanupLevel> &custom)
-{
-    const QString level = refinedCleanupLevel(profile.cleanupStrength, profile.outputLanguage);
-    return cleanupLevelOffered(level, custom) ? level : QStringLiteral("balanced");
-}
-
 } // namespace
 
 TranscribeQueue::TranscribeQueue(SettingsStore *settings,
@@ -47,13 +40,10 @@ TranscribeQueue::TranscribeQueue(SettingsStore *settings,
     , m_session(session)
     , m_refusal(std::move(refusal))
 {
-    seedOptions();
+    // What the batch would run with follows the settings.
     connect(settings, &SettingsStore::snapshotApplied, this, [this] {
-        if (m_optionsChosen) {
-            dropWithdrawnChoices();
-        } else {
-            seedOptions();
-        }
+        dropWithdrawnChoices();
+        emit optionsChanged();
     });
     connect(session, &FileTranscriptionSession::fileStarted, this, [this](int index) {
         if (!followsBatch()) {
@@ -170,6 +160,17 @@ TranscribeQueue::ListedFile TranscribeQueue::listedFile(const QString &path) con
     return m_listed.value(path);
 }
 
+const RunOverrides &TranscribeQueue::overrides() const
+{
+    return m_overrides;
+}
+
+void TranscribeQueue::setOverrides(const RunOverrides &overrides)
+{
+    m_overrides = overrides;
+    emit optionsChanged();
+}
+
 const TranscribeOptions &TranscribeQueue::options() const
 {
     return m_options;
@@ -178,38 +179,14 @@ const TranscribeOptions &TranscribeQueue::options() const
 void TranscribeQueue::setOptions(const TranscribeOptions &options)
 {
     m_options = options;
-    m_optionsChosen = true;
     emit optionsChanged();
 }
 
-void TranscribeQueue::chooseProfile(const QString &profile)
+// The page reads this on the GUI thread as its bindings change, so it never
+// waits for the keyring: a model name is no secret.
+DictationPlan TranscribeQueue::plan(const RunOverrides &overrides) const
 {
-    const AppSettings settings = m_settings->dictationSnapshot();
-    const WritingProfileSettings chosen =
-        writingProfileSettingsFor(settings.refinement.writingProfiles, writingProfileFromName(profile));
-    const AppSettings resolved = m_providers->withProfileProviders(settings, chosen);
-    m_options.writingProfile = profile;
-    m_options.speechProviderId = resolved.speech.providerId;
-    m_options.refinementProviderId = resolved.refinement.providerId;
-    m_options.cleanupStrength = profileCleanupLevel(chosen, settings.refinement.customCleanupLevels);
-    m_options.tone = chosen.tone;
-    m_options.speechModel.clear();
-    m_options.refinementModel.clear();
-    m_optionsChosen = true;
-    emit optionsChanged();
-}
-
-// The page reads these on the GUI thread as its bindings change, so they never
-// wait for the keyring: a model name is no secret.
-QString TranscribeQueue::speechModel() const
-{
-    return speecher::speechModel(withBatchChoices(m_settings->dictationSnapshot(), *m_providers, m_options).speech);
-}
-
-QString TranscribeQueue::refinementModel() const
-{
-    const AppSettings settings = withBatchChoices(m_settings->dictationSnapshot(), *m_providers, m_options);
-    return speecher::refinementModel(m_options.refinementProviderId, settings.refinement);
+    return planDictation(m_settings->dictationSnapshot(), Target{}, overrides, m_providers->offersSpeech());
 }
 
 bool TranscribeQueue::start()
@@ -226,14 +203,15 @@ bool TranscribeQueue::start()
     }
     // Nothing from here to the session's start waits for the keyring, so no
     // event loop runs where a dictation could start.
-    const AppSettings settings = withBatchChoices(m_settings->dictationSnapshot(), *m_providers, m_options);
+    const DictationPlan batchPlan = plan(m_overrides);
     m_batch = m_files;
+    m_batchOverrides = m_overrides;
     m_batchOptions = m_options;
     // Pinned, so a retry hears in this batch's language after the setting
     // changes.
-    m_batchOptions.spokenLanguage = settings.speech.language;
-    m_batchLabels = speecher::batchLabels(m_options, *m_providers, settings.refinement);
-    m_batchRefines = refinesTranscripts(m_options, settings.refinement);
+    m_batchOverrides.spokenLanguage = batchPlan.settings.speech.language;
+    m_batchLabels = speecher::batchLabels(batchPlan, *m_providers);
+    m_batchRefines = refinesTranscripts(batchPlan);
     m_results.clear();
     m_exported.clear();
     m_cancelled = false;
@@ -247,7 +225,7 @@ bool TranscribeQueue::start()
     // Checked again: what the signals above reach may have started a
     // dictation.
     const QString lateRefusal = m_refusal();
-    if (!lateRefusal.isEmpty() || !m_session->start(m_batch, m_batchOptions)) {
+    if (!lateRefusal.isEmpty() || !m_session->start(m_batch, m_batchOverrides, m_batchOptions)) {
         setStep(Step::Configure);
         setProblem(lateRefusal);
         return false;
@@ -272,7 +250,10 @@ void TranscribeQueue::backToSetup()
     for (const TranscribeFileResult &result : std::as_const(m_results)) {
         m_files.removeOne(result.path);
     }
-    seedOptions();
+    // The folder stays, for the next time one folder is chosen.
+    m_overrides = {};
+    m_options = {TranscriptDestination::BesideInput, m_options.folder};
+    emit optionsChanged();
     setProblem({});
     emit filesChanged();
     setStep(Step::Configure);
@@ -281,6 +262,11 @@ void TranscribeQueue::backToSetup()
 const QStringList &TranscribeQueue::batch() const
 {
     return m_batch;
+}
+
+const RunOverrides &TranscribeQueue::batchOverrides() const
+{
+    return m_batchOverrides;
 }
 
 const TranscribeOptions &TranscribeQueue::batchOptions() const
@@ -351,7 +337,7 @@ void TranscribeQueue::retry(int index)
     }
     m_retrying = index;
     const QString refusal = m_refusal();
-    if (!refusal.isEmpty() || !m_session->start({m_results.at(index).path}, m_batchOptions)) {
+    if (!refusal.isEmpty() || !m_session->start({m_results.at(index).path}, m_batchOverrides, m_batchOptions)) {
         m_retrying = -1;
         setProblem(refusal);
         return;
@@ -402,39 +388,21 @@ bool TranscribeQueue::holdsUnsavedResults() const
     return false;
 }
 
-void TranscribeQueue::seedOptions()
-{
-    const AppSettings settings = m_settings->dictationSnapshot();
-    const QString folder = m_options.folder;
-    m_options = {};
-    m_options.folder = folder;
-    chooseProfile(settings.refinement.defaultWritingProfile);
-    m_optionsChosen = false;
-}
-
 // A profile, cleanup level or tone deleted since it was chosen gives way to
-// the profile's own, as it would for dictation.
+// what the settings give, as it would for dictation.
 void TranscribeQueue::dropWithdrawnChoices()
 {
     const RefinementSettings refinement = m_settings->dictationSnapshot().refinement;
-    const QString profile = offeredWritingProfile(m_options.writingProfile, refinement.writingProfiles);
-    if (profile != m_options.writingProfile) {
-        chooseProfile(profile);
-        return;
+    const std::optional<QString> &profile = m_overrides.writingProfile;
+    if (profile && offeredWritingProfile(*profile, refinement.writingProfiles, {}).isEmpty()) {
+        m_overrides.writingProfile.reset();
     }
-    const WritingProfileSettings own = writingProfileSettingsFor(refinement.writingProfiles, profile);
-    const bool levelKept = cleanupLevelOffered(m_options.cleanupStrength, refinement.customCleanupLevels);
-    const bool toneKept = toneOffered(m_options.tone, refinement.customTones);
-    if (levelKept && toneKept) {
-        return;
+    if (m_overrides.cleanupLevel && !cleanupLevelOffered(*m_overrides.cleanupLevel, refinement.customCleanupLevels)) {
+        m_overrides.cleanupLevel.reset();
     }
-    if (!levelKept) {
-        m_options.cleanupStrength = profileCleanupLevel(own, refinement.customCleanupLevels);
+    if (m_overrides.tone && !toneOffered(*m_overrides.tone, refinement.customTones)) {
+        m_overrides.tone.reset();
     }
-    if (!toneKept) {
-        m_options.tone = own.tone;
-    }
-    emit optionsChanged();
 }
 
 void TranscribeQueue::setStep(Step step)

@@ -90,6 +90,16 @@ ClientWindow {
                 Connections {
                     target: stack.currentItem as Page
                     function onPathPicked(pageId) { Navigation.go(pageId) }
+                    function onBackPicked() { Navigation.goBack() }
+                }
+                // The way back from a page a link opened, to the page or the
+                // setup assistant it came from.
+                Binding {
+                    target: stack.currentItem as Page
+                    property: "backText"
+                    value: Navigation.returnTo === "" ? ""
+                         : Navigation.returnTo === "setup" ? Words.shell.backToSetup
+                         : Words.shell.backTo(Schema.page(Navigation.returnTo).title)
                 }
             }
         }
@@ -114,5 +124,14 @@ ClientWindow {
     Toast {}
 
     Shortcut { sequence: "Ctrl+K"; enabled: !window.settingsDeleted; onActivated: searchPalette.shown ? searchPalette.close() : searchPalette.open() }
-    Shortcut { sequence: "Ctrl+F"; enabled: !window.settingsDeleted; onActivated: searchPalette.open() }
+    // Find's one owner, so no page's own shortcut makes it ambiguous.
+    Shortcut {
+        sequence: "Ctrl+F"
+        enabled: !window.settingsDeleted
+        onActivated: {
+            const field = (stack.currentItem as Page)?.findField
+            if (field && !searchPalette.shown) field.forceActiveFocus()
+            else searchPalette.open()
+        }
+    }
 }

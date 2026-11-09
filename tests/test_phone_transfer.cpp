@@ -1,4 +1,5 @@
 #include "common/test_suites.h"
+#include "common/vocabulary_entries.h"
 #include "app/PhoneTransfer.h"
 
 #include <monocypher.h>
@@ -36,8 +37,21 @@ AppSettings sampleSettings()
     kubernetes.lastUsedMs = 1790000000000;
     kubernetes.context = QStringLiteral("The container platform.");
     kubernetes.profiles = {QStringLiteral("work")};
-    settings.vocabulary = {kubernetes};
-    settings.bindings = {{QStringLiteral("my address"), QStringLiteral("Flat 3")}};
+    // What the phone can't apply stays behind: a term limited to an app, a
+    // replacement limited to a profile, one that is off, and a Learned
+    // Correction.
+    VocabularyEntry inSlack{QStringLiteral("Tee three")};
+    inSlack.apps = {QStringLiteral("com.slack.Slack")};
+    VocabularyEntry signature = test::replacementEntry(QStringLiteral("sig"), QStringLiteral("Best"));
+    signature.profiles = {QStringLiteral("work")};
+    VocabularyEntry off = test::replacementEntry(QStringLiteral("old address"), QStringLiteral("Flat 2"));
+    off.enabled = false;
+    settings.vocabulary = {kubernetes,
+                           inSlack,
+                           test::replacementEntry(QStringLiteral("my address"), QStringLiteral("Flat 3")),
+                           signature,
+                           off,
+                           test::learnedEntry(QStringLiteral("cute"), QStringLiteral("Qt"))};
     WritingProfileSettings work;
     work.profile = QStringLiteral("work");
     work.cleanupStrength = QStringLiteral("custom_terse");
@@ -52,8 +66,8 @@ AppSettings sampleSettings()
                                                 QStringLiteral("Cut filler.")}};
     settings.refinement.additionalInstructions = QStringLiteral("Use British spelling.");
     // Credentials, which must never leave the computer.
-    settings.refinement.cliproxyApiKey = QStringLiteral("proxy-secret");
-    settings.speech.endpoint.apiKey = QStringLiteral("speech-secret");
+    settings.accounts.cliproxyApiKey = QStringLiteral("proxy-secret");
+    settings.speech.server.apiKey = QStringLiteral("speech-secret");
     return settings;
 }
 

@@ -17,13 +17,14 @@ Ease 1.0 Ease.qml
 EaseColor 1.0 EaseColor.qml
 EditableList 1.0 EditableList.qml
 EmptyState 1.0 EmptyState.qml
-FallbackList 1.0 FallbackList.qml
+OrderedList 1.0 OrderedList.qml
 Flag 1.0 Flag.qml
 FocusRing 1.0 FocusRing.qml
 FormField 1.0 FormField.qml
 Grow 1.0 Grow.qml
 Icon 1.0 Icon.qml
 IconButton 1.0 IconButton.qml
+InheritSelect 1.0 InheritSelect.qml
 InlineConfirm 1.0 InlineConfirm.qml
 InlineForm 1.0 InlineForm.qml
 InputFrame 1.0 InputFrame.qml
@@ -52,7 +53,6 @@ ScrollBar 1.0 ScrollBar.qml
 SearchField 1.0 SearchField.qml
 Section 1.0 Section.qml
 SegmentedControl 1.0 SegmentedControl.qml
-ServiceCards 1.0 ServiceCards.qml
 Select 1.0 Select.qml
 Settle 1.0 Settle.qml
 SettingRow 1.0 SettingRow.qml

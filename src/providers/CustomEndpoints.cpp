@@ -43,7 +43,7 @@ QStringList modelIdsFromListing(const QByteArray &body)
     return ids;
 }
 
-EndpointCheck checkSpeechEndpoint(const SpeechEndpointSettings &endpoint, int timeoutMs)
+EndpointCheck checkSpeechEndpoint(const ServerSettings &endpoint, int timeoutMs)
 {
     if (endpoint.baseUrl.isEmpty()) {
         return {false, QStringLiteral("Enter the server URL."), {}};
@@ -56,9 +56,8 @@ EndpointCheck checkSpeechEndpoint(const SpeechEndpointSettings &endpoint, int ti
     return checkFromListing(blockingGet(request, timeoutMs), endpoint.baseUrl);
 }
 
-EndpointCheck checkRefinementEndpoint(const RefinementSettings &settings, int timeoutMs)
+EndpointCheck checkRefinementEndpoint(const RefinementEndpoint &endpoint, int timeoutMs)
 {
-    const RefinementEndpoint endpoint = resolvedRefinementEndpoint(settings);
     if (endpoint.apiBase.isEmpty()) {
         return {false, QStringLiteral("Enter the server URL."), {}};
     }

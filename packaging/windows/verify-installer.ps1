@@ -57,7 +57,7 @@ try {
     }
 
     $Exe = Join-Path $InstallDir "speecher.exe"
-    foreach ($Required in "LICENSE-AtkinsonHyperlegibleNext.txt", "LICENSE-Lucide.txt", "speecher.com", "Qt6WebSockets.dll", "Qt6Multimedia.dll", "platforms\qoffscreen.dll", "transcribe.dll", "ggml-cpu-x64.dll", "ggml-vulkan.dll", "multimedia\ffmpegmediaplugin.dll", "networkinformation\qnetworklistmanager.dll", "imageformats\qsvg.dll") {
+    foreach ($Required in "LICENSE-AtkinsonHyperlegibleNext.txt", "LICENSE-Lucide.txt", "speecher.com", "Qt6WebSockets.dll", "Qt6Multimedia.dll", "platforms\qoffscreen.dll", "transcribe.dll", "ggml-cpu-x64.dll", "ggml-vulkan.dll", "multimedia\ffmpegmediaplugin.dll", "networkinformation\qnetworklistmanager.dll", "imageformats\qsvg.dll", "sqldrivers\qsqlite.dll") {
         if (-not (Test-Path (Join-Path $InstallDir $Required))) {
             throw "Installed application is missing $Required"
         }
@@ -162,6 +162,12 @@ try {
         throw "The installed Qt Quick UI did not open Main: $($QmlErrors -join "`n")"
     }
     Write-Output "Installed application opened Main without Qt on PATH"
+    # History opens through the deployed SQLite driver, and its SQLite has
+    # the FTS5 trigram tokenizer search is built on.
+    if (-not (Select-String -Path $Log -Pattern "history store opened .*search=trigram" -Quiet)) {
+        throw "History did not open with trigram search: $((Select-String -Path $Log -SimpleMatch "history") -join "`n")"
+    }
+    Write-Output "History opens, with trigram search"
     $App | Stop-Process -Force
     $App.WaitForExit()
     Remove-Item $MainShot

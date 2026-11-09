@@ -12,13 +12,15 @@ import "home/words.js" as T
 
 // Home: the latest dictation and whether Speecher is ready, then the chosen
 // period's figures, the year's activity, and the lists that go with them in
-// pairs across the page. With Insights off or nothing dictated yet, one
-// line says so in their place. The words are home/words.js's.
+// pairs across the page. With History keeping nothing or nothing dictated
+// yet, one line says so in their place. History, its subpage, opens from the
+// Your dictation card, which says what it holds, so one card stands for
+// what Speecher kept. The words are home/words.js's.
 Page {
     id: page
-    // Whether the chosen speech service is signed in, for what stands in
-    // the way.
-    Component.onCompleted: ModelText.checkUnknownSignIns([Settings.values.speechProvider])
+    // Whether the speech chain's services are signed in, for whether
+    // Speecher is ready.
+    Component.onCompleted: ModelText.checkUnknownSignIns(ModelText.order("speech"))
 
     readonly property var t: T.text
     readonly property var summary: Insights.summary
@@ -89,6 +91,15 @@ Page {
         })
     }
 
+    // History, under what Speecher counted of your dictation.
+    component HistoryLink: SettingRow {
+        objectName: "homeHistory"
+        title: Schema.page("history").title
+        help: History.kept > 0 ? T.historyLine(History.kept) : T.historyKeeps(Settings.values.historyKeeps)
+        clickable: true
+        onClicked: Navigation.go("history")
+    }
+
     SessionSection {}
 
     // Insights off, or nothing dictated yet.
@@ -96,11 +107,13 @@ Page {
         open: !Insights.hasData
         Section {
             title: page.t.yourDictation
+            LatestDictation {}
             SettingRow {
                 title: Insights.state === "off" ? page.t.offTitle : page.t.emptyTitle
                 help: Insights.state === "off" ? page.t.offBody : page.t.emptyBody
-                Button { text: page.t.insightsSettings; size: "small"; onClicked: Navigation.go("general") }
+                Button { text: page.t.insightsSettings; size: "small"; onClicked: Navigation.goToRow("privacy", "historyKeeps") }
             }
+            HistoryLink {}
         }
     }
 
@@ -117,7 +130,9 @@ Page {
                     currentId: Insights.period
                     onActivated: id => Insights.period = id
                 }
+                LatestDictation {}
                 Figures { rows: page.summary ? T.figures(page.summary, Insights.period, Insights.today) : [] }
+                HistoryLink {}
             }
 
             ActivitySection {}
@@ -235,8 +250,8 @@ Page {
                     Behavior on opacity { Ease {} }
                     onClicked: Navigation.goToRow(Schema.row(learned.action.row).page, learned.action.row)
                 }
-                // Learning needs accessibility; the notice turns it on.
-                AccessibilityNotice { text: "Turn on desktop accessibility so Speecher can learn your corrections." }
+                // Learning needs accessibility.
+                AccessibilityNotice { what: Schema.pasting.accessibilityUses.learning; linkText: Schema.pasting.accessibilityLinkAbove }
                 Reveal {
                     width: parent.width
                     open: Insights.corrections.recent.length > 0
@@ -290,7 +305,7 @@ Page {
                     width: parent.width
                     spacing: Theme.space2
                     Txt { text: page.t.privacyNote; variant: "small"; tone: "tertiary" }
-                    TextLink { text: page.t.insightsSettings; onActivated: Navigation.go("general") }
+                    TextLink { text: page.t.insightsSettings; onActivated: Navigation.goToRow("privacy", "historyKeeps") }
                 }
             }
         }

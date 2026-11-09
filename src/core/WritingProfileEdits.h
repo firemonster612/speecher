@@ -6,7 +6,7 @@
 #include <QStringList>
 
 // The edits the user makes to a draft of the settings' Writing Profiles,
-// custom tones and cleanup levels and app matches: adding and changing one,
+// custom tones and cleanup levels: adding and changing one,
 // refused with the reason when the list would hold something it can't, and
 // removing one together with what named it, with the edit that puts it back.
 // (Saving a draft without a profile already drops what named the profile:
@@ -53,16 +53,5 @@ SettingsEdit removeCustomTone(AppSettings &settings, const QString &id);
 // The same for a custom cleanup level. Its profiles get the built-in level it
 // was based on, or Medium for one based on no level (Custom only).
 SettingsEdit removeCustomCleanupLevel(AppSettings &settings, const QString &id);
-
-// The user's app matches. Each edit first folds the per-application profile
-// overrides they replaced into them, which retires the overrides for good. A
-// match needs an app no other match names (ignoring case), and an app type,
-// an offered profile, or both. `match` finds the one edited, ignoring case.
-EditRefusal addAppRecognitionRule(AppSettings &settings, AppRecognitionRule rule);
-EditRefusal editAppRecognitionRule(AppSettings &settings, const QString &match,
-                                   const EntryChange<AppRecognitionRule> &change);
-// Removes the match; the edit it returns puts it back unless a match for the
-// app was added since. Empty when no match names it.
-SettingsEdit removeAppRecognitionRule(AppSettings &settings, const QString &match);
 
 } // namespace speecher

@@ -1,5 +1,6 @@
 #include "recording/RecordingPresentation.h"
 
+#include "core/history/HistoryEntry.h"
 #include "dictation/DictationTypes.h"
 #include "recording/RecordingStatus.h"
 #include "recording/SystemAudioPresentation.h"
@@ -33,13 +34,20 @@ QString recordingDictatingText()
     return QStringLiteral("(dictating, not on the call)");
 }
 
-QString recordingClock(qint64 elapsedMs)
+QString recordingElapsedText(qint64 elapsedMs)
 {
     const qint64 seconds = elapsedMs / 1000;
-    return QStringLiteral("%1:%2:%3")
-        .arg(seconds / 3600, 2, 10, QLatin1Char('0'))
-        .arg(seconds / 60 % 60, 2, 10, QLatin1Char('0'))
-        .arg(seconds % 60, 2, 10, QLatin1Char('0'));
+    const QString minutesAndSeconds =
+        QStringLiteral("%1:%2").arg(seconds / 60 % 60).arg(seconds % 60, 2, 10, QLatin1Char('0'));
+    return seconds < 3600 ? minutesAndSeconds
+                          : QStringLiteral("%1:%2").arg(seconds / 3600).arg(minutesAndSeconds.rightJustified(5, QLatin1Char('0')));
+}
+
+QString trayRecordingActionText(bool starting, bool recording, qint64 elapsedMs)
+{
+    return starting    ? QStringLiteral("Cancel recording")
+         : recording ? QStringLiteral("Stop recording (%1)").arg(recordingElapsedText(elapsedMs))
+                     : QStringLiteral("Start recording");
 }
 
 QString recordingConsentNotice()
@@ -139,16 +147,20 @@ QString alreadyRecordingText(const QString &path)
     return QStringLiteral("Already recording to %1. Stop it with speecher record stop first.").arg(path);
 }
 
-QString recordingNeedsSetupText()
+QString recordingNoServiceText()
 {
-    return QStringLiteral("Finish setting up Speecher, then start the recording.");
+    return QStringLiteral("None of your speech services can record a call. Add ChatGPT, Claude, This computer "
+                          "or Your server to Speech to text.");
 }
 
-QString recordingSpeechProviderRefusal(const QString &providerLabel)
+QString recordingCancelledText()
 {
-    return QStringLiteral("Recording needs Claude, ChatGPT or the Custom Endpoint. %1 can't record "
-                          "yet.")
-        .arg(providerLabel);
+    return QStringLiteral("The recording was cancelled before it started.");
+}
+
+QString recordingAlreadyStartedText()
+{
+    return QStringLiteral("A recording is already starting or running.");
 }
 
 QString recordingStreamEndedText()

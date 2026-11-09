@@ -52,7 +52,7 @@ struct PopupErrorAction {
     QString pageId;
 };
 // Where a speech service that cannot start is set up: Accounts for a
-// sign-in, Local models for a model on this computer, Speech to text for a server.
+// sign-in, This computer for a model on this computer, Speech to text for a server.
 PopupErrorAction speechSetupAction(const QString &providerId);
 
 // What the popup says once a Dictation Session delivered: the receipt

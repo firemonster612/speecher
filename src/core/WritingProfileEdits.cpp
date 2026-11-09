@@ -57,9 +57,9 @@ bool toneOffered(const QString &id, const RefinementSettings &refinement)
 }
 
 // An empty service is the one the Speech to text or Refinement page chose.
-bool serviceOffered(ProviderRole role, const QString &id)
+bool serviceOffered(ProviderRole role, const std::optional<ServiceChoice> &first)
 {
-    return id.isEmpty() || isChainProviderId(role, id);
+    return !first || isChainProviderId(role, first->service);
 }
 
 QString profileId(const WritingProfileSettings &profile)
@@ -84,8 +84,11 @@ EditRefusal checkProfile(WritingProfileSettings &profile, const WritingProfileSe
                          const RefinementSettings &refinement)
 {
     profile.outputLanguage = profile.outputLanguage.trimmed();
-    profile.speechModel = profile.speechModel.trimmed();
-    profile.refinementModel = profile.refinementModel.trimmed();
+    for (std::optional<ServiceChoice> *first : {&profile.speechFirst, &profile.refinementFirst}) {
+        if (*first) {
+            (*first)->model = (*first)->model.trimmed();
+        }
+    }
     if (isBuiltInWritingProfile(profile.profile)) {
         if (stored && profile.name != stored->name) {
             return EditRefusal::BuiltIn;
@@ -105,14 +108,18 @@ EditRefusal checkProfile(WritingProfileSettings &profile, const WritingProfileSe
     const auto kept = [stored](QString WritingProfileSettings::*field, const QString &value) {
         return stored && stored->*field == value;
     };
+    const auto keptService = [stored, &profile](std::optional<ServiceChoice> WritingProfileSettings::*field) {
+        const auto service = [](const std::optional<ServiceChoice> &first) { return first ? first->service : QString(); };
+        return stored && service(stored->*field) == service(profile.*field);
+    };
     const bool offered =
         (kept(&WritingProfileSettings::cleanupStrength, profile.cleanupStrength)
          || levelOffered(profile.cleanupStrength, refinement))
         && (kept(&WritingProfileSettings::tone, profile.tone) || toneOffered(profile.tone, refinement))
-        && (kept(&WritingProfileSettings::speechProvider, profile.speechProvider)
-            || serviceOffered(ProviderRole::Speech, profile.speechProvider))
-        && (kept(&WritingProfileSettings::refinementProvider, profile.refinementProvider)
-            || serviceOffered(ProviderRole::Refinement, profile.refinementProvider));
+        && (keptService(&WritingProfileSettings::speechFirst)
+            || serviceOffered(ProviderRole::Speech, profile.speechFirst))
+        && (keptService(&WritingProfileSettings::refinementFirst)
+            || serviceOffered(ProviderRole::Refinement, profile.refinementFirst));
     return offered ? EditRefusal::None : EditRefusal::Missing;
 }
 
@@ -154,51 +161,6 @@ EditRefusal checkLevel(CustomCleanupLevel &level, qsizetype self, const QList<Cu
     // Custom only is nothing but the instructions.
     const bool instructed = level.base != kCustomOnlyCleanupBase || !level.instructions.trimmed().isEmpty();
     return instructed ? EditRefusal::None : EditRefusal::Incomplete;
-}
-
-QString ruleMatch(const AppRecognitionRule &rule)
-{
-    return rule.match;
-}
-
-bool sameMatch(const QString &left, const QString &right)
-{
-    return left.compare(right, Qt::CaseInsensitive) == 0;
-}
-
-// The app matches with the overrides they replaced folded in and the
-// overrides cleared, so saving the draft retires them.
-QList<AppRecognitionRule> &rulesWithOverridesRetired(AppSettings &settings)
-{
-    settings.appRecognitionRules = recognitionRulesWithMigratedProfileOverrides(
-        settings.appRecognitionRules, settings.refinement.writingProfileOverrides);
-    settings.refinement.writingProfileOverrides.clear();
-    return settings.appRecognitionRules;
-}
-
-qsizetype indexOfMatch(const QList<AppRecognitionRule> &rules, const QString &match)
-{
-    const auto found = std::find_if(rules.cbegin(), rules.cend(), [&match](const AppRecognitionRule &rule) {
-        return sameMatch(rule.match, match.trimmed());
-    });
-    return found == rules.cend() ? -1 : found - rules.cbegin();
-}
-
-EditRefusal checkRule(AppRecognitionRule &rule, qsizetype self, const AppSettings &settings)
-{
-    rule.match = rule.match.trimmed();
-    if (rule.match.isEmpty()) {
-        return EditRefusal::Blank;
-    }
-    if (!nameFree(settings.appRecognitionRules, self, rule.match, ruleMatch)) {
-        return EditRefusal::Taken;
-    }
-    if (!rule.category && !rule.writingProfile) {
-        return EditRefusal::Incomplete;
-    }
-    const bool profileOffered = !rule.writingProfile
-        || !offeredWritingProfile(*rule.writingProfile, settings.refinement.writingProfiles, {}).isEmpty();
-    return profileOffered ? EditRefusal::None : EditRefusal::Missing;
 }
 
 // Removes entry id from `entries` and points every profile field that chose
@@ -335,34 +297,6 @@ SettingsEdit removeCustomCleanupLevel(AppSettings &settings, const QString &id)
                                                                                        : levels.at(index).base;
     return removeChoice(&RefinementSettings::customCleanupLevels, &WritingProfileSettings::cleanupStrength,
                         settings, id, base);
-}
-
-EditRefusal addAppRecognitionRule(AppSettings &settings, AppRecognitionRule rule)
-{
-    return appendEntry(rulesWithOverridesRetired(settings), rule, [&settings](AppRecognitionRule &added, qsizetype self) {
-        return checkRule(added, self, settings);
-    });
-}
-
-EditRefusal editAppRecognitionRule(AppSettings &settings, const QString &match,
-                                   const EntryChange<AppRecognitionRule> &change)
-{
-    QList<AppRecognitionRule> &rules = rulesWithOverridesRetired(settings);
-    return changeEntry(rules, indexOfMatch(rules, match), change,
-                       [&settings](AppRecognitionRule &rule, qsizetype self) { return checkRule(rule, self, settings); });
-}
-
-SettingsEdit removeAppRecognitionRule(AppSettings &settings, const QString &match)
-{
-    QList<AppRecognitionRule> &rules = rulesWithOverridesRetired(settings);
-    const qsizetype index = indexOfMatch(rules, match);
-    if (index < 0) {
-        return {};
-    }
-    const auto putBack = takeEntry(rules, index, [](const AppRecognitionRule &entry, const AppRecognitionRule &removed) {
-        return sameMatch(entry.match, removed.match);
-    });
-    return [putBack](AppSettings &draft) { putBack(rulesWithOverridesRetired(draft)); };
 }
 
 } // namespace speecher

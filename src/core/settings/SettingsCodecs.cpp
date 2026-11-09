@@ -4,12 +4,10 @@
 #include "core/ProviderChain.h"
 #include "core/settings/SettingsKeys.h"
 
-#include "core/BindingProcessor.h"
-#include "core/CliToolDiscovery.h"
-#include "core/OutputMethod.h"
 #include "core/Vocabulary.h"
-#include "core/VocabularyLimit.h"
 #include "core/settings/CorrectionSettingsCodec.h"
+#include "core/settings/AppsSettingsCodec.h"
+#include "core/settings/ServiceOrderSettingsCodec.h"
 #include "core/settings/VocabularySettingsCodec.h"
 
 #include <QDateTime>
@@ -46,30 +44,13 @@ AudioCaptureSettings normalizedAudioCaptureSettings(AudioCaptureSettings setting
     return settings;
 }
 
-bool isRefinementProviderId(const QString &id)
-{
-    const std::optional<ProviderId> provider = parseProviderId(id);
-    return id == kNoRefinementProvider || (provider && providerServes(*provider, ProviderRole::Refinement));
-}
-
 QString normalizedEndpointPath(const QString &path)
 {
     const QString trimmed = path.trimmed();
     if (trimmed.isEmpty()) {
-        return SpeechEndpointSettings{}.path;
+        return ServerSettings{}.path;
     }
     return trimmed.startsWith(QLatin1Char('/')) ? trimmed : QLatin1Char('/') + trimmed;
-}
-
-QString defaultRefinementProvider()
-{
-    if (CliToolDiscovery::isCodexInstalled()) {
-        return providerKey(ProviderId::OpenAi);
-    }
-    if (CliToolDiscovery::isClaudeCodeInstalled()) {
-        return providerKey(ProviderId::Anthropic);
-    }
-    return providerKey(ProviderId::OpenAi);
 }
 
 QString profileKey(ProviderRole role, const char *field)
@@ -80,35 +61,29 @@ QString profileKey(ProviderRole role, const char *field)
 // A Writing Profile's own provider for a role and its model. An id no chain
 // can hold reads as the page's choice, and a model as the provider's own
 // without a provider of the profile's to go with.
-// Haiku 4.5, dated or not, has left the picker for Haiku 5.5.
-QString replacedAnthropicModel(const QString &model)
+std::optional<ServiceChoice> readProfileProvider(const QJsonObject &object, ProviderRole role)
 {
-    return model == QStringLiteral("claude-haiku-4-5") || model == QStringLiteral("claude-haiku-4-5-20251001")
-        ? QStringLiteral("claude-haiku-5-5")
-        : model;
-}
-
-void readProfileProvider(const QJsonObject &object, ProviderRole role, QString &provider, QString &model)
-{
-    provider = object.value(profileKey(role, "Provider")).toString();
+    const QString provider = object.value(profileKey(role, "Provider")).toString();
     if (!isChainProviderId(role, provider)) {
-        provider.clear();
-        return;
+        return std::nullopt;
     }
-    model = object.value(profileKey(role, "Model")).toString().trimmed();
+    ServiceChoice first{provider, object.value(profileKey(role, "Model")).toString().trimmed()};
     if (parseProviderId(provider) == ProviderId::Anthropic) {
-        model = replacedAnthropicModel(model);
+        first.model = ServiceOrderSettingsCodec::replacedAnthropicModel(first.model);
     }
+    return first;
 }
 
-void writeProfileProvider(QJsonObject &object, ProviderRole role, const QString &provider, const QString &model)
+// Stored under the keys a profile's provider and model always had, so an
+// older release reads them.
+void writeProfileProvider(QJsonObject &object, ProviderRole role, const std::optional<ServiceChoice> &first)
 {
-    if (!isChainProviderId(role, provider)) {
+    if (!first || !isChainProviderId(role, first->service)) {
         return;
     }
-    object.insert(profileKey(role, "Provider"), provider);
-    if (!model.trimmed().isEmpty()) {
-        object.insert(profileKey(role, "Model"), model.trimmed());
+    object.insert(profileKey(role, "Provider"), first->service);
+    if (!first->model.trimmed().isEmpty()) {
+        object.insert(profileKey(role, "Model"), first->model.trimmed());
     }
 }
 
@@ -292,54 +267,14 @@ void SettingsCodecs::setSoundsEnabled(bool value)
     m_settings.setValue(SettingsKeys::UiSoundsEnabled, value);
 }
 
-QString SettingsCodecs::speechProvider() const
+ServiceOrder SettingsCodecs::speechServices() const
 {
-    const QString fallback = providerKey(ProviderId::Claude);
-    const QString provider = value(SettingsKeys::SpeechProvider, fallback).toString();
-    return provider.isEmpty() ? fallback : provider;
+    return ServiceOrderSettingsCodec::speech(m_settings);
 }
 
-void SettingsCodecs::setSpeechProvider(const QString &value)
+void SettingsCodecs::setSpeechServices(const ServiceOrder &value)
 {
-    const QStringList fallbacks = speechFallbackProviders();
-    m_settings.setValue(SettingsKeys::SpeechProvider, value.isEmpty() ? providerKey(ProviderId::Claude) : value);
-    // A new primary leaves the fallbacks.
-    setSpeechFallbackProviders(fallbacks);
-}
-
-QStringList SettingsCodecs::speechFallbackProviders() const
-{
-    return normalizedFallbackProviders(ProviderRole::Speech, speechProvider(),
-                                       value(SettingsKeys::SpeechFallbackProviders, QStringList()).toStringList());
-}
-
-void SettingsCodecs::setSpeechFallbackProviders(const QStringList &value)
-{
-    m_settings.setValue(SettingsKeys::SpeechFallbackProviders,
-                        normalizedFallbackProviders(ProviderRole::Speech, speechProvider(), value));
-}
-
-QHash<QString, QString> SettingsCodecs::speechFallbackLanguages() const
-{
-    // Settings saved before fallbacks had their own language have none.
-    QHash<QString, QString> languages;
-    const QString prefix = SettingsKeys::SpeechFallbackLanguages + QLatin1Char('/');
-    for (const QString &key : m_settings.allKeys()) {
-        if (key.startsWith(prefix)) {
-            languages.insert(key.mid(prefix.size()), m_settings.value(key).toString());
-        }
-    }
-    return languages;
-}
-
-void SettingsCodecs::setSpeechFallbackLanguages(const QHash<QString, QString> &value)
-{
-    m_settings.remove(SettingsKeys::SpeechFallbackLanguages);
-    m_settings.beginGroup(SettingsKeys::SpeechFallbackLanguages);
-    for (auto it = value.cbegin(); it != value.cend(); ++it) {
-        m_settings.setValue(it.key(), it.value());
-    }
-    m_settings.endGroup();
+    ServiceOrderSettingsCodec::storeSpeech(m_settings, value);
 }
 
 bool SettingsCodecs::codexFinalRetranscribe() const
@@ -366,7 +301,6 @@ LocalSpeechSettings SettingsCodecs::localSpeechSettings() const
 {
     const LocalSpeechSettings defaults;
     LocalSpeechSettings settings;
-    settings.modelId = value(SettingsKeys::LocalModel, defaults.modelId).toString();
     settings.modelChosen = value(SettingsKeys::LocalModelChosen, m_settings.contains(SettingsKeys::LocalModel)).toBool();
     // A graphics card saved before the backend was chosen too has no backend
     // saved, and reads as Automatic on that card.
@@ -393,9 +327,7 @@ LocalSpeechSettings SettingsCodecs::localSpeechSettings() const
 void SettingsCodecs::setLocalSpeechSettings(const LocalSpeechSettings &value)
 {
     const auto previous = localSpeechSettings();
-    m_settings.setValue(SettingsKeys::LocalModelChosen, value.modelChosen || previous.modelChosen
-                        || value.modelId != previous.modelId);
-    m_settings.setValue(SettingsKeys::LocalModel, value.modelId);
+    m_settings.setValue(SettingsKeys::LocalModelChosen, value.modelChosen || previous.modelChosen);
     m_settings.setValue(SettingsKeys::LocalBackend, value.runsOn.backend);
     m_settings.setValue(SettingsKeys::LocalDevice, value.runsOn.deviceId);
     m_settings.setValue(SettingsKeys::LocalIdleUnloadMinutes, std::max(0, value.idleUnloadMinutes));
@@ -407,44 +339,36 @@ void SettingsCodecs::setLocalSpeechSettings(const LocalSpeechSettings &value)
     m_settings.endGroup();
 }
 
-SpeechEndpointSettings SettingsCodecs::speechEndpointSettings() const
+ServerSettings SettingsCodecs::speechServer() const
 {
-    SpeechEndpointSettings settings;
+    ServerSettings settings;
     settings.baseUrl = endpointServerBase(value(SettingsKeys::SpeechEndpointBaseUrl, QString()).toString());
     settings.path = normalizedEndpointPath(value(SettingsKeys::SpeechEndpointPath, settings.path).toString());
-    settings.model = value(SettingsKeys::SpeechEndpointModel, QString()).toString().trimmed();
     return settings;
 }
 
-void SettingsCodecs::setSpeechEndpointSettings(const SpeechEndpointSettings &value)
+void SettingsCodecs::setSpeechServer(const ServerSettings &value)
 {
     m_settings.setValue(SettingsKeys::SpeechEndpointBaseUrl, endpointServerBase(value.baseUrl));
     m_settings.setValue(SettingsKeys::SpeechEndpointPath, normalizedEndpointPath(value.path));
-    m_settings.setValue(SettingsKeys::SpeechEndpointModel, value.model.trimmed());
 }
 
-RefinementEndpointSettings SettingsCodecs::refinementEndpointSettings() const
+ServerSettings SettingsCodecs::refinementServer() const
 {
-    RefinementEndpointSettings settings;
-    const QString preset = value(SettingsKeys::RefinementEndpointPreset, QString()).toString();
-    settings.preset = preset == QStringLiteral("cliproxy") ? preset : QString();
+    ServerSettings settings;
     const QString format = value(SettingsKeys::RefinementEndpointFormat, settings.format).toString();
     settings.format = format == QStringLiteral("anthropic") ? format : QStringLiteral("openai");
     settings.baseUrl = withoutTrailingSlashes(value(SettingsKeys::RefinementEndpointBaseUrl, QString()).toString());
-    settings.model = value(SettingsKeys::RefinementEndpointModel, QString()).toString().trimmed();
     return settings;
 }
 
-void SettingsCodecs::setRefinementEndpointSettings(const RefinementEndpointSettings &value)
+void SettingsCodecs::setRefinementServer(const ServerSettings &value)
 {
-    // Retired: which key the endpoint sends follows from its server.
+    // Retired: which key the server sends follows from its address.
     m_settings.remove(SettingsKeys::RefinementEndpointUseCliproxyKey);
-    m_settings.setValue(SettingsKeys::RefinementEndpointPreset,
-                        value.preset == QStringLiteral("cliproxy") ? value.preset : QString());
     m_settings.setValue(SettingsKeys::RefinementEndpointFormat,
                         value.format == QStringLiteral("anthropic") ? value.format : QStringLiteral("openai"));
     m_settings.setValue(SettingsKeys::RefinementEndpointBaseUrl, withoutTrailingSlashes(value.baseUrl));
-    m_settings.setValue(SettingsKeys::RefinementEndpointModel, value.model.trimmed());
 }
 
 LocalRunnerSettings SettingsCodecs::localRunnerSettings() const
@@ -456,7 +380,6 @@ LocalRunnerSettings SettingsCodecs::localRunnerSettings() const
     if (runner == QStringLiteral("ollama") || runner == QStringLiteral("lmstudio") || runner == QStringLiteral("llama-server")) {
         settings.runner = runner;
     }
-    settings.model = value(SettingsKeys::LocalRunnerModel, QString()).toString().trimmed();
     return settings;
 }
 
@@ -465,11 +388,10 @@ void SettingsCodecs::setLocalRunnerSettings(const LocalRunnerSettings &value)
     const bool known = value.runner == QStringLiteral("ollama") || value.runner == QStringLiteral("lmstudio")
         || value.runner == QStringLiteral("llama-server");
     m_settings.setValue(SettingsKeys::LocalRunner, known ? value.runner : QString());
-    m_settings.setValue(SettingsKeys::LocalRunnerModel, value.model.trimmed());
 }
 
-// Terms lose the profiles the settings no longer hold, on the way in and out,
-// so a profile recreated under a deleted one's id does not inherit its terms.
+// Entries lose the profiles the settings no longer hold, on the way in and
+// out, so a profile recreated under a deleted one's id does not inherit them.
 static QList<VocabularyEntry> withOfferedProfiles(QList<VocabularyEntry> entries,
                                                   const QList<WritingProfileSettings> &profiles)
 {
@@ -521,7 +443,7 @@ std::optional<QStringList> SettingsCodecs::addVocabularyTerms(const QStringList 
         // A term limited to some Writing Profiles counts too: adding it again
         // for every profile would list it twice.
         const bool listed = std::any_of(entries.cbegin(), entries.cend(), [&cleaned](const VocabularyEntry &entry) {
-            return entry.term.compare(cleaned, Qt::CaseInsensitive) == 0;
+            return !entry.isReplacement() && entry.term.compare(cleaned, Qt::CaseInsensitive) == 0;
         });
         if (listed) {
             held.append(term);
@@ -568,111 +490,32 @@ void SettingsCodecs::setAudioCaptureSettings(const AudioCaptureSettings &value)
     m_settings.setValue(SettingsKeys::AudioVadThresholdPercent, settings.vadThresholdPercent);
 }
 
-// A rule pointing at a deleted profile loses the profile, here where settings
-// are read and written; the callers then drop a rule left with nothing to set.
-static AppRecognitionRule withoutDeletedProfile(AppRecognitionRule rule,
-                                                const QList<WritingProfileSettings> &profiles)
+// What names a deleted profile loses it, here where settings are read and
+// written: the app or type then follows the wider place instead.
+static AppsSettings withoutDeletedProfiles(AppsSettings apps, const QList<WritingProfileSettings> &profiles)
 {
-    if (rule.writingProfile && offeredWritingProfile(*rule.writingProfile, profiles, QString()).isEmpty()) {
-        rule.writingProfile.reset();
+    const auto drop = [&profiles](std::optional<QString> &profile) {
+        if (profile && offeredWritingProfile(*profile, profiles, QString()).isEmpty()) {
+            profile.reset();
+        }
+    };
+    for (AppEntry &entry : apps.apps) {
+        drop(entry.writingProfile);
     }
-    return rule;
+    for (AppTypeSettings &type : apps.types) {
+        drop(type.writingProfile);
+    }
+    return apps;
 }
 
-QList<AppRecognitionRule> SettingsCodecs::appRecognitionRules() const
+AppsSettings SettingsCodecs::apps() const
 {
-    const QList<WritingProfileSettings> profiles = writingProfileSettings();
-    const QJsonDocument document = QJsonDocument::fromJson(
-        value(SettingsKeys::AppRecognitionRules, QByteArray()).toByteArray());
-    QList<AppRecognitionRule> rules;
-    for (const QJsonValue &value : document.array()) {
-        const QJsonObject object = value.toObject();
-        AppRecognitionRule rule;
-        rule.match = object.value(QStringLiteral("match")).toString().trimmed();
-        const QString category = object.value(QStringLiteral("category")).toString();
-        if (!category.isEmpty()) {
-            const AppCategory parsed = appCategoryFromName(category);
-            if (parsed != AppCategory::Unknown) {
-                rule.category = parsed;
-            }
-        }
-        const QString profile = object.value(QStringLiteral("writingProfile")).toString();
-        if (!profile.isEmpty()) {
-            rule.writingProfile = writingProfileFromName(profile);
-        }
-        rule = withoutDeletedProfile(rule, profiles);
-        if (!rule.match.isEmpty() && (rule.category || rule.writingProfile)) {
-            rules.append(rule);
-        }
-    }
-    return rules;
+    return withoutDeletedProfiles(AppsSettingsCodec::load(m_settings), writingProfileSettings());
 }
 
-void SettingsCodecs::setAppRecognitionRules(const QList<AppRecognitionRule> &rules)
+void SettingsCodecs::setApps(const AppsSettings &value)
 {
-    const QList<WritingProfileSettings> profiles = writingProfileSettings();
-    QJsonArray array;
-    for (const AppRecognitionRule &stored : rules) {
-        const AppRecognitionRule rule = withoutDeletedProfile(stored, profiles);
-        const QString match = rule.match.trimmed();
-        if (match.isEmpty() || (!rule.category && !rule.writingProfile)) {
-            continue;
-        }
-        QJsonObject object{{QStringLiteral("match"), match}};
-        if (rule.category) {
-            object.insert(QStringLiteral("category"), appCategoryName(*rule.category));
-        }
-        if (rule.writingProfile) {
-            object.insert(QStringLiteral("writingProfile"), *rule.writingProfile);
-        }
-        array.append(object);
-    }
-    m_settings.setValue(SettingsKeys::AppRecognitionRules,
-                        QJsonDocument(array).toJson(QJsonDocument::Compact));
-}
-
-QList<BindingRule> SettingsCodecs::bindingRules() const
-{
-    const QString stored = value(SettingsKeys::BindingRules, QString()).toString();
-    const QJsonDocument document = QJsonDocument::fromJson(stored.toUtf8());
-    if (!document.isArray()) {
-        return {};
-    }
-
-    QList<BindingRule> rules;
-    const QJsonArray array = document.array();
-    rules.reserve(array.size());
-    for (const QJsonValue &value : array) {
-        const QJsonObject object = value.toObject();
-        const QString phrase = object.value(QStringLiteral("phrase")).toString().trimmed();
-        const QString replacement = object.value(QStringLiteral("replacement")).toString();
-        if (!phrase.isEmpty() && !replacement.trimmed().isEmpty()) {
-            rules.append({phrase, replacement});
-        }
-    }
-    return BindingProcessor::validateRules(rules).rules;
-}
-
-bool SettingsCodecs::setBindingRules(const QList<BindingRule> &rules, QString *error)
-{
-    const BindingValidationResult validated = BindingProcessor::validateRules(rules);
-    if (!validated.ok()) {
-        if (error) {
-            *error = validated.messages().join(QStringLiteral("\n"));
-        }
-        return false;
-    }
-
-    QJsonArray array;
-    for (const BindingRule &rule : validated.rules) {
-        array.append(QJsonObject{
-            {QStringLiteral("phrase"), rule.phrase},
-            {QStringLiteral("replacement"), rule.replacement},
-        });
-    }
-    m_settings.setValue(SettingsKeys::BindingRules,
-                        QString::fromUtf8(QJsonDocument(array).toJson(QJsonDocument::Compact)));
-    return true;
+    AppsSettingsCodec::store(m_settings, withoutDeletedProfiles(value, writingProfileSettings()));
 }
 
 bool SettingsCodecs::correctionLearningEnabled() const
@@ -685,68 +528,82 @@ void SettingsCodecs::setCorrectionLearningEnabled(bool enabled)
     CorrectionSettingsCodec::storeLearningEnabled(m_settings, enabled);
 }
 
-bool SettingsCodecs::insightsEnabled() const
+HistorySettings SettingsCodecs::historySettings() const
 {
-    return value(SettingsKeys::InsightsEnabled, true).toBool();
+    const HistorySettings defaults;
+    HistorySettings history;
+    history.keeps = historyKeepFromName(value(SettingsKeys::HistoryKeeps, QString()).toString()).value_or(defaults.keeps);
+    history.textDays = qMax(0, value(SettingsKeys::HistoryTextDays, defaults.textDays).toInt());
+    history.audioDays = qMax(-1, value(SettingsKeys::HistoryAudioDays, defaults.audioDays).toInt());
+    return history;
 }
 
-void SettingsCodecs::setInsightsEnabled(bool enabled)
+void SettingsCodecs::setHistorySettings(const HistorySettings &history)
 {
-    m_settings.setValue(SettingsKeys::InsightsEnabled, enabled);
+    m_settings.setValue(SettingsKeys::HistoryKeeps, historyKeepName(history.keeps));
+    m_settings.setValue(SettingsKeys::HistoryTextDays, history.textDays);
+    m_settings.setValue(SettingsKeys::HistoryAudioDays, history.audioDays);
 }
 
-QList<LearnedCorrection> SettingsCodecs::learnedCorrections() const
+RecordingSettings SettingsCodecs::recordingSettings() const
 {
-    return CorrectionSettingsCodec::load(m_settings);
-}
-
-void SettingsCodecs::setLearnedCorrections(const QList<LearnedCorrection> &corrections)
-{
-    CorrectionSettingsCodec::store(m_settings, corrections);
-}
-
-QString SettingsCodecs::refinementProvider() const
-{
-    const QString key = SettingsKeys::RefinementProvider;
-    const QString provider = m_settings.contains(key) ? value(key, providerKey(ProviderId::OpenAi)).toString()
-                                                      : defaultRefinementProvider();
-    if (isRefinementProviderId(provider)) {
-        return provider;
+    const RecordingSettings defaults;
+    RecordingSettings recording;
+    recording.systemAudio = value(SettingsKeys::RecordingSources, QStringLiteral("both")).toString() != QStringLiteral("mic");
+    const QJsonObject first = QJsonDocument::fromJson(value(SettingsKeys::RecordingFirst, QByteArray()).toByteArray()).object();
+    const QString service = first.value(QStringLiteral("service")).toString();
+    if (isChainProviderId(ProviderRole::Speech, service)) {
+        recording.first = ServiceChoice{service, first.value(QStringLiteral("model")).toString()};
     }
-#ifdef SPEECHER_E2E_HOOKS
-    // E2E-build-only hook: the stub refiner is not a real choice, so the
-    // whitelist would otherwise coerce it back to openai.
-    if (provider == QStringLiteral("e2e-stub")
-        && qEnvironmentVariableIntValue("SPEECHER_E2E_STUB") == 1) {
-        return provider;
+    recording.writingProfile = value(SettingsKeys::RecordingWritingProfile, QString()).toString();
+    recording.folder = value(SettingsKeys::RecordingFolder, QString()).toString();
+    recording.format = value(SettingsKeys::RecordingFormat, QString()).toString() == QStringLiteral("txt")
+        ? RecordingFormat::PlainText
+        : RecordingFormat::Markdown;
+    recording.keepAudio = value(SettingsKeys::RecordingKeepAudio, defaults.keepAudio).toBool();
+    recording.autoStopMinutes = qMax(0, value(SettingsKeys::RecordingAutoStopMinutes, defaults.autoStopMinutes).toInt());
+    recording.showPill = value(SettingsKeys::RecordingShowPill, defaults.showPill).toBool();
+    return recording;
+}
+
+void SettingsCodecs::setRecordingSettings(const RecordingSettings &recording)
+{
+    m_settings.setValue(SettingsKeys::RecordingSources, recording.systemAudio ? QStringLiteral("both") : QStringLiteral("mic"));
+    if (recording.first) {
+        m_settings.setValue(SettingsKeys::RecordingFirst,
+                            QJsonDocument(QJsonObject{{QStringLiteral("service"), recording.first->service},
+                                                      {QStringLiteral("model"), recording.first->model}})
+                                .toJson(QJsonDocument::Compact));
+    } else {
+        m_settings.remove(SettingsKeys::RecordingFirst);
     }
-#endif
-    return providerKey(ProviderId::OpenAi);
+    m_settings.setValue(SettingsKeys::RecordingWritingProfile, recording.writingProfile);
+    m_settings.setValue(SettingsKeys::RecordingFolder, recording.folder);
+    m_settings.setValue(SettingsKeys::RecordingFormat,
+                        recording.format == RecordingFormat::PlainText ? QStringLiteral("txt") : QStringLiteral("md"));
+    m_settings.setValue(SettingsKeys::RecordingKeepAudio, recording.keepAudio);
+    m_settings.setValue(SettingsKeys::RecordingAutoStopMinutes, recording.autoStopMinutes);
+    m_settings.setValue(SettingsKeys::RecordingShowPill, recording.showPill);
 }
 
-void SettingsCodecs::setRefinementProvider(const QString &value)
+bool SettingsCodecs::refinementEnabled() const
 {
-    const QString provider = isRefinementProviderId(value) ? value : providerKey(ProviderId::OpenAi);
-    // Saving a snapshot that still holds the default leaves it a default,
-    // which the setup assistant may replace; only a different provider is a
-    // choice.
-    if (!m_settings.contains(SettingsKeys::RefinementProvider) && provider == refinementProvider()) return;
-    const QStringList fallbacks = refinementFallbackProviders();
-    m_settings.setValue(SettingsKeys::RefinementProvider, provider);
-    // A new primary leaves the fallbacks, and None clears them.
-    setRefinementFallbackProviders(fallbacks);
+    return value(SettingsKeys::RefinementEnabled, true).toBool();
 }
 
-QStringList SettingsCodecs::refinementFallbackProviders() const
+void SettingsCodecs::setRefinementEnabled(bool value)
 {
-    return normalizedFallbackProviders(ProviderRole::Refinement, refinementProvider(),
-                                       value(SettingsKeys::RefinementFallbackProviders, QStringList()).toStringList());
+    m_settings.setValue(SettingsKeys::RefinementEnabled, value);
 }
 
-void SettingsCodecs::setRefinementFallbackProviders(const QStringList &value)
+ServiceOrder SettingsCodecs::refinementServices() const
 {
-    m_settings.setValue(SettingsKeys::RefinementFallbackProviders,
-                        normalizedFallbackProviders(ProviderRole::Refinement, refinementProvider(), value));
+    return ServiceOrderSettingsCodec::refinement(m_settings);
+}
+
+void SettingsCodecs::setRefinementServices(const ServiceOrder &value)
+{
+    ServiceOrderSettingsCodec::storeRefinement(m_settings, value);
 }
 
 QString SettingsCodecs::refinementStyle() const
@@ -756,18 +613,6 @@ QString SettingsCodecs::refinementStyle() const
         return style;
     }
     return QStringLiteral("balanced");
-}
-
-QString SettingsCodecs::defaultWritingProfile() const
-{
-    const QString profile = value(SettingsKeys::DefaultWritingProfile, WritingProfile::Other).toString();
-    return offeredWritingProfile(writingProfileFromName(profile), writingProfileSettings());
-}
-
-void SettingsCodecs::setDefaultWritingProfile(const QString &value)
-{
-    m_settings.setValue(SettingsKeys::DefaultWritingProfile,
-                        offeredWritingProfile(writingProfileFromName(value), writingProfileSettings()));
 }
 
 // The id when it is built in or one of the custom choices, otherwise fallback.
@@ -835,10 +680,8 @@ QList<WritingProfileSettings> SettingsCodecs::writingProfileSettings() const
             object.value(QStringLiteral("name")).toString(),
             object.value(QStringLiteral("outputLanguage")).toString(),
         });
-        readProfileProvider(object, ProviderRole::Speech, settings.last().speechProvider,
-                            settings.last().speechModel);
-        readProfileProvider(object, ProviderRole::Refinement, settings.last().refinementProvider,
-                            settings.last().refinementModel);
+        settings.last().speechFirst = readProfileProvider(object, ProviderRole::Speech);
+        settings.last().refinementFirst = readProfileProvider(object, ProviderRole::Refinement);
     }
     bool hasAiCoding = false;
     for (const WritingProfileSettings &entry : settings) {
@@ -883,9 +726,8 @@ void SettingsCodecs::setWritingProfileSettings(const QList<WritingProfileSetting
         if (!settings.outputLanguage.isEmpty()) {
             object.insert(QStringLiteral("outputLanguage"), settings.outputLanguage);
         }
-        writeProfileProvider(object, ProviderRole::Speech, settings.speechProvider, settings.speechModel);
-        writeProfileProvider(object, ProviderRole::Refinement, settings.refinementProvider,
-                             settings.refinementModel);
+        writeProfileProvider(object, ProviderRole::Speech, settings.speechFirst);
+        writeProfileProvider(object, ProviderRole::Refinement, settings.refinementFirst);
         array.append(object);
     }
     m_settings.setValue(SettingsKeys::WritingProfiles,
@@ -893,43 +735,6 @@ void SettingsCodecs::setWritingProfileSettings(const QList<WritingProfileSetting
     // A deleted profile leaves the stored terms it limited now, not only
     // when they are next read.
     setVocabularyEntries(vocabularyEntries());
-}
-
-QList<WritingProfileOverride> SettingsCodecs::writingProfileOverrides() const
-{
-    const QJsonDocument document = QJsonDocument::fromJson(
-        value(SettingsKeys::WritingProfileOverrides, QByteArray()).toByteArray());
-    QList<WritingProfileOverride> overrides;
-    for (const QJsonValue &item : document.array()) {
-        const QJsonObject object = item.toObject();
-        const QString applicationId = object.value(QStringLiteral("applicationId")).toString().trimmed();
-        if (!applicationId.isEmpty()) {
-            overrides.append({
-                applicationId,
-                writingProfileFromName(object.value(QStringLiteral("profile")).toString()),
-                object.value(QStringLiteral("enabled")).toBool(true),
-            });
-        }
-    }
-    return overrides;
-}
-
-void SettingsCodecs::setWritingProfileOverrides(const QList<WritingProfileOverride> &value)
-{
-    QJsonArray array;
-    for (const WritingProfileOverride &override : value) {
-        const QString applicationId = override.applicationId.trimmed();
-        if (applicationId.isEmpty()) {
-            continue;
-        }
-        array.append(QJsonObject{
-            {QStringLiteral("applicationId"), applicationId},
-            {QStringLiteral("profile"), override.profile},
-            {QStringLiteral("enabled"), override.enabled},
-        });
-    }
-    m_settings.setValue(SettingsKeys::WritingProfileOverrides,
-                        QJsonDocument(array).toJson(QJsonDocument::Compact));
 }
 
 bool SettingsCodecs::useTargetContext() const
@@ -1036,19 +841,6 @@ void SettingsCodecs::setCustomCleanupLevels(const QList<CustomCleanupLevel> &val
                         QJsonDocument(array).toJson(QJsonDocument::Compact));
 }
 
-QString SettingsCodecs::openAiModel() const
-{
-    const QString model = value(SettingsKeys::OpenAiModel, QStringLiteral("gpt-6-luna")).toString().trimmed();
-    return model.isEmpty() ? QStringLiteral("gpt-6-luna") : model;
-}
-
-void SettingsCodecs::setOpenAiModel(const QString &value)
-{
-    const QString model = value.trimmed();
-    m_settings.setValue(SettingsKeys::OpenAiModel,
-                        model.isEmpty() ? QStringLiteral("gpt-6-luna") : model);
-}
-
 OpenAiAuthMode SettingsCodecs::openAiAuthMode() const
 {
     const QString mode = value(SettingsKeys::OpenAiAuthMode, QString()).toString();
@@ -1068,64 +860,6 @@ void SettingsCodecs::setOpenAiAuthMode(OpenAiAuthMode value)
     m_settings.setValue(SettingsKeys::OpenAiAuthMode, openAiAuthModeName(value));
 }
 
-QString SettingsCodecs::openAiEffort() const
-{
-    const QString effort = value(SettingsKeys::OpenAiEffort, QStringLiteral("none")).toString();
-    if (effort == QStringLiteral("none") || effort == QStringLiteral("low") || effort == QStringLiteral("medium")
-        || effort == QStringLiteral("high") || effort == QStringLiteral("xhigh")) {
-        return effort;
-    }
-    return QStringLiteral("none");
-}
-
-void SettingsCodecs::setOpenAiEffort(const QString &value)
-{
-    if (value == QStringLiteral("none") || value == QStringLiteral("low") || value == QStringLiteral("medium")
-        || value == QStringLiteral("high") || value == QStringLiteral("xhigh")) {
-        m_settings.setValue(SettingsKeys::OpenAiEffort, value);
-        return;
-    }
-    m_settings.setValue(SettingsKeys::OpenAiEffort, QStringLiteral("none"));
-}
-
-namespace {
-bool isOpenAiSpeed(const QString &speed)
-{
-    return speed == QStringLiteral("standard") || speed == QStringLiteral("fast")
-        || speed == QStringLiteral("ultrafast");
-}
-} // namespace
-
-QString SettingsCodecs::openAiSpeed() const
-{
-    const QString legacy = value(SettingsKeys::OpenAiFastMode, true).toBool()
-        ? QStringLiteral("fast")
-        : QStringLiteral("standard");
-    const QString speed = value(SettingsKeys::OpenAiSpeed, legacy).toString();
-    return isOpenAiSpeed(speed) ? speed : legacy;
-}
-
-void SettingsCodecs::setOpenAiSpeed(const QString &value)
-{
-    m_settings.setValue(SettingsKeys::OpenAiSpeed, isOpenAiSpeed(value) ? value : QStringLiteral("fast"));
-}
-
-QString SettingsCodecs::anthropicModel() const
-{
-    const QString model = value(SettingsKeys::AnthropicModel, QStringLiteral("claude-opus-5-5")).toString().trimmed();
-    if (model.isEmpty()) {
-        return QStringLiteral("claude-opus-5-5");
-    }
-    return replacedAnthropicModel(model);
-}
-
-void SettingsCodecs::setAnthropicModel(const QString &value)
-{
-    const QString model = value.trimmed();
-    m_settings.setValue(SettingsKeys::AnthropicModel,
-                        model.isEmpty() ? QStringLiteral("claude-opus-5-5") : model);
-}
-
 AnthropicAuthMode SettingsCodecs::anthropicAuthMode() const
 {
     return anthropicAuthModeFromName(value(SettingsKeys::AnthropicAuthMode, QString()).toString());
@@ -1136,50 +870,23 @@ void SettingsCodecs::setAnthropicAuthMode(AnthropicAuthMode value)
     m_settings.setValue(SettingsKeys::AnthropicAuthMode, anthropicAuthModeName(value));
 }
 
-QString SettingsCodecs::anthropicEffort() const
+DeliverySteps SettingsCodecs::deliverySteps() const
 {
-    const QString effort = value(SettingsKeys::AnthropicEffort, QStringLiteral("low")).toString();
-    if (effort == QStringLiteral("low") || effort == QStringLiteral("medium")
-        || effort == QStringLiteral("high") || effort == QStringLiteral("xhigh")
-        || effort == QStringLiteral("max")) {
-        return effort;
-    }
-    return QStringLiteral("low");
+    const DeliverySteps unset;
+    const DeliverySteps steps{
+        .insert = value(SettingsKeys::InsertThroughAccessibility, unset.insert).toBool(),
+        .press = value(SettingsKeys::PressPasteKeys, unset.press).toBool(),
+        .keep = value(SettingsKeys::KeepOnClipboard, unset.keep).toBool(),
+    };
+    // A file edited by hand to turn every step off still delivers somehow.
+    return steps.any() ? steps : DeliverySteps{.insert = false, .press = false, .keep = true};
 }
 
-void SettingsCodecs::setAnthropicEffort(const QString &value)
+void SettingsCodecs::setDeliverySteps(const DeliverySteps &value)
 {
-    if (value == QStringLiteral("low") || value == QStringLiteral("medium")
-        || value == QStringLiteral("high") || value == QStringLiteral("xhigh")
-        || value == QStringLiteral("max")) {
-        m_settings.setValue(SettingsKeys::AnthropicEffort, value);
-        return;
-    }
-    m_settings.setValue(SettingsKeys::AnthropicEffort, QStringLiteral("low"));
-}
-
-bool SettingsCodecs::anthropicFastMode() const
-{
-    return value(SettingsKeys::AnthropicFastMode, true).toBool();
-}
-
-void SettingsCodecs::setAnthropicFastMode(bool value)
-{
-    m_settings.setValue(SettingsKeys::AnthropicFastMode, value);
-}
-
-QString SettingsCodecs::outputMethod() const
-{
-    const QString method = OutputMethod::normalized(value(SettingsKeys::OutputMethod, QString::fromLatin1(OutputMethod::Automatic)).toString());
-    if (!OutputMethod::hasVirtualKeyboard && method == QString::fromLatin1(OutputMethod::Ydotool)) {
-        return QString::fromLatin1(OutputMethod::Automatic);
-    }
-    return method;
-}
-
-void SettingsCodecs::setOutputMethod(const QString &value)
-{
-    m_settings.setValue(SettingsKeys::OutputMethod, OutputMethod::normalized(value));
+    m_settings.setValue(SettingsKeys::InsertThroughAccessibility, value.insert);
+    m_settings.setValue(SettingsKeys::PressPasteKeys, value.press);
+    m_settings.setValue(SettingsKeys::KeepOnClipboard, value.keep);
 }
 
 OutputFormat SettingsCodecs::outputFormat() const
@@ -1201,19 +908,6 @@ bool SettingsCodecs::ydotoolEnabled() const
 void SettingsCodecs::setYdotoolEnabled(bool value)
 {
     m_settings.setValue(SettingsKeys::YdotoolEnabled, value);
-    if (!value && outputMethod() == QString::fromLatin1(OutputMethod::Ydotool)) {
-        setOutputMethod(QString::fromLatin1(OutputMethod::Automatic));
-    }
-}
-
-bool SettingsCodecs::restoreClipboardAfterTyping() const
-{
-    return value(SettingsKeys::RestoreClipboardAfterTyping, false).toBool();
-}
-
-void SettingsCodecs::setRestoreClipboardAfterTyping(bool value)
-{
-    m_settings.setValue(SettingsKeys::RestoreClipboardAfterTyping, value);
 }
 
 int SettingsCodecs::completionStatusDurationMs() const
@@ -1224,53 +918,6 @@ int SettingsCodecs::completionStatusDurationMs() const
 void SettingsCodecs::setCompletionStatusDurationMs(int value)
 {
     m_settings.setValue(SettingsKeys::CompletionStatusDurationMs, std::clamp(value, 0, 5000));
-}
-
-QList<PasteRule> pasteRulesFromJson(const QByteArray &encoded)
-{
-    if (encoded.isEmpty()) {
-        return defaultPasteRules();
-    }
-    const QJsonDocument document = QJsonDocument::fromJson(encoded);
-    if (!document.isArray()) {
-        return defaultPasteRules();
-    }
-
-    QList<PasteRule> rules;
-    for (const QJsonValue &value : document.array()) {
-        const QJsonObject object = value.toObject();
-        PasteRule rule;
-        rule.scope = pasteRuleScopeFromName(object.value(QStringLiteral("scope")).toString());
-        rule.match = object.value(QStringLiteral("match")).toString().trimmed();
-        rule.method = pasteMethodFromName(object.value(QStringLiteral("method")).toString());
-        rule.enabled = object.value(QStringLiteral("enabled")).toBool(true);
-        rules.append(rule);
-    }
-    return rules.isEmpty() ? defaultPasteRules() : rules;
-}
-
-QByteArray pasteRulesToJson(const QList<PasteRule> &rules)
-{
-    QJsonArray array;
-    for (const PasteRule &rule : rules) {
-        array.append(QJsonObject{
-            {QStringLiteral("scope"), pasteRuleScopeName(rule.scope)},
-            {QStringLiteral("match"), rule.match.trimmed()},
-            {QStringLiteral("method"), pasteMethodName(rule.method)},
-            {QStringLiteral("enabled"), rule.enabled},
-        });
-    }
-    return QJsonDocument(array).toJson(QJsonDocument::Compact);
-}
-
-QList<PasteRule> SettingsCodecs::pasteRules() const
-{
-    return pasteRulesFromJson(value(SettingsKeys::PasteRules, QByteArray()).toByteArray());
-}
-
-void SettingsCodecs::setPasteRules(const QList<PasteRule> &rules)
-{
-    m_settings.setValue(SettingsKeys::PasteRules, pasteRulesToJson(rules));
 }
 
 ShortcutActivationMode SettingsCodecs::shortcutActivationMode() const
@@ -1293,6 +940,10 @@ QString globalShortcutKey(GlobalShortcutRole role)
         return SettingsKeys::CancelShortcut;
     case GlobalShortcutRole::Pause:
         return SettingsKeys::PauseShortcut;
+    case GlobalShortcutRole::PasteAgain:
+        return SettingsKeys::PasteAgainShortcut;
+    case GlobalShortcutRole::Recording:
+        return SettingsKeys::RecordingShortcut;
     case GlobalShortcutRole::Dictation:
         break;
     }

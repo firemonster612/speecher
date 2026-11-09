@@ -9,10 +9,6 @@
 
 namespace speecher {
 
-// How output/pasteRules is stored. Nothing stored reads as defaultPasteRules().
-QList<PasteRule> pasteRulesFromJson(const QByteArray &encoded);
-QByteArray pasteRulesToJson(const QList<PasteRule> &rules);
-
 // Where Claude Code keeps its sign-in: its config directory, which
 // CLAUDE_CONFIG_DIR moves from ~/.claude.
 QString defaultClaudeCredentialsPath();
@@ -35,36 +31,34 @@ public:
     bool boringMode() const; void setBoringMode(bool value);
     bool pauseMediaDuringTranscription() const; void setPauseMediaDuringTranscription(bool value);
     bool soundsEnabled() const; void setSoundsEnabled(bool value);
-    QString speechProvider() const; void setSpeechProvider(const QString &value);
-    QStringList speechFallbackProviders() const; void setSpeechFallbackProviders(const QStringList &value);
-    QHash<QString, QString> speechFallbackLanguages() const; void setSpeechFallbackLanguages(const QHash<QString, QString> &value);
+    ServiceOrder speechServices() const; void setSpeechServices(const ServiceOrder &value);
     bool codexFinalRetranscribe() const; void setCodexFinalRetranscribe(bool value);
     QString spokenLanguage() const; void setSpokenLanguage(const QString &value);
     LocalSpeechSettings localSpeechSettings() const; void setLocalSpeechSettings(const LocalSpeechSettings &value);
     // Without apiKey: SettingsStore keeps the key in the keyring.
-    SpeechEndpointSettings speechEndpointSettings() const; void setSpeechEndpointSettings(const SpeechEndpointSettings &value);
-    RefinementEndpointSettings refinementEndpointSettings() const; void setRefinementEndpointSettings(const RefinementEndpointSettings &value);
+    ServerSettings speechServer() const; void setSpeechServer(const ServerSettings &value);
+    ServerSettings refinementServer() const; void setRefinementServer(const ServerSettings &value);
     LocalRunnerSettings localRunnerSettings() const; void setLocalRunnerSettings(const LocalRunnerSettings &value);
     QList<VocabularyEntry> vocabularyEntries() const; void setVocabularyEntries(const QList<VocabularyEntry> &entries);
     bool recordVocabularyUsage(const QString &text);
-    // Saves each term the list does not hold yet, ignoring case, as a manual
-    // key term, and writes the settings out. Returns the ones it held already,
+    // Saves each term the list holds no spelling of yet, ignoring case, as a
+    // manual key term, and writes the settings out. Returns the ones it held already,
     // or nothing when the settings could not be written.
     static std::optional<QStringList> addVocabularyTerms(const QStringList &terms);
     AudioCaptureSettings audioCaptureSettings() const; void setAudioCaptureSettings(const AudioCaptureSettings &value);
-    QList<AppRecognitionRule> appRecognitionRules() const; void setAppRecognitionRules(const QList<AppRecognitionRule> &rules);
-    QList<BindingRule> bindingRules() const; bool setBindingRules(const QList<BindingRule> &rules, QString *error = nullptr);
+    // An app or type naming a deleted profile reads and saves without it.
+    AppsSettings apps() const; void setApps(const AppsSettings &value);
     bool correctionLearningEnabled() const; void setCorrectionLearningEnabled(bool value);
-    bool insightsEnabled() const; void setInsightsEnabled(bool value);
-    QList<LearnedCorrection> learnedCorrections() const; void setLearnedCorrections(const QList<LearnedCorrection> &corrections);
-    QString refinementProvider() const; void setRefinementProvider(const QString &value);
-    QStringList refinementFallbackProviders() const; void setRefinementFallbackProviders(const QStringList &value);
+    HistorySettings historySettings() const; void setHistorySettings(const HistorySettings &value);
+    RecordingSettings recordingSettings() const; void setRecordingSettings(const RecordingSettings &value);
+    bool refinementEnabled() const; void setRefinementEnabled(bool value);
+    // Until one is saved, the order starts with defaultRefinementProvider
+    // (ServiceOrderSettingsCodec).
+    ServiceOrder refinementServices() const; void setRefinementServices(const ServiceOrder &value);
     // The cleanup level an older release saved, which seeds the Writing
     // Profiles until they are saved. Nothing writes it now.
     QString refinementStyle() const;
-    QString defaultWritingProfile() const; void setDefaultWritingProfile(const QString &value);
     QList<WritingProfileSettings> writingProfileSettings() const; void setWritingProfileSettings(const QList<WritingProfileSettings> &value);
-    QList<WritingProfileOverride> writingProfileOverrides() const; void setWritingProfileOverrides(const QList<WritingProfileOverride> &value);
     bool useTargetContext() const; void setUseTargetContext(bool value);
     bool includeScreenshotContext() const; void setIncludeScreenshotContext(bool value);
     QString additionalInstructions() const; void setAdditionalInstructions(const QString &value);
@@ -72,25 +66,17 @@ public:
     QString customSystemPrompt() const; void setCustomSystemPrompt(const QString &value);
     QList<CustomTone> customTones() const; void setCustomTones(const QList<CustomTone> &value);
     QList<CustomCleanupLevel> customCleanupLevels() const; void setCustomCleanupLevels(const QList<CustomCleanupLevel> &value);
-    QString openAiModel() const; void setOpenAiModel(const QString &value);
     OpenAiAuthMode openAiAuthMode() const; void setOpenAiAuthMode(OpenAiAuthMode value);
-    QString openAiEffort() const; void setOpenAiEffort(const QString &value);
-    QString openAiSpeed() const; void setOpenAiSpeed(const QString &value);
     QString openAiCliproxyAccount() const; void setOpenAiCliproxyAccount(const QString &value);
-    QString anthropicModel() const; void setAnthropicModel(const QString &value);
     AnthropicAuthMode anthropicAuthMode() const; void setAnthropicAuthMode(AnthropicAuthMode value);
-    QString anthropicEffort() const; void setAnthropicEffort(const QString &value);
-    bool anthropicFastMode() const; void setAnthropicFastMode(bool value);
     QString anthropicCliproxyAccount() const; void setAnthropicCliproxyAccount(const QString &value);
     QString cliproxyOauthDir() const;
     QString configuredCliproxyOauthDir() const; void setCliproxyOauthDir(const QString &value);
     QString cliproxyBaseUrl() const; void setCliproxyBaseUrl(const QString &value);
-    QString outputMethod() const; void setOutputMethod(const QString &value);
+    DeliverySteps deliverySteps() const; void setDeliverySteps(const DeliverySteps &value);
     OutputFormat outputFormat() const; void setOutputFormat(OutputFormat value);
     bool ydotoolEnabled() const; void setYdotoolEnabled(bool value);
-    bool restoreClipboardAfterTyping() const; void setRestoreClipboardAfterTyping(bool value);
     int completionStatusDurationMs() const; void setCompletionStatusDurationMs(int value);
-    QList<PasteRule> pasteRules() const; void setPasteRules(const QList<PasteRule> &rules);
     ShortcutActivationMode shortcutActivationMode() const; void setShortcutActivationMode(ShortcutActivationMode value);
     // The binding Speecher keeps for a Global Shortcut, a combination or a
     // single key; empty when none is stored. Where a desktop shortcut service
