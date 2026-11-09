@@ -314,14 +314,13 @@ private slots:
     {
         // Frames without a GPU, so a shown window really renders one.
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
-        // Screenshots draw with the UI's own fonts, which only the app
-        // carries.
-        if (!captureDir().isEmpty()) {
-            QDirIterator fonts(QStringLiteral(SPEECHER_SOURCE_DIR "/src/frontend/quick/assets"), {QStringLiteral("*.ttf")}, QDir::Files,
-                               QDirIterator::Subdirectories);
-            while (fonts.hasNext()) {
-                QVERIFY(QFontDatabase::addApplicationFont(fonts.next()) >= 0);
-            }
+        // The UI's own fonts, which only the app carries. Without them the
+        // offscreen platform on Windows has no font at all, and text
+        // measures nothing like what the app draws.
+        QDirIterator fonts(QStringLiteral(SPEECHER_SOURCE_DIR "/src/frontend/quick/assets"), {QStringLiteral("*.ttf")}, QDir::Files,
+                           QDirIterator::Subdirectories);
+        while (fonts.hasNext()) {
+            QVERIFY(QFontDatabase::addApplicationFont(fonts.next()) >= 0);
         }
     }
 
