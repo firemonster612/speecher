@@ -29,7 +29,7 @@ jobs:
         with:
           version: 6.11.3
           arch: clang_64
-          modules: qtmultimedia qtwebsockets
+          modules: qtmultimedia qtshadertools qtwebsockets
 
       - name: Remove obsolete AGL references
         run: |

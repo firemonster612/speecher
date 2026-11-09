@@ -200,8 +200,9 @@ else()
   find_package(Qt6 6.5 QUIET COMPONENTS WebSockets)
 endif()
 # The Qt Quick UI (cmake/QuickUi.cmake). Its QML needs 6.9, for
-# QtQuick.Effects' RectangularShadow.
-find_package(Qt6 6.9 REQUIRED COMPONENTS Qml Quick QuickTemplates2)
+# QtQuick.Effects' RectangularShadow, and Shader Tools compiles the popup's
+# voice shader for every graphics API.
+find_package(Qt6 6.9 REQUIRED COMPONENTS Qml Quick QuickTemplates2 ShaderTools)
 if(UNIX AND NOT APPLE)
   find_package(Qt6 6.5 REQUIRED COMPONENTS DBus)
   if(SPEECHER_WITH_KDE)

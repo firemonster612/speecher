@@ -13,7 +13,7 @@ talks to the running app.
 
 Install Visual Studio 2022 Build Tools with the MSVC x64 toolchain and Windows
 11 SDK, CMake, Ninja, Git, Python, and Qt 6.9 or newer (CI uses 6.10.3)
-`msvc2022_64` with Qt Multimedia and Qt WebSockets. In a developer PowerShell:
+`msvc2022_64` with Qt Multimedia, Qt Shader Tools and Qt WebSockets. In a developer PowerShell:
 
 ```powershell
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSPEECHER_BUILD_TESTS=ON -DCMAKE_PREFIX_PATH=C:\Qt\6.10.3\msvc2022_64
