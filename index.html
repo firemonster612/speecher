@@ -47,7 +47,6 @@
     <a class="wordmark" href="#top" aria-label="Speecher, back to top"><span class="mark" aria-hidden="true"></span>Speecher</a>
     <nav class="nav-links" aria-label="Sections">
       <a href="#says">How it works</a>
-      <a href="#pick">Apps</a>
       <a href="#android">Android</a>
       <a href="#coding">Terminal</a>
       <a href="#questions">Questions</a>
@@ -89,7 +88,7 @@
             <p class="review-diff"></p>
             <div class="review-actions">
               <span class="pbtn">Cancel <span class="kc">Esc</span></span>
-              <span class="pbtn">Ask for more changes <span class="kc">Right Alt</span></span>
+              <span class="pbtn pbtn-ask">Ask for more changes <span class="kc">Meta</span><span class="kc">Alt</span><span class="kc">D</span></span>
               <span class="pbtn pbtn-primary review-replace">Replace <span class="kc">Enter</span></span>
             </div>
           </div>
@@ -99,8 +98,8 @@
   </template>
 
   <main>
-    <!-- 1 and 2. The hero; its night gathers into the pill (the page's one
-         scroll-driven moment); then the cleanup level, click by click. -->
+    <!-- 1 and 2. The hero; its night gathers into the pill (the page's first
+         scroll-driven moment), which lands on the instrument. -->
     <section class="intro" id="top" aria-labelledby="hero-title">
       <div class="intro-stage">
         <div class="hero">
@@ -108,87 +107,72 @@
           <div class="range-still hero-still" aria-hidden="true"></div>
           <canvas class="hero-canvas" id="hero-canvas" aria-hidden="true"></canvas>
           <div class="hero-copy">
-            <h1 id="hero-title"><span class="rise"><span>Talk.</span></span> <span class="rise"><span>It lands.</span></span></h1>
+            <div class="hero-head">
+              <h1 id="hero-title"><span class="rise"><span>Talk.</span></span> <span class="rise"><span>It lands.</span></span></h1>
+            </div>
             <div class="hero-side">
-              <p class="hook">Hold a key in any app and talk. It runs on the <em>Claude or ChatGPT you already pay&nbsp;for.</em></p>
+              <!-- The sample lands in the hook's place, right above the keys. -->
+              <div class="hero-say">
+                <p class="hook">Hold a shortcut in any app and talk. It runs on the <em>Claude or ChatGPT you already pay&nbsp;for.</em></p>
+                <p class="landed" id="landed" aria-hidden="true"><span class="landed-text"></span><i class="caret"></i><span class="landed-tag"></span></p>
+              </div>
               <div class="hero-actions">
                 <a class="button button-light" id="hero-download" href="https://github.com/firemonster612/speecher/releases/tag/v0.3.0">Download Speecher</a>
-                <button type="button" class="voice-try" id="voice-try" hidden>Try it with your voice</button>
+                <!-- Speecher's default shortcut for this computer (page.js),
+                     held to play a sample dictation. Phones get one cap. -->
+                <button type="button" class="talk" id="talk" aria-label="Hold to talk: plays a sample dictation"><span class="caps" id="talk-caps"><kbd class="cap cap-wide">Hold to talk</kbd></span><span class="talk-label">Hold to talk</span></button>
               </div>
-              <p class="hero-note" id="hero-note">Free, open-source dictation for Linux, macOS and Windows.</p>
+              <!-- The pill docks under the keys, where the note steps back. -->
+              <div class="hero-foot">
+                <p class="hero-note" id="hero-note">Free, open-source dictation for Linux, macOS and Windows.</p>
+                <div class="pill-mount hero-pill"></div>
+              </div>
             </div>
           </div>
+          <p class="sr" id="talk-live" aria-live="polite"></p>
         </div>
 
-        <div class="says" id="says">
-          <h2 id="says-title" tabindex="-1">Say it the way it comes out.</h2>
-          <p class="lead">You pick how much it cleans up.</p>
+        <!-- One instrument: the pill lands here and hears one sentence; it
+             lands written for the app you pick, by that app's profile. -->
+        <div class="says" id="says" style="--p: var(--other)">
+          <h2 id="says-title" tabindex="-1">Written for the app you're in.</h2>
+          <div class="apps" id="apps" role="tablist" aria-label="Apps">
+            <button type="button" role="tab" id="tab-anywhere" aria-selected="true" aria-controls="strip" tabindex="0" data-app="anywhere" style="--i: var(--ibeam); --c: var(--pale)"><span class="ico"></span><span class="tab-name">Anywhere</span></button>
+            <button type="button" role="tab" id="tab-mail" aria-selected="false" aria-controls="strip" tabindex="-1" data-app="mail" style="--i: url(icons/mail.svg); --c: #3B9BFF"><span class="ico"></span><span class="tab-name">Mail</span></button>
+            <button type="button" role="tab" id="tab-slack" aria-selected="false" aria-controls="strip" tabindex="-1" data-app="slack" style="--i: url(icons/slack.svg)"><span class="ico ico-own"></span><span class="tab-name">Slack</span></button>
+            <button type="button" role="tab" id="tab-claude" aria-selected="false" aria-controls="strip" tabindex="-1" data-app="claude" style="--i: url(icons/claude.svg); --c: #D97757"><span class="ico"></span><span class="tab-name">Claude Code</span></button>
+            <button type="button" role="tab" id="tab-whatsapp" aria-selected="false" aria-controls="strip" tabindex="-1" data-app="whatsapp" style="--i: url(icons/whatsapp.svg); --c: #25D366"><span class="ico"></span><span class="tab-name">WhatsApp</span></button>
+            <button type="button" role="tab" id="tab-notion" aria-selected="false" aria-controls="strip" tabindex="-1" data-app="notion" style="--i: url(icons/notion.svg); --c: #EEF1EA"><span class="ico"></span><span class="tab-name">Notion</span></button>
+            <button type="button" role="tab" id="tab-cursor" aria-selected="false" aria-controls="strip" tabindex="-1" data-app="cursor" style="--i: url(icons/cursor.svg); --c: #EEF1EA"><span class="ico"></span><span class="tab-name">Cursor</span></button>
+            <button type="button" role="tab" id="tab-discord" aria-selected="false" aria-controls="strip" tabindex="-1" data-app="discord" style="--i: url(icons/discord.svg); --c: #5865F2"><span class="ico"></span><span class="tab-name">Discord</span></button>
+          </div>
           <div class="pill-mount says-pill"></div>
-          <div class="proof-frame">
-            <span class="frame-label">you said, at <b id="level-name">Medium</b></span>
-            <span class="frame-label frame-label-r"><i class="dot dot-live"></i>demo</span>
-            <p class="proof" id="proof" aria-hidden="true"></p>
-            <p class="sr">You said: so um can you send me the the numbers from last quarter before friday thanks.</p>
-            <p class="sr" id="proof-sr" aria-live="polite"></p>
+          <div class="strip-panel" id="strip" role="tabpanel" aria-labelledby="tab-anywhere">
+            <div class="strip" id="strip-app" aria-hidden="true"></div>
+            <p class="sr" id="strip-sr"></p>
           </div>
-          <div class="levels" role="radiogroup" aria-label="Cleanup level" aria-describedby="level-help">
-            <button type="button" role="radio" aria-checked="false" tabindex="-1" data-level="none">None</button>
-            <button type="button" role="radio" aria-checked="false" tabindex="-1" data-level="light">Light</button>
-            <button type="button" role="radio" aria-checked="true" tabindex="0" data-level="medium">Medium</button>
-            <button type="button" role="radio" aria-checked="false" tabindex="-1" data-level="high">High</button>
+          <div class="tune">
+            <p class="profile"><span class="chip chip-p"><i class="dot"></i><span id="profile-name">Other profile</span></span><span class="chip" id="profile-tone">No tone</span><span class="chip chip-lang" id="profile-lang" hidden>Writes in German</span></p>
+            <div class="cleanup"><span class="tune-label" aria-hidden="true">Cleanup</span>
+            <div class="levels" role="radiogroup" aria-label="Cleanup level of this profile">
+              <button type="button" role="radio" aria-checked="false" tabindex="-1" data-level="none">None</button>
+              <button type="button" role="radio" aria-checked="false" tabindex="-1" data-level="light">Light</button>
+              <button type="button" role="radio" aria-checked="true" tabindex="0" data-level="medium">Medium</button>
+              <button type="button" role="radio" aria-checked="false" tabindex="-1" data-level="high">High</button>
+            </div></div>
           </div>
-          <p class="level-help" id="level-help">Also removes filler words and false starts, and adds paragraphs.</p>
+          <p class="says-foot">Demo, sample settings. Logos belong to their owners; not affiliated.</p>
           <canvas class="says-glow" id="says-glow" aria-hidden="true"></canvas>
+          <p class="sr" id="says-live" aria-live="polite"></p>
         </div>
       </div>
-    </section>
-
-    <!-- 2. The centrepiece: pick an app; the same words land written for it. -->
-    <section class="pick sec" id="pick" aria-labelledby="pick-title">
-      <div class="pick-head">
-        <h2 id="pick-title">Written for the app you're in.</h2>
-        <p class="spoken"><span class="chip"><i class="dot dot-live"></i>you said</span> <span class="spoken-text">um so the upload test no wait the login test is failing again can you take a look don't change anything yet thanks</span></p>
-      </div>
-      <div class="pick-stage" id="pick-stage" data-profile="email">
-        <div class="range-still pick-still" aria-hidden="true"></div>
-        <canvas class="pick-glow" id="pick-glow" aria-hidden="true"></canvas>
-        <div class="result" id="result" aria-hidden="true">
-          <div class="result-tags"><span class="chip chip-p" id="result-profile"><i class="dot"></i>Email profile</span><span class="chip" id="result-settings">Formal, High cleanup</span><span class="chip chip-lang" id="result-lang" hidden>Writes in German</span></div>
-          <div class="app-win" id="app-win"></div>
-        </div>
-        <p class="sr" id="result-sr" aria-live="polite"></p>
-      </div>
-      <div class="dock" role="radiogroup" aria-label="Pick an app">
-        <div class="dock-group" style="--p: var(--email)"><p class="group-name"><i class="dot"></i>Email</p><div class="tiles">
-          <button type="button" role="radio" aria-checked="true" tabindex="0" data-app="mail" style="--i: url(icons/mail.svg); --c: #3B9BFF"><span class="ico"></span><span class="tile-name">Mail</span></button>
-        </div></div>
-        <div class="dock-group" style="--p: var(--work)"><p class="group-name"><i class="dot"></i>Work</p><div class="tiles">
-          <button type="button" role="radio" aria-checked="false" tabindex="-1" data-app="slack" style="--i: url(icons/slack.svg)"><span class="ico ico-own"></span><span class="tile-name">Slack</span></button>
-          <button type="button" role="radio" aria-checked="false" tabindex="-1" data-app="notion" style="--i: url(icons/notion.svg); --c: #EEF1EA"><span class="ico"></span><span class="tile-name">Notion</span></button>
-        </div></div>
-        <div class="dock-group" style="--p: var(--ai)"><p class="group-name"><i class="dot"></i>AI coding</p><div class="tiles">
-          <button type="button" role="radio" aria-checked="false" tabindex="-1" data-app="claude" style="--i: url(icons/claude.svg); --c: #D97757"><span class="ico"></span><span class="tile-name">Claude Code</span></button>
-          <button type="button" role="radio" aria-checked="false" tabindex="-1" data-app="cursor" style="--i: url(icons/cursor.svg); --c: #EEF1EA"><span class="ico"></span><span class="tile-name">Cursor</span></button>
-        </div></div>
-        <div class="dock-group" style="--p: var(--personal)"><p class="group-name"><i class="dot"></i>Personal</p><div class="tiles">
-          <button type="button" role="radio" aria-checked="false" tabindex="-1" data-app="whatsapp" style="--i: url(icons/whatsapp.svg); --c: #25D366"><span class="ico"></span><span class="tile-name">WhatsApp</span></button>
-          <button type="button" role="radio" aria-checked="false" tabindex="-1" data-app="discord" style="--i: url(icons/discord.svg); --c: #5865F2"><span class="ico"></span><span class="tile-name">Discord</span></button>
-        </div></div>
-      </div>
-      <p class="also"><span class="also-label">Also types into anything else, with your default profile:</span>
-        <span class="also-chip"><span class="ico" style="--i: url(icons/gmail.svg); --c: #EA4335"></span>Gmail</span>
-        <span class="also-chip">Outlook</span>
-        <span class="also-chip">Word</span>
-        <span class="also-chip"><span class="ico" style="--i: url(icons/googledocs.svg); --c: #4C8BF5"></span>Google Docs</span>
-        <span class="also-chip"><span class="ico" style="--i: url(icons/googlemessages.svg); --c: #5C9DFF"></span>Messages</span>
-      </p>
-      <p class="aside sec-foot">Demo with sample settings. Logos belong to their owners; not affiliated.</p>
     </section>
 
     <!-- 3. Delivery: the page's one pinned layout (and its second scroll
-         moment). A whole desktop; the words land in the window you were in;
-         the frame closes on that window while the two other cases ride in,
-         and each acts out its beat as it settles. Phones stack the cards. -->
+         moment), in two beats for the heading's two claims. A whole desktop;
+         the words land in the window you were in; the frame closes on that
+         window while the password field rides in and refuses the words.
+         Phones stack the two cards. -->
     <section class="lands sec" id="lands" aria-labelledby="lands-title">
       <div class="lands-pin">
         <div class="lands-head">
@@ -196,9 +180,8 @@
           <p class="lead" id="lands-lead">And never anywhere it shouldn't.</p>
         </div>
         <div class="lands-stage" id="lands-stage">
-          <span class="stage-tag">Demo, with cleanup on</span>
+          <span class="stage-tag">Demo, cleanup on</span>
           <article class="cell cell-a" style="--cell: var(--positive)" aria-label="It lands where your cursor was">
-            <canvas class="cell-glow lands-glow" id="lands-glow" aria-hidden="true"></canvas>
             <div class="desk-bar desk-chrome" aria-hidden="true">
               <span class="bar-clock">Thu 4:12 PM</span>
               <span class="bar-status">
@@ -246,7 +229,6 @@
           </article>
           <div class="cell-frame" id="lands-frame" style="--cell: var(--positive)" aria-hidden="true"></div>
           <article class="cell cell-b" style="--cell: #F0695C" aria-label="Never in a password field">
-            <canvas class="cell-glow guard-glow" id="guard-glow" aria-hidden="true"></canvas>
             <div class="desk guard" aria-hidden="true">
               <div class="win w-login">
                 <div class="win-bar"><span class="win-title">Sign in</span></div>
@@ -257,52 +239,35 @@
             </div>
             <p class="sr">You say "running ten minutes late" while a password field has focus. The words stop at the field and nothing is typed. The pill says Copied, and your words wait on the clipboard.</p>
           </article>
-          <article class="cell cell-c" style="--cell: var(--light)" aria-label="Change it by voice">
-            <canvas class="cell-glow edit-glow" id="edit-glow" aria-hidden="true"></canvas>
-            <div class="desk edit-desk" aria-hidden="true">
-              <div class="win w-draft">
-                <div class="win-bar"><span class="win-title">Re: Quarterly numbers</span></div>
-                <div class="draft-body"><p>Hi Morgan,</p><p><span class="sel">Could you send me the numbers by Friday? Thanks.</span></p></div>
-              </div>
-              <div class="pill-mount stage-pill edit-pill"></div>
-            </div>
-            <p class="sr">Select "Could you send me the numbers by Friday? Thanks." and say "change Friday to Monday". The review shows Friday struck and Monday added, one change. Enter replaces, Escape cancels.</p>
-          </article>
         </div>
       </div>
     </section>
 
-    <!-- 4. No new account: the real marks, the setup step, a wide horizon of light. -->
+    <!-- 4. No new account: the sign-up steps struck out as a copy edit, and
+         the setup window that finds the sign-ins you already have. -->
     <section class="account sec" id="account" aria-labelledby="account-title">
-      <div class="range-still account-still" aria-hidden="true"></div>
-      <canvas class="account-canvas" id="account-canvas" aria-hidden="true"></canvas>
       <div class="account-copy">
         <h2 id="account-title">No new account.</h2>
-        <p class="lead">It runs on the Claude or ChatGPT plan you already pay for. No API key, no new subscription.</p>
+        <p class="redline" id="redline"><del>Sign up.</del> <del>Choose a plan.</del> <del>Paste an API key.</del> <ins>Runs on the Claude or ChatGPT you already pay&nbsp;for.</ins></p>
         <div class="brands">
           <div class="brand brand-claude"><img src="icons/claude-color.svg" alt=""><span><b>Claude</b><small>with Claude Code</small></span></div>
           <div class="brand brand-chatgpt"><span class="ico ico-big" style="--i: url(icons/chatgpt.svg); --c: #EEF1EA"></span><span><b>ChatGPT</b><small>with the Codex app</small></span></div>
         </div>
+        <p class="account-foot">Not affiliated with Anthropic or OpenAI. Uses their voice services unofficially.</p>
       </div>
-      <div class="setup" id="setup" data-found="0">
-        <div class="setup-bar" aria-hidden="true"><span class="setup-mark"></span>Set up Speecher</div>
-        <div class="setup-body" aria-hidden="true">
-          <p class="setup-title">Welcome to Speecher</p>
-          <p class="setup-found">Sign-ins found on this computer</p>
-          <div class="setup-card">
-            <div class="setup-row" data-row="1"><div><b>Claude</b><small>Signed in with Claude Code</small></div><span class="ok">Signed in</span></div>
-            <div class="setup-row" data-row="2"><div><b>ChatGPT</b><small>Signed in with the Codex app</small></div><span class="ok">Signed in</span></div>
-          </div>
-        </div>
-        <p class="sr">In setup, Speecher shows the sign-ins it found on this computer: Claude, signed in with Claude Code, and ChatGPT, signed in with the Codex app.</p>
-        <p class="setup-foot"><span>Setup, sample data</span><span>Not affiliated with Anthropic or OpenAI.</span></p>
-      </div>
+      <!-- The setup window, cropped to its title bar and its sign-ins.
+           To show the owner's capture, replace setup/setup-welcome.png
+           (a 960 x 764 window, any scale) and say so in the caption; the
+           crop needs no change (shots/r14/NOTES.md). -->
+      <figure class="setup-shot">
+        <div class="setup-crop" role="img" style="--shot: url(setup/setup-welcome.png)" aria-label="Speecher's setup window, Set up Speecher. Sign-ins found on this computer: ChatGPT, signed in with the Codex app, and Claude, signed in with Claude Code. Both say Signed in."><i class="crop-title"></i><i class="crop-controls"></i><i class="crop-signins"></i></div>
+        <figcaption>Demo, sample data. Speecher's setup window, cropped to its sign-ins, which are redrawn from the app's source.</figcaption>
+      </figure>
     </section>
 
-    <!-- 4b. Android: the same plan, on the phone. One phone stands in the
-         middle; the heading hangs off its left edge at the top, the APK off
-         its right edge at the bottom, so the eye crosses the phone. The
-         phone is the real app in Android's dark dynamic colours (sage, from
+    <!-- 4b. Android: the same plan, on the phone. The phone's lower half,
+         large, on the left (the keyboard's button, the panel and Insert
+         refined); the heading and the APK beside it. The phone is the real app in Android's dark dynamic colours (sage, from
          docs/android/media/qa-0.1.14-screenshot.png): Speecher's button on
          the keyboard's mic key, its dictation panel, and Insert refined. -->
     <section class="droid sec" id="android" aria-labelledby="android-title">
@@ -310,7 +275,8 @@
         <h2 id="android-title">And on your phone.</h2>
         <p class="lead">On Android, tap the button beside your keyboard and talk.</p>
       </div>
-      <div class="handset" id="handset" aria-hidden="true">
+      <div class="handset-crop" aria-hidden="true">
+      <div class="handset" id="handset">
         <div class="screen" id="droid-screen" data-step="type">
           <div class="sb"><span class="sb-time">6:42</span><span class="sb-mic"><svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11z"/></svg></span><span class="sb-icons"><svg viewBox="0 0 24 24"><path d="M2 22h3V12H2zm5 0h3V8H7zm5 0h3V4h-3zm5 0h3V2h-3z" opacity=".95"/></svg><svg viewBox="0 0 24 24"><path d="M12 21 1 8.5a16 16 0 0 1 22 0z"/></svg><svg class="sb-batt" viewBox="0 0 24 24"><rect x="1" y="7" width="19" height="10" rx="3"/><rect x="21" y="10" width="2" height="4" rx="1"/></svg></span></div>
           <div class="chat-bar">
@@ -357,6 +323,7 @@
           <div class="nav-row"><svg class="ic" viewBox="0 0 24 24"><path d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg><svg class="ic" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm6.9 6h-3a15.7 15.7 0 0 0-1.4-3.6A8 8 0 0 1 18.9 8zM12 4a14 14 0 0 1 1.9 4h-3.8A14 14 0 0 1 12 4zM4.3 14a8.2 8.2 0 0 1 0-4h3.4a16.5 16.5 0 0 0 0 4zm.8 2h3a15.7 15.7 0 0 0 1.4 3.6A8 8 0 0 1 5.1 16zm3-8h-3a8 8 0 0 1 4.3-3.6C8.9 5.5 8.4 6.7 8.1 8zM12 20a14 14 0 0 1-1.9-4h3.8A14 14 0 0 1 12 20zm2.3-6H9.7a14.7 14.7 0 0 1 0-4h4.6a14.7 14.7 0 0 1 0 4zm.3 5.6a15.7 15.7 0 0 0 1.4-3.6h3a8 8 0 0 1-4.4 3.6zm1.7-5.6a16.5 16.5 0 0 0 0-4h3.4a8.2 8.2 0 0 1 0 4z"/></svg><i class="gesture"></i></div>
         </div>
       </div>
+      </div>
       <p class="sr">In a chat, you tap Speecher's button on the keyboard's mic key. Speecher's panel takes the keyboard's place and shows your words as you say "Yeah, running about ten minutes late, um, save me a seat." You tap Insert refined, and "Yeah, running about ten minutes late. Save me a seat!" goes into the message field.</p>
       <div class="apk">
         <p class="apk-note" aria-hidden="true"><i></i>Speecher's button</p>
@@ -365,7 +332,7 @@
           <div class="apk-name"><b>Speecher for Android</b><span class="apk-tags"><span>0.2.0</span><span>Android 12+</span><span>32 MB</span></span></div>
         </div>
         <a class="button apk-button" href="https://github.com/firemonster612/speecher/releases/download/android-v0.2.0/Speecher-0.2.0.apk">Download the APK</a>
-        <p class="apk-foot">From GitHub, not the Play Store. Demo, dark theme.</p>
+        <p class="apk-foot">From GitHub, not the Play Store. Signs in on its own. Demo, dark theme.</p>
       </div>
     </section>
 
@@ -381,7 +348,7 @@
       <div class="tty" id="tty">
         <div class="tty-top">
           <span class="tty-path"><i class="tty-branch"></i>~/upload-service <b>main</b></span>
-          <span class="tty-tag">Example, progress lines omitted</span>
+          <span class="tty-tag">Demo, progress lines omitted</span>
           <button type="button" class="copy" id="copy" data-copy="git commit -m &quot;$(speecher listen --until-silence)&quot;">Copy</button>
         </div>
         <p class="ln ln-cmd"><span class="ps" aria-hidden="true">$</span> <span class="cmd">git commit -m "<span class="sub">$(<span class="sub-cmd">speecher listen --until-silence</span>)</span>"</span></p>
@@ -408,15 +375,23 @@
         </details>
         <details name="qa">
           <summary>Which services does it use?</summary>
-          <p>Claude turns your voice into words. Cleanup runs on ChatGPT if you have the Codex app, or on Claude if you only have Claude Code. You can add a backup for when one is rate limited, and if every cleanup fails, your raw words still land. The Claude and ChatGPT voice services are used unofficially, so they could change.</p>
+          <p>Claude or ChatGPT, so either sign-in is enough. Setup asks which one turns your voice into words and which one cleans them up. You can add a backup for when one is rate limited, and if every cleanup fails, your raw words still land. The Claude and ChatGPT voice services are used unofficially, so they could change.</p>
         </details>
         <details name="qa">
           <summary>Where does the text go?</summary>
           <p>Where your cursor was, in any app. If you switch windows mid-sentence it stays on the clipboard. It never types into password fields, and it reads the field back to check the text arrived. Linux and Windows terminals get Ctrl Shift V, and your words stay copied.</p>
         </details>
         <details name="qa">
+          <summary>Can it change what I've already written?</summary>
+          <p>Yes. Select it, press the shortcut and say the change, like "change Friday to Monday". You see the edit first, and Enter puts it in place. It needs cleanup on and an app that shares its selection.</p>
+        </details>
+        <details name="qa">
           <summary>What gets sent where?</summary>
           <p>Your audio goes to the speech service you picked. The transcript, the app's name, the window title and the text around your cursor go to the cleanup service. If you turn on screenshot context, which is off by default, a picture of the screen goes too. By default, History keeps your text 90 days.</p>
+        </details>
+        <details name="qa">
+          <summary>Does the phone need its own sign-in?</summary>
+          <p>Yes. The Android keyboard signs in to Claude or ChatGPT itself. Your profiles and words can come over from your computer by QR code, on the same Wi-Fi.</p>
         </details>
         <details name="qa">
           <summary>Why does Linux ask for my password?</summary>
@@ -433,6 +408,7 @@
         <h2 id="download-title">Get Speecher.</h2>
         <p class="close-line">Version 0.3.0, free and open source.</p>
         <a class="button button-light close-button" id="close-download" href="https://github.com/firemonster612/speecher/releases/tag/v0.3.0">Download Speecher</a>
+        <p class="needs" id="close-needs" hidden></p>
         <p class="close-other" id="close-other">For <a href="https://github.com/firemonster612/speecher/releases/download/v0.3.0/Speecher-x86_64.AppImage">Linux</a>, <a href="https://github.com/firemonster612/speecher/releases/download/v0.3.0/speecher.dmg">macOS</a> and <a href="https://github.com/firemonster612/speecher/releases/download/v0.3.0/Speecher-Setup-x64.exe">Windows</a>, a <a href="https://github.com/firemonster612/speecher/releases/tag/android-v0.2.0">keyboard for Android</a>, and the <a href="https://github.com/firemonster612/speecher">source</a>.</p>
         <details class="close-notes">
           <summary>Before you install</summary>
@@ -440,6 +416,7 @@
             <li><b>Linux.</b> An x86-64 AppImage. Needs glibc 2.43 or newer, like Fedora 44, Ubuntu 26.04 or Debian 14. Pasting on Wayland needs a one-time helper, which asks for your password.</li>
             <li><b>macOS.</b> macOS 15 or newer. The app isn't signed yet, so Gatekeeper asks once.</li>
             <li><b>Windows.</b> Windows 11. Also unsigned, so SmartScreen asks once.</li>
+            <li><b>The pill.</b> This page shows the pill from the nightly build. Version 0.3.0 still draws the earlier ribbon.</li>
             <li><b>Android.</b> A dictation keyboard, version 0.2.0, installed from GitHub rather than the Play Store.</li>
           </ul>
         </details>

@@ -1,7 +1,7 @@
 // The page's scenes. Two scroll-driven moments, the tagline's two halves: the
 // hero's night becoming the pill ("Talk."), and the pinned delivery stage,
-// where the words land in the window you were in and the layout opens into
-// the three ways delivery behaves ("It lands."). Everything else scrolls
+// where the words land in the window you were in and the layout opens onto
+// the password field that refuses them ("It lands."). Everything else scrolls
 // normally, with the light and the demos moving on their own clocks, and the
 // clicks and hovers that show the real product.
 (() => {
@@ -34,10 +34,12 @@
   // secondary views at 1x, to keep frames cheap.
   const density = (cap = 1.25) => Math.min(cap, devicePixelRatio || 1);
   // A light's colours from one accent: a pale core, the accent far, its halo.
-  const tint = (accent) => {
-    const a = hex(accent);
-    return { core: a.map((v) => v + (1 - v) * .82), far: a.map((v) => v * .7), halo: a };
+  const tint = (accent, rgb = hex(accent), white = .82) => {
+    const a = rgb;
+    return { core: a.map((v) => v + (1 - v) * white), far: a.map((v) => v * .7), halo: a };
   };
+  // The instrument's horizon keeps its colour where its lines crowd together.
+  const HORIZON_WHITE = .4;
 
   // Someone talking into a range: a talker, a voice, and whatever draws it.
   // With reduced motion the voice is a still level.
@@ -83,7 +85,18 @@
   if (!RM) for (let i = 0; i < 70; i++) heroActor.step(1000 / 60);
   const hero = new Range(heroCanvas, heroActor.voice, { ...HERO });
   watch.observe(intro);
-  let mic = null;
+  // Speecher's default dictation shortcut on this computer
+  // (GlobalShortcutBinder.h): Meta+Alt+D, and Ctrl+Alt+D on Windows. On
+  // macOS Qt's Meta is the Control key (MacGlobalShortcutBinder.mm). The app
+  // draws the shortcut from Qt's native text split at "+"
+  // (ShortcutBinding::displayText, QuickSettings.cpp shortcutKeys); macOS's
+  // native text has no "+", so a Mac shows one cap, ⌃⌥D. Phones and
+  // ChromeOS have no Speecher shortcut, so they get no key names.
+  const ua = navigator.userAgent, plat = navigator.userAgentData?.platform || navigator.platform || '';
+  const KEYS = /Android|iPhone|iPad|iPod|CrOS/i.test(ua) || (/Mac/.test(plat) && navigator.maxTouchPoints > 1) ? null
+    : /Win/i.test(plat) ? { caps: ['Ctrl', 'Alt', 'D'], held: (e) => e.ctrlKey && e.altKey }
+    : /Mac/i.test(plat) ? { caps: ['\u2303\u2325D'], name: 'Control Option D', held: (e) => e.ctrlKey && e.altKey }
+    : /Linux|X11/i.test(plat + ua) ? { caps: ['Meta', 'Alt', 'D'], held: (e) => e.metaKey && e.altKey } : null;
   const lean = { x: 0, y: 0, tx: 0, ty: 0 };
   if (!RM && matchMedia('(hover: hover)').matches) {
     addEventListener('pointermove', (e) => { lean.tx = e.clientX / innerWidth * 2 - 1; lean.ty = e.clientY / innerHeight * 2 - 1; });
@@ -95,190 +108,506 @@
     return { x: (W - w) / 2 + lean.x * 22, cy: H * .34, w, h };
   }
 
-  // 2. The cleanup level, the app's own (Library.qml): one spoken sentence,
-  //    marked as the app marks it, rewritten as you pick a level.
-  const RAW = 'so um can you send me the the numbers from last quarter before friday thanks';
-  const LEVELS = {
-    none: { name: 'None', help: 'Pastes your words as spoken, unless the profile translates.',
-      text: RAW, segs: [['same', RAW]] },
-    light: { name: 'Light', help: 'Fixes punctuation, capitals and clear mistakes, and keeps your wording.',
-      text: 'So, um, can you send me the numbers from last quarter before Friday? Thanks.',
-      segs: [['same', 'So, um, can you send me the'], ['del', 'the'], ['same', 'numbers from last quarter before'], ['del', 'friday thanks'], ['ins', 'Friday? Thanks.']] },
-    medium: { name: 'Medium', help: 'Also removes filler words and false starts, and adds paragraphs.',
-      text: 'Can you send me the numbers from last quarter before Friday? Thanks.',
-      segs: [['del', 'so um can'], ['ins', 'Can'], ['same', 'you send me'], ['del', 'the'], ['same', 'the numbers from last quarter before'], ['del', 'friday thanks'], ['ins', 'Friday? Thanks.']] },
-    high: { name: 'High', help: 'Also rewrites for clarity, flow and organization, keeping the facts.',
-      text: "Could you send me last quarter's numbers by Friday? Thank you.",
-      segs: [['del', 'so um can'], ['ins', 'Could'], ['same', 'you send me'], ['del', 'the the numbers from last quarter before'], ['ins', "last quarter's numbers by"], ['del', 'friday thanks'], ['ins', 'Friday? Thank you.']] },
+  // 2. One instrument. The hand-off lands the pill here; it hears one spoken
+  //    sentence, and only when it has finished does the result write itself
+  //    into the app's composer, marked as the app marks an edit (struck in
+  //    red, added in blue), then settled. Pick an app and the same words land
+  //    written for it; pick a level and its profile cleans up more or less.
+  //    Level, tone and output language belong to the writing profile, not to
+  //    the app (Target.h), so apps in one profile share them: Slack and
+  //    Notion are both Work (Apps.cpp). Discord sits in a custom profile that
+  //    writes German. At None nothing refines and the words land as heard,
+  //    unless the profile translates, which then cleans up lightly (Target.cpp).
+  const SPOKEN = "um so the upload test no wait the login test is failing again can you take a look don't change anything yet thanks";
+  const said = SPOKEN.split(' ');
+  const LEVEL_NAMES = { none: 'None', light: 'Light', medium: 'Medium', high: 'High' };
+  // Sample settings. The colours are the page's profile accents.
+  const PROFILES = {
+    other: { name: 'Other', colour: '#7894E4', tone: 'No tone', level: 'medium' },
+    email: { name: 'Email', colour: '#F2A65E', tone: 'Formal', level: 'high' },
+    work: { name: 'Work', colour: '#4FD1C5', tone: 'No tone', level: 'light' },
+    ai: { name: 'AI coding', colour: '#B79CFF', tone: 'No tone', level: 'medium' },
+    personal: { name: 'Personal', colour: '#FF8AB8', tone: 'Very casual', level: 'medium' },
+    german: { name: 'German', colour: '#E8C547', tone: 'Casual', level: 'medium', lang: 'de', custom: true },
   };
-  const said = RAW.split(' ');
-  const proof = $('#proof'), proofSr = $('#proof-sr');
-  let level = 'medium';
-  function setLevel(id) {
-    level = id;
-    const L = LEVELS[id];
-    proof.replaceChildren();
-    L.segs.forEach(([kind, text], i) => {
-      const node = document.createElement(kind === 'same' ? 'span' : kind);
-      node.textContent = text;
-      if (kind === 'del') { node.style.setProperty('--s', 1); node.classList.add('struck'); }
-      if (kind === 'ins') node.style.setProperty('--v', 1);
-      if (i) proof.append(' ');
-      proof.append(node);
-    });
-    $('#level-name').textContent = L.name;
-    $('#level-help').textContent = L.help;
-    proofSr.textContent = `${L.name} cleanup writes: ${L.text}`;
+  // What each level writes (\n\n a paragraph, `x` code). None is the words as heard unless given.
+  const PLAIN = {
+    light: "Um, so the login test is failing again. Can you take a look? Don't change anything yet. Thanks.",
+    medium: "The login test is failing again. Can you take a look? Don't change anything yet. Thanks.",
+    high: 'The login test is failing again. Could you take a look without changing anything yet? Thanks.',
+  };
+  // An agent's prompt names what the window shows, and keeps the request and its limit.
+  const coding = (name) => ({
+    light: PLAIN.light,
+    medium: `\`${name}\` is failing again. Can you take a look? Don't change anything yet. Thanks.`,
+    high: `\`${name}\` is failing again. Please take a look, but don't change anything yet.`,
+  });
+  const GERMAN_LIGHT = 'Ähm, also der Login-Test schlägt schon wieder fehl. Kannst du mal draufschauen? Ändere noch nichts, danke.';
+  const APPS = {
+    anywhere: { name: 'Anywhere', profile: 'other', out: PLAIN },
+    mail: { name: 'Mail', profile: 'email', out: {
+      light: "Um, so the login test is failing again. Can you take a look? Don't change anything yet. Thank you.",
+      medium: "The login test is failing again. Could you take a look? Please don't change anything yet. Thank you.",
+      high: "The login test is failing again. Could you please take a look?\n\nPlease don't make any changes for now. Thank you." } },
+    slack: { name: 'Slack', profile: 'work', out: PLAIN },
+    notion: { name: 'Notion', profile: 'work', out: PLAIN },
+    claude: { name: 'Claude Code', profile: 'ai', out: coding('tests/login_test.py') },
+    cursor: { name: 'Cursor', profile: 'ai', out: coding('test_login_redirect') },
+    whatsapp: { name: 'WhatsApp', profile: 'personal', out: {
+      light: "Um, so the login test is failing again, can you take a look? Don't change anything yet, thanks!",
+      medium: "login test's failing again \u{1F629} can u take a look? don't touch anything yet tho, thx!",
+      high: "login test's failing again \u{1F629} mind taking a look? don't touch anything yet tho, thx!" } },
+    discord: { name: 'Discord', profile: 'german', out: {
+      none: GERMAN_LIGHT, light: GERMAN_LIGHT,
+      medium: 'Der Login-Test schlägt schon wieder fehl, kannst du mal draufschauen? Bitte noch nichts ändern, danke!',
+      high: 'Der Login-Test schlägt schon wieder fehl. Kannst du ihn dir ansehen, ohne schon etwas zu ändern? Danke!' } },
+  };
+  const written = (app, lvl) => APPS[app].out[lvl] ?? SPOKEN;
+  const esc = (t) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const code = (t) => esc(t).replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  // The edit, word by word against what was said, as the app's DiffText
+  // shows it: punctuation is its own token, so "again." keeps "again" and
+  // adds the full stop. In each changed run, punctuation that closes the
+  // word before comes first, then the struck words, then the added ones.
+  const tokens = (text) => text.replace(/\n\n/g, ' ').split(' ').flatMap((w) => {
+    const m = w.match(/^(.*?[^.,?!])([.,?!]+)$/);
+    return m ? [m[1], m[2]] : [w];
+  });
+  const glued = (t) => /^[.,?!]+$/.test(t);
+  function diff(a, b) {
+    const n = a.length, m = b.length, L = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = a[i] === b[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+    const runs = [];
+    const push = (kind, t) => { const r = runs.at(-1); if (r?.kind === kind) r.words.push(t); else runs.push({ kind, words: [t] }); };
+    let i = 0, j = 0, del = [], ins = [];
+    const flush = () => {
+      const lead = del.length && glued(ins[0] ?? '') && runs.at(-1)?.kind === 'same' ? [ins.shift()] : [];
+      lead.forEach((t) => push('ins', t)); del.forEach((t) => push('del', t)); ins.forEach((t) => push('ins', t)); del = []; ins = [];
+    };
+    while (i < n || j < m) {
+      if (i < n && j < m && a[i] === b[j]) { flush(); push('same', a[i]); i++; j++; }
+      else if (j >= m || (i < n && L[i + 1][j] >= L[i][j + 1])) del.push(a[i++]);
+      else ins.push(b[j++]);
+    }
+    flush();
+    return runs;
   }
-  radios($$('.levels [role="radio"]'), (b) => setLevel(b.dataset.level));
-  setLevel('medium');
-  const says = $('#says'), saysPillMount = $('.says-pill');
-  // Each part of the scene, and the T at which it starts to lift in.
-  const saysReveal = [[$('#says-title'), .38], [$('.says .lead'), .38], [$('.proof-frame'), .6], [$('.levels'), .7], [$('.level-help'), .7]];
+  function marksHtml(text, lang) {
+    const join = (words) => words.reduce((s, t, k) => s + (k && !glued(t) ? ' ' : '') + code(t), '');
+    return diff(said, tokens(text)).map((r, k) => {
+      const body = join(r.words), gap = k && !glued(r.words[0]) ? ' ' : '';
+      return gap + (r.kind === 'same' ? body : `<${r.kind}${r.kind === 'ins' && lang ? ` lang="${lang}"` : ''}>${body}</${r.kind}>`);
+    }).join('');
+  }
+  const cleanHtml = (text) => text.split('\n\n').map((p) => `<p>${code(p)}</p>`).join('').replace(/<\/p>$/, '<i class="caret"></i></p>');
+
+  // Each app as a composer strip: its own header, composer and type. The
+  // strip is as tall as the longest edit needs; what is left over shows the
+  // app's own context (the last message, the failing test), which the
+  // composer grows over as a real one does. The sentence is most of it.
+  const SAY = (ph) => `<div class="say" data-show="empty"><p class="say-ph">${ph}<i class="caret"></i></p><div class="say-marks"></div><div class="say-clean"></div></div>`;
+  const HIST = (html) => `<div class="hist">${html}</div>`;
+  const STRIPS = {
+    anywhere: () => `<div class="bar"><span class="any-icons"><span class="ico" style="--i: url(icons/gmail.svg)"></span><span class="ico" style="--i: url(icons/googledocs.svg)"></span><span class="ico" style="--i: url(icons/googlemessages.svg)"></span><span class="ico" style="--i: url(icons/firefoxbrowser.svg)"></span></span><b>Any other app</b></div>
+      <div class="comp">${SAY('')}</div>`,
+    mail: () => `<div class="bar"><span class="lights"><i></i><i></i><i></i></span><b>Re: Login test</b><span class="to"><span>To:</span> Sam Okafor</span><span class="send">&#x2191;</span></div>
+      <div class="comp">${SAY('')}</div>${HIST('<p class="quote"><b>On Monday, Sam Okafor wrote:</b> I pushed the session changes this morning. Let me know if anything breaks.</p>')}`,
+    slack: () => `<div class="bar"><span class="ico ico-own" style="--i: url(icons/slack.svg)"></span><b># backend</b><span class="bar-r">Upload team</span></div>
+      ${HIST('<div class="m"><span class="av j">J</span><p><b>Jun</b><small>1:52 PM</small><br>merged the session store change</p></div><div class="m"><span class="av">R</span><p><b>Rosa</b><small>2:14 PM</small><br>deploy is out, ping me if anything looks off</p></div>')}
+      <div class="comp"><div class="box">${SAY('Message #backend')}<div class="tools"><i>B</i><i><em>I</em></i><i><s>S</s></i><span class="send"><svg viewBox="0 0 24 24"><path d="M3 20V4l19 8z"/></svg></span></div></div></div>`,
+    notion: () => `<div class="bar"><span class="ico" style="--i: url(icons/notion.svg); --c: #37352F"></span><span class="crumbs">Engineering <i>/</i> <b>Release checklist</b></span></div>
+      ${HIST('<p class="todo"><i></i>Ship the upload server</p><p class="todo"><i></i>Login test green</p>')}
+      <div class="comp"><span class="av">A</span>${SAY('Add a comment…')}<span class="send">&#x2191;</span></div>`,
+    claude: () => `<div class="bar"><b>&#x273B; Claude Code</b><span class="bar-r">~/upload-service</span></div>
+      ${HIST('<p class="you">&gt; run the tests</p><p class="dimt">&#x23FA; Bash(pytest tests/)</p><p class="err"><span>&#x23BF;</span> tests/login_test.py failed, 1 of 48</p>')}
+      <div class="comp"><div class="box"><span class="ps">&gt;</span>${SAY('')}</div></div>`,
+    cursor: () => `<div class="bar"><span class="tab">login_test.py</span><code class="line"><i>12</i><span class="k">def</span> <span class="f">test_login_redirect</span>(client):</code></div>
+      ${HIST('<p class="ask">run the tests</p><p class="turn"><b>Tests</b> <span class="ok">47 passed</span>, <span class="bad">1 failed</span>: test_login_redirect</p>')}
+      <div class="comp"><div class="box"><span class="ctx">@ login_test.py</span>${SAY('Plan, search, build anything')}</div></div>`,
+    whatsapp: () => `<div class="bar"><span class="av">R</span><span class="who"><b>Rosa</b><small>online</small></span></div>
+      ${HIST('<p class="b out">pushing the session fix now<small>14:02</small></p><p class="b">did the fix go in?<small>14:14</small></p>')}
+      <div class="comp"><div class="box">${SAY('Type a message')}</div><span class="mic"><svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11z"/></svg></span></div>`,
+    discord: () => `<div class="bar"><b># dev</b><span class="bar-r">Upload-Team</span></div>
+      ${HIST('<div class="m"><span class="av b"></span><p><b class="n2">Mara</b><small>14:02</small><br><span lang="de">Build ist grün</span></p></div><div class="m"><span class="av"></span><p><b>Jonas</b><small>14:14</small><br><span lang="de">ist der Fix schon drin?</span></p></div>')}
+      <div class="comp"><div class="box"><span class="plus">+</span>${SAY('Nachricht an #dev')}</div></div>`,
+  };
+  const DARK = new Set(['claude', 'cursor', 'whatsapp', 'discord']);
+  const says = $('#says'), saysPillMount = $('.says-pill'), strip = $('#strip-app'), panel = $('#strip');
+  const tabs = $$('#apps [role="tab"]'), levelButtons = $$('.levels [role="radio"]');
+  const live = $('#says-live');
+  const levels = Object.fromEntries(Object.entries(PROFILES).map(([id, p]) => [id, p.level]));
+  const ins = { app: 'anywhere', say: null, shown: '', marksUntil: 0, pass: null, delivered: false, user: false, started: false };
   const saysPill = makePill(saysPillMount, heroActor.voice);
-  // A far horizon under the control: the same voice, always a little lit.
+  function buildStrip(app) {
+    strip.className = `strip s-${app}${DARK.has(app) ? ' dark' : ''}${strip.classList.contains('measuring') ? ' measuring' : ''}`;
+    strip.innerHTML = STRIPS[app]();
+    const lang = PROFILES[APPS[app].profile].lang;
+    ins.say = $('.say', strip);
+    // A translated result is marked with its language; the struck words as heard stay English.
+    if (lang) for (const el of [$('.say-ph', ins.say), $('.say-clean', ins.say)]) el.lang = lang;
+  }
+  // What the composer shows: its placeholder, the marked edit, or the clean text.
+  function show(what, dim = false) {
+    const { app } = ins, lvl = levels[APPS[app].profile], text = written(app, lvl);
+    const lang = PROFILES[APPS[app].profile].lang;
+    if (what !== 'empty') {
+      const key = `${app}|${lvl}`;
+      if (ins.shown !== key) {
+        $('.say-marks', ins.say).innerHTML = text === SPOKEN ? `<p>${esc(text)}</p>` : `<p>${marksHtml(text, lang)}</p>`;
+        $('.say-clean', ins.say).innerHTML = cleanHtml(text);
+        ins.shown = key;
+      }
+    } else ins.shown = '';
+    ins.say.dataset.show = what;
+    ins.say.classList.toggle('dim', dim);
+    fitHistory();
+  }
+  // A message the composer has grown over goes, whole, rather than clipped.
+  function fitHistory() {
+    for (const h of $$('.hist', strip)) for (const c of h.children) c.classList.toggle('gone', c.offsetTop < 0 || c.offsetTop + c.offsetHeight > h.clientHeight + 1);
+  }
+  // The profile's colour, chips and level control for the app in front.
+  function showProfile() {
+    const P = PROFILES[APPS[ins.app].profile];
+    says.style.setProperty('--p', P.colour);
+    $('#profile-name').textContent = `${P.custom ? 'Your ' : ''}${P.name} profile`;
+    $('#profile-tone').textContent = P.tone;
+    $('#profile-lang').hidden = !P.lang;
+    const lvl = levels[APPS[ins.app].profile];
+    for (const b of levelButtons) { const on = b.dataset.level === lvl; b.setAttribute('aria-checked', String(on)); b.tabIndex = on ? 0 : -1; }
+    glowTarget = hex(P.colour);
+    // Reduced motion has no frames: recolour the still light now.
+    if (RM) { saysGlow.colours = tint(P.colour, undefined, HORIZON_WHITE); if (ins.started) draw(0, true); }
+  }
+  function describe() {
+    const A = APPS[ins.app], P = PROFILES[A.profile], lvl = levels[A.profile];
+    const text = written(ins.app, lvl).replace(/`/g, '');
+    return `${A.name}, ${P.name} profile, ${P.tone.toLowerCase()}, ${LEVEL_NAMES[lvl]} cleanup${P.lang ? ', writes in German' : ''}: <span${P.lang ? ` lang="${P.lang}"` : ''}>${esc(text)}</span>`;
+  }
+  // The result lands: marked for a moment, then clean. Words as heard have no marks.
+  const MARKS = 1200;
+  function deliver(now) {
+    ins.delivered = true;
+    // Reduced motion keeps the marks: the edit, still.
+    const raw = !refines();
+    show(raw ? 'clean' : 'marks');
+    ins.marksUntil = RM || raw ? 0 : now + MARKS;
+    $('#strip-sr').innerHTML = describe();
+    if (ins.user) live.innerHTML = describe();
+  }
+  const refines = () => written(ins.app, levels[APPS[ins.app].profile]) !== SPOKEN;
+  // A change after the result has landed: the pill refines briefly (not at
+  // None, which doesn't refine), then the new result lands.
+  const REDO = 520;
+  function redo(now, appChanged) {
+    if (!ins.delivered) { if (appChanged) show('empty'); return; }
+    if (RM) return deliver(now);
+    // The old result stays, dimmed, until the new one is sent; a new app starts empty.
+    ins.marksUntil = 0;
+    if (appChanged) show('empty'); else ins.say.classList.add('dim');
+    ins.pass = { kind: 'redo', start: now, refine: refines() ? REDO : 0 };
+  }
+  function selectApp(app, now, user) {
+    ins.app = app; ins.user = user;
+    for (const t of tabs) { const on = t.dataset.app === app; t.setAttribute('aria-selected', String(on)); t.tabIndex = on ? 0 : -1; }
+    panel.setAttribute('aria-labelledby', `tab-${app}`);
+    buildStrip(app); ins.shown = '';
+    showProfile();
+    redo(now, true);
+    if (!RM) strip.animate([{ opacity: .6, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 320, easing: 'cubic-bezier(.165, .84, .44, 1)' });
+  }
+  // Tabs: one tab stop, arrows, Home and End move and select.
+  tabs.forEach((t, i) => {
+    t.addEventListener('click', () => { stopAuto(); selectApp(t.dataset.app, lastNow, true); });
+    t.addEventListener('keydown', (e) => {
+      const k = { ArrowRight: i + 1, ArrowDown: i + 1, ArrowLeft: i - 1, ArrowUp: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+      if (k === undefined) return;
+      e.preventDefault();
+      const next = tabs[(k + tabs.length) % tabs.length];
+      next.focus();
+      selectApp(next.dataset.app, lastNow, true);
+    });
+  });
+  radios(levelButtons, (b) => { stopAuto(); levels[APPS[ins.app].profile] = b.dataset.level; ins.user = true; redo(lastNow, false); });
+  // Idle auto-advance: 3 s after the result settles, the next app every 4 s,
+  // with a thin line filling under the tab in front. It stops for good at the
+  // first click or key in the instrument, and waits while a pointer is over it.
+  const AUTO = 4000, IDLE = 3000;
+  const auto = { stopped: false, hover: false, at: Infinity, from: 0 };
+  const appsRow = $('#apps');
+  // The page's clock at the last frame.
+  let lastNow = 0;
+  function stopAuto() { auto.stopped = true; auto.at = Infinity; appsRow.removeAttribute('data-auto'); }
+  says.addEventListener('pointerdown', stopAuto);
+  says.addEventListener('keydown', (e) => { if (e.key !== 'Tab' && e.key !== 'Shift') stopAuto(); });
+  // Focus on a control means someone is using it: the tabs stay put.
+  for (const el of [appsRow, $('.levels')]) el.addEventListener('focusin', stopAuto);
+  says.addEventListener('pointerenter', () => { auto.hover = true; });
+  says.addEventListener('pointerleave', () => { auto.hover = false; });
+  function schedule(now, wait) { if (!auto.stopped && !RM) { auto.from = now; auto.at = now + wait; } }
+  // The first pass, once the pill has landed: it hears the sentence, refines
+  // it (still showing the last words, as the app does), then sends it.
+  const HEAR_MS = 1600, REFINE_MS = 900;
+  function instrumentAt(now) {
+    const p = ins.pass;
+    // While the pill hears the first pass, the app sits a little back under
+    // the night: the pill is the bright thing, and the caret waits in it.
+    says.toggleAttribute('data-hearing', p?.kind === 'first');
+    if (!p) return;
+    const t = now - p.start;
+    if (p.kind === 'first') {
+      const refine = refines() ? REFINE_MS : 0;
+      if (t < HEAR_MS) saysPill.set({ phase: 'listening', words: said, count: Math.max(1, Math.ceil(t / HEAR_MS * said.length)), seconds: Math.floor(t / 1000) });
+      else if (t < HEAR_MS + refine) saysPill.set({ phase: 'refining', words: said });
+      else { saysPill.set(SENT); ins.pass = null; deliver(now); schedule(now, MARKS + IDLE); }
+    } else {
+      if (t < p.refine) saysPill.set({ phase: 'refining', words: [] });
+      else { saysPill.set(SENT); ins.pass = null; deliver(now); }
+    }
+  }
+  // Marks to clean: the composer keeps the marked text's height until the
+  // crossfade has ended, so the two wraps never overlap a shrinking box.
+  const FADE = 320;
+  function instrumentTick(now, dt) {
+    if (ins.marksUntil && now >= ins.marksUntil) {
+      ins.marksUntil = 0;
+      ins.say.style.minHeight = `${ins.say.offsetHeight}px`;
+      show('clean');
+      ins.holdUntil = now + FADE;
+    }
+    if (ins.holdUntil && now >= ins.holdUntil) { ins.holdUntil = 0; ins.say.style.minHeight = ''; fitHistory(); }
+    const running = !auto.stopped && auto.at < Infinity;
+    appsRow.toggleAttribute('data-auto', running);
+    if (!running) return;
+    if (auto.hover || !seen(says)) { auto.at += dt; auto.from += dt; }
+    if (now >= auto.at) {
+      const i = tabs.findIndex((t) => t.dataset.app === ins.app);
+      selectApp(tabs[(i + 1) % tabs.length].dataset.app, now, false);
+      schedule(now, AUTO);
+    }
+    appsRow.style.setProperty('--prog', clamp((now - auto.from) / (auto.at - auto.from)).toFixed(3));
+  }
+  // Landing and leaving: the instrument starts empty each time the pill lands.
+  function land(now) { ins.delivered = false; show('empty'); ins.pass = { kind: 'first', start: now - 300 }; }
+  function unland() { says.removeAttribute('data-hearing'); ins.pass = null; ins.delivered = false; ins.marksUntil = 0; auto.at = Infinity; show('empty'); }
+  // Every result at once, to size the strip for the longest one, so nothing
+  // under it moves as the apps and levels change.
+  function measureStrip() {
+    const app = ins.app, keep = ins.say?.dataset.show ?? 'empty';
+    strip.style.height = '';
+    strip.classList.add('measuring');
+    let h = 0;
+    for (const id of Object.keys(APPS)) {
+      buildStrip(id);
+      const marks = $('.say-marks', ins.say), clean = $('.say-clean', ins.say), lang = PROFILES[APPS[id].profile].lang;
+      for (const lvl of Object.keys(LEVEL_NAMES)) {
+        const text = written(id, lvl);
+        marks.innerHTML = `<p>${text === SPOKEN ? esc(text) : marksHtml(text, lang)}</p>`;
+        clean.innerHTML = cleanHtml(text);
+        for (const what of ['marks', 'clean']) { ins.say.dataset.show = what; h = Math.max(h, strip.offsetHeight); }
+      }
+    }
+    strip.classList.remove('measuring');
+    strip.style.height = `${Math.ceil(h)}px`;
+    ins.app = app; buildStrip(app); ins.shown = '';
+    show(keep);
+  }
+  // The profile's light: the instrument's one range, a horizon under it.
   const saysGlowCanvas = $('#says-glow');
   const saysGlow = new Range(saysGlowCanvas, heroActor.voice, { ...HERO, lines: 24, row: 3, persp: .03, narrow: .008, base: .12, horizon: .96, amp: .24, rest: .3, swell: 9, width: .8, glow: 4 });
   watch.observe(saysGlowCanvas);
+  watch.observe(says);
+  let glowColour = hex(PROFILES.other.colour), glowTarget = glowColour;
+  saysGlow.colours = tint(PROFILES.other.colour, undefined, HORIZON_WHITE);
+  // A horizon, not a light source: it never blows out to white while the pill hears.
+  saysGlow.look.gain = .75;
   let saysGlowAlpha = 1, saysT0 = null;
-  // The first scroll-driven moment: the hero's night becomes the pill, over 0.6 of a viewport.
+  // The first scroll-driven moment: the hero's night becomes the pill, over
+  // 0.6 of a viewport. The intro then stays pinned for another half viewport
+  // (style.css), so the first pass plays while the instrument holds still.
   const HANDOFF = .6;
-  // The pill's own loop, once landed: hear the sentence, refine it, send it.
-  // With cleanup at None there is no refining (DictationSession.cpp).
-  const SAYS_LOOP = 7000;
-  function saysState(t) {
-    if (t < 2800) return { phase: 'listening', words: said, count: Math.max(1, Math.ceil(t / 2600 * said.length)), seconds: Math.floor(t / 1000) };
-    if (t < 3800 && level !== 'none') return { phase: 'refining', words: LEVELS[level].text.split(' ') };
-    if (t < 6400) return { phase: 'delivered', receipt: { title: 'Sent to the app' } };
-    return { phase: 'listening', words: [], seconds: 0 };
+  // Stop scrolling partway through the hand-off and, after a moment, it
+  // finishes by itself, so no resting position shows an idle instrument.
+  // Scrolling scrubs it as before; scrolling up hands the finish back.
+  const SETTLE_FROM = .08, SETTLE_AFTER = 450, SETTLE_MS = 700;
+  const settleState = { k: 0, goal: 0, y: -1, still: 0 };
+  function settleHandoff(T, y, now, dt) {
+    const S = settleState;
+    if (y !== S.y) { if (y < S.y) S.goal = 0; S.y = y; S.still = now; }
+    if (T >= .999) S.goal = S.k = 0;
+    else if (T < SETTLE_FROM - .05) S.goal = 0;
+    else if (T >= SETTLE_FROM && now - S.still > SETTLE_AFTER) S.goal = 1;
+    S.k = clamp(S.k + Math.sign(S.goal - S.k) * dt / SETTLE_MS);
+    return T + (1 - T) * easeInOut(S.k);
   }
+  // Each part of the scene, and the T at which it starts to lift in.
+  const saysReveal = [[$('#says-title'), .38], [appsRow, .46], [panel, .6], [$('.tune'), .66], [$('.says-foot'), .7]];
+  buildStrip('anywhere'); showProfile();
 
-  // 3. The centrepiece: pick an app. Each app has its own window, and its
-  //    profile's sample settings (tone, cleanup level, output language, all
-  //    real settings) write the same spoken words differently. For a moment
-  //    the edits show in red and blue, as the cleanup section marks them.
-  const SPOKEN = "um so the upload test no wait the login test is failing again can you take a look don't change anything yet thanks";
-  const COLOURS = { email: '#F2A65E', work: '#4FD1C5', ai: '#B79CFF', personal: '#FF8AB8' };
-  const NAMES = { email: 'Email', work: 'Work', ai: 'AI coding', personal: 'Personal' };
-  // segs: [kind, text] against the spoken words; clean: the result (\n\n = paragraph, `x` = code).
-  const APPS = {
-    mail: { name: 'Mail', profile: 'email', settings: 'Formal, High cleanup',
-      segs: [['del', 'um so the upload test no wait the'], ['ins', 'The'], ['same', 'login test is failing again'], ['ins', '.'], ['del', 'can you take a look'], ['ins', 'Could you please take a look when you have a moment?'], ['del', "don't change anything yet thanks"], ['ins', "Please don't make any changes for now. Thank you."]],
-      clean: "The login test is failing again. Could you please take a look when you have a moment?\n\nPlease don't make any changes for now. Thank you." },
-    slack: { name: 'Slack', profile: 'work', settings: 'No tone, Medium cleanup',
-      segs: [['del', 'um so the upload test no wait the'], ['ins', 'The'], ['same', 'login test is failing again'], ['ins', '.'], ['del', 'can'], ['ins', 'Can'], ['same', 'you take a look'], ['ins', '?'], ['del', "don't"], ['ins', "Don't"], ['same', 'change anything yet'], ['ins', '.'], ['del', 'thanks'], ['ins', 'Thanks.']],
-      clean: "The login test is failing again. Can you take a look? Don't change anything yet. Thanks." },
-    notion: { name: 'Notion', profile: 'work', settings: 'No tone, Light cleanup',
-      segs: [['del', 'um so'], ['ins', 'Um, so'], ['del', 'the upload test no wait'], ['same', 'the login test is failing again'], ['ins', '.'], ['del', 'can'], ['ins', 'Can'], ['same', 'you take a look'], ['ins', '?'], ['del', "don't"], ['ins', "Don't"], ['same', 'change anything yet'], ['ins', '.'], ['del', 'thanks'], ['ins', 'Thanks.']],
-      clean: "Um, so the login test is failing again. Can you take a look? Don't change anything yet. Thanks." },
-    claude: { name: 'Claude Code', profile: 'ai', settings: 'No tone, Medium cleanup',
-      segs: [['del', 'um so the upload test no wait the login test'], ['ins', '`tests/login_test.py`'], ['same', 'is failing again'], ['ins', '.'], ['del', 'can'], ['ins', 'Can'], ['same', 'you take a look'], ['ins', '?'], ['del', "don't"], ['ins', "Don't"], ['same', 'change anything yet'], ['ins', '.'], ['del', 'thanks'], ['ins', 'Thanks.']],
-      clean: "`tests/login_test.py` is failing again. Can you take a look? Don't change anything yet. Thanks." },
-    cursor: { name: 'Cursor', profile: 'ai', settings: 'No tone, Medium cleanup',
-      segs: [['del', 'um so the upload test no wait the login test'], ['ins', '`test_login_redirect`'], ['same', 'is failing again'], ['ins', '.'], ['del', 'can'], ['ins', 'Can'], ['same', 'you take a look'], ['ins', '?'], ['del', "don't"], ['ins', "Don't"], ['same', 'change anything yet'], ['ins', '.'], ['del', 'thanks'], ['ins', 'Thanks.']],
-      clean: "`test_login_redirect` is failing again. Can you take a look? Don't change anything yet. Thanks." },
-    whatsapp: { name: 'WhatsApp', profile: 'personal', settings: 'Very casual, Medium cleanup',
-      segs: [['del', 'um so the upload test no wait the login test is'], ['ins', "login test's"], ['same', 'failing again'], ['ins', '\u{1F629}'], ['same', 'can'], ['del', 'you'], ['ins', 'u'], ['same', 'take a look'], ['ins', '?'], ['same', "don't"], ['del', 'change'], ['ins', 'touch'], ['same', 'anything yet'], ['ins', 'tho,'], ['del', 'thanks'], ['ins', 'thx!']],
-      clean: "login test's failing again \u{1F629} can u take a look? don't touch anything yet tho, thx!" },
-    discord: { name: 'Discord', profile: 'personal', settings: 'Casual, Medium cleanup', lang: 'Writes in German', outLang: 'de',
-      segs: [['del', SPOKEN], ['ins', 'Der Login-Test schlägt schon wieder fehl, kannst du mal draufschauen? Bitte noch nichts ändern, danke!']],
-      clean: 'Der Login-Test schlägt schon wieder fehl, kannst du mal draufschauen? Bitte noch nichts ändern, danke!' },
-  };
-  const esc = (t) => t.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
-  const code = (t) => esc(t).replace(/`([^`]+)`/g, '<code>$1</code>');
-  // A translated result is marked with its language; the struck original stays English.
-  const langAttr = (A) => (A.outLang ? ` lang="${A.outLang}"` : '');
-  const outHtml = (A) => {
-    const lang = langAttr(A);
-    const marks = A.segs.map(([k, t]) => (k === 'same' ? code(t) : `<${k}${k === 'ins' ? lang : ''}>${code(t)}</${k}>`)).join(' ').replace(/ <ins>([.,?])/g, '<ins>$1');
-    const clean = A.clean.split('\n\n').map((p) => `<p>${code(p)}</p>`).join('').replace(/<\/p>$/, '<i class="caret"></i></p>');
-    return `<div class="out" id="out"><div class="marks"><p>${marks}</p></div><div class="clean"${lang}>${clean}</div></div>`;
-  };
-  const WINDOWS = {
-    mail: (o) => `<div class="app-win a-mail"><div class="tool"><span class="lights"><i></i><i></i><i></i></span><b>New Message</b><span class="send">&#x2191;</span></div>
-      <p class="row"><span>To:</span>Sam Okafor</p><p class="row"><span>Subject:</span>Re: Login test</p><div class="body">${o}</div>
-      <div class="quote"><b>On Monday, Sam Okafor wrote:</b>I pushed the session changes this morning. Let me know if anything breaks.</div></div>`,
-    slack: (o) => `<div class="app-win a-slack"><div class="side"><span class="ws">Upload team</span><span class="ch"># general</span><span class="ch on"># backend</span><span class="ch"># releases</span><span class="sub">Direct messages</span><span class="ch">Rosa</span><span class="ch">Jun</span></div>
-      <div class="main"><div class="head"># backend</div><div class="msgs"><div class="m"><span class="av b">R</span><div><b>Rosa</b><small>2:14 PM</small><br>deploy is out, ping me if anything looks off</div></div></div>
-      <div class="compose">${o}</div></div></div>`,
-    notion: (o) => `<div class="app-win a-notion"><p class="crumbs">Engineering / Release checklist</p><h4>Release checklist</h4>
-      <p class="prop"><span>Status</span><span class="tag">In progress</span></p><p class="todo"><i></i>Ship the upload server</p><p class="todo"><i></i>Login test green</p>
-      <div class="cmt"><span class="av">A</span><div>${o}</div></div></div>`,
-    claude: (o) => `<div class="app-win a-claude dark"><div class="welcome"><b>&#x273B; Welcome to Claude Code</b><span class="cwd">cwd: ~/upload-service</span></div>
-      <p class="dimt">&#x23FA; Bash(pytest tests/)</p><p class="err">&#x23BF; Last run: tests/login_test.py failed, 1 of 48</p>
-      <div class="box"><span>&gt;</span><div>${o}</div></div><p class="foot">? for shortcuts</p></div>`,
-    cursor: (o) => `<div class="app-win a-cursor dark"><div class="ed"><div class="tabs"><span class="tab on">login_test.py</span><span class="tab">auth.py</span></div><div class="code">
-      <p class="ln"><i>12</i><span><span class="k">def</span> <span class="f">test_login_redirect</span>(client):</span></p>
-      <p class="ln"><i>13</i><span>    r = client.post(<span class="s">"/login"</span>, data=USER)</span></p>
-      <p class="ln"><i>14</i><span>    <span class="k">assert</span> r.status_code == 302</span></p>
-      <p class="ln"><i>15</i><span>    <span class="k">assert</span> r.headers[<span class="s">"Location"</span>] == <span class="s">"/home"</span></span></p>
-      <p class="ln"><i>16</i><span></span></p>
-      <p class="ln"><i>17</i><span><span class="k">def</span> <span class="f">test_login_bad_password</span>(client):</span></p>
-      <p class="ln"><i>18</i><span>    r = client.post(<span class="s">"/login"</span>, data=BAD)</span></p>
-      <p class="ln"><i>19</i><span>    <span class="k">assert</span> r.status_code == 401</span></p>
-      <p class="ln"><i>20</i><span></span></p>
-      <p class="ln"><i>21</i><span><span class="k">def</span> <span class="f">test_logout</span>(client):</span></p>
-      <p class="ln"><i>22</i><span>    <span class="k">assert</span> client.get(<span class="s">"/logout"</span>).status_code == 302</span></p></div></div>
-      <div class="chat"><span class="chat-h">Chat</span><div class="turn"><b>Tests</b><br><span class="ok">47 passed</span>, <span class="bad">1 failed</span>: test_login_redirect</div>
-      <div class="chat-in"><span class="ctx">@ login_test.py</span>${o}</div></div></div>`,
-    whatsapp: (o) => `<div class="app-win a-wa dark"><div class="head"><span class="av">R</span><span>Rosa<small>online</small></span></div>
-      <div class="chat"><div class="b in">did the fix go in?<span class="t">14:14</span></div></div><div class="compose">${o}</div></div>`,
-    discord: (o) => `<div class="app-win a-discord dark"><div class="rail"><i class="on"></i><i></i><i></i></div><div class="chs"><b>Upload-Team</b><span># allgemein</span><span class="on"># dev</span><span># releases</span></div>
-      <div class="main"><div class="head"># dev</div><div class="msgs"><div class="m"><span class="av"></span><div><span class="n1">Jonas</span><small>14:14</small><br><span lang="de">ist der Fix schon drin?</span></div></div></div>
-      <div class="compose">${o}</div></div></div>`,
-  };
-  const pick = $('#pick'), pickStage = $('#pick-stage');
-  let appWin = $('#app-win');
-  const pickActor = actor(29, .5, 'phrase'); pickActor.talker.loopGap = 1800; actors.push(pickActor);
-  const pickCanvas = $('#pick-glow');
-  const pickGlow = new Range(pickCanvas, pickActor.voice, { ...HERO, lines: 16, row: 4, persp: .07, narrow: .02, amp: .42, rest: .25, glow: 6 });
-  watch.observe(pickCanvas);
-  watch.observe(pickStage);
-  let pickColour = hex(COLOURS.email), pickTarget = pickColour, pickT0 = null;
-  function showApp(b) {
-    const A = APPS[b.dataset.app], colour = COLOURS[A.profile];
-    pick.style.setProperty('--p', colour);
-    pickStage.dataset.profile = A.profile;
-    $('#result-profile').innerHTML = `<i class="dot"></i>${NAMES[A.profile]} profile`;
-    $('#result-settings').textContent = A.settings;
-    $('#result-lang').hidden = !A.lang;
-    if (A.lang) $('#result-lang').textContent = A.lang;
-    // Swap the window in place: the new one is whole from its first frame.
-    appWin.outerHTML = WINDOWS[b.dataset.app](outHtml(A)).replace('class="app-win', 'id="app-win" class="app-win');
-    appWin = $('#app-win');
-    if (RM) $('#out').classList.add('is-clean');
-    else appWin.animate([{ opacity: .85, transform: 'scale(.985)' }, { opacity: 1, transform: 'none' }], { duration: 300, easing: 'cubic-bezier(.165, .84, .44, 1)' });
-    pickT0 = null;
-    $('#result-sr').innerHTML = `${A.name}, ${NAMES[A.profile]} profile, sample settings ${A.settings}${A.lang ? ', ' + A.lang.toLowerCase() : ''}: <span${langAttr(A)}>${esc(A.clean.replace(/`/g, ''))}</span>`;
-    pickTarget = hex(colour);
+  // 1b. Hold the key. The default gesture is hybrid (AppSettings.h): hold
+  //     past 250 ms to talk until you let go, or tap to start and tap again
+  //     to finish (ShortcutGesture.cpp). Held, the pill comes up at the
+  //     bottom of the window and hears a sample while the ridge rises; let
+  //     go, it refines, and the sentence lands under the headline, marked
+  //     for a moment, then clean, then gone. Each press plays the next
+  //     sample. Untouched for 6 s, the keys press themselves once.
+  const SAMPLES = [
+    { heard: 'book a table for six no wait four', marked: 'Book a table for <del>six, no wait,</del> four.', clean: 'Book a table for four.', tag: 'Sample' },
+    { heard: 'get push origin main', marked: '<del>get</del> <ins>git</ins> push origin main', clean: 'git push origin main', tag: 'Sample, in a terminal', code: true },
+    { heard: 'ask clerk to check the new logo', marked: 'Ask <del>clerk</del> <ins>Clark</ins> to check the new logo.', clean: 'Ask Clark to check the new logo.', tag: 'Sample, a word it learned' },
+  ];
+  const TAP = 250, FIRST_WORD = 260, WORD = 230, REFINE_HERO = 650, RECEIPT = 500, STAY = 4000, SELF = 3500;
+  const talkButton = $('#talk'), talkCaps = $('#talk-caps'), talkLabel = $('.talk-label'), talkLive = $('#talk-live');
+  const landed = $('#landed'), landedText = $('.landed-text', landed), landedTag = $('.landed-tag', landed);
+  const heroPill = RM ? null : makePill($('.hero-pill'), heroActor.voice);
+  // state: idle | held | latched (tapped on) | refining | landed. down is the
+  // page's clock at the press (it paces the sample); pressedAt is the press
+  // event's own time, which tells a hold from a tap even if frames stall.
+  const talk = { state: 'idle', k: 0, at: 0, down: 0, pressedAt: 0, via: '', heard: 0, tapAt: 0, touched: false, self: false, lift: 0 };
+  if (KEYS) {
+    talkCaps.innerHTML = KEYS.caps.map((k) => `<kbd class="cap">${k}</kbd>`).join('');
+    talkButton.setAttribute('aria-label', `Hold to talk, ${KEYS.name ?? KEYS.caps.join(' ')}: plays a sample dictation`);
+  } else talkButton.classList.add('solo');
+  const sample = () => SAMPLES[talk.k];
+  function capsLook(down, lit) {
+    talkButton.toggleAttribute('data-down', down);
+    talkButton.toggleAttribute('data-lit', lit);
+    labelEl.textContent = talk.state === 'latched' ? LATCHED : 'Hold to talk';
   }
-  const pickButtons = $$('.dock [role="radio"]');
-  // Keep the result you just asked for in view, by pointer or keyboard.
-  const keepResultInView = () => {
-    const r = pickStage.getBoundingClientRect(), navH = 64;
-    if (r.top < navH) scrollBy({ top: r.top - navH - 8, behavior: RM ? 'instant' : 'smooth' });
-  };
-  radios(pickButtons, (b) => { showApp(b); keepResultInView(); });
-  showApp(pickButtons[0]);
+  // The label's two texts take the same room, so the row never re-wraps between them.
+  const LATCHED = 'Tap to finish', labelEl = KEYS ? talkLabel : $('.cap', talkCaps);
+  function reserveLabel() {
+    const keep = labelEl.textContent;
+    labelEl.style.minWidth = '';
+    const widths = [LATCHED, 'Hold to talk'].map((t) => { labelEl.textContent = t; return labelEl.getBoundingClientRect().width; });
+    labelEl.textContent = keep;
+    labelEl.style.minWidth = `${Math.ceil(Math.max(...widths))}px`;
+  }
+  // The line under the headline: a waiting caret, the marked edit, or the clean sentence.
+  function showLanded(what) {
+    const S = sample();
+    landed.dataset.show = what;
+    landed.classList.toggle('is-code', !!S.code);
+    landedText.innerHTML = what === 'marks' ? S.marked : what === 'clean' ? esc(S.clean) : '';
+    landedTag.textContent = what === 'marks' || what === 'clean' ? S.tag : '';
+    heroCopy.classList.toggle('landing', what !== '');
+  }
+  // at: the event's timestamp (the page's clock for the keys' own press).
+  function press(now, via, at = now) {
+    if (via !== 'self') talk.touched = true;
+    if (talk.state === 'latched') return finish(now);
+    if (talk.state === 'held' || talk.state === 'refining') return;
+    if (talk.state === 'landed') talk.k = (talk.k + 1) % SAMPLES.length;
+    Object.assign(talk, { state: 'held', at: now, down: now, pressedAt: at, via, heard: 0 });
+    capsLook(true, true);
+    showLanded('wait');
+    talkLive.textContent = '';
+  }
+  function release(now, via, at = now) {
+    if (talk.state !== 'held' || via !== talk.via) return;
+    // Reduced motion lands at once, whatever the gesture.
+    if (!RM && at - talk.pressedAt <= TAP) { talk.state = 'latched'; capsLook(false, true); return; }
+    finish(now);
+  }
+  function finish(now) {
+    Object.assign(talk, { state: 'refining', at: now });
+    capsLook(false, false);
+    if (RM) landSample(now);
+  }
+  function landSample(now) {
+    Object.assign(talk, { state: 'landed', at: now });
+    showLanded('marks');
+    talkLive.textContent = `${sample().tag}: ${sample().clean}`;
+  }
+  function stopTalk() {
+    if (talk.state === 'idle') return;
+    if (talk.state === 'landed') talk.k = (talk.k + 1) % SAMPLES.length;
+    talk.state = 'idle';
+    capsLook(false, false);
+    showLanded('');
+    heroPill?.set({ phase: 'hidden' });
+  }
+  const talking = () => talk.state === 'held' || talk.state === 'latched';
+  function talkTick(now, dt) {
+    talk.lift += ((talking() ? 1 : 0) - talk.lift) * (1 - Math.exp(-dt / 260));
+    if (!talk.touched && !talk.self && talk.state === 'idle' && now - born > SELF && !document.hidden) { talk.self = true; press(now, 'self'); }
+    const words = sample().heard.split(' '), t = now - talk.at;
+    const lastWord = talk.down + FIRST_WORD + (words.length - 1) * WORD;
+    if (talking()) {
+      talk.heard = Math.min(words.length, Math.max(0, Math.floor((now - talk.down - FIRST_WORD) / WORD) + 1));
+      heroPill.set({ phase: 'listening', words: words.slice(0, talk.heard), seconds: Math.floor((now - talk.down) / 1000) });
+      // The keys let go of themselves once the sample is said; a tapped
+      // dictation is finished by a second tap, shown on the keys.
+      if (talk.via === 'self' && talk.state === 'held' && now > lastWord + 450) release(now, 'self');
+      if (talk.state === 'latched' && now > lastWord + 900) {
+        if (!talk.tapAt) { talk.tapAt = now; capsLook(true, true); }
+        else if (now - talk.tapAt > 140) { talk.tapAt = 0; finish(now); }
+      }
+    } else if (talk.state === 'refining') {
+      // Let go early and the rest of the words come in with the final transcript.
+      if (t < REFINE_HERO) heroPill.set({ phase: 'refining', words });
+      else { heroPill.set({ phase: 'delivered', receipt: { title: 'Sent to the app' } }); landSample(now); }
+    } else if (talk.state === 'landed') {
+      if (t > RECEIPT) heroPill.set({ phase: 'hidden' });
+      if (t > 1200 && landed.dataset.show === 'marks') showLanded('clean');
+      if (t > STAY) stopTalk();
+    }
+  }
+  // Pointer and touch: hold the keys. Keyboard: Space or Enter on them, or
+  // the shortcut itself anywhere while the hero is in view. A release counts
+  // wherever it happens: focus may have moved, or the pointer left the caps.
+  const clock = () => lastNow;
+  // How long a press was held comes from the events' own times.
+  const stamp = (e) => e.timeStamp;
+  const heroLive = () => RM ? heroLayer.getBoundingClientRect().bottom > innerHeight * .5 : scrollY - introTop < H * .02;
+  talkButton.addEventListener('pointerdown', (e) => {
+    if (e.button) return;
+    e.preventDefault();
+    // Capture keeps the release ours if the finger slides off; it can fail for a pointer the browser no longer tracks.
+    try { talkButton.setPointerCapture(e.pointerId); } catch {}
+    press(clock(), 'pointer', stamp(e));
+  });
+  for (const type of ['pointerup', 'pointercancel']) addEventListener(type, (e) => release(clock(), 'pointer', stamp(e)), true);
+  talkButton.addEventListener('lostpointercapture', (e) => release(clock(), 'pointer', stamp(e)));
+  talkButton.addEventListener('contextmenu', (e) => e.preventDefault());
+  const isHoldKey = (e) => e.key === ' ' || e.key === 'Enter';
+  talkButton.addEventListener('keydown', (e) => { if (!isHoldKey(e)) return; e.preventDefault(); if (!e.repeat) press(clock(), 'key', stamp(e)); });
+  // The key's release, wherever focus went meanwhile; it doesn't also press what now has focus.
+  addEventListener('keyup', (e) => {
+    if (!isHoldKey(e) || talk.via !== 'key' || !talking()) return;
+    e.preventDefault();
+    release(clock(), 'key', stamp(e));
+  }, true);
+  // A click with no pointer or key (a screen reader's) is a tap.
+  talkButton.addEventListener('click', (e) => { if (e.detail === 0 && talk.state !== 'held') { press(clock(), 'click'); release(clock(), 'click'); } });
+  if (KEYS) {
+    addEventListener('keydown', (e) => {
+      if (e.code !== 'KeyD' || !KEYS.held(e) || !heroLive()) return;
+      e.preventDefault();
+      if (!e.repeat) press(clock(), 'chord', stamp(e));
+    });
+    addEventListener('keyup', (e) => { if (e.code === 'KeyD' || !KEYS.held(e)) release(clock(), 'chord', stamp(e)); });
+  }
+  addEventListener('blur', () => release(clock(), talk.via, Infinity));
 
-  // 4. Delivery: the page's one pinned layout, and its second scroll moment.
-  //    On desktops the stage holds still for 1.25 screens. It opens on a
-  //    whole desktop: the pill hears you, and the words rise into the line at
-  //    the cursor in Notes. Then the frame closes on Notes while the two other
-  //    cases ride in, and each acts out its beat as it settles: words stop at
-  //    a password field and go to the clipboard, then an edit by voice opens
-  //    its review. Phones stack the three cards, and each plays its beat as it
-  //    scrolls up into place. Every part is a function of scroll position, so
-  //    it plays the same both ways and the words are whole at every point.
+  // 4. Delivery: the page's one pinned layout, and its second scroll moment,
+  //    in two beats for the heading's two claims. On desktops the stage holds
+  //    still for 1.1 screens. It opens on a whole desktop: the pill hears
+  //    you, and the words rise into the line at the cursor in Notes. Then the
+  //    frame closes on Notes, half the stage, while the password field rides
+  //    into the other half, where the words stop and go to the clipboard.
+  //    Phones stack the two cards, and each plays its beat as it scrolls up
+  //    into place. Every part is a function of scroll position, so it plays
+  //    the same both ways and the words are whole at every point.
   const landsSec = $('#lands'), landsStage = $('#lands-stage'), landsScene = $('#lands-scene'), landsLead = $('#lands-lead');
-  const cellA = $('.cell-a'), cellB = $('.cell-b'), cellC = $('.cell-c'), landsFrame = $('#lands-frame');
-  const notesWin = $('.w-notes', landsScene), loginWin = $('.w-login'), draftWin = $('.w-draft');
+  const cellA = $('.cell-a'), cellB = $('.cell-b'), landsFrame = $('#lands-frame');
+  const notesWin = $('.w-notes', landsScene), loginWin = $('.w-login');
   const desktopOnly = [...$$('.w-side', landsScene), ...$$('.desk-chrome', cellA)];
-  const desks = [$('.guard'), $('.edit-desk')];
   const guardDesk = $('.guard'), passwordField = $('.input-focus', guardDesk);
   const landsActor = actor(31, .5, 'babble'); actors.push(landsActor);
   const stagePill = (selector) => Object.assign(makePill($(selector), landsActor.voice, { scrub: true }), { stage: true });
-  const landsPill = stagePill('.lands-pill'), copiedPill = stagePill('.cell-pill'), editPill = stagePill('.edit-pill');
+  const landsPill = stagePill('.lands-pill'), copiedPill = stagePill('.cell-pill');
   watch.observe(landsStage);
 
   // Words in flight from a pill to a line in a window: one copy pale over the
@@ -333,7 +662,7 @@
   // orb of the pill's Copied. The field stays blue and empty throughout: the
   // app leaves a secure field alone and only copies (TextDelivery.cpp).
   // pose({ rise, lock, recoil, fold, flare, on }): each 0 to 1, recoil in px.
-  const LOCK = 18;      // the lock's slot: its 12 px glyph and a gap
+  const LOCK = 18;      // the lock's slot: its 12 px glyph and a gap, times the stage's --z
   const MUTE = .5;      // folding, the words go here, at 80 %: never under 12 px
   const easeHit = bezier(.4, 0, .7, .85);   // still moving when it meets the field
   function capsule(scene, field, pill) {
@@ -344,20 +673,22 @@
         const d = scene.getBoundingClientRect(), f = field.getBoundingClientRect(), m = pill.mount.getBoundingClientRect(), k = pill.k;
         el.style.transform = 'none'; el.style.setProperty('--lock', '0');
         const w = el.offsetWidth, h = el.offsetHeight, pad = parseFloat(getComputedStyle(el).paddingLeft);
-        geo = { w, h,
+        // The capsule's words are 15 px times --z; the pill's are 15 px times k.
+        const z = parseFloat(getComputedStyle(el).fontSize) / 15, lock = LOCK * z;
+        geo = { w, h, lock,
           // Its words start where the pill's did (44 app px in, the line's centre 23 below its top).
-          start: { x: m.left - d.left + m.width / 2 - pill.wide * k / 2 + (44 - pad) * k, cy: m.top - d.top + 23 * k, s: k },
+          start: { x: m.left - d.left + m.width / 2 - pill.wide * k / 2 + 44 * k - pad * k / z, cy: m.top - d.top + 23 * k, s: k / z },
           // Centred under the field with its lock, its top on the field's edge.
-          rest: { x: f.left - d.left + (f.width - w - LOCK) / 2 + LOCK, cy: f.bottom - d.top + 1 + h / 2 },
+          rest: { x: f.left - d.left + (f.width - w - lock) / 2 + lock, cy: f.bottom - d.top + 1 + h / 2 },
           // The orb of the Copied receipt (160 wide).
           home: { x: m.left - d.left + m.width / 2 - 80 * k + 22 * k, cy: m.top - d.top + 22 * k } };
       },
       pose({ rise, lock, recoil, fold, flare, on }) {
         const { w, h, start, rest, home } = geo, ex = easeInOut(rise), f = easeInOut(fold);
-        const width = w + LOCK * lock, s0 = lerp(start.s, 1, ex);
+        const width = w + geo.lock * lock, s0 = lerp(start.s, 1, ex);
         const s = s0 * lerp(1, .8, Math.min(1, f / MUTE)) * lerp(1, 24 / width, span(f, MUTE, 1));
         // Its centre, from the pill to the field, then to the orb.
-        const left = lerp(start.x, rest.x, ex) - LOCK * lock;
+        const left = lerp(start.x, rest.x, ex) - geo.lock * lock;
         const cx = lerp(left + width * s0 / 2, home.x, f);
         const cy = lerp(lerp(start.cy, rest.cy, easeHit(rise)) + recoil, home.cy, f);
         el.classList.toggle('on', on);
@@ -370,7 +701,7 @@
   }
   const guardCapsule = capsule(guardDesk, passwordField, copiedPill);
 
-  // The three beats, each in its own time t (0..1).
+  // The two beats, each in its own time t (0..1).
   const WORKING = { phase: 'refining', words: [] };
   const HEAR = { phase: 'listening', words: 'pick up the dry cleaning before six'.split(' '), seconds: 2 };
   // The words have left the pill: it keeps its height until they are clear
@@ -379,11 +710,6 @@
   const SENT = { phase: 'delivered', receipt: { title: 'Sent to the app' } };
   const HEAR_GUARD = { phase: 'listening', words: 'running ten minutes late'.split(' '), seconds: 1 };
   const COPIED = { phase: 'delivered', receipt: { mark: 'copied', title: 'Copied' } };
-  const EDIT_ASK = { phase: 'listening', words: ['change', 'Friday', 'to', 'Monday'], seconds: 1 };
-  // The whole sentence is selected, so SelectionEditPresentation reports one change.
-  const REVIEW = { phase: 'review', review: { said: '“change Friday to Monday”', summary: '1 change', segments: [
-    { kind: 'same', text: 'Could you send me the numbers by ' }, { kind: 'removed', text: 'Friday' }, { kind: 'same', text: ' ' },
-    { kind: 'added', text: 'Monday' }, { kind: 'same', text: '? Thanks.' }] } };
   // Lands: hear, then the words rise into Notes while the pill refines.
   function landsBeat(t) {
     const LIFT = .28, LAND = .94;
@@ -400,8 +726,8 @@
   // A pill hearing its words come in one at a time, x from 0 to 1.
   const hearing = (s, x) => { const n = s.words.length, state = { ...s, count: Math.min(n, Math.floor(x * (n + 1))) }; return [state, state, 1]; };
   // Guard: the pill hears, the capsule rises to the field and is refused,
-  // then shrinks into the pill as it turns to Copied. The cell's red light
-  // flares at the touch.
+  // then shrinks into the pill as it turns to Copied. The capsule flares at
+  // the touch.
   const G = { HEARD: .12, LIFT: .16, TOUCH: .4, FOLD: [.52, .84], COPY: [.6, .72] };
   let guardFlare = 0;
   function guardBeat(t) {
@@ -414,89 +740,78 @@
     guardCapsule.pose({ rise: span(t, G.LIFT, G.TOUCH), lock: easeOut(span(t, G.TOUCH, G.TOUCH + .02)), recoil: 4 * easeOut(span(t, G.TOUCH, G.TOUCH + .05)),
       fold: span(t, ...G.FOLD), flare: guardFlare, on: t >= G.LIFT && t < G.FOLD[1] });
   }
-  // Edit: the ask comes in, then the shell and the whole review take its
-  // place together, at one point.
-  function editBeat(t) {
-    if (t < .3) editPill.pose(...hearing(EDIT_ASK, t / .26));
-    else editPill.pose(EDIT_ASK, REVIEW, t >= .48 ? 1 : 0, { cut: 1 });
-  }
-
-  // The stage's geometry: its size, the three columns it ends in (the first
-  // a little wider), and Notes at that first column's width throughout.
+  // The stage's geometry: its size, the two halves it ends in, and Notes
+  // at its half's width throughout. --z sizes what is inside the cards, as
+  // large as the stage's height allows (up to 1.5 times the old cards').
   const PILL_GAP = 24, LIFT_GAP = 96;
+  const stageZ = () => parseFloat(landsStage.style.getPropertyValue('--z')) || 1;
   let stageBox = null, landsRect = null;
   const under = (win, gap) => `${(win.offsetTop + win.offsetHeight + gap).toFixed(1)}px`;
   function measureStage() {
+    for (const el of [cellA, cellB, landsFrame, landsScene, notesWin, guardDesk, ...desktopOnly]) el.removeAttribute('style');
     const W = landsStage.clientWidth, H = landsStage.clientHeight, gap = 16;
-    const colA = (W - 2 * gap) * .38, colW = (W - 2 * gap) * .31;
-    stageBox = { W, H, gap, colA, colW };
-    for (const el of [cellA, cellB, cellC, landsFrame, landsScene, notesWin, ...desks, ...desktopOnly]) el.removeAttribute('style');
+    const col = (W - gap) / 2;
+    stageBox = { W, H, gap, col };
     if (!phone()) {
-      for (const c of [cellB, cellC]) Object.assign(c.style, { width: `${colW}px`, height: `${H}px` });
-      const nw = `${Math.min(460, colA - 40).toFixed(0)}px`;
+      landsStage.style.setProperty('--z', clamp((H - 50) / 390, 1, 1.5).toFixed(3));
+      Object.assign(cellB.style, { width: `${col}px`, height: `${H}px` });
+      const nw = `${Math.min(640, col - 64).toFixed(0)}px`;
       notesWin.style.width = nw;
       landsScene.style.setProperty('--nw', nw);
-    }
+    } else landsStage.style.removeProperty('--z');
+    // The stage's pills grow with the cards (1.1 times the app's size at --z 1).
+    const z = stageZ();
+    for (const p of [landsPill, copiedPill]) { if (phone()) p.mount.style.removeProperty('--k'); else p.mount.style.setProperty('--k', (1.1 * z).toFixed(3)); p.measure(); }
     // Each pill hangs a set gap under its window; Notes' starts lower, so
     // the words have room to rise.
     landsPill.mount.style.top = under(notesWin, phone() ? 40 : LIFT_GAP);
     copiedPill.mount.style.top = under(loginWin, PILL_GAP);
-    editPill.mount.style.top = under(draftWin, PILL_GAP);
   }
   // One position of the desktop stage, from pin progress p.
-  const SPLIT = [.36, .47];
-  // Each card's frame and light rise into its own column once the desktop
-  // has cleared it; its window and pill appear whole when the frame is in,
-  // then settle the last 10 px. Nothing with words crosses an edge.
-  const ARRIVE = { c: [.4, .47], b: [.455, .5] };
+  const SPLIT = [.4, .54];
+  // The guard's card rises into its half once the desktop has cleared it;
+  // its window and pill appear whole when the frame is in, then settle the
+  // last 10 px. Nothing with words crosses an edge.
+  const ARRIVE = [.5, .58];
   function arrive(p, cell, desk, x, [a, b]) {
     const k = easeOut(span(p, a, b));
     Object.assign(cell.style, { transform: `translate(${x.toFixed(1)}px, ${((1 - k) * 28).toFixed(1)}px)`, opacity: k.toFixed(3) });
     desk.style.visibility = p >= b ? '' : 'hidden';
-    desk.style.transform = `translateY(${((1 - easeOut(span(p, b, b + .025))) * 10).toFixed(1)}px)`;
+    desk.style.transform = `translateY(${((1 - easeOut(span(p, b, b + .03))) * 10).toFixed(1)}px)`;
   }
   function stageAt(p) {
-    const { W, H, gap, colA, colW } = stageBox;
-    // The desktop closes on Notes: its frame narrows to the first column and
+    const { W, H, gap, col } = stageBox;
+    // The desktop closes on Notes: its frame narrows to the first half and
     // the scene slides so Notes stays centred in what is left.
     const e = easeInOut(span(p, ...SPLIT));
-    const width = lerp(W, colA, e);
+    const width = lerp(W, col, e);
     cellA.style.clipPath = `inset(0 ${(W - width).toFixed(1)}px 0 0 round 20px)`;
     cellA.style.setProperty('--gx', `${(width / 2).toFixed(0)}px`);
     landsScene.style.transform = `translateX(${((width - W) / 2).toFixed(1)}px)`;
-    const desk = (1 - easeOut(span(p, SPLIT[0], SPLIT[0] + .035))).toFixed(3);
+    const desk = (1 - easeOut(span(p, SPLIT[0], SPLIT[0] + .04))).toFixed(3);
     for (const el of desktopOnly) { el.style.opacity = desk; el.classList.toggle('bare', p > SPLIT[0]); }
     landsPill.mount.style.top = under(notesWin, lerp(LIFT_GAP, PILL_GAP, e));
     Object.assign(landsFrame.style, { width: `${width.toFixed(1)}px`, height: `${H}px` });
-    arrive(p, cellC, desks[1], colA + colW + 2 * gap, ARRIVE.c);
-    arrive(p, cellB, desks[0], colA + gap, ARRIVE.b);
+    arrive(p, cellB, guardDesk, col + gap, ARRIVE);
     landsRect = { width, height: H, e };
   }
-  // The spotlight: while a card plays its beat the others sit under a light
-  // night veil (their text stays above 4.5:1) and their light drops to a
-  // quarter, and the edit pill waits for its own beat. dims = [A, B, C], 0
-  // to 1 of the full spotlight.
-  let dims = [0, 0, 0];
-  const lightAt = (dim) => 1 - .65 * dim;   // under the veil's .72: a quarter at full
-  function spotlight(d, held) {
-    dims = d;
-    [cellA, cellB, cellC].forEach((c, i) => c.style.setProperty('--dim', d[i].toFixed(3)));
-    editPill.held = held;
-    editPill.mount.style.opacity = held ? '0' : '';
+  // The spotlight: while one card plays its beat the other sits under a
+  // light night veil (its text stays above 4.5:1). dims = [A, B], 0 to 1.
+  function spotlight(d) {
+    [cellA, cellB].forEach((c, i) => c.style.setProperty('--dim', d[i].toFixed(3)));
   }
   // Pin progress: 0 as the stage pins, 1 as it lets go.
   const landsProgress = () => clamp(-landsSec.getBoundingClientRect().top / (landsSec.offsetHeight - innerHeight));
-  const GUARD = [.5, .8], EDIT = [.82, .93];
+  const GUARD = [.58, .92];
   function landsAt(p) {
     stageAt(p);
-    landsBeat(span(p, 0, .36));
+    landsBeat(span(p, 0, .4));
     guardBeat(span(p, ...GUARD));
-    editBeat(span(p, ...EDIT));
-    const into = span(p, .47, .52), turn = span(p, .8, .84), back = span(p, .93, .98);
-    spotlight([into - .45 * turn - .55 * back, .55 * turn - .55 * back, into - turn], p < EDIT[0]);
+    const into = span(p, .54, .6), back = span(p, .92, .97);
+    spotlight([into - back, 0]);
     // "And never anywhere it shouldn't." lights up as the capsule is refused.
     const hit = lerp(...GUARD, G.TOUCH);
-    landsLead.style.setProperty('--lit', (span(p, hit - .01, hit + .02) - span(p, .8, .85)).toFixed(3));
+    landsLead.style.setProperty('--lit', (span(p, hit - .01, hit + .02) - span(p, .92, .97)).toFixed(3));
   }
   // Phones: each card plays its beat while its window's top travels from
   // 65 % to 30 % of the screen's height, so it finishes where you read it.
@@ -504,42 +819,26 @@
     const top = card.getBoundingClientRect().top + win.offsetTop, vh = innerHeight;
     return span(top, vh * .65, vh * .3);
   }
-  const landsPhoneRead = () => [cardBeat(cellA, notesWin), cardBeat(cellB, loginWin), cardBeat(cellC, draftWin)];
-  function landsPhoneAt([a, b, c]) { landsBeat(a); guardBeat(b); editBeat(c); spotlight([0, 0, 0], false); }
+  const landsPhoneRead = () => [cardBeat(cellA, notesWin), cardBeat(cellB, loginWin)];
+  function landsPhoneAt([a, b]) { landsBeat(a); guardBeat(b); spotlight([0, 0]); }
   // Reduced motion ends with the refusal still in view: the capsule, locked,
   // under the untouched field, beside the pill's Copied.
   const landsEnd = () => {
-    if (phone()) landsPhoneAt([1, 1, 1]); else landsAt(1);
+    if (phone()) landsPhoneAt([1, 1]); else landsAt(1);
     guardCapsule.pose({ rise: 1, lock: 1, recoil: 4, fold: 0, flare: 0, on: true });
   };
   const landsMeasure = () => { measureStage(); landsFlight.measure(); guardCapsule.measure(); };
-  // The cells' lights: a voice for the first, a slow resting breath for the others.
-  const restActor = actor(37, .4); actors.push(restActor);
-  restActor.voice.reduced = true;
-  let restT = 0;
-  restActor.step = (dt) => { if (RM) return; restT += dt; restActor.voice.hist.fill(.42 + .14 * Math.sin(restT / 4200 * Math.PI * 2)); };
-  const cellLook = { ...HERO, lines: 12, row: 5, persp: .08, amp: .5, rest: .3, width: 1.3, glow: 7 };
-  const landsGlowCanvas = $('#lands-glow'), guardCanvas = $('#guard-glow'), editCanvas = $('#edit-glow');
-  const landsGlow = new Range(landsGlowCanvas, landsActor.voice, { ...cellLook, amp: .32 });
-  const guardGlow = new Range(guardCanvas, restActor.voice, { ...cellLook, lines: 10 });
-  const editGlow = new Range(editCanvas, restActor.voice, { ...cellLook, lines: 10 });
-  landsGlow.colours = tint('#6CCB8F'); guardGlow.colours = tint('#F0695C');
-  for (const c of [landsGlowCanvas, guardCanvas, editCanvas]) watch.observe(c);
-  // The review keeps the app's 500 px, and narrows (wrapping its buttons) to its cell.
-  function fitEdit() {
-    const m = $('.edit-pill'), inner = m.clientWidth;
-    const k = Math.min(1.1, Math.max(1, inner / 520));
-    m.style.setProperty('--k', k.toFixed(3));
-    m.style.setProperty('--review-wide', String(Math.round(Math.min(500, inner / k))));
+  // 5. No new account: the sign-up steps are struck out, one after another,
+  //    the first time the line is well in view (once, on its own clock).
+  //    The unstruck start is in the CSS from the first paint, so nothing
+  //    plays backwards before it.
+  const redline = $('#redline');
+  if (!RM) {
+    const strike = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) { redline.classList.add('struck'); strike.disconnect(); }
+    }, { threshold: .9 });
+    strike.observe(redline);
   }
-
-  // 5. No new account: the real setup step's found sign-ins (WelcomeStep.qml
-  //    lists only signed-in services), over a wide, low horizon of the range.
-  const accountCanvas = $('#account-canvas'), setup = $('#setup');
-  const accountActor = actor(41, .5, 'phrase'); accountActor.talker.loopGap = 2200; actors.push(accountActor);
-  const account = new Range(accountCanvas, accountActor.voice, { ...HERO, lines: 30, persp: .06, narrow: .02, horizon: .9, amp: .3, rest: .2, glow: 5 });
-  watch.observe(accountCanvas);
-  let setupT0 = null;
 
   // 5b. Android: the real flow, on its own clock while the phone is in view.
   //     Tap Speecher's button on the keyboard's mic key, its panel takes the
@@ -631,6 +930,7 @@
   // 8. The close: the range listening hard, wider and taller than the hero.
   const closeCanvas = $('#close-canvas');
   const closeActor = actor(67, .7, 'babble'); actors.push(closeActor);
+  let closeHeadTop = 0;
   const closeRange = new Range(closeCanvas, closeActor.voice, { ...HERO, lines: 28, persp: .08, narrow: .03, amp: .62, horizon: .95, glow: 7 });
   watch.observe(closeCanvas);
 
@@ -643,8 +943,7 @@
     addEventListener('pointermove', (e) => { pointer.x = e.clientX; pointer.y = e.clientY; }, { passive: true });
     root.addEventListener('pointerleave', () => { pointer.x = pointer.y = -1e5; });
   }
-  const warps = [[hero, heroCanvas, 90], [saysGlow, saysGlowCanvas, 70], [pickGlow, pickCanvas, 70], [landsGlow, landsGlowCanvas, 60], [guardGlow, guardCanvas, 50], [editGlow, editCanvas, 50],
-    [account, accountCanvas, 100], [closeRange, closeCanvas, 100]]
+  const warps = [[hero, heroCanvas, 90], [saysGlow, saysGlowCanvas, 70], [closeRange, closeCanvas, 100]]
     .map(([range, canvas, radius]) => { range.warpRadius = radius; return { range, canvas, s: 0, v: 0, x: 0, y: 0 }; });
   function stepWarp(dt) {
     if (!FINE) return;
@@ -672,10 +971,15 @@
     W = stage.clientWidth; H = stage.clientHeight;
     introTop = intro.getBoundingClientRect().top + scrollY;
     hero.fit(density());
-    for (const r of [account, closeRange, saysGlow, landsGlow, guardGlow, editGlow, pickGlow]) r.fit(density(1));
+    reserveLabel();
+    for (const r of [closeRange, saysGlow]) r.fit(density(1));
+    measureStrip();
+    // The instrument's light lies under its note, never behind words.
+    const foot = $('.says-foot');
+    saysGlowCanvas.style.height = `${Math.max(64, says.clientHeight - (foot.offsetTop + foot.offsetHeight) + 12)}px`;
+    closeHeadTop = $('#download-title').getBoundingClientRect().top - closeCanvas.getBoundingClientRect().top;
     const sharp = density(2);
     ttyStrip.look = ttyLook(sharp); ttyStrip.fit(sharp);
-    fitEdit();
     for (const p of pills) p.measure();
     // The stage is measured at its opening, then put where the scroll has it.
     landsMeasure();
@@ -686,27 +990,30 @@
     if (RM) settle();
   }
   // The pill the night becomes: its empty listening shape (280 x 44 app px),
-  // fixed, so the hand-off is the same in both directions.
+  // fixed, so the hand-off is the same in both directions. It stands on the
+  // composer on wide screens and hangs over it on phones (style.css).
   function handoffRect() {
     const m = saysPillMount.getBoundingClientRect(), k = saysPill.k;
-    const w = 280 * k, h = 44 * k, cx = m.left + m.width / 2;
-    return { left: cx - w / 2, top: m.bottom - h, width: w, height: h, right: cx + w / 2, bottom: m.bottom };
+    const w = 280 * k, h = 44 * k, cx = m.left + m.width / 2, top = phone() ? m.top : m.bottom - h;
+    return { left: cx - w / 2, top, width: w, height: h, right: cx + w / 2, bottom: top + h };
   }
 
   // Reduced motion: every state at once, still.
   function settle() {
     heroLayer.style.visibility = '';
-    saysPill.set({ phase: 'listening', words: said, count: said.length, seconds: 5 });
+    saysPill.set(SENT);
     saysPill.settle();
-    setup.dataset.found = '2';
+    if (!ins.delivered) deliver(0);
     droidStill();
-    for (const pill of [landsPill, copiedPill, editPill]) pill.settle();
+    for (const pill of [landsPill, copiedPill]) pill.settle();
     draw(0, true);
   }
 
   // One frame ----------------------------------------------------------------
-  const nav = $('#nav');
-  function frame(dt, now) {
+  const nav = $('#nav'), saysTitle = $('#says-title');
+  // dt is capped for the ranges' physics; pills morph on the real time (wall).
+  function frame(dt, now, wall = dt) {
+    lastNow = now;
     for (const a of actors) a.step(dt);
     stepWarp(dt);
     lean.x += (lean.tx - lean.x) * (1 - Math.exp(-dt / 600));
@@ -718,16 +1025,29 @@
 
     // 1 and 2 -------------------------------------------------------------
     const p = clamp((y - introTop) / H, 0, 1);
-    const T = span(p, 0, HANDOFF);
+    // A whole-pixel scroll can stop a fraction short of the end: .999 is the end.
+    let T = settleHandoff(span(p, 0, HANDOFF), y, now, Math.min(wall, 100));
+    if (T >= .999) T = 1;
     if (seen(intro)) {
       // Until the night has landed, the pill waits empty: it is the shape the night becomes.
-      if (T < 1) { saysT0 = null; saysPill.set({ phase: 'listening', words: [], seconds: 0 }); saysPill.settle(); }
-      else {
-        // Land already hearing words, not idle.
-        if (saysT0 == null) saysT0 = now - 900;
-        saysPill.set(saysState((now - saysT0) % SAYS_LOOP));
+      if (T < 1) {
+        if (saysT0 != null) { saysT0 = null; unland(); }
+        saysPill.set({ phase: 'listening', words: [], seconds: 0 }); saysPill.settle();
+      } else {
+        // Land already hearing words, not idle; then the result, once. A fast
+        // arrival past the pin, with the heading already under the nav, lands
+        // on the delivered result instead of a pass nobody can watch.
+        if (saysT0 == null) {
+          saysT0 = now;
+          const late = saysTitle.getBoundingClientRect().top < nav.getBoundingClientRect().bottom;
+          land(late ? now - 1e4 : now);
+        }
+        instrumentAt(now);
       }
-      heroActor.talker.set(mic ? 'quiet' : (T < 1 || saysPill.phase === 'listening') ? 'phrase' : 'quiet');
+      instrumentTick(now, dt);
+      // The keycap's sample plays only while the hero is up.
+      if (T < .02) talkTick(now, dt); else stopTalk();
+      heroActor.talker.set(talking() ? 'babble' : talk.state === 'refining' ? 'quiet' : (T < 1 || saysPill.phase === 'listening') ? 'phrase' : 'quiet');
 
       // The hero's copy sinks and goes quickly.
       const out = span(T, 0, .08);
@@ -771,6 +1091,8 @@
         // Assembly: the range recedes into being over the first seconds.
         const age = now - born;
         look.lines = Math.min(look.lines, 8 + 18 * easeOut(clamp(age / 1600)));
+        // Held, the range stands taller, as it does for a louder voice.
+        look.amp *= 1 + .3 * talk.lift;
         hero.look = look;
         hero.alpha = .6 + .4 * easeOut(clamp(age / 500));
         hero.render({ breath: .5 + .5 * Math.sin(now / 1000 * 1.85) });
@@ -782,26 +1104,15 @@
       }
     }
 
-    // 3: the pick light eases to the chosen profile's colour.
-    if (seen(pickCanvas)) {
+    // The instrument's light eases to the profile's colour.
+    if (seen(saysGlowCanvas)) {
       const f = 1 - Math.exp(-dt / 220);
-      pickColour = pickColour.map((v, i) => v + (pickTarget[i] - v) * f);
-      const c = pickColour;
-      pickGlow.colours = { core: c.map((v) => v + (1 - v) * .82), far: c.map((v) => v * .7), halo: c };
+      glowColour = glowColour.map((v, i) => v + (glowTarget[i] - v) * f);
+      saysGlow.colours = tint(null, glowColour, HORIZON_WHITE);
     }
 
-    // 4 and 5 -------------------------------------------------------------
+    // 4 -------------------------------------------------------------
     if (lands !== null) (phone() ? landsPhoneAt(lands) : landsAt(lands));
-    if (seen(pickStage)) {
-      if (pickT0 == null) pickT0 = now;
-      const out = $('#out');
-      if (out && !out.classList.contains('is-clean') && now - pickT0 > 1100) out.classList.add('is-clean');
-    }
-    if (seen(accountCanvas)) {
-      if (setupT0 == null) setupT0 = now;
-      const step = String((now - setupT0) < 300 ? 0 : (now - setupT0) < 800 ? 1 : 2);
-      if (setup.dataset.found !== step) setup.dataset.found = step;
-    } else setupT0 = null;
     if (seen(droid)) {
       if (droidT0 == null) droidT0 = now;
       droidAt((now - droidT0) % DROID_LOOP);
@@ -811,11 +1122,11 @@
     // The stage's pills follow the stage, not their own mounts, so their
     // geometry is the scroll position's alone.
     for (const pill of pills) {
-      const on = pill.stage ? seen(landsStage) && !pill.held : seen(pill.mount);
+      const on = pill.stage ? seen(landsStage) : seen(pill.mount);
       pill.mount.style.visibility = on ? '' : 'hidden';   // no shadow left under the nav
       if (pill === saysPill) pill.visible = pill.visible && on;
       else pill.visible = on;
-      if (on) pill.frame(dt);
+      if (on) pill.frame(wall);
       else if (!pill.parked) { pill.visible = false; pill.draw(); }
       pill.parked = !on;
     }
@@ -828,48 +1139,19 @@
       saysGlow.alpha = still ? 1 : saysGlowAlpha;
       const gh = Math.min(h * .85, w * .42);
       saysGlow.layout(-w * .05, h - gh * .53, w * 1.1, gh);
-      saysGlow.render({ breath, work: saysPill.phase === 'refining' && !still ? 1 : 0, sweep: now / 1100 });
-    }
-    if (seen(pickCanvas) || still) {
-      const w = pickCanvas.clientWidth, h = pickCanvas.clientHeight;
-      pickGlow.layout(w * .04, h * .52, w * .92, h * .9);
-      pickGlow.render({ breath });
-    }
-    // The first cell's light keeps low under its visible part, so its peaks
-    // stay under the pill and the words rise over calm light.
-    // Closed to its column, it takes the other cards' height of light.
-    if (seen(landsGlowCanvas) || still) {
-      const H = landsGlowCanvas.clientHeight, w = (phone() ? landsGlowCanvas.clientWidth : landsRect?.width ?? landsGlowCanvas.clientWidth) * 1.16;
-      const e = phone() ? 0 : landsRect?.e ?? 0, h = H * lerp(.36, .62, e);
-      landsGlow.layout(-w * .03, H - h + h * .58, w * .92, h * .8);
-      landsGlow.alpha = lightAt(dims[0]);
-      landsGlow.render({ breath });
-    }
-    // The refusal's flare: the guard light brightens for a moment at the touch.
-    guardGlow.look.gain = 1 + 1.3 * guardFlare;
-    guardGlow.look.amp = cellLook.amp * (1 + .35 * guardFlare);
-    for (const [range, canvas, i] of [[guardGlow, guardCanvas, 1], [editGlow, editCanvas, 2]]) {
-      if (!seen(canvas) && !still) continue;
-      const w = canvas.clientWidth, h = canvas.clientHeight;
-      range.alpha = lightAt(dims[i]);
-      range.layout(w * .04, h * .58, w * .92, h * .8);
-      range.render({ breath });
+      saysGlow.render({ breath, work: saysPill.phase === 'refining' && !still ? .55 : 0, sweep: now / 1100 });
     }
     if (seen(ttyCanvas) || still) {
       const w = ttyCanvas.clientWidth, h = ttyCanvas.clientHeight;
       ttyStrip.layout(TIP, h / 2, w - 2 * TIP, Math.min(h, 34));
       ttyStrip.render({ breath });
     }
-    if (seen(accountCanvas) || still) {
-      const w = accountCanvas.clientWidth, h = accountCanvas.clientHeight;
-      const bw = w * (phone() ? 1.6 : 1.15);
-      account.layout((w - bw) / 2, h * .56, bw, h * .86);
-      account.render({ breath });
-    }
     if (seen(closeCanvas) || still) {
       const w = closeCanvas.clientWidth, h = closeCanvas.clientHeight;
-      const bw = phone() ? w * 1.3 : w * 1.04;
-      closeRange.layout((w - bw) / 2, h * .56, bw, Math.min(phone() ? 300 : 560, h * .72));
+      // The range stands on the heading's top edge, never through it.
+      const bw = phone() ? w * 1.3 : w * 1.04, bottom = closeHeadTop - 14;
+      const bh = Math.max(120, Math.min(phone() ? 300 : 560, h * .72, bottom - 8));
+      closeRange.layout((w - bw) / 2, bottom - bh / 2, bw, bh);
       closeRange.render({ breath });
     }
     if (still) {
@@ -884,7 +1166,8 @@
   // "How it works", the skip link and a shared #says link go to the end of the
   // hand-off, where the proof's heading is (it sits in the pinned stage).
   const toProof = () => {
-    if (!RM) scrollTo({ top: introTop + H * HANDOFF, behavior: 'instant' });
+    // Rounded up, so the hand-off is whole wherever 0.6 of the height isn't a whole pixel.
+    if (!RM) scrollTo({ top: Math.ceil(introTop + H * HANDOFF), behavior: 'instant' });
     says.inert = false;
     $('#says-title').focus({ preventScroll: !RM });
   };
@@ -918,6 +1201,13 @@
       : /Linux|X11/i.test(platform + ua) ? (/arm|x86-32/i.test(arch) ? 'other' : 'linux') : null;
     if (!os) return;
     for (const button of [$('#hero-download'), $('#close-download')]) [button.textContent, button.href] = FILES[os];
+    // What this computer needs, by the button, not only in the notes. The
+    // AppImage needs glibc 2.43 (README.md).
+    const NEEDS = { linux: 'Needs Ubuntu 26.04, Fedora 44, Debian 14 or newer.', mac: 'Needs macOS 15 or newer.', windows: 'Needs Windows 11.' };
+    if (NEEDS[os]) {
+      $('#hero-note').textContent = `Free and open source. ${NEEDS[os]}`;
+      Object.assign($('#close-needs'), { textContent: NEEDS[os], hidden: false });
+    }
     if (os === 'phone') $('#hero-note').innerHTML = `Free, open-source dictation for Linux, macOS and Windows. On Android, try the <a href="${ANDROID}">0.2.0 keyboard</a>.`;
     // "Also for" names only the platforms the button doesn't.
     const names = { linux: 'Linux', mac: 'macOS', windows: 'Windows' };
@@ -926,34 +1216,6 @@
       const rest = $$('#close-other a').slice(3);
       $('#close-other').innerHTML = `Also for ${links.map((a) => a.outerHTML).join(' and ')}, a ${rest[0].outerHTML}, and the ${rest[1].outerHTML}.`;
     }
-  })();
-
-  // Try it with your voice: only where the browser allows a microphone. The
-  // page reads one loudness number a frame and throws the audio away.
-  (() => {
-    const button = $('#voice-try');
-    if (RM || !window.isSecureContext || !navigator.mediaDevices?.getUserMedia) return;
-    button.hidden = false;
-    let stream = null, context = null;
-    const note = $('#hero-note'), noteText = note.innerHTML;
-    function stop() {
-      stream?.getTracks().forEach((t) => t.stop()); context?.close();
-      stream = context = mic = null;
-      button.textContent = 'Try it with your voice'; note.innerHTML = noteText;
-    }
-    button.addEventListener('click', async () => {
-      if (stream) return stop();
-      try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true } }); } catch { stream = null; return; }
-      context = new AudioContext();
-      const analyser = context.createAnalyser(); analyser.fftSize = 1024;
-      context.createMediaStreamSource(stream).connect(analyser);
-      const samples = new Float32Array(analyser.fftSize);
-      mic = () => { analyser.getFloatTimeDomainData(samples); let s = 0; for (const v of samples) s += v * v; return Math.min(1, Math.sqrt(s / samples.length) * 8); };
-      button.textContent = 'Stop listening';
-      note.textContent = 'Listening. Nothing is recorded or sent.';
-    });
-    const step = heroActor.step;
-    heroActor.step = (dt) => { if (!mic) return step(dt); heroActor.talker.update(dt); heroActor.voice.update(dt, mic()); };
   })();
 
   // Copy the command: the Clipboard API where allowed (https), else the older
@@ -986,17 +1248,18 @@
   })();
 
   // Run ---------------------------------------------------------------------
+  ins.started = true;
   layout();
   addEventListener('resize', layout);
   document.fonts.ready.then(() => { layout(); if (location.hash === '#says') toProof(); });
   // The stage pills' strips start their GL while the page is idle, not on
   // the frame they first scroll into view.
-  if (!RM) (window.requestIdleCallback ?? setTimeout)(() => { for (const pill of [landsPill, copiedPill, editPill]) pill.ensureRange(); });
+  if (!RM) (window.requestIdleCallback ?? setTimeout)(() => { for (const pill of [landsPill, copiedPill]) pill.ensureRange(); });
   if (RM) {
     addEventListener('scroll', () => nav.classList.toggle('solid', scrollY > 8), { passive: true });
     return;
   }
   let last = performance.now();
-  const loop = (t) => { frame(Math.min(50, t - last), t); last = t; requestAnimationFrame(loop); };
+  const loop = (t) => { frame(Math.min(50, t - last), t, Math.min(1000, t - last)); last = t; requestAnimationFrame(loop); };
   requestAnimationFrame(loop);
 })();
