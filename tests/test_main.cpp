@@ -209,6 +209,7 @@ int main(int argc, char **argv)
     if (selected("local_models")) result |= runLocalModelsTests(argc, argv);
     if (selected("custom_endpoints")) result |= runCustomEndpointsTests(argc, argv);
     if (selected("file_transcription")) result |= runFileTranscriptionTests(argc, argv);
+    if (selected("gpt_live")) result |= runGptLiveTests(argc, argv);
 #ifdef Q_OS_UNIX
     if (selected("update_controller")) result |= runUpdateControllerTests(argc, argv);
 #endif

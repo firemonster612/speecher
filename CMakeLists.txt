@@ -390,6 +390,7 @@ set(SPEECHER_PROVIDER_SOURCES
   src/providers/ChatCompletionsRefiner.cpp
   src/providers/CustomEndpoints.cpp
   src/providers/EndpointSpeechTranscriber.cpp
+  src/providers/GptLiveProtocol.cpp
   src/providers/EndpointTranscriptRefiner.cpp
   src/providers/LocalRunner.cpp
   src/providers/AnthropicApiRefiner.cpp
@@ -426,6 +427,8 @@ set(SPEECHER_PROVIDER_HEADERS
   src/providers/ChatCompletionsRefiner.h
   src/providers/CustomEndpoints.h
   src/providers/EndpointSpeechTranscriber.h
+  src/providers/GptLiveProtocol.h
+  src/providers/GptLiveSession.h
   src/providers/EndpointTranscriptRefiner.h
   src/providers/LocalRunner.h
   src/providers/PcmWav.h
@@ -663,6 +666,7 @@ set(SPEECHER_APP_SOURCES
   src/app/CompositionEchoCanceller.cpp
   src/app/CompositionSockets.cpp
   src/app/HeadlessTranscribe.cpp
+  src/app/LiveCommand.cpp
   src/app/IpcCommandHandler.cpp
   src/app/IpcMessages.cpp
   src/app/LogFile.cpp
@@ -706,6 +710,7 @@ set(SPEECHER_APP_HEADERS
   src/app/CompositionEchoCanceller.h
   src/app/CompositionSockets.h
   src/app/HeadlessTranscribe.h
+  src/app/LiveCommand.h
   src/app/IpcCommandHandler.h
   src/app/IpcMessages.h
   src/app/LogFile.h
@@ -1349,6 +1354,7 @@ if(Qt6WebSockets_FOUND)
   target_compile_definitions(speecher_providers PUBLIC SPEECHER_WITH_QT_WEBSOCKETS=1)
   target_link_libraries(speecher_providers PUBLIC Qt6::WebSockets)
 endif()
+
 if(LayerShellQt_FOUND)
   target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_LAYER_SHELL=1)
   target_link_libraries(speecher_platform PUBLIC LayerShellQt::Interface)
@@ -1559,6 +1565,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_local_models.cpp
     tests/test_custom_endpoints.cpp
     tests/test_file_transcription.cpp
+    tests/test_gpt_live.cpp
   )
   if(UNIX)
     target_sources(speecher_tests PRIVATE tests/test_update_controller.cpp)
@@ -1678,6 +1685,7 @@ if(SPEECHER_BUILD_TESTS)
     local_models
     custom_endpoints
     file_transcription
+    gpt_live
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(APPEND SPEECHER_TEST_SUITES keywatch helper_install)
