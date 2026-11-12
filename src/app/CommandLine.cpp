@@ -100,6 +100,7 @@ Record from the microphone once and print what was said:
 
 Talk with GPT-Live, ChatGPT's voice model, with the Codex ChatGPT sign-in:
   speecher live [options] <file | ->
+  speecher live --protocol jsonl [options]
   <file>                   an audio file, sent as fast as it was spoken
   -                        raw 16-bit mono PCM on stdin, streamed at the
                            pace it was spoken
@@ -120,6 +121,13 @@ Talk with GPT-Live, ChatGPT's voice model, with the Codex ChatGPT sign-in:
                            error
   --linger <seconds>       once the input has all gone out, how long to wait
                            with nothing said before closing (default 30)
+  --protocol jsonl         a long session for a host app: commands on stdin
+                           and events on stdout, one JSON object a line, as
+                           docs/live-protocol.md describes
+  --echo-cancel            take the assistant's audio, as played, out of
+                           the input, so it does not hear itself
+  --accept-slow            keep a session GPT-Live runs at half speed,
+                           rather than calling again
   Without --json, prints "user: ..." and "assistant: ..." for each turn.
   Exit status: 0 the session ran and closed, 1 it failed, 2 usage error.
 
@@ -681,6 +689,7 @@ QString parseLiveArguments(const QStringList &arguments, CommandLineDecision *de
 {
     LiveOptions &live = decision->live;
     bool rateGiven = false;
+    bool lingerGiven = false;
     bool optionsEnded = false;
     for (qsizetype index = 0; index < arguments.size(); ++index) {
         const QString argument = arguments.at(index);
@@ -697,6 +706,17 @@ QString parseLiveArguments(const QStringList &arguments, CommandLineDecision *de
             optionsEnded = true;
         } else if (argument == QStringLiteral("--json")) {
             live.json = true;
+        } else if (argument == QStringLiteral("--protocol")) {
+            if (const std::optional<QString> protocol = value()) {
+                live.hostProtocol = true;
+                if (*protocol != QStringLiteral("jsonl")) {
+                    error = QStringLiteral("Unknown --protocol value: %1 (expected jsonl)").arg(*protocol);
+                }
+            }
+        } else if (argument == QStringLiteral("--accept-slow")) {
+            live.session.acceptSlowSession = true;
+        } else if (argument == QStringLiteral("--echo-cancel")) {
+            live.echoCancel = true;
         } else if (argument == QStringLiteral("--voice")) {
             if (const std::optional<QString> voice = value()) {
                 live.session.voice = voice->toLower();
@@ -732,6 +752,7 @@ QString parseLiveArguments(const QStringList &arguments, CommandLineDecision *de
                 }
             }
         } else if (argument == QStringLiteral("--linger")) {
+            lingerGiven = true;
             if (const std::optional<QString> given = value()) {
                 bool ok = false;
                 const int seconds = given->toInt(&ok);
@@ -746,6 +767,19 @@ QString parseLiveArguments(const QStringList &arguments, CommandLineDecision *de
         if (!error.isEmpty()) {
             return error;
         }
+    }
+    if (live.hostProtocol) {
+        if (!live.input.isEmpty()) {
+            return QStringLiteral("--protocol jsonl takes its audio from stdin's commands, not %1").arg(live.input);
+        }
+        if (live.audioOut == kStdinFile) {
+            return QStringLiteral("--protocol jsonl writes its events to stdout, so --audio-out - cannot");
+        }
+        if (lingerGiven) {
+            return QStringLiteral("--linger is for a file or -; --protocol jsonl runs until the host ends it");
+        }
+        decision->mode = LaunchMode::LiveHeadless;
+        return {};
     }
     if (live.input.isEmpty()) {
         return QStringLiteral("live needs an audio file, or - for raw PCM on stdin");

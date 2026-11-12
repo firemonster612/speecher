@@ -2,6 +2,7 @@
 
 #include "providers/CodexDictationClient.h"
 
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QUrl>
@@ -129,6 +130,21 @@ QByteArray gptLiveSessionClose()
     return QByteArrayLiteral(R"({"type":"session.close"})");
 }
 
+QByteArray gptLiveContextAppend(const QString &text)
+{
+    const QJsonArray content{QJsonObject{{QStringLiteral("type"), QStringLiteral("input_text")},
+                                         {QStringLiteral("text"), text}}};
+    return QJsonDocument(QJsonObject{{QStringLiteral("type"), QStringLiteral("session.context.append")},
+                                     {QStringLiteral("content"), content}})
+        .toJson(QJsonDocument::Compact);
+}
+
+QByteArray gptLiveInputPause(bool paused)
+{
+    return paused ? QByteArrayLiteral(R"({"type":"input_audio.pause"})")
+                  : QByteArrayLiteral(R"({"type":"input_audio.resume"})");
+}
+
 GptLiveEvent parseGptLiveEvent(const QByteArrayView message)
 {
     using Kind = GptLiveEvent::Kind;
@@ -143,15 +159,26 @@ GptLiveEvent parseGptLiveEvent(const QByteArrayView message)
     if (type == QStringLiteral("output_transcript.added")) {
         return transcriptItem(Kind::AssistantTranscriptDelta, event);
     }
-    if (type == QStringLiteral("turn.done")) {
+    if (type == QStringLiteral("turn.done") || type == QStringLiteral("turn.created")) {
         const QJsonObject turn = event.value(QStringLiteral("turn")).toObject();
         const QString role = turn.value(QStringLiteral("role")).toString();
         if (role != QStringLiteral("user") && role != QStringLiteral("assistant")) {
             return {};
         }
-        return {role == QStringLiteral("user") ? Kind::UserTurn : Kind::AssistantTurn,
-                turn.value(QStringLiteral("transcript")).toString().trimmed(), msField(turn, QStringLiteral("start_ms")),
-                msField(turn, QStringLiteral("end_ms"))};
+        const bool user = role == QStringLiteral("user");
+        const Kind kind = type == QStringLiteral("turn.created") ? (user ? Kind::UserTurnStarted : Kind::AssistantTurnStarted)
+                                                                 : (user ? Kind::UserTurn : Kind::AssistantTurn);
+        return {kind, turn.value(QStringLiteral("transcript")).toString().trimmed(),
+                msField(turn, QStringLiteral("start_ms")), msField(turn, QStringLiteral("end_ms"))};
+    }
+    if (type == QStringLiteral("session.input_audio.append")) {
+        return {Kind::InputEcho};
+    }
+    if (type == QStringLiteral("session.context.appended")) {
+        return {Kind::ContextAppended};
+    }
+    if (type == QStringLiteral("input_audio.paused") || type == QStringLiteral("input_audio.resumed")) {
+        return {type == QStringLiteral("input_audio.paused") ? Kind::InputPaused : Kind::InputResumed};
     }
     if (type == QStringLiteral("session.output_audio.delta")) {
         GptLiveEvent audio{Kind::AssistantAudio};
@@ -169,6 +196,48 @@ GptLiveEvent parseGptLiveEvent(const QByteArrayView message)
         return {Kind::Error, error.value(QStringLiteral("message")).toString()};
     }
     return {};
+}
+
+std::optional<GptLiveEvent> GptLiveTurnTracker::take(const GptLiveEvent &event)
+{
+    using Kind = GptLiveEvent::Kind;
+    const auto interrupted = [](const GptLiveEvent &turn) {
+        GptLiveEvent cut{Kind::AssistantInterrupted, turn.text, turn.startMs, turn.endMs};
+        cut.audioMs = turn.startMs >= 0 && turn.endMs >= turn.startMs ? turn.endMs - turn.startMs : -1;
+        return cut;
+    };
+    switch (event.kind) {
+    case Kind::AssistantTurnStarted:
+        m_assistantOpen = true;
+        m_justEnded.reset();
+        m_userStartedDuring = -1;
+        return std::nullopt;
+    case Kind::AssistantTurn: {
+        m_assistantOpen = false;
+        const qint64 userStart = std::exchange(m_userStartedDuring, -1);
+        if (userStart >= 0 && userStart < event.endMs) {
+            m_justEnded.reset();
+            return interrupted(event);
+        }
+        m_justEnded = event;
+        return std::nullopt;
+    }
+    case Kind::UserTurnStarted:
+        if (m_assistantOpen) {
+            m_userStartedDuring = event.startMs;
+            return std::nullopt;
+        }
+        if (const std::optional<GptLiveEvent> ended = std::exchange(m_justEnded, std::nullopt);
+            ended && event.startMs >= 0 && event.startMs < ended->endMs) {
+            return interrupted(*ended);
+        }
+        return std::nullopt;
+    case Kind::UserTurn:
+        m_justEnded.reset();
+        return std::nullopt;
+    default:
+        return std::nullopt;
+    }
 }
 
 QByteArray pcmuFromPcm16(QByteArrayView pcm)

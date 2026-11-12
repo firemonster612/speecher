@@ -511,7 +511,7 @@ int main(int argc, char **argv)
         _setmode(_fileno(stdin), _O_BINARY);
         _setmode(_fileno(stdout), _O_BINARY);
 #endif
-        return runLiveCommand(decision.live, &settings, std::cin, std::cout, std::cerr);
+        return runLiveCommand(decision.live, &settings, platform, std::cout, std::cerr);
     }
     if (decision.mode == LaunchMode::ListProviders) {
         QCoreApplication app(argc, argv);

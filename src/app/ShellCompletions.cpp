@@ -68,6 +68,9 @@ QMap<QString, std::optional<Values>> completedOptions(const CompletionChoices &c
         {QStringLiteral("--rate"), Values{{QStringLiteral("8000"), QStringLiteral("16000"), QStringLiteral("24000"),
                                            QStringLiteral("48000")}}},
         {QStringLiteral("--linger"), Values{}},
+        {QStringLiteral("--protocol"), Values{{QStringLiteral("jsonl")}}},
+        {QStringLiteral("--echo-cancel"), flag},
+        {QStringLiteral("--accept-slow"), flag},
     };
 }
 
@@ -106,7 +109,8 @@ QList<CompletedCommand> documentedCommands()
         {QStringLiteral("live"),
          {QStringLiteral("--rate"), QStringLiteral("--voice"), QStringLiteral("--instructions"),
           QStringLiteral("--instructions-file"), QStringLiteral("--audio-out"), QStringLiteral("--json"),
-          QStringLiteral("--linger")},
+          QStringLiteral("--linger"), QStringLiteral("--protocol"), QStringLiteral("--echo-cancel"),
+          QStringLiteral("--accept-slow")},
          files},
         {QStringLiteral("providers"), {QStringLiteral("--json")}},
         {QStringLiteral("record start"),

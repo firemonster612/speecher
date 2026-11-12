@@ -17,6 +17,7 @@
 #include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QThread>
 #include <QTimer>
 #include <QtEndian>
 
@@ -80,6 +81,18 @@ void writeWav(const QString &path, const QByteArray &pcm, int sampleRate)
     file.write(header + pcm);
 }
 
+// Input that reads pcm, then ends.
+LiveInputReader readerOf(const QByteArray &pcm)
+{
+    auto left = std::make_shared<QByteArray>(pcm);
+    return [left](char *buffer, qint64 size) -> qint64 {
+        const qint64 got = std::min<qint64>(size, left->size());
+        memcpy(buffer, left->constData(), size_t(got));
+        left->remove(0, qsizetype(got));
+        return got;
+    };
+}
+
 GptLiveEvent made(GptLiveEvent::Kind kind, const QString &text = {})
 {
     GptLiveEvent event{kind, text};
@@ -122,6 +135,8 @@ public:
         }
     }
     qint64 queuedMs() const override { return 0; }
+    void sendContext(const QString &text) override { contexts << text; }
+    void setInputPaused(bool paused) override { pauses << paused; }
     void close() override
     {
         ++closeCalls;
@@ -141,6 +156,8 @@ public:
     QString token;
     GptLiveSessionOptions startedWith;
     QByteArray heard;
+    QStringList contexts;
+    QList<bool> pauses;
     bool answered = false;
     int closeCalls = 0;
 };
@@ -264,10 +281,26 @@ private slots:
         QCOMPARE(event.kind, Kind::Error);
         QCOMPARE(event.text, QStringLiteral("Voice cannot be updated after initialization."));
 
-        // The input's echo, turn bookkeeping and anything new are not for the client.
-        for (const char *ignored : {R"({"type":"session.input_audio.append","audio":"AAAA"})",
-                                    R"({"type":"turn.created","turn":{"role":"user"}})",
-                                    R"({"type":"turn.delta","delta":" so"})", "not json", "{}"}) {
+        event = parseGptLiveEvent(
+            R"({"type":"turn.created","turn":{"end_ms":14600,"role":"user","start_ms":14400,"transcript":" Of"}})");
+        QCOMPARE(event.kind, Kind::UserTurnStarted);
+        QCOMPARE(event.startMs, 14400);
+        QCOMPARE(parseGptLiveEvent(R"({"type":"turn.created","turn":{"role":"assistant","start_ms":1}})").kind,
+                 Kind::AssistantTurnStarted);
+        QCOMPARE(parseGptLiveEvent(R"({"type":"session.input_audio.append","audio":"AAAA"})").kind, Kind::InputEcho);
+        QCOMPARE(parseGptLiveEvent(R"({"type":"session.context.appended","start_ms":200})").kind, Kind::ContextAppended);
+        QCOMPARE(parseGptLiveEvent(R"({"type":"input_audio.paused"})").kind, Kind::InputPaused);
+        QCOMPARE(parseGptLiveEvent(R"({"type":"input_audio.resumed"})").kind, Kind::InputResumed);
+        QCOMPARE(QJsonDocument::fromJson(gptLiveContextAppend(QStringLiteral("Hi"))).object(),
+                 QJsonObject({{QStringLiteral("type"), QStringLiteral("session.context.append")},
+                              {QStringLiteral("content"),
+                               QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("input_text")},
+                                                      {QStringLiteral("text"), QStringLiteral("Hi")}}}}}));
+        QCOMPARE(gptLiveInputPause(true), QByteArray(R"({"type":"input_audio.pause"})"));
+        QCOMPARE(gptLiveInputPause(false), QByteArray(R"({"type":"input_audio.resume"})"));
+
+        // Turn deltas and anything new are not for the client.
+        for (const char *ignored : {R"({"type":"turn.delta","delta":" so"})", "not json", "{}"}) {
             QCOMPARE(parseGptLiveEvent(QByteArrayView(ignored)).kind, Kind::Ignored);
         }
     }
@@ -399,7 +432,7 @@ private slots:
         options.input = audio;
         options.json = true;
         options.session.instructions = QStringLiteral("Be brief.");
-        std::istringstream in;
+        const LiveInputReader in = readerOf({});
         std::ostringstream out;
         std::ostringstream err;
 
@@ -429,7 +462,7 @@ private slots:
         options.stdinRate = 8000;
         options.audioOut = dir.filePath(QStringLiteral("assistant.wav"));
         // Half a second at 8 kHz.
-        std::istringstream in(tone(300, 8000, 4000).toStdString());
+        const LiveInputReader in = readerOf(tone(300, 8000, 4000));
         std::ostringstream out;
         std::ostringstream err;
 
@@ -455,7 +488,7 @@ private slots:
         LiveOptions options;
         options.input = QStringLiteral("-");
         options.audioOut = QStringLiteral("-");
-        std::istringstream in(tone(300, 24000, 4800).toStdString());
+        const LiveInputReader in = readerOf(tone(300, 24000, 4800));
         std::ostringstream out;
         std::ostringstream err;
 
@@ -470,7 +503,7 @@ private slots:
         std::ostringstream err;
         LiveOptions options;
         options.input = QStringLiteral("-");
-        std::istringstream in;
+        const LiveInputReader in = readerOf({});
 
         FakeSession refused;
         refused.failStart = QStringLiteral("GPT-Live refused the call: 403");
@@ -481,7 +514,7 @@ private slots:
         FakeSession ended;
         ended.script = {made(GptLiveEvent::Kind::SessionClosed, QStringLiteral("usage_limit"))};
         ended.answerAfterMs = 0;
-        std::istringstream speech(tone(300, 24000, 2400).toStdString());
+        const LiveInputReader speech = readerOf(tone(300, 24000, 2400));
         err.str({});
         QCOMPARE(runLiveSession(options, ended, QStringLiteral("token"), {}, speech, out, err), 1);
         QVERIFY(QString::fromStdString(err.str()).contains(QStringLiteral("GPT-Live ended the session: usage_limit")));
@@ -494,7 +527,7 @@ private slots:
         LiveOptions options;
         options.input = QStringLiteral("-");
         options.lingerMs = 300;
-        std::istringstream in(tone(300, 24000, 2400).toStdString());
+        const LiveInputReader in = readerOf(tone(300, 24000, 2400));
         std::ostringstream out;
         std::ostringstream err;
         QElapsedTimer clock;
@@ -522,7 +555,7 @@ private slots:
         options.input = QStringLiteral("-");
         options.json = true;
         options.lingerMs = 300;
-        std::istringstream in(tone(300, 24000, 2400).toStdString());
+        const LiveInputReader in = readerOf(tone(300, 24000, 2400));
         std::ostringstream out;
         std::ostringstream err;
 
@@ -534,6 +567,217 @@ private slots:
         const QString last = QString::fromStdString(out.str()).trimmed().section(QLatin1Char('\n'), -1);
         QCOMPARE(QJsonDocument::fromJson(last.toUtf8()).object().value(QStringLiteral("reason")).toString(),
                  QStringLiteral("connection_closed"));
+    }
+
+    // The order of events in a real barge-in on 2026-11-12, and the two that
+    // are not one: a turn that ended before the user spoke, and a
+    // back-channel the assistant made while the user spoke.
+    void theUserTalkingOverTheAssistantIsAnInterruption()
+    {
+        using Kind = GptLiveEvent::Kind;
+        const auto turn = [](Kind kind, qint64 start, qint64 end, const QString &text = {}) {
+            GptLiveEvent event{kind, text, start, end};
+            return event;
+        };
+        // GPT-Live ends the assistant's turn, then starts the user's, which
+        // began before it ended.
+        GptLiveTurnTracker cut;
+        QVERIFY(!cut.take(turn(Kind::AssistantTurnStarted, 11600, 11800)));
+        QVERIFY(!cut.take(turn(Kind::AssistantTurn, 11600, 14600, QStringLiteral("JFK's inaugural address, 1961."))));
+        std::optional<GptLiveEvent> interrupted = cut.take(turn(Kind::UserTurnStarted, 14400, 14600));
+        QVERIFY(interrupted);
+        QCOMPARE(interrupted->kind, Kind::AssistantInterrupted);
+        QCOMPARE(interrupted->text, QStringLiteral("JFK's inaugural address, 1961."));
+        QCOMPARE(interrupted->audioMs, 3000);
+
+        // The user's turn can start first, while the assistant's is open.
+        GptLiveTurnTracker early;
+        early.take(turn(Kind::AssistantTurnStarted, 1000, 1200));
+        QVERIFY(!early.take(turn(Kind::UserTurnStarted, 2000, 2200)));
+        interrupted = early.take(turn(Kind::AssistantTurn, 1000, 2400, QStringLiteral("Well")));
+        QVERIFY(interrupted);
+        QCOMPARE(interrupted->audioMs, 1400);
+
+        // A turn the user answered after it ended.
+        GptLiveTurnTracker ended;
+        ended.take(turn(Kind::AssistantTurnStarted, 1000, 1200));
+        ended.take(turn(Kind::AssistantTurn, 1000, 3000));
+        QVERIFY(!ended.take(turn(Kind::UserTurnStarted, 3400, 3600)));
+
+        // A back-channel: the assistant's "Mm-hmm" began while the user spoke.
+        GptLiveTurnTracker backChannel;
+        backChannel.take(turn(Kind::UserTurnStarted, 14400, 14600));
+        backChannel.take(turn(Kind::UserTurn, 14400, 19000));
+        backChannel.take(turn(Kind::AssistantTurnStarted, 18800, 19000));
+        backChannel.take(turn(Kind::AssistantTurn, 18800, 31600));
+        QVERIFY(!backChannel.take(turn(Kind::UserTurnStarted, 32000, 32200)));
+    }
+
+    void aHalfSpeedSessionIsSlow()
+    {
+        // Echo spans measured on 2026-11-12: real time, then three slow ones.
+        QVERIFY(!gptLiveSessionIsSlow(1978));
+        QVERIFY(!gptLiveSessionIsSlow(2001));
+        for (const qint64 slow : {2539, 2725, 3316, 3693}) {
+            QVERIFY(gptLiveSessionIsSlow(slow));
+        }
+    }
+
+    void hostEventsPrintAsJson()
+    {
+        using Kind = GptLiveEvent::Kind;
+        const QJsonObject started = *liveEventJson(made(Kind::SessionStarted), true);
+        QCOMPARE(started.value(QStringLiteral("protocol")).toInt(), kLiveProtocolVersion);
+        QCOMPARE(started.value(QStringLiteral("output_rate")).toInt(), 24000);
+        GptLiveEvent speech = made(Kind::UserTurnStarted);
+        speech.startMs = 14400;
+        QCOMPARE(*liveEventJson(speech, true),
+                 QJsonObject({{QStringLiteral("type"), QStringLiteral("user.speech_started")},
+                              {QStringLiteral("start_ms"), 14400}}));
+        QCOMPARE(liveEventJson(made(Kind::AssistantTurnStarted), true)->value(QStringLiteral("type")),
+                 QStringLiteral("assistant.speech_started"));
+        GptLiveEvent cut = made(Kind::AssistantInterrupted, QStringLiteral("JFK."));
+        cut.audioMs = 2600;
+        QCOMPARE(liveEventJson(cut, true)->value(QStringLiteral("heard_ms")).toInt(), 2600);
+        QCOMPARE(liveEventJson(made(Kind::ContextAppended), true)->value(QStringLiteral("type")),
+                 QStringLiteral("context.added"));
+        QCOMPARE(liveEventJson(made(Kind::InputPaused), true)->value(QStringLiteral("type")),
+                 QStringLiteral("input.muted"));
+        QCOMPARE(liveEventJson(made(Kind::InputResumed), true)->value(QStringLiteral("type")),
+                 QStringLiteral("input.unmuted"));
+        QVERIFY(!liveEventJson(made(Kind::InputEcho), true));
+        // The silence between turns stays home.
+        GptLiveEvent quiet = made(Kind::AssistantAudio);
+        quiet.pcm = QByteArray(960, '\0');
+        QVERIFY(!liveEventJson(quiet, true));
+        quiet.pcm[5] = '\x01';
+        QCOMPARE(liveEventJson(quiet, true)->value(QStringLiteral("ms")).toInt(), 20);
+    }
+
+    void commandLineTakesTheHostProtocol()
+    {
+        CommandLineDecision decision = parseLive({QStringLiteral("--protocol"), QStringLiteral("jsonl"),
+                                                  QStringLiteral("--echo-cancel"), QStringLiteral("--accept-slow"),
+                                                  QStringLiteral("--rate"), QStringLiteral("16000")});
+        QCOMPARE(decision.mode, LaunchMode::LiveHeadless);
+        QVERIFY(decision.live.hostProtocol);
+        QVERIFY(decision.live.echoCancel);
+        QVERIFY(decision.live.session.acceptSlowSession);
+        QCOMPARE(decision.live.stdinRate, 16000);
+        for (const QStringList &mistake :
+             {QStringList{QStringLiteral("--protocol"), QStringLiteral("grpc")},
+              QStringList{QStringLiteral("--protocol"), QStringLiteral("jsonl"), QStringLiteral("-")},
+              QStringList{QStringLiteral("--protocol"), QStringLiteral("jsonl"), QStringLiteral("--audio-out"),
+                          QStringLiteral("-")},
+              QStringList{QStringLiteral("--protocol"), QStringLiteral("jsonl"), QStringLiteral("--linger"),
+                          QStringLiteral("5")}}) {
+            const CommandLineDecision refused = parseLive(mistake);
+            QVERIFY2(refused.mode == LaunchMode::Exit && refused.exitCode == 2, qPrintable(mistake.join(QLatin1Char(' '))));
+        }
+    }
+
+    // A host's commands reach the session, its events come back as JSON
+    // lines, the session runs until the host ends it, and an assistant the
+    // user talked over says so.
+    void theHostProtocolDrivesASession()
+    {
+        using Kind = GptLiveEvent::Kind;
+        const auto turn = [](Kind kind, qint64 start, qint64 end, const QString &text = {}) {
+            GptLiveEvent event{kind, text, start, end};
+            return event;
+        };
+        FakeSession session;
+        session.answerAfterMs = 0;
+        GptLiveEvent audio = made(Kind::AssistantAudio);
+        audio.pcm = QByteArray(480, '\x05');
+        session.script = {turn(Kind::AssistantTurnStarted, 1000, 1200), audio,
+                          turn(Kind::AssistantTurn, 1000, 2400, QStringLiteral("Well")),
+                          turn(Kind::UserTurnStarted, 2200, 2400), audio};
+        session.sayGoodbye = true;
+        LiveOptions options;
+        options.hostProtocol = true;
+        options.stdinRate = 16000;
+        const QByteArray speech = tone(300, 16000, 1600).toBase64();
+        const QByteArray commands = QByteArray("{\"type\":\"input.audio\",\"audio\":\"") + speech + "\"}\n"
+            + R"({"type":"input.mute"})" + "\n" + R"({"type":"input.unmute"})" + "\n"
+            + R"({"type":"context.add","text":"The caller is Sam."})" + "\n" + R"({"type":"frobnicate"})" + "\n";
+        auto pending = std::make_shared<QByteArray>(commands);
+        auto ended = std::make_shared<bool>(false);
+        // The host's pipe: its commands, then session.end once the script ran.
+        const LiveInputReader in = [pending, ended, &session](char *buffer, qint64 size) -> qint64 {
+            while (pending->isEmpty()) {
+                if (std::exchange(*ended, true)) {
+                    return 0;
+                }
+                QThread::msleep(800);
+                *pending = R"({"type":"session.end"})" "\n";
+            }
+            const qint64 got = std::min<qint64>(size, pending->size());
+            memcpy(buffer, pending->constData(), size_t(got));
+            pending->remove(0, qsizetype(got));
+            return got;
+        };
+        std::ostringstream out;
+        std::ostringstream err;
+
+        QCOMPARE(runLiveSession(options, session, QStringLiteral("token"), {}, in, out, err), 0);
+        QCOMPARE(session.heard.size(), 3200);
+        QCOMPARE(session.pauses, (QList<bool>{true, false}));
+        QCOMPARE(session.contexts, QStringList{QStringLiteral("The caller is Sam.")});
+        QCOMPARE(session.closeCalls, 1);
+        const QStringList types = jsonTypes(out.str());
+        QCOMPARE(types.first(), QStringLiteral("session.started"));
+        QVERIFY2(types.contains(QStringLiteral("assistant.interrupted")), qPrintable(types.join(QLatin1Char(' '))));
+        QCOMPARE(types.indexOf(QStringLiteral("assistant.interrupted")), types.indexOf(QStringLiteral("user.speech_started")) + 1);
+        QCOMPARE(types.count(QStringLiteral("assistant.audio")), 2);
+        QCOMPARE(types.last(), QStringLiteral("session.closed"));
+        QVERIFY(QString::fromStdString(out.str()).contains(QStringLiteral("Unknown command: frobnicate")));
+        const QJsonObject started =
+            QJsonDocument::fromJson(QString::fromStdString(out.str()).section(QLatin1Char('\n'), 0, 0).toUtf8()).object();
+        QCOMPARE(started.value(QStringLiteral("input_rate")).toInt(), 16000);
+    }
+
+    // playback.stop drops the rest of the assistant's turn, and the next turn
+    // plays again.
+    void playbackStopDropsTheRestOfTheTurn()
+    {
+        using Kind = GptLiveEvent::Kind;
+        FakeSession session;
+        session.answerAfterMs = 0;
+        session.eventGapMs = 300;
+        GptLiveEvent audio = made(Kind::AssistantAudio);
+        audio.pcm = QByteArray(480, '\x05');
+        session.script = {made(Kind::AssistantTurnStarted), audio, audio, made(Kind::AssistantTurnStarted), audio};
+        LiveOptions options;
+        options.hostProtocol = true;
+        auto step = std::make_shared<int>(0);
+        // input.audio at once, playback.stop after the first audio, then end.
+        const LiveInputReader in = [step](char *buffer, qint64) -> qint64 {
+            QByteArray line;
+            switch ((*step)++) {
+            case 0:
+                line = R"({"type":"input.audio","audio":"AAAAAAAA"})" "\n";
+                break;
+            case 1:
+                QThread::msleep(450);
+                line = R"({"type":"playback.stop"})" "\n";
+                break;
+            case 2:
+                QThread::msleep(900);
+                line = R"({"type":"session.end"})" "\n";
+                break;
+            default:
+                return 0;
+            }
+            memcpy(buffer, line.constData(), size_t(line.size()));
+            return line.size();
+        };
+        std::ostringstream out;
+        std::ostringstream err;
+
+        QCOMPARE(runLiveSession(options, session, QStringLiteral("token"), {}, in, out, err), 0);
+        // The first turn's first chunk, none after the stop, the next turn's.
+        QCOMPARE(jsonTypes(out.str()).count(QStringLiteral("assistant.audio")), 2);
     }
 
     // Opt-in, like liveCodexDictationProvider: a real GPT-Live call with the
@@ -558,7 +802,7 @@ private slots:
         options.json = true;
         options.session.instructions = QStringLiteral("Answer in one short sentence.");
         GptLiveCall call;
-        std::istringstream in;
+        const LiveInputReader in = readerOf({});
         std::ostringstream out;
         std::ostringstream err;
         QCOMPARE(runLiveSession(options, call, auth.bearerToken, auth.accountId, in, out, err), 0);
