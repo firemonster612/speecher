@@ -87,7 +87,14 @@ struct FakeModelCounts {
     // their own abort.
     std::atomic<int> held = 0;
     std::atomic_bool heldOpen = false;
+    // The most audio one run or stream was given.
+    std::atomic<qsizetype> longestRunBytes = 0;
 };
+
+void noteRun(FakeModelCounts &counts, qsizetype bytes)
+{
+    counts.longestRunBytes = std::max(counts.longestRunBytes.load(), bytes);
+}
 
 // A word a fake session stops on mid-call, as a slow model would.
 constexpr qint16 kHeldWord = 99;
@@ -104,6 +111,16 @@ QByteArray spoken(qint16 word)
 QByteArray quiet()
 {
     return QByteArray(kSpeechChunkBytes, 0);
+}
+
+// spoken(word) as loud as speech, so it never counts as a pause.
+QByteArray voiced(qint16 word)
+{
+    QByteArray chunk(kSpeechChunkBytes, 0);
+    for (qsizetype at = 0; at < chunk.size(); at += 2) {
+        qToLittleEndian<qint16>(at == 0 ? word : qint16(3000), chunk.data() + at);
+    }
+    return chunk;
 }
 
 QString fakeWords(const QByteArray &pcm)
@@ -130,6 +147,7 @@ public:
 
     std::optional<QString> transcribe(const QByteArray &pcm16, const QString &, QString *) override
     {
+        noteRun(m_counts, pcm16.size());
         return fakeWords(pcm16);
     }
     std::optional<QString> transcribeTimed(const QByteArray &pcm16, const QString &language,
@@ -140,6 +158,7 @@ public:
     bool beginStream(const QString &, QString *) override
     {
         m_committed.clear();
+        m_streamBytes = 0;
         return true;
     }
     bool feed(const QByteArray &pcm16, LocalSpeechEngine::StreamText *text, QString *) override
@@ -155,6 +174,8 @@ public:
                 return false;
             }
         }
+        m_streamBytes += pcm16.size();
+        noteRun(m_counts, m_streamBytes);
         if (const QString words = fakeWords(pcm16); !words.isEmpty()) {
             m_committed += words + QLatin1Char(' ');
         }
@@ -167,6 +188,7 @@ private:
     FakeModelCounts &m_counts;
     std::function<bool()> m_shouldAbort;
     QString m_committed;
+    qsizetype m_streamBytes = 0;
 };
 
 class FakeEngine final : public LocalSpeechEngine {
@@ -1167,6 +1189,102 @@ private slots:
             QCOMPARE(texts(finals).join(QLatin1Char(' ')).simplified(), QStringLiteral("w1 w2"));
         }
         QVERIFY(connected.size() == 1 && failed.isEmpty());
+    }
+
+    void audioPiecesEndAtAPauseOrTheLongestPiece()
+    {
+        // A pause before the shortest piece is passed over; the first after
+        // it ends the piece, the pause going with it.
+        AudioPieces pieces;
+        QByteArray run;
+        for (int chunk = 0; chunk < 100; ++chunk) run += voiced(1);
+        run += quiet();
+        for (int chunk = 0; chunk < 150; ++chunk) run += voiced(1);
+        run += quiet();
+        AudioPieces::Fit fit = pieces.fit(run);
+        QVERIFY(fit.ends);
+        QCOMPARE(fit.bytes, 252 * kSpeechChunkBytes);
+
+        // Speech with no pause ends at the longest piece, however the audio
+        // arrives, and the rest starts the next.
+        QByteArray speech;
+        for (int chunk = 0; chunk < 450; ++chunk) speech += voiced(1);
+        fit = pieces.fit(QByteArrayView(speech).first(kSpeechChunkBytes / 2));
+        QCOMPARE(fit.bytes, kSpeechChunkBytes / 2);
+        QVERIFY(!fit.ends);
+        fit = pieces.fit(QByteArrayView(speech).sliced(kSpeechChunkBytes / 2));
+        QVERIFY(fit.ends);
+        QCOMPARE(fit.bytes + kSpeechChunkBytes / 2, AudioPieces::kLongestPieceBytes);
+        // The last piece is whatever is left.
+        fit = pieces.fit(QByteArrayView(speech).sliced(AudioPieces::kLongestPieceBytes));
+        QCOMPARE(fit.bytes, 50 * kSpeechChunkBytes);
+        QVERIFY(!fit.ends);
+
+        QCOMPARE(joinPieceTexts(QStringLiteral("one two "), QStringLiteral(" three")), QStringLiteral("one two three"));
+        QCOMPARE(joinPieceTexts(QString(), QStringLiteral("three")), QStringLiteral("three"));
+        QCOMPARE(joinPieceTexts(QStringLiteral("一二"), QStringLiteral("三")), QStringLiteral("一二三"));
+    }
+
+    // 95 s of speech, a model run never longer than the longest piece, and
+    // every word once in order, the last piece's too.
+    void longAudioReachesTheModelInPieces_data()
+    {
+        QTest::addColumn<bool>("streams");
+        QTest::addColumn<bool>("cutIntoUtterances");
+        QTest::newRow("streaming dictation") << true << false;
+        QTest::newRow("batch dictation") << false << false;
+        QTest::newRow("streaming utterance") << true << true;
+        QTest::newRow("batch utterance") << false << true;
+    }
+
+    void longAudioReachesTheModelInPieces()
+    {
+        QFETCH(bool, streams);
+        QFETCH(bool, cutIntoUtterances);
+        QTemporaryDir dir;
+        LocalModelStore store(dir.path(), QUrl());
+        QVERIFY(fakeDownload(store, QStringLiteral("moonshine-small")));
+        FakeModelCounts counts;
+        LocalSpeechTranscriber transcriber(
+            store, std::make_shared<LocalSpeechWorker>(std::make_unique<FakeEngine>(counts, streams)));
+        QSignalSpy finals(&transcriber, &SpeechTranscriber::finalTranscript);
+        QSignalSpy transcripts(&transcriber, &SpeechTranscriber::attemptTranscript);
+        QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
+        QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
+        SpeechSettings settings;
+        localModelId(settings) = QStringLiteral("moonshine-small");
+
+        transcriber.startAttempt(1, settings, {.cutIntoUtterances = cutIntoUtterances});
+        if (cutIntoUtterances) {
+            transcriber.beginUtterance(1);
+        }
+        QStringList words;
+        for (int chunk = 1; chunk <= 950; ++chunk) {
+            // Past kHeldWord. A pause a little past the shortest piece.
+            const qint16 word = qint16(1000 + chunk);
+            transcriber.sendAudio(1, chunk == 251 ? quiet() : voiced(word));
+            if (chunk != 251) {
+                words << QStringLiteral("w%1").arg(word);
+            }
+        }
+        transcriber.finishInput(1);
+        QVERIFY(completed.wait(10000));
+        QVERIFY(failed.isEmpty());
+
+        const QString expected = words.join(QLatin1Char(' '));
+        if (cutIntoUtterances) {
+            QCOMPARE(texts(finals), QStringList{expected});
+        } else {
+            QCOMPARE(texts(transcripts), QStringList{expected});
+            if (streams) {
+                QCOMPARE(texts(finals).join(QLatin1Char(' ')).simplified(), expected);
+            }
+        }
+        // 40 s: Cohere left out words of a 60 s run, and Moonshine Streaming
+        // aborts past 81.9 s.
+        QVERIFY(counts.longestRunBytes > 0);
+        QVERIFY2(counts.longestRunBytes <= qsizetype(40) * kSpeechBytesPerSecond,
+                 qPrintable(QString::number(counts.longestRunBytes)));
     }
 
     // A recording's two sides and dictation load the model once, with a

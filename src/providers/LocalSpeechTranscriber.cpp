@@ -1,13 +1,16 @@
 #include "providers/LocalSpeechTranscriber.h"
 
 #include "core/LocalModelCatalog.h"
+#include "core/WordSpacing.h"
 #include "providers/LocalModelStore.h"
 #include "providers/LocalSpeechWorker.h"
-#include "providers/SpeechAudio.h"
 
 #include <QMutex>
+#include <QtEndian>
 
+#include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <utility>
 
 namespace speecher {
@@ -18,6 +21,24 @@ namespace {
 // call, and a batch model on a slow processor takes several seconds for
 // every utterance.
 constexpr int answerTimeoutMs = 60000;
+
+// 100 ms is quiet at this share of the loudest 100 ms of its piece, as RMS:
+// 20 dB under it.
+constexpr float kQuietShareOfLoudest = 0.1f;
+
+float rmsOf(QByteArrayView pcm)
+{
+    const qsizetype samples = pcm.size() / 2;
+    if (samples == 0) {
+        return 0.0f;
+    }
+    double sum = 0.0;
+    for (qsizetype index = 0; index < samples; ++index) {
+        const double sample = qFromLittleEndian<qint16>(pcm.constData() + 2 * index) / 32768.0;
+        sum += sample * sample;
+    }
+    return float(std::sqrt(sum / double(samples)));
+}
 
 enum class UtteranceMark { None, Begin, End };
 
@@ -96,6 +117,10 @@ private:
     bool abandoned() const;
     bool running() const;
     void take(const QByteArray &pcm);
+    bool feed(QByteArrayView pcm);
+    bool endPiece();
+    std::optional<QString> transcribeInPieces(const QByteArray &pcm, QList<TranscriptSegment> *segments,
+                                              QString *error);
     void beginUtterance();
     void endUtterance();
     void fail(const QString &message, SpeechPhase phase, ProviderFailureKind kind);
@@ -115,6 +140,10 @@ private:
     bool m_speedTesting = false;
     // A dictation's: how much of the stream's committed text went out.
     qsizetype m_emittedCommittedChars = 0;
+    // A stream's: where its current piece ends, and the text of the pieces
+    // before it, which a dictation has sent as finals already.
+    AudioPieces m_pieces;
+    QString m_earlierPieces;
     // A batch model's audio: the dictation's, or the open utterance's.
     QByteArray m_batchPcm;
     // A recording's: between beginUtterance() and endUtterance().
@@ -124,6 +153,35 @@ private:
     // cut. The rest of the quiet goes in nowhere.
     QByteArray m_leadIn;
 };
+
+AudioPieces::Fit AudioPieces::fit(QByteArrayView pcm)
+{
+    for (qsizetype at = 0; at < pcm.size();) {
+        const QByteArrayView window =
+            pcm.sliced(at, std::min({kSpeechChunkBytes, pcm.size() - at, kLongestPieceBytes - m_bytes}));
+        at += window.size();
+        m_bytes += window.size();
+        const float rms = rmsOf(window);
+        m_loudest = std::max(m_loudest, rms);
+        const bool quiet = rms <= m_loudest * kQuietShareOfLoudest;
+        if (m_bytes >= kLongestPieceBytes || (m_bytes >= kShortestPieceBytes && quiet)) {
+            *this = {};
+            return {at, true};
+        }
+    }
+    return {pcm.size(), false};
+}
+
+QString joinPieceTexts(const QString &before, const QString &after)
+{
+    const QString left = before.trimmed();
+    const QString right = after.trimmed();
+    if (left.isEmpty() || right.isEmpty()) {
+        return left + right;
+    }
+    const bool spaced = !writtenWithoutSpaces(left.back().script()) && !writtenWithoutSpaces(right.front().script());
+    return spaced ? left + QLatin1Char(' ') + right : left + right;
+}
 
 StreamSplit splitStreamText(const LocalSpeechEngine::StreamText &text, qsizetype finalChars)
 {
@@ -188,6 +246,8 @@ void LocalTranscriberWork::begin(const LocalAttempt &attempt)
     m_attempt = attempt;
     m_attemptFailed = false;
     m_emittedCommittedChars = 0;
+    m_pieces = {};
+    m_earlierPieces.clear();
     m_batchPcm.clear();
     m_utteranceOpen = false;
     m_leadIn.clear();
@@ -242,21 +302,35 @@ void LocalTranscriberWork::take(const QByteArray &pcm)
         m_leadIn = (m_leadIn + pcm).right(kUtteranceLeadInBytes);
         return;
     }
+    // A batch model's pieces are cut once all of the audio is in.
     if (!m_client.streams()) {
         m_batchPcm.append(pcm);
         return;
     }
+    for (QByteArrayView rest(pcm); !rest.isEmpty() && running();) {
+        const AudioPieces::Fit fit = m_pieces.fit(rest);
+        if (!feed(rest.first(fit.bytes)) || (fit.ends && !endPiece())) {
+            return;
+        }
+        rest = rest.sliced(fit.bytes);
+    }
+}
+
+// Streams audio of the current piece. False when the stream failed or was
+// aborted.
+bool LocalTranscriberWork::feed(QByteArrayView pcm)
+{
     LocalSpeechEngine::StreamText text;
     QString error;
-    if (!m_client.session().feed(pcm, &text, &error)) {
+    if (!m_client.session().feed(pcm.toByteArray(), &text, &error)) {
         if (!error.isEmpty()) {
             fail(error, SpeechPhase::Streaming, ProviderFailureKind::Other);
         }
-        return;
+        return false;
     }
     if (m_attempt.cutIntoUtterances) {
-        emit partial(m_attempt.id, (text.committed + text.tentative).trimmed());
-        return;
+        emit partial(m_attempt.id, joinPieceTexts(m_earlierPieces, text.committed + text.tentative));
+        return true;
     }
     const StreamSplit split = splitStreamText(text, m_emittedCommittedChars);
     m_emittedCommittedChars = split.finalChars;
@@ -264,6 +338,62 @@ void LocalTranscriberWork::take(const QByteArray &pcm)
         emit finalText(m_attempt.id, split.finalWords);
     }
     emit partial(m_attempt.id, split.partial);
+    return true;
+}
+
+// Finalizes the stream's piece, whose text joins the pieces before, and
+// begins a stream for the next. A dictation sends the piece's words that had
+// not gone out as finals. False when the stream failed or was aborted.
+bool LocalTranscriberWork::endPiece()
+{
+    LocalSpeechEngine::Session &session = m_client.session();
+    QString error;
+    const std::optional<QString> text = session.finalize(&error);
+    if (!text || !session.beginStream(m_attempt.spokenLanguage, &error)) {
+        if (!error.isEmpty()) {
+            fail(error, SpeechPhase::Streaming, ProviderFailureKind::Other);
+        }
+        return false;
+    }
+    if (!m_attempt.cutIntoUtterances) {
+        if (const QString rest = text->mid(m_emittedCommittedChars).trimmed(); !rest.isEmpty()) {
+            emit finalText(m_attempt.id, rest);
+        }
+        emit partial(m_attempt.id, {});
+        m_emittedCommittedChars = 0;
+    }
+    m_earlierPieces = joinPieceTexts(m_earlierPieces, *text);
+    return true;
+}
+
+// A batch model's text for pcm, a piece at a time, with each piece's
+// segments, when asked for, moved to where the piece starts.
+std::optional<QString> LocalTranscriberWork::transcribeInPieces(const QByteArray &pcm,
+                                                                QList<TranscriptSegment> *segments,
+                                                                QString *error)
+{
+    LocalSpeechEngine::Session &session = m_client.session();
+    AudioPieces pieces;
+    QString text;
+    for (qsizetype start = 0; start < pcm.size();) {
+        const QByteArray piece = pcm.mid(start, pieces.fit(QByteArrayView(pcm).sliced(start)).bytes);
+        QList<TranscriptSegment> timed;
+        const std::optional<QString> pieceText = segments
+            ? session.transcribeTimed(piece, m_attempt.spokenLanguage, &timed, error)
+            : session.transcribe(piece, m_attempt.spokenLanguage, error);
+        if (!pieceText) {
+            return std::nullopt;
+        }
+        const qint64 startMs = start * 1000 / kSpeechBytesPerSecond;
+        for (TranscriptSegment &segment : timed) {
+            segment.startMs += startMs;
+            segment.endMs += startMs;
+            segments->append(segment);
+        }
+        text = joinPieceTexts(text, *pieceText);
+        start += piece.size();
+    }
+    return text;
 }
 
 void LocalTranscriberWork::beginUtterance()
@@ -272,6 +402,8 @@ void LocalTranscriberWork::beginUtterance()
         return;
     }
     m_utteranceOpen = true;
+    m_pieces = {};
+    m_earlierPieces.clear();
     QString error;
     if (m_client.streams() && !m_client.session().beginStream(m_attempt.spokenLanguage, &error)) {
         fail(error, SpeechPhase::Streaming, ProviderFailureKind::Other);
@@ -291,14 +423,14 @@ void LocalTranscriberWork::endUtterance()
     QString error;
     const std::optional<QString> text = m_client.streams()
         ? m_client.session().finalize(&error)
-        : m_client.session().transcribe(std::exchange(m_batchPcm, {}), m_attempt.spokenLanguage, &error);
+        : transcribeInPieces(std::exchange(m_batchPcm, {}), nullptr, &error);
     if (!text) {
         if (!error.isEmpty()) {
             fail(error, SpeechPhase::Finalize, ProviderFailureKind::Other);
         }
         return;
     }
-    emit finalText(m_attempt.id, *text);
+    emit finalText(m_attempt.id, joinPieceTexts(std::exchange(m_earlierPieces, {}), *text));
 }
 
 void LocalTranscriberWork::finish(quint64 attemptId)
@@ -318,18 +450,17 @@ void LocalTranscriberWork::finish(quint64 attemptId)
     QString error;
     // The final text can revise what streamed, so it replaces all of it.
     // A stream's final text comes from its committed text, which its raw
-    // rows may not match, so only a one-pass run is timed.
+    // rows may not match, so only a batch model's run is timed.
     QList<TranscriptSegment> timed;
     std::optional<QString> text;
-    LocalSpeechEngine::Session &session = m_client.session();
     if (m_client.streams()) {
-        text = session.finalize(&error);
-    } else if (m_attempt.timed) {
-        text = session.transcribeTimed(m_batchPcm, m_attempt.spokenLanguage, &timed, &error);
+        text = m_client.session().finalize(&error);
+        if (text) {
+            text = joinPieceTexts(m_earlierPieces, *text);
+        }
     } else {
-        text = session.transcribe(m_batchPcm, m_attempt.spokenLanguage, &error);
+        text = transcribeInPieces(std::exchange(m_batchPcm, {}), m_attempt.timed ? &timed : nullptr, &error);
     }
-    m_batchPcm.clear();
     if (!text) {
         if (!error.isEmpty()) {
             fail(error, SpeechPhase::Finalize, ProviderFailureKind::Other);
