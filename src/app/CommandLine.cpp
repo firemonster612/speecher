@@ -118,8 +118,8 @@ Talk with GPT-Live, ChatGPT's voice model, with the Codex ChatGPT sign-in:
                            assistant.turn, assistant.audio (base64 PCM, left
                            out with --audio-out), usage, session.closed and
                            error
-  --linger <seconds>       how long to wait for the reply once the input has
-                           all gone out (default 30)
+  --linger <seconds>       once the input has all gone out, how long to wait
+                           with nothing said before closing (default 30)
   Without --json, prints "user: ..." and "assistant: ..." for each turn.
   Exit status: 0 the session ran and closed, 1 it failed, 2 usage error.
 

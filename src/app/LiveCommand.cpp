@@ -207,6 +207,12 @@ int runLiveSession(const LiveOptions &options, GptLiveSession &session, const QS
     bool answered = false;
     QElapsedTimer sinceUser;
     sinceUser.start();
+    // When either side last said anything: a slow answer still coming in
+    // keeps the session open past the linger.
+    QElapsedTimer sinceSpeech;
+    sinceSpeech.start();
+    // --json ends with one session.closed, whether or not the server sent it.
+    bool closedSeen = false;
 
     const auto fail = [&](const QString &message) {
         err << message.toStdString() << "\n" << std::flush;
@@ -285,9 +291,10 @@ int runLiveSession(const LiveOptions &options, GptLiveSession &session, const QS
             inputEnded = true;
             sinceInputSent.start();
         }
-        if (inputEnded
-            && ((answered && sinceUser.elapsed() >= kQuietAfterAnswerMs && sinceInputSent.elapsed() >= kQuietAfterAnswerMs)
-                || sinceInputSent.elapsed() >= options.lingerMs)) {
+        const bool answeredAndQuiet = answered && sinceUser.elapsed() >= kQuietAfterAnswerMs
+            && sinceInputSent.elapsed() >= kQuietAfterAnswerMs;
+        const bool idle = sinceInputSent.elapsed() >= options.lingerMs && sinceSpeech.elapsed() >= options.lingerMs;
+        if (inputEnded && (answeredAndQuiet || idle)) {
             requestClose();
         }
     };
@@ -310,9 +317,14 @@ int runLiveSession(const LiveOptions &options, GptLiveSession &session, const QS
         case Kind::UserTurn:
             answered = false;
             sinceUser.start();
+            sinceSpeech.start();
+            break;
+        case Kind::AssistantTranscriptDelta:
+            sinceSpeech.start();
             break;
         case Kind::AssistantTurn:
             answered = true;
+            sinceSpeech.start();
             break;
         case Kind::AssistantAudio:
             if (audioToStdout) {
@@ -323,6 +335,7 @@ int runLiveSession(const LiveOptions &options, GptLiveSession &session, const QS
             }
             break;
         case Kind::SessionClosed:
+            closedSeen = true;
             if (!closeRequested) {
                 fail(QStringLiteral("GPT-Live ended the session: %1").arg(event.text));
             }
@@ -348,6 +361,10 @@ int runLiveSession(const LiveOptions &options, GptLiveSession &session, const QS
     err << "Connecting to GPT-Live\n" << std::flush;
     session.start(accessToken, accountId, options.session);
     loop.exec();
+    // The server may hang up without a goodbye.
+    if (options.json && !closedSeen) {
+        writeLine(out, *liveEventJson({GptLiveEvent::Kind::SessionClosed, QStringLiteral("connection_closed")}, false));
+    }
 
     if (stdinReader.joinable()) {
         const std::lock_guard lock(stdinQueue->mutex);

@@ -26,8 +26,8 @@ struct LiveOptions {
     // One JSON object a line on stdout for each event, instead of a line for
     // each turn.
     bool json = false;
-    // How long the session waits for the assistant once the input has all
-    // gone out.
+    // Once the input has all gone out, how long the session waits with
+    // neither side saying anything before it closes.
     int lingerMs = 30000;
 };
 
@@ -38,7 +38,8 @@ std::optional<QJsonObject> liveEventJson(const GptLiveEvent &event, bool withAud
 // Talks to session with the input, printing the conversation to out (and the
 // assistant's audio where options say), progress and failures to err. The
 // session closes once the input has all gone out and the assistant answered
-// the last thing said, or after options.lingerMs. Returns the exit code: 0
+// the last thing said, or once nothing was said for options.lingerMs. With
+// json the last line is always session.closed. Returns the exit code: 0
 // when the session ran and closed, 1 when it failed or out took nothing.
 int runLiveSession(const LiveOptions &options, GptLiveSession &session, const QString &accessToken,
                    const QString &accountId, std::istream &in, std::ostream &out, std::ostream &err);

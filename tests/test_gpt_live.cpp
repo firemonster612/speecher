@@ -14,6 +14,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
@@ -87,7 +88,8 @@ GptLiveEvent made(GptLiveEvent::Kind kind, const QString &text = {})
 
 // A session that answers as a script says: it starts, hears the audio sent,
 // and once it has heard answerAfterMs, plays the user's and the assistant's
-// turns. close() says goodbye as the real one does.
+// turns, eventGapMs apart. close() says goodbye as the real one does, unless
+// it hangs up without one.
 class FakeSession final : public GptLiveSession {
 public:
     void start(const QString &accessToken, const QString &, const GptLiveSessionOptions &options) override
@@ -108,16 +110,15 @@ public:
         heard += pcm16k;
         if (!answered && heard.size() >= answerAfterMs * 32) {
             answered = true;
-            QTimer::singleShot(0, this, [this] {
-                for (const GptLiveEvent &scripted : std::as_const(script)) {
+            for (qsizetype index = 0; index < script.size(); ++index) {
+                QTimer::singleShot(int(index * eventGapMs), this, [this, scripted = script.at(index)] {
                     emit event(scripted);
                     // The server ending the session closes the sideband.
                     if (scripted.kind == GptLiveEvent::Kind::SessionClosed) {
                         emit closed();
-                        return;
                     }
-                }
-            });
+                });
+            }
         }
     }
     qint64 queuedMs() const override { return 0; }
@@ -125,14 +126,17 @@ public:
     {
         ++closeCalls;
         QTimer::singleShot(0, this, [this] {
-            GptLiveEvent goodbye = made(GptLiveEvent::Kind::SessionClosed, QStringLiteral("client_request"));
-            emit event(goodbye);
+            if (sayGoodbye) {
+                emit event(made(GptLiveEvent::Kind::SessionClosed, QStringLiteral("client_request")));
+            }
             emit closed();
         });
     }
 
     QList<GptLiveEvent> script;
     qint64 answerAfterMs = 100;
+    int eventGapMs = 0;
+    bool sayGoodbye = true;
     QString failStart;
     QString token;
     GptLiveSessionOptions startedWith;
@@ -501,15 +505,52 @@ private slots:
         QVERIFY(clock.elapsed() < 5000);
     }
 
+    // An answer still coming in keeps the session open past the linger, and
+    // the JSON ends with session.closed even when the server hangs up without
+    // one.
+    void aSlowAnswerOutlastsTheLinger()
+    {
+        FakeSession session;
+        session.eventGapMs = 150;
+        session.sayGoodbye = false;
+        session.script = {made(GptLiveEvent::Kind::UserTurn, QStringLiteral("Hello"))};
+        for (int word = 0; word < 6; ++word) {
+            session.script << made(GptLiveEvent::Kind::AssistantTranscriptDelta, QStringLiteral(" word"));
+        }
+        session.script << made(GptLiveEvent::Kind::AssistantTurn, QStringLiteral("word word word"));
+        LiveOptions options;
+        options.input = QStringLiteral("-");
+        options.json = true;
+        options.lingerMs = 300;
+        std::istringstream in(tone(300, 24000, 2400).toStdString());
+        std::ostringstream out;
+        std::ostringstream err;
+
+        QCOMPARE(runLiveSession(options, session, QStringLiteral("token"), {}, in, out, err), 0);
+        const QStringList types = jsonTypes(out.str());
+        QVERIFY2(types.contains(QStringLiteral("assistant.turn")), qPrintable(types.join(QLatin1Char(' '))));
+        QCOMPARE(types.last(), QStringLiteral("session.closed"));
+        QCOMPARE(types.count(QStringLiteral("session.closed")), 1);
+        const QString last = QString::fromStdString(out.str()).trimmed().section(QLatin1Char('\n'), -1);
+        QCOMPARE(QJsonDocument::fromJson(last.toUtf8()).object().value(QStringLiteral("reason")).toString(),
+                 QStringLiteral("connection_closed"));
+    }
+
     // Opt-in, like liveCodexDictationProvider: a real GPT-Live call with the
-    // Codex ChatGPT login, the WAV as the caller.
+    // Codex ChatGPT login, the WAV as the caller. The suites run on empty
+    // sign-in homes, so the login's folder is named outright.
     void liveGptLiveCall()
     {
         const QString wav = qEnvironmentVariable("SPEECHER_TEST_LIVE_GPT_LIVE_WAV");
-        if (wav.isEmpty()) {
-            QSKIP("Live GPT-Live check is opt-in: set SPEECHER_TEST_LIVE_GPT_LIVE_WAV to a WAV of speech");
+        const QString codexHome = qEnvironmentVariable("SPEECHER_TEST_LIVE_CODEX_HOME");
+        if (wav.isEmpty() || codexHome.isEmpty()) {
+            QSKIP("Live GPT-Live check is opt-in: set SPEECHER_TEST_LIVE_GPT_LIVE_WAV to a WAV of speech and "
+                  "SPEECHER_TEST_LIVE_CODEX_HOME to the Codex login's folder, such as ~/.codex");
         }
 #ifdef SPEECHER_WITH_GPT_LIVE
+        const QByteArray isolatedHome = qgetenv("CODEX_HOME");
+        qputenv("CODEX_HOME", QFile::encodeName(codexHome));
+        const auto restore = qScopeGuard([&isolatedHome] { qputenv("CODEX_HOME", isolatedHome); });
         const OpenAiAuth auth = OpenAiAuthProvider::forSpeech(SettingsStore().snapshot().accounts).resolve();
         QVERIFY2(auth.ok && auth.chatgptBackend, qPrintable(auth.status));
         LiveOptions options;
