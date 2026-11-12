@@ -119,6 +119,55 @@ those defining calls to civic duty. What made you pull that up just now?"
 GPT-Live answered on its own once the user stopped. The client sent no
 commit or `response.create`.
 
+### Conversations (probed with Speecher's own peer, 2026-11-12)
+
+- **Slow sessions.** About a third of sessions take the caller's audio in
+  at roughly half speed: 10 s of audio took 17 to 21 s to echo back. Their
+  turns come late, the assistant's audio arrives too slowly to play, and
+  they never answer `session.close`.
+  - Speecher's libdatachannel peer and aiortc both saw it, with PCMU and with
+    Opus, on either media server, so it is GPT-Live's.
+  - It shows in the first 2 s: the echoes of 2 s of silence take 2.5 to
+    3.7 s against 2.0 s.
+- **Barge-in.** When the caller talks over the assistant, GPT-Live stops
+  the assistant's audio about 1.1 to 1.6 s after the caller starts.
+  - It ends the assistant's turn (`turn.done`) with only what was said,
+    e.g. "That's President John F. Kennedy in his 1961 inaugural".
+  - Then it starts the caller's turn, whose `start_ms` is before the
+    assistant turn's `end_ms`.
+  - There is no event of its own for it.
+  - The assistant's audio comes in real time, so what was sent is what was
+    heard.
+  - After the interruption the assistant may finish its thought ("address.
+    Hmm.").
+- **Turns.**
+  - Turns alternate in `turn.created`/`turn.done` pairs.
+  - The assistant back-channels ("Mm-hmm") during the caller's turn, inside
+    its own next turn.
+  - It answers about 0.5 to 0.8 s after a finished sentence, longer after
+    an unfinished one.
+  - A caller who stops mid-sentence ("…called the Whole") got no answer for
+    a minute, until they spoke again.
+- **No turn settings.** At creation, `audio.input`, `turn_detection` and
+  `audio.output.speed` each make the session never start. On
+  `session.update`, `session.turn_detection` and `session.audio.input` are
+  unknown parameters. Instructions and voice "cannot be updated after
+  initialization".
+- **Controls that work:**
+  - `session.context.append` with `content: [{type: input_text, text}]` is
+    answered `session.context.appended`, and the assistant acts on it as on
+    being told ("Greet the user, who is called Sam" made it say "Hey Sam,
+    good to hear you."), with or without `channel`.
+  - `input_audio.pause` and `input_audio.resume` are answered
+    `input_audio.paused` and `input_audio.resumed`.
+- **Controls that don't:** `output_audio.playback.play` wants an
+  `event_id`, and `response.create` wants Responses delegation, so a client
+  cannot cancel a reply.
+- **Echo.** The assistant's own audio mixed back into the input, at 0.6
+  gain 120 ms late and at full gain 300 ms late, was never transcribed and
+  never cut a turn short.
+- **Instructions** may be left out, or empty.
+
 ## What a client needs
 
 1. A WebRTC peer that can do ICE as the controlling agent against an ICE-lite
@@ -130,8 +179,6 @@ commit or `response.create`.
 
 ## Not verified
 
-- Barge-in: what the server does when the user talks over the assistant
-  (whether `output_audio.delta` stops, or a turn is cut short).
 - Sessions near the 120 minute expiry, idle timeouts, and how many sessions
   one login may hold.
 - What `usage_limit.status` says once the plan's limit is reached.
