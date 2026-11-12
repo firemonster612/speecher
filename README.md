@@ -275,6 +275,20 @@ speecher listen --json --profile ai-coding        # one JSON object with the tex
 
 It takes the same `--model`, `--refine`, `--cleanup`, `--profile`, `--tone`, `--language`, `--no-vocabulary`, `--vocab-file`, `--raw` and `--json` choices as `transcribe`, with unset ones from your settings. Like `transcribe`, it runs in the calling process with its own microphone and provider connections, so it works while Speecher is running and even while it is dictating. Silence is judged by the Skip silence threshold in your microphone settings. The exit status is 0 when a transcript was printed, 1 when it failed or heard no speech, and 2 for a usage error.
 
+### Talking with GPT-Live
+
+`speecher live` holds a conversation with GPT-Live, ChatGPT's voice model, signed in with the same ChatGPT login the Codex CLI and ChatGPT app make, which the `codex` speech provider uses too. No API key is involved. The caller is an audio file, played at the pace it was spoken, or raw 16-bit mono PCM streamed on stdin (`-`, at `--rate`, default 24000 Hz). It is meant for scripts, such as a voice gateway that answers calls: without `--json` it prints a `user: …` and an `assistant: …` line for each turn, and with `--json` one JSON object a line for each event:
+
+```sh
+speecher live --instructions "Answer in one short sentence." --audio-out reply.wav question.wav
+ffmpeg -i call.webm -ar 8000 -ac 1 -f s16le - | speecher live --rate 8000 --json -
+speecher live --audio-out - question.wav | aplay -f S16_LE -r 24000 -c 1
+```
+
+The events are `session.started`, `user.transcript.delta` and `assistant.transcript.delta` (a word or two at a time, with `start_ms` and `end_ms` from the session's start), `user.turn` and `assistant.turn` (the whole turn's `text`), `assistant.audio` (`pcm_s16le_24k`, base64 24 kHz mono PCM, left out with `--audio-out`), `usage` (`audio_ms`), `error` (a `message` the session survived) and, always last, `session.closed` (`reason`: `client_request`, or `connection_closed` when GPT-Live hung up, or did not answer the close within 5 seconds, without saying goodbye: about a third of sessions take the audio in at half speed, answer late and never acknowledge the close). `--audio-out` writes the assistant's audio as a WAV file, or as raw 24 kHz PCM to stdout with `-`, when the turn lines go to stderr instead. `--voice` picks one of ChatGPT Voice's voices: juniper (default), breeze, cove, ember, maple, arbor, spruce, vale or sol; it is fixed for the session. `--instructions` or `--instructions-file` tell the assistant how to behave. GPT-Live answers on its own when the caller stops talking. Once the input has all gone out, the session closes as soon as the assistant has answered and the caller stayed quiet for two seconds, or after `--linger` seconds (default 30) in which neither side said anything. The exit status is 0 when the session ran and closed, 1 when it could not start or broke off (GPT-Live ending it by itself included), and 2 for a usage error.
+
+The call is WebRTC, as the ChatGPT login reaches GPT-Live no other way (see [docs/research/0010](docs/research/0010-gpt-live-protocol.md)); the caller's audio goes out as PCMU, and the assistant's comes back over a websocket. Builds get it when OpenSSL is found (`SPEECHER_WITH_GPT_LIVE`, which fetches libdatachannel at configure time); a build without it says so and exits with 1. `SPEECHER_GPT_LIVE_TRACE=<file>` writes every message of the session's websocket to that file, with its audio cut short.
+
 ### Checking providers
 
 `speecher providers` lists every speech and refinement provider this build offers, with whether it is configured, signed in and usable, so a script or agent can check before calling `listen`. `--json` prints a JSON array of objects with `id`, `role`, `label`, `signsIn`, `configured`, `signedIn`, `usable` and `problem`.

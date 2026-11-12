@@ -1355,6 +1355,48 @@ if(Qt6WebSockets_FOUND)
   target_link_libraries(speecher_providers PUBLIC Qt6::WebSockets)
 endif()
 
+# `speecher live` talks to GPT-Live, which the ChatGPT sign-in reaches only as
+# a WebRTC call (docs/research/0010-gpt-live-protocol.md): libdatachannel does
+# its ICE, DTLS-SRTP and RTP, and its DTLS needs OpenSSL. The events and the
+# assistant's audio come over a Qt websocket.
+find_package(OpenSSL QUIET)
+set(SPEECHER_GPT_LIVE_DEFAULT OFF)
+if(Qt6WebSockets_FOUND AND OpenSSL_FOUND)
+  set(SPEECHER_GPT_LIVE_DEFAULT ON)
+endif()
+option(SPEECHER_WITH_GPT_LIVE "Build speecher live, GPT-Live calls over WebRTC (needs OpenSSL)"
+  ${SPEECHER_GPT_LIVE_DEFAULT})
+if(SPEECHER_WITH_GPT_LIVE)
+  if(NOT Qt6WebSockets_FOUND OR NOT OpenSSL_FOUND)
+    message(FATAL_ERROR "SPEECHER_WITH_GPT_LIVE needs Qt WebSockets and OpenSSL (Debian: libssl-dev).")
+  endif()
+  include(FetchContent)
+  set(NO_WEBSOCKET ON CACHE BOOL "" FORCE)
+  set(NO_EXAMPLES ON CACHE BOOL "" FORCE)
+  set(NO_TESTS ON CACHE BOOL "" FORCE)
+  # v0.24.6. Its own websocket and the examples' JSON library stay out.
+  FetchContent_Declare(libdatachannel
+    GIT_REPOSITORY https://github.com/paullouisageneau/libdatachannel.git
+    GIT_TAG d9617a53201615ef729e99dc39ad6736982d0346
+    GIT_SUBMODULES deps/plog deps/usrsctp deps/libjuice deps/libsrtp
+    SOURCE_SUBDIR speecher-adds-this-itself
+  )
+  FetchContent_MakeAvailable(libdatachannel)
+  # A function scope, so Qt's code generation stays off for its C and C++.
+  function(speecher_add_libdatachannel)
+    set(CMAKE_AUTOMOC OFF)
+    set(CMAKE_AUTORCC OFF)
+    set(CMAKE_AUTOUIC OFF)
+    add_subdirectory("${libdatachannel_SOURCE_DIR}" "${libdatachannel_BINARY_DIR}" EXCLUDE_FROM_ALL)
+  endfunction()
+  speecher_add_libdatachannel()
+  target_sources(speecher_providers PRIVATE
+    src/providers/GptLiveCall.cpp
+    src/providers/GptLiveCall.h
+  )
+  target_compile_definitions(speecher_providers PUBLIC SPEECHER_WITH_GPT_LIVE=1)
+  target_link_libraries(speecher_providers PRIVATE LibDataChannel::LibDataChannelStatic)
+endif()
 if(LayerShellQt_FOUND)
   target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_LAYER_SHELL=1)
   target_link_libraries(speecher_platform PUBLIC LayerShellQt::Interface)
@@ -1455,6 +1497,7 @@ message(STATUS "  release profile: ${SPEECHER_RELEASE_BUILD}")
 message(STATUS "  KDE GlobalAccel: ${KF6GlobalAccel_FOUND}")
 message(STATUS "  LayerShellQt: ${LayerShellQt_FOUND}")
 message(STATUS "  Qt WebSockets: ${Qt6WebSockets_FOUND}")
+message(STATUS "  GPT-Live (speecher live): ${SPEECHER_WITH_GPT_LIVE}")
 message(STATUS "  QtKeychain: ${Qt6Keychain_FOUND}")
 message(STATUS "  AT-SPI: ${ATSPI_FOUND}")
 message(STATUS "  libpulse (system audio): ${PULSE_FOUND}")
