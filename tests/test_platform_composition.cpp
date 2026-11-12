@@ -1831,8 +1831,11 @@ private slots:
 
         QCOMPARE(parse({QStringLiteral("--srt")}).headless.format, TranscriptFormat::Srt);
         QCOMPARE(parse({QStringLiteral("--vtt"), QStringLiteral("--vtt")}).headless.format, TranscriptFormat::WebVtt);
-        QCOMPARE(parse({QStringLiteral("--output"), QStringLiteral("NONE")}).headless.destination,
+        QCOMPARE(parse({QStringLiteral("--output"), QStringLiteral("NONE"), QStringLiteral("--stdout")})
+                     .headless.destination,
                  TranscriptDestination::None);
+        QCOMPARE(parse({QStringLiteral("--output"), QStringLiteral("none"), QStringLiteral("--json")}).mode,
+                 LaunchMode::TranscribeHeadless);
         QCOMPARE(parse({QStringLiteral("--cleanup"), QStringLiteral("Medium")}).overrides.cleanupLevel,
                  std::optional(QStringLiteral("balanced")));
         // After --, everything is a file, even a name that looks like an option.
@@ -1873,7 +1876,11 @@ private slots:
                                            QStringList{QStringLiteral("--daemon")},
                                            QStringList{QStringLiteral("--srt"), QStringLiteral("--vtt")},
                                            QStringList{QStringLiteral("--vtt"), QStringLiteral("--raw")},
-                                           QStringList{QStringLiteral("--output"), dir.filePath(QStringLiteral("nowhere"))}}) {
+                                           QStringList{QStringLiteral("--output"), dir.filePath(QStringLiteral("nowhere"))},
+                                           // Nothing would keep the transcript.
+                                           QStringList{QStringLiteral("--output"), QStringLiteral("none")},
+                                           QStringList{QStringLiteral("--srt"), QStringLiteral("--output"),
+                                                       QStringLiteral("none")}}) {
             const CommandLineDecision refused = parse(mistake);
             QCOMPARE(refused.mode, LaunchMode::Exit);
             QCOMPARE(refused.exitCode, 2);

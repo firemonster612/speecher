@@ -72,7 +72,8 @@ Transcribe without a window, printing the results:
   --tone <name>            %5
   --language <code>        spoken language: a code such as de, or auto
   --output <beside|none|DIR>
-                           where to save <name>-transcribed.txt (default beside)
+                           where to save <name>-transcribed.txt (default
+                           beside); none needs --stdout or --json
   -                        as the only file, read the audio from stdin; needs
                            --stdout, --json or --output DIR, and saves as
                            stdin-transcribed.txt
@@ -595,6 +596,9 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
     decision->transcribeFiles = absolutePaths(files);
     if (!headless) {
         return {};
+    }
+    if (options.destination == TranscriptDestination::None && !options.printTranscripts && !options.json) {
+        return QStringLiteral("--output none needs --stdout or --json, or the transcripts go nowhere");
     }
     for (const QString &path : std::as_const(decision->transcribeFiles)) {
         if (!QFileInfo(path).isReadable() || !QFileInfo(path).isFile()) {

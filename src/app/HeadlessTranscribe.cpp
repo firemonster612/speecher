@@ -168,6 +168,18 @@ void writeJson(std::ostream &out, const QJsonObject &object)
     out.flush();
 }
 
+// A run whose output stdout did not take, as on a full disk or for a reader
+// that quit, lost it, so it fails: Qt ignores SIGPIPE, so nothing else says
+// so. exitCode is the run's otherwise.
+int checkedExitCode(int exitCode, std::ostream &out, std::ostream &err)
+{
+    if (out) {
+        return exitCode;
+    }
+    err << "Could not write to stdout\n";
+    return std::max(exitCode, 1);
+}
+
 } // namespace
 
 void removeStdinSpool()
@@ -214,7 +226,7 @@ int runHeadlessTranscribe(const QStringList &files,
             }
             writeJson(out, summary);
         }
-        return exitCode;
+        return checkedExitCode(exitCode, out, err);
     };
     if (files.isEmpty()) {
         return finish(2, QStringLiteral("No audio files to transcribe"));
@@ -429,7 +441,7 @@ int runHeadlessListen(const RunOverrides &overrides,
             out << text.toStdString() << "\n";
             out.flush();
         }
-        return exitCode;
+        return checkedExitCode(exitCode, out, err);
     };
     const DictationPlan plan =
         planDictation(settings->dictationSnapshot(), Target{}, overrides, providers->offersSpeech());
