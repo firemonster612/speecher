@@ -884,11 +884,17 @@ if(SPEECHER_WITH_LOCAL_SPEECH)
   endif()
 
   include(FetchContent)
-  # v0.2.4's release commit.
+  find_package(Git REQUIRED)
+  # v0.2.4's release commit. The patch has ggml destroy its Vulkan devices
+  # before the driver's exit handlers run; left to them, a finished
+  # `speecher transcribe` can crash on its way out.
   FetchContent_Declare(transcribe
     URL https://github.com/handy-computer/transcribe.cpp/archive/7d37cea2248a1fb6aca9652a1d37debccbbb1ff3.tar.gz
     URL_HASH SHA256=abbe8a1e7352cc2a101ffdc37b2a0de1e6b3f04121e27d24ff1d63821ab6ccfb
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    PATCH_COMMAND "${CMAKE_COMMAND}" "-DGIT=${GIT_EXECUTABLE}"
+      "-DPATCH=${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/transcribe-vulkan-destroy-devices-at-exit.patch"
+      "-DCEILING=${FETCHCONTENT_BASE_DIR}" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ApplyPatch.cmake"
     # Added below with EXCLUDE_FROM_ALL, which keeps ggml's headers and CMake
     # package files out of `cmake --install`.
     SOURCE_SUBDIR speecher-adds-this-itself

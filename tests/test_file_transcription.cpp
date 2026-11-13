@@ -3699,6 +3699,31 @@ private slots:
         QVERIFY(!QFile::exists(dir.filePath(QStringLiteral("memo-transcribed (2).txt"))));
     }
 
+    // A transcript stdout did not take, as on a full disk, fails the run.
+    void headlessRunFailsWhenStdoutTakesNothing()
+    {
+        struct FullBuffer : std::streambuf {
+            int overflow(int) override { return traits_type::eof(); }
+        };
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        RunOverrides run;
+        run.speech = ServiceChoice{QStringLiteral("claude")};
+        run.refinement = ServiceChoice{kNoRefinementProvider};
+        HeadlessTranscribeOptions options;
+        options.printTranscripts = true;
+        options.destination = TranscriptDestination::None;
+        std::istringstream in;
+        FullBuffer full;
+        std::ostream out(&full);
+        std::ostringstream err;
+
+        QCOMPARE(runHeadlessTranscribe({audio}, run, options, &settings, m_registry.get(), in, out, err, false), 1);
+        QVERIFY(QString::fromStdString(err.str()).contains(QStringLiteral("Could not write to stdout")));
+    }
+
     // `transcribe --profile` runs the profile's own refinement provider, with
     // the model it picked; `--refine` still replaces it.
     void headlessRunUsesTheProfilesServicesUnlessTold()

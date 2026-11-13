@@ -1,0 +1,93 @@
+diff --git a/ggml/src/ggml-vulkan/ggml-vulkan.cpp b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
+--- a/ggml/src/ggml-vulkan/ggml-vulkan.cpp
++++ b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
+@@ -3803,6 +3803,22 @@
+     }
+ }
+ 
++#ifndef _WIN32
++// Every device is destroyed in a handler registered after the driver's own
++// exit handlers, which therefore runs before them. Left to the end, a device
++// keeps the driver's worker threads running into the driver's teardown, which
++// can crash a process that finished its work. Each buffer type holds its
++// device, so no destructor ever does it. Windows runs these handlers under the
++// loader lock, where Vulkan calls can deadlock.
++static void ggml_vk_destroy_devices_at_exit() {
++    for (vk_device & device : vk_instance.devices) {
++        if (device) {
++            device->shutdown();
++        }
++    }
++}
++#endif
++
+ vk_device ggml_vk_get_device(size_t idx) {
+     VK_LOG_DEBUG("ggml_vk_get_device(" << idx << ")");
+ 
+@@ -4581,6 +4597,9 @@
+             .setPEnabledExtensionNames(device_extensions);
+         device_create_info.setPNext(&device_features2);
+         device->device = device->physical_device.createDevice(device_create_info);
++#ifndef _WIN32
++        std::atexit(ggml_vk_destroy_devices_at_exit);
++#endif
+ 
+         if (device->device_fault) {
+             device->pfn_vkGetDeviceFaultInfoEXT = (PFN_vkGetDeviceFaultInfoEXT)
+@@ -16088,7 +16107,19 @@
+ }
+ 
+ vk_device_struct::~vk_device_struct() {
++    shutdown();
++}
++
++void vk_device_struct::shutdown() {
++    if (destroyed || !device) {
++        return;
++    }
+     VK_LOG_DEBUG("destroy device " << name);
++    try {
++        device.waitIdle();
++    } catch (const vk::SystemError &) {
++        // A lost device is destroyed all the same.
++    }
+ 
+     device.destroyFence(fence);
+ 
+@@ -16114,7 +16145,12 @@
+ 
+     device.destroyDescriptorSetLayout(dsl);
+ 
++    {
++        std::lock_guard<std::shared_mutex> guard(pinned_memory_mutex);
++        pinned_memory.clear();
++    }
+     device.destroy();
++    destroyed = true;
+ }
+ 
+ void vk_perf_logger::print_timings(bool force) {
+diff --git a/ggml/src/ggml-vulkan/ggml-vulkan-types.h b/ggml/src/ggml-vulkan/ggml-vulkan-types.h
+--- a/ggml/src/ggml-vulkan/ggml-vulkan-types.h
++++ b/ggml/src/ggml-vulkan/ggml-vulkan-types.h
+@@ -1019,6 +1019,11 @@
+ 
+     std::unique_ptr<vk_memory_logger> memory_logger;
+ 
++    // Destroys the Vulkan device and what it holds, once. Buffers freed
++    // after it skip their Vulkan calls.
++    void shutdown();
++    bool destroyed = false;
++
+     ~vk_device_struct();
+ 
+ };
+@@ -1050,7 +1055,7 @@
+     vk_device device;
+ 
+     ~vk_buffer_struct() {
+-        if (size == 0) {
++        if (size == 0 || device->destroyed) {
+             return;
+         }
+         VK_LOG_DEBUG("~vk_buffer_struct(" << buffer << ", " << size << ")");
