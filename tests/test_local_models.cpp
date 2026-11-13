@@ -93,7 +93,9 @@ struct FakeModelCounts {
 
 void noteRun(FakeModelCounts &counts, qsizetype bytes)
 {
-    counts.longestRunBytes = std::max(counts.longestRunBytes.load(), bytes);
+    if (bytes > counts.longestRunBytes) {
+        counts.longestRunBytes = bytes;
+    }
 }
 
 // A word a fake session stops on mid-call, as a slow model would.

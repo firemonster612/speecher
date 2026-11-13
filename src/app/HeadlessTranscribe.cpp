@@ -177,7 +177,8 @@ int checkedExitCode(int exitCode, std::ostream &out, std::ostream &err)
         return exitCode;
     }
     err << "Could not write to stdout\n";
-    return std::max(exitCode, 1);
+    // Not std::max, which windows.h's max macro breaks.
+    return exitCode == 0 ? 1 : exitCode;
 }
 
 } // namespace
