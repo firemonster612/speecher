@@ -112,6 +112,7 @@ int runEchoCancellerTests(int argc, char **argv);
 int runLocalModelsTests(int argc, char **argv);
 int runCustomEndpointsTests(int argc, char **argv);
 int runFileTranscriptionTests(int argc, char **argv);
+int runGptLiveTests(int argc, char **argv);
 #ifdef Q_OS_UNIX
 int runUpdateControllerTests(int argc, char **argv);
 #endif

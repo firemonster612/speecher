@@ -499,6 +499,20 @@ int main(int argc, char **argv)
                                  [] { return g_listenStopRequested.load(); }, enterStops, &settings, &providers,
                                  std::cout, std::cerr);
     }
+    if (decision.mode == LaunchMode::LiveHeadless) {
+        QCoreApplication app(argc, argv);
+        SettingsStore settings;
+        if (decision.live.input == kStdinFile && stdinIsTerminal()) {
+            std::cerr << "live - reads PCM piped to stdin, not a terminal\n";
+            return 2;
+        }
+#ifdef Q_OS_WIN
+        // Raw PCM in and, with --audio-out -, out.
+        _setmode(_fileno(stdin), _O_BINARY);
+        _setmode(_fileno(stdout), _O_BINARY);
+#endif
+        return runLiveCommand(decision.live, &settings, platform, std::cout, std::cerr);
+    }
     if (decision.mode == LaunchMode::ListProviders) {
         QCoreApplication app(argc, argv);
         return runProvidersCommand(decision.json, platform, std::cout, std::cerr);

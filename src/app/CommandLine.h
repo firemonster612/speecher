@@ -2,6 +2,7 @@
 
 #include "app/HeadlessTranscribe.h"
 #include "app/IpcMessages.h"
+#include "app/LiveCommand.h"
 #include "dictation/DictationTypes.h"
 
 #include <QString>
@@ -28,6 +29,9 @@ enum class LaunchMode {
     // `speecher providers`: print every provider's state as the running app
     // or, without one, this process knows it, and quit.
     ListProviders,
+    // `speecher live`: a GPT-Live conversation in this process, with a file
+    // or stdin as the caller, printing it as it goes.
+    LiveHeadless,
 };
 
 struct CommandLineDecision {
@@ -54,6 +58,8 @@ struct CommandLineDecision {
     HeadlessTranscribeOptions headless;
     // ListenHeadless: stop after this long without speech once there was some.
     std::optional<int> untilSilenceMs;
+    // LiveHeadless: what to talk with and where to put the conversation.
+    LiveOptions live;
     // ListProviders: a JSON array instead of a table. RunCli's record status
     // and status: one JSON object, and status --watch one a line.
     bool json = false;

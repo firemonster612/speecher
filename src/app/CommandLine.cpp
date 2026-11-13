@@ -9,6 +9,7 @@
 #include "providers/ProviderRegistry.h"
 #include "transcribe/FileTranscriptionSession.h"
 
+#include <QFile>
 #include <QFileInfo>
 
 #include <iostream>
@@ -96,6 +97,39 @@ Record from the microphone once and print what was said:
   prints one object.
   Exit status: 0 transcript printed, 1 failed or heard no speech, 2 usage
   error.
+
+Talk with GPT-Live, ChatGPT's voice model, with the Codex ChatGPT sign-in:
+  speecher live [options] <file | ->
+  speecher live --protocol jsonl [options]
+  <file>                   an audio file, sent as fast as it was spoken
+  -                        raw 16-bit mono PCM on stdin, streamed at the
+                           pace it was spoken
+  --rate <hz>              stdin's sample rate (default 24000)
+  --voice <name>           the assistant's voice, fixed for the session:
+                           juniper (default), breeze, cove, ember, maple,
+                           arbor, spruce, vale, sol
+  --instructions <text>    how the assistant should behave
+  --instructions-file <path>
+                           the same, from a file
+  --audio-out <file|->     write the assistant's audio as a WAV file, or as
+                           raw 24 kHz 16-bit mono PCM to stdout with -
+  --json                   print a JSON object a line for each event:
+                           session.started, user.transcript.delta,
+                           user.turn, assistant.transcript.delta,
+                           assistant.turn, assistant.audio (base64 PCM, left
+                           out with --audio-out), usage, session.closed and
+                           error
+  --linger <seconds>       once the input has all gone out, how long to wait
+                           with nothing said before closing (default 30)
+  --protocol jsonl         a long session for a host app: commands on stdin
+                           and events on stdout, one JSON object a line, as
+                           docs/live-protocol.md describes
+  --echo-cancel            take the assistant's audio, as played, out of
+                           the input, so it does not hear itself
+  --accept-slow            keep a session GPT-Live runs at half speed,
+                           rather than calling again
+  Without --json, prints "user: ..." and "assistant: ..." for each turn.
+  Exit status: 0 the session ran and closed, 1 it failed, 2 usage error.
 
 Check which speech and refinement services can work:
   speecher providers [--json]
@@ -649,6 +683,123 @@ QString parseListenArguments(const QStringList &arguments, CommandLineDecision *
     return {};
 }
 
+// Reads `speecher live`'s arguments. Returns an error message for a usage
+// mistake.
+QString parseLiveArguments(const QStringList &arguments, CommandLineDecision *decision)
+{
+    LiveOptions &live = decision->live;
+    bool rateGiven = false;
+    bool lingerGiven = false;
+    bool optionsEnded = false;
+    for (qsizetype index = 0; index < arguments.size(); ++index) {
+        const QString argument = arguments.at(index);
+        if (optionsEnded || !argument.startsWith(QLatin1Char('-')) || argument == kStdinFile) {
+            if (!live.input.isEmpty()) {
+                return QStringLiteral("live takes one audio file, or -");
+            }
+            live.input = argument;
+            continue;
+        }
+        QString error;
+        const auto value = [&] { return optionValue(arguments, index, &error); };
+        if (argument == QStringLiteral("--")) {
+            optionsEnded = true;
+        } else if (argument == QStringLiteral("--json")) {
+            live.json = true;
+        } else if (argument == QStringLiteral("--protocol")) {
+            if (const std::optional<QString> protocol = value()) {
+                live.hostProtocol = true;
+                if (*protocol != QStringLiteral("jsonl")) {
+                    error = QStringLiteral("Unknown --protocol value: %1 (expected jsonl)").arg(*protocol);
+                }
+            }
+        } else if (argument == QStringLiteral("--accept-slow")) {
+            live.session.acceptSlowSession = true;
+        } else if (argument == QStringLiteral("--echo-cancel")) {
+            live.echoCancel = true;
+        } else if (argument == QStringLiteral("--voice")) {
+            if (const std::optional<QString> voice = value()) {
+                live.session.voice = voice->toLower();
+                if (!gptLiveVoices().contains(live.session.voice)) {
+                    error = QStringLiteral("Unknown --voice value: %1 (expected %2)")
+                                .arg(*voice, gptLiveVoices().join(QStringLiteral(", ")));
+                }
+            }
+        } else if (argument == QStringLiteral("--instructions")) {
+            live.session.instructions = value().value_or(QString());
+        } else if (argument == QStringLiteral("--instructions-file")) {
+            if (const std::optional<QString> path = value()) {
+                QFile file(*path);
+                if (file.open(QIODevice::ReadOnly)) {
+                    live.session.instructions = QString::fromUtf8(file.readAll()).trimmed();
+                } else {
+                    error = QStringLiteral("Cannot read instructions file %1").arg(*path);
+                }
+            }
+        } else if (argument == QStringLiteral("--audio-out")) {
+            live.audioOut = value().value_or(QString());
+            if (error.isEmpty() && live.audioOut != kStdinFile
+                && !QFileInfo(QFileInfo(live.audioOut).absolutePath()).isDir()) {
+                error = QStringLiteral("--audio-out folder does not exist: %1").arg(live.audioOut);
+            }
+        } else if (argument == QStringLiteral("--rate")) {
+            if (const std::optional<QString> given = value()) {
+                bool ok = false;
+                live.stdinRate = given->toInt(&ok);
+                rateGiven = true;
+                if (!ok || live.stdinRate < 8000 || live.stdinRate > 48000) {
+                    error = QStringLiteral("--rate takes a sample rate from 8000 to 48000, not %1").arg(*given);
+                }
+            }
+        } else if (argument == QStringLiteral("--linger")) {
+            lingerGiven = true;
+            if (const std::optional<QString> given = value()) {
+                bool ok = false;
+                const int seconds = given->toInt(&ok);
+                live.lingerMs = seconds * 1000;
+                if (!ok || seconds < 1 || seconds > 600) {
+                    error = QStringLiteral("--linger takes seconds from 1 to 600, not %1").arg(*given);
+                }
+            }
+        } else {
+            error = QStringLiteral("Unknown live option: %1").arg(argument);
+        }
+        if (!error.isEmpty()) {
+            return error;
+        }
+    }
+    if (live.hostProtocol) {
+        if (!live.input.isEmpty()) {
+            return QStringLiteral("--protocol jsonl takes its audio from stdin's commands, not %1").arg(live.input);
+        }
+        if (live.audioOut == kStdinFile) {
+            return QStringLiteral("--protocol jsonl writes its events to stdout, so --audio-out - cannot");
+        }
+        if (lingerGiven) {
+            return QStringLiteral("--linger is for a file or -; --protocol jsonl runs until the host ends it");
+        }
+        decision->mode = LaunchMode::LiveHeadless;
+        return {};
+    }
+    if (live.input.isEmpty()) {
+        return QStringLiteral("live needs an audio file, or - for raw PCM on stdin");
+    }
+    if (rateGiven && live.input != kStdinFile) {
+        return QStringLiteral("--rate is for -, raw PCM on stdin; a file says its own rate");
+    }
+    if (live.json && live.audioOut == kStdinFile) {
+        return QStringLiteral("--json and --audio-out - would both write to stdout");
+    }
+    if (live.input != kStdinFile) {
+        live.input = QFileInfo(live.input).absoluteFilePath();
+        if (!QFileInfo(live.input).isFile() || !QFileInfo(live.input).isReadable()) {
+            return QStringLiteral("Cannot read %1").arg(live.input);
+        }
+    }
+    decision->mode = LaunchMode::LiveHeadless;
+    return {};
+}
+
 // Reads `speecher vocabulary`'s arguments. Returns an error message for a
 // usage mistake.
 QString parseVocabularyArguments(const QStringList &arguments, CommandLineDecision *decision)
@@ -908,6 +1059,8 @@ QString parseArguments(const QStringList &arguments, CommandLineDecision *decisi
         }
     } else if (verb == QStringLiteral("listen")) {
         return parseListenArguments(arguments.mid(2), decision);
+    } else if (verb == QStringLiteral("live")) {
+        return parseLiveArguments(arguments.mid(2), decision);
     } else if (verb == QStringLiteral("providers")) {
         return parseProvidersArguments(arguments.mid(2), decision);
     } else {

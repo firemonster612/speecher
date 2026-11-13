@@ -1,6 +1,7 @@
 #include "app/ShellCompletions.h"
 
 #include "core/ProviderTable.h"
+#include "providers/GptLiveProtocol.h"
 
 #include <QMap>
 
@@ -59,6 +60,17 @@ QMap<QString, std::optional<Values>> completedOptions(const CompletionChoices &c
         // A name of the person's own, so nothing is offered for it.
         {QStringLiteral("--name"), Values{}},
         {QStringLiteral("--mic-only"), flag},
+        {QStringLiteral("--voice"), Values{gptLiveVoices()}},
+        // Words of the person's own, so nothing is offered for them.
+        {QStringLiteral("--instructions"), Values{}},
+        {QStringLiteral("--instructions-file"), Values{{}, {}, Paths::Files}},
+        {QStringLiteral("--audio-out"), Values{{QStringLiteral("-")}, {}, Paths::Files}},
+        {QStringLiteral("--rate"), Values{{QStringLiteral("8000"), QStringLiteral("16000"), QStringLiteral("24000"),
+                                           QStringLiteral("48000")}}},
+        {QStringLiteral("--linger"), Values{}},
+        {QStringLiteral("--protocol"), Values{{QStringLiteral("jsonl")}}},
+        {QStringLiteral("--echo-cancel"), flag},
+        {QStringLiteral("--accept-slow"), flag},
     };
 }
 
@@ -94,6 +106,12 @@ QList<CompletedCommand> documentedCommands()
                            QStringLiteral("--srt"), QStringLiteral("--vtt")},
          files},
         {QStringLiteral("listen"), sharedChoices + QStringList{QStringLiteral("--until-silence")}},
+        {QStringLiteral("live"),
+         {QStringLiteral("--rate"), QStringLiteral("--voice"), QStringLiteral("--instructions"),
+          QStringLiteral("--instructions-file"), QStringLiteral("--audio-out"), QStringLiteral("--json"),
+          QStringLiteral("--linger"), QStringLiteral("--protocol"), QStringLiteral("--echo-cancel"),
+          QStringLiteral("--accept-slow")},
+         files},
         {QStringLiteral("providers"), {QStringLiteral("--json")}},
         {QStringLiteral("record start"),
          {QStringLiteral("--to"), QStringLiteral("--name"), QStringLiteral("--mic-only"), QStringLiteral("--vocab-file")}},
