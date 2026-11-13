@@ -407,6 +407,7 @@ set(SPEECHER_PROVIDER_SOURCES
   src/providers/CliProxyCredentials.cpp
   src/providers/ProviderSignIn.cpp
   src/providers/SignInCheck.cpp
+  src/providers/AudioPieces.cpp
   src/providers/CodexDictationClient.cpp
   src/providers/CodexSpeechTranscriber.cpp
   src/providers/LocalModelStore.cpp
@@ -432,6 +433,7 @@ set(SPEECHER_PROVIDER_HEADERS
   src/providers/EndpointTranscriptRefiner.h
   src/providers/LocalRunner.h
   src/providers/PcmWav.h
+  src/providers/AudioPieces.h
   src/providers/SpeechAudio.h
   src/providers/ServerSentEvents.h
   src/providers/AnthropicApiRefiner.h

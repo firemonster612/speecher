@@ -100,6 +100,7 @@ void CodexSpeechTranscriber::startAttempt(quint64 attemptId,
     m_bufferedPcm.clear();
     m_streamedFinalChars = 0;
     m_inputFinished = false;
+    m_pieces = {};
     m_attemptId = attemptId;
     m_client = new CodexDictationClient(this);
     CodexDictationClient *client = m_client;
@@ -160,7 +161,17 @@ void CodexSpeechTranscriber::sendAudio(quint64 attemptId, const QByteArray &pcm)
                 m_bufferedPcm.clear();
             }
         }
-        m_client->sendAudio(pcm);
+        // The service reads an utterance slower than a file streams in, and
+        // drops all of its text once it lags too far behind: a long run goes
+        // as utterances cut at pauses, which it reads side by side.
+        for (QByteArrayView rest(pcm); !rest.isEmpty();) {
+            const AudioPieces::Fit fit = m_pieces.fit(rest);
+            m_client->sendAudio(rest.first(fit.bytes).toByteArray());
+            if (fit.ends) {
+                m_client->endUtterance();
+            }
+            rest = rest.sliced(fit.bytes);
+        }
     }
 }
 
@@ -234,6 +245,7 @@ void CodexSpeechTranscriber::finishInput(quint64 attemptId)
 void CodexSpeechTranscriber::endUtterance(quint64 attemptId)
 {
     if (m_client && attemptId == m_attemptId) {
+        m_pieces = {};
         m_client->endUtterance();
     }
 }

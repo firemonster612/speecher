@@ -1,5 +1,6 @@
 #pragma once
 
+#include "providers/AudioPieces.h"
 #include "providers/SpeechTranscriber.h"
 
 #include <QNetworkAccessManager>
@@ -39,6 +40,8 @@ private:
     bool m_inputFinished = false;
     QByteArray m_bufferedPcm;
     qsizetype m_streamedFinalChars = 0;
+    // Where the current utterance ends, unless the input ends one first.
+    AudioPieces m_pieces;
     QNetworkAccessManager m_network;
     QPointer<QNetworkReply> m_retranscribeReply;
 };

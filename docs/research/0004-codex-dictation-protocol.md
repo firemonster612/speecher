@@ -31,6 +31,42 @@ Endpoint: `wss://chatgpt.com/backend-api/dictation/stream`, subprotocols `chatgp
   alive; speech after a 20 s pause at an 8 s TTL then transcribed in full.
 - Two sessions on one token can stream at the same time.
 
+## Long files (probed live 2026-11-13)
+
+A 169 s file of continuous speech (Kokoro, sentence pauses well under a
+second), streamed at Speecher's file pace of 100 ms every 12 ms:
+
+- The server's VAD never ended the utterance: one `speech.started` at 0.5 s,
+  and `speech.stopped` only at the final `audio.flush`.
+  `max_utterance_duration_ms: 30000` split nothing.
+- The ASR reads an utterance at its own pace, slower than the audio arrives:
+  `transcript.segment` text reached about 100 s of audio when all 169 s were
+  sent (20.7 s in), and kept growing after: about 5 times real time. In
+  Speecher's runs it stopped earlier, in paragraph nine, so its pace varies.
+- 15 s after the flush, with about 10% of the audio still unread, came
+  `transcript.failed` `{"code":"BidiFlushTimeoutError","message":"Streaming
+  ASR failed before producing a final transcript.","retryable":true}`, then
+  `session.updated` closed. No `transcript.final` came for any of it. Twice
+  in two runs.
+- With an `audio.flush` every 20 s of audio, each flush ended the utterance
+  and the next append started a new one. The server read them side by side:
+  all nine finals came, the last 3.9 s after `session.close` (24.7 s in all),
+  and together they held the whole text. They came out of order: a short last
+  utterance's final came before the one ahead of it.
+
+- Flushed at the first 100 ms 20 dB under the loudest past 20 s, three of
+  seven joins repeated a word: one final ended "…nothing gets cut off." and
+  the next began "Cut off at the end". That cut fell on a lone quiet 100 ms
+  inside the phrase; the sentence's pause came 0.8 s later.
+- Flushed only after 300 ms that quiet, the joins were clean in two runs,
+  and so was Speecher's own transcript of the 187 s MP3 in three: every word
+  once, in order, one misheard.
+
+So a client sends a long run as utterances short enough to be read within
+15 s of their flush, cut at a pause of 300 ms or more, and puts the finals
+back in the order of `speech.started`. Speecher cuts at the first such pause
+past 20 s of each utterance, at latest at 40 s.
+
 ## Free-form context / prompt biasing (probed live 2026-09-20)
 
 The `session.start` config schema is strict (Pydantic; unknown keys fail with
@@ -96,7 +132,7 @@ refinement stage). The public Realtime API's `prompt` field for
 
 ## Probe harness
 
-`.scratch/codex-context-probe/{probe,sweep,update,update2,full,batch,batch2,batch3}.ts`
+`.scratch/codex-long-audio/probe.ts` (bun) streams a PCM file at a set pace, with an optional flush every N seconds, and logs each event with how much audio was sent; it ran the long-file probes. `.scratch/codex-context-probe/{probe,sweep,update,update2,full,batch,batch2,batch3}.ts`
 (bun; `full.ts` streams `speech.pcm`, espeak-synthesized 16 kHz mono s16le;
 `batch*.ts` hit the backend transcribe endpoint) cover the probes above: each opens a live socket, sends one `session.start` /
 `session.update` variant, and prints the server's verdict. The original
