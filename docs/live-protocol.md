@@ -13,7 +13,10 @@ speecher live --protocol jsonl --rate 16000 --voice cove \
 ```
 
 How GPT-Live itself behaves on the ChatGPT login is in
-[docs/research/0010](research/0010-gpt-live-protocol.md).
+[docs/research/0010](research/0010-gpt-live-protocol.md). The command needs
+a build configured with `-DSPEECHER_WITH_GPT_LIVE=ON` (OpenSSL, and
+libdatachannel fetched at configure time); the release packages leave it out
+for now.
 
 ## Versions
 

@@ -1359,14 +1359,12 @@ endif()
 # a WebRTC call (docs/research/0010-gpt-live-protocol.md): libdatachannel does
 # its ICE, DTLS-SRTP and RTP, and its DTLS needs OpenSSL. The events and the
 # assistant's audio come over a Qt websocket.
-find_package(OpenSSL QUIET)
-set(SPEECHER_GPT_LIVE_DEFAULT OFF)
-if(Qt6WebSockets_FOUND AND OpenSSL_FOUND)
-  set(SPEECHER_GPT_LIVE_DEFAULT ON)
-endif()
-option(SPEECHER_WITH_GPT_LIVE "Build speecher live, GPT-Live calls over WebRTC (needs OpenSSL)"
-  ${SPEECHER_GPT_LIVE_DEFAULT})
+#
+# Off unless asked for: the packages would have to carry OpenSSL's libraries,
+# which none of them does yet. Without it, speecher live says so and exits 1.
+option(SPEECHER_WITH_GPT_LIVE "Build speecher live, GPT-Live calls over WebRTC (needs OpenSSL)" OFF)
 if(SPEECHER_WITH_GPT_LIVE)
+  find_package(OpenSSL)
   if(NOT Qt6WebSockets_FOUND OR NOT OpenSSL_FOUND)
     message(FATAL_ERROR "SPEECHER_WITH_GPT_LIVE needs Qt WebSockets and OpenSSL (Debian: libssl-dev).")
   endif()
