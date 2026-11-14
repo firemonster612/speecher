@@ -5,7 +5,10 @@
 
 #include <QScopeGuard>
 #include <QTcpServer>
+
+#include <cmath>
 #include "providers/ClaudeSpeechTranscriber.h"
+#include "providers/AudioPieces.h"
 #include "providers/CodexDictationClient.h"
 #include "providers/CodexSpeechTranscriber.h"
 
@@ -705,6 +708,123 @@ private slots:
 
     // Past 80 s the batch endpoint would cut the tail, so the streamed
     // transcript stays.
+    void codexHearsLongAudioInUtterancesAndKeepsTheirOrder_data()
+    {
+        QTest::addColumn<int>("seconds");
+        QTest::newRow("86 s") << 86;
+        QTest::newRow("187 s") << 187;
+    }
+
+    // The service reads one utterance at 2 to 5 times real time, and fails it
+    // when it has not caught up 15 s after its flush: a file sent at 8 times
+    // real time as one utterance lost everything past about 80 s. This server
+    // fails an utterance over 60 s the same way, reads utterances side by
+    // side and so gives out their finals last first, each final naming the
+    // bytes it heard.
+    void codexHearsLongAudioInUtterancesAndKeepsTheirOrder()
+    {
+        QFETCH(int, seconds);
+        QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
+        server.setSupportedSubprotocols({QStringLiteral("chatgpt-dictation")});
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        qputenv("SPEECHER_CODEX_DICTATION_URL",
+                QStringLiteral("ws://127.0.0.1:%1/dictation/stream").arg(server.serverPort()).toUtf8());
+        const auto unsetEnv = qScopeGuard([] { qunsetenv("SPEECHER_CODEX_DICTATION_URL"); });
+
+        std::unique_ptr<QWebSocket> peer;
+        qsizetype heard = 0;
+        std::optional<qsizetype> utteranceStart;
+        QStringList finals;
+        const auto send = [&](const QJsonObject &event) {
+            peer->sendTextMessage(QString::fromUtf8(QJsonDocument(event).toJson(QJsonDocument::Compact)));
+        };
+        connect(&server, &QWebSocketServer::newConnection, this, [&] {
+            peer.reset(server.nextPendingConnection());
+            connect(peer.get(), &QWebSocket::textMessageReceived, this, [&](const QString &message) {
+                const QJsonObject event = QJsonDocument::fromJson(message.toUtf8()).object();
+                const QString type = event.value(QStringLiteral("type")).toString();
+                const QString id = QStringLiteral("utt_%1").arg(finals.size());
+                if (type == QStringLiteral("session.start")) {
+                    send({{QStringLiteral("type"), QStringLiteral("session.started")}});
+                } else if (type == QStringLiteral("audio.append")) {
+                    if (!utteranceStart) {
+                        utteranceStart = heard;
+                        send({{QStringLiteral("type"), QStringLiteral("speech.started")},
+                              {QStringLiteral("utterance_id"), id}});
+                    }
+                    heard += QByteArray::fromBase64(event.value(QStringLiteral("audio")).toString().toLatin1()).size();
+                } else if (type == QStringLiteral("audio.flush") && utteranceStart) {
+                    const qsizetype start = *std::exchange(utteranceStart, std::nullopt);
+                    if (heard - start > 60 * kSpeechBytesPerSecond) {
+                        send({{QStringLiteral("type"), QStringLiteral("transcript.failed")},
+                              {QStringLiteral("utterance_id"), id},
+                              {QStringLiteral("error"),
+                               QJsonObject{{QStringLiteral("code"), QStringLiteral("BidiFlushTimeoutError")},
+                                           {QStringLiteral("retryable"), true}}}});
+                        return;
+                    }
+                    finals << QStringLiteral("%1-%2").arg(start).arg(heard);
+                } else if (type == QStringLiteral("session.close")) {
+                    for (qsizetype i = finals.size() - 1; i >= 0; --i) {
+                        const QString utterance = QStringLiteral("utt_%1").arg(i);
+                        send({{QStringLiteral("type"), QStringLiteral("transcript.segment")},
+                              {QStringLiteral("utterance_id"), utterance},
+                              {QStringLiteral("text"), QStringLiteral("heard so far")}});
+                        send({{QStringLiteral("type"), QStringLiteral("transcript.final")},
+                              {QStringLiteral("utterance_id"), utterance},
+                              {QStringLiteral("text"), finals.at(i)}});
+                    }
+                    send({{QStringLiteral("type"), QStringLiteral("session.updated")},
+                          {QStringLiteral("session"), QJsonObject{{QStringLiteral("status"), QStringLiteral("closed")}}}});
+                }
+            });
+        });
+
+        CodexSpeechTranscriber transcriber;
+        QSignalSpy connected(&transcriber, &SpeechTranscriber::attemptConnected);
+        QSignalSpy partials(&transcriber, &SpeechTranscriber::partialTranscript);
+        QSignalSpy streamed(&transcriber, &SpeechTranscriber::finalTranscript);
+        QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
+        QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
+        transcriber.startAttempt(1, SpeechSettings{}, {});
+        QTRY_COMPARE_WITH_TIMEOUT(connected.count(), 1, 2000);
+
+        // Speech in sentences of 4.6 s, each followed by 400 ms of silence.
+        constexpr qsizetype sentenceBytes = 5 * kSpeechBytesPerSecond;
+        constexpr qsizetype voicedBytes = sentenceBytes - 4 * kSpeechChunkBytes;
+        QByteArray audio(qsizetype(seconds) * kSpeechBytesPerSecond, '\0');
+        auto *samples = reinterpret_cast<qint16 *>(audio.data());
+        for (qsizetype i = 0; i < audio.size() / 2; ++i) {
+            if (2 * i % sentenceBytes < voicedBytes) {
+                samples[i] = qint16(8000 * std::sin(i * 0.17));
+            }
+        }
+        for (qsizetype at = 0; at < audio.size(); at += kSpeechChunkBytes) {
+            transcriber.sendAudio(1, audio.mid(at, kSpeechChunkBytes));
+        }
+        transcriber.finishInput(1);
+        QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 1, 10000);
+        QCOMPARE(failed.count(), 0);
+
+        // Each utterance takes up where the one before ended, in order, and
+        // all but the last end in a silence 20 to 40 s on.
+        QCOMPARE(partials.count(), 1);
+        qsizetype end = 0;
+        for (qsizetype i = 0; i < streamed.count(); ++i) {
+            const QStringList range = streamed.at(i).at(1).toString().split(QLatin1Char('-'));
+            QCOMPARE(range.value(0).toLongLong(), end);
+            const qsizetype start = std::exchange(end, range.value(1).toLongLong());
+            QVERIFY(end - start <= AudioPieces::kLongestPieceBytes);
+            if (end < audio.size()) {
+                QVERIFY(end - start >= AudioPieces::kShortestPieceBytes);
+                QVERIFY2(end % sentenceBytes > voicedBytes || end % sentenceBytes == 0,
+                         qPrintable(QStringLiteral("cut at %1 s").arg(end / double(kSpeechBytesPerSecond))));
+            }
+        }
+        QCOMPARE(end, audio.size());
+        QVERIFY(streamed.count() >= seconds / 40);
+    }
+
     void aRecordingTooLongToRetranscribeKeepsTheStreamedTranscript()
     {
         QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);

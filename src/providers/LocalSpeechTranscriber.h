@@ -1,5 +1,6 @@
 #pragma once
 
+#include "providers/AudioPieces.h"
 #include "providers/LocalSpeechEngine.h"
 #include "providers/SpeechAudio.h"
 #include "providers/SpeechTranscriber.h"
@@ -28,33 +29,6 @@ struct StreamSplit {
 
 // finalChars is what the previous update returned for this stream.
 StreamSplit splitStreamText(const LocalSpeechEngine::StreamText &text, qsizetype finalChars);
-
-// Cuts a run of 16 kHz mono audio into the pieces a Local Model hears one at
-// a time. Some models fail on a long run, or drop words from it without
-// saying so: Moonshine Streaming's position table holds 81.9 s of frames, past
-// which the CPU aborts and a GPU reads beyond it, and Cohere returned half the
-// words of 95 s of speech. A piece
-// ends with the first 100 ms past kShortestPieceBytes that is 20 dB under the
-// piece's loudest, or at kLongestPieceBytes if none comes.
-class AudioPieces {
-public:
-    static constexpr qsizetype kShortestPieceBytes = qsizetype(20) * kSpeechBytesPerSecond;
-    static constexpr qsizetype kLongestPieceBytes = qsizetype(40) * kSpeechBytesPerSecond;
-
-    struct Fit {
-        // How much of the audio, from its start, goes in the current piece.
-        qsizetype bytes = 0;
-        // Whether the piece ends there; the audio after starts the next.
-        bool ends = false;
-    };
-    // The next audio of the run, which goes on from the last call's.
-    Fit fit(QByteArrayView pcm);
-
-private:
-    qsizetype m_bytes = 0;
-    // The loudest 100 ms of the piece so far, as RMS.
-    float m_loudest = 0.0f;
-};
 
 // Two pieces' text as one: a space between them unless either side is
 // written without spaces.

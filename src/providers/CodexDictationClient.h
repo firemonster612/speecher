@@ -3,6 +3,7 @@
 #include "core/ProviderFailure.h"
 
 #include <QByteArray>
+#include <QHash>
 #include <QList>
 #include <QObject>
 #include <QTimer>
@@ -72,6 +73,7 @@ private:
     void sendAudioFlush();
     void requestFinalization();
     void extendCloseWait();
+    void releaseFinals(bool all);
     void handleTextMessage(const QString &message);
     void fail(const QString &message, bool retryable, SpeechPhase phase, ProviderFailureKind kind);
 
@@ -84,6 +86,12 @@ private:
     // each endUtterance().
     QList<QByteArray> m_pendingAudio;
     QSet<QString> m_finalUtteranceIds;
+    // Utterances the service has heard and not yet given out the text of, in
+    // the order they were spoken, and the finals that came early. The service
+    // reads utterances side by side, so a short one's final can overtake the
+    // one before it.
+    QStringList m_openUtterances;
+    QHash<QString, QString> m_heldFinals;
     bool m_sessionStarted = false;
     bool m_finishRequested = false;
     bool m_finalizing = false;

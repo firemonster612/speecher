@@ -65,8 +65,6 @@ CodexDictationClient::CodexDictationClient(QObject *parent, int closeTimeoutMs, 
             sendAudioMessage(QByteArray(bytesPer100Ms, '\0'));
         }
     });
-    connect(this, &CodexDictationClient::partialTranscript, this, &CodexDictationClient::extendCloseWait);
-    connect(this, &CodexDictationClient::finalTranscript, this, &CodexDictationClient::extendCloseWait);
     connect(&m_socket, &QWebSocket::connected, this, [this] {
         sendSessionStart(m_socket.property("sampleRateHz").toInt(), m_socket.property("language").toString());
     });
@@ -78,6 +76,7 @@ CodexDictationClient::CodexDictationClient(QObject *parent, int closeTimeoutMs, 
             const bool serviceEndedStream = m_sessionStarted && !m_finishRequested && !m_finalizing;
             if (serviceEndedStream) {
                 m_sessionClosed = true;
+                releaseFinals(true);
                 emit completed();
             } else {
                 fail(m_sessionStarted
@@ -125,6 +124,8 @@ void CodexDictationClient::start(const QUrl &url,
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
     m_pendingAudio.clear();
     m_finalUtteranceIds.clear();
+    m_openUtterances.clear();
+    m_heldFinals.clear();
     m_sessionStarted = false;
     m_finishRequested = false;
     m_finalizing = false;
@@ -301,6 +302,18 @@ void CodexDictationClient::extendCloseWait()
 #endif
 }
 
+// Gives out the finals held for the oldest utterances, up to the first
+// still being read; all of them, in order, once the session is over.
+void CodexDictationClient::releaseFinals(bool all)
+{
+    while (!m_openUtterances.isEmpty() && (all || m_heldFinals.contains(m_openUtterances.first()))) {
+        const QString text = m_heldFinals.take(m_openUtterances.takeFirst());
+        if (!text.isEmpty()) {
+            emit finalTranscript(text);
+        }
+    }
+}
+
 void CodexDictationClient::cancel()
 {
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
@@ -353,13 +366,28 @@ void CodexDictationClient::handleTextMessage(const QString &message)
             // rollover runs inside completed() and aborts this socket.
             m_sessionClosed = true;
             m_socket.close();
+            releaseFinals(true);
             emit completed();
         }
         return;
     }
+    if (type == QStringLiteral("speech.started")) {
+        const QString utteranceId = event.value(QStringLiteral("utterance_id")).toString();
+        if (!utteranceId.isEmpty() && !m_finalUtteranceIds.contains(utteranceId)
+            && !m_openUtterances.contains(utteranceId)) {
+            m_openUtterances.append(utteranceId);
+        }
+        return;
+    }
     if (type == QStringLiteral("transcript.segment")) {
+        extendCloseWait();
         const QString utteranceId = event.value(QStringLiteral("utterance_id")).toString();
         if (!utteranceId.isEmpty() && m_finalUtteranceIds.contains(utteranceId)) {
+            return;
+        }
+        // Only the oldest utterance still being read shows: a later one's
+        // words come after its final.
+        if (m_openUtterances.indexOf(utteranceId) > 0) {
             return;
         }
         const QString text = event.value(QStringLiteral("text")).toString().trimmed();
@@ -369,15 +397,19 @@ void CodexDictationClient::handleTextMessage(const QString &message)
         return;
     }
     if (type == QStringLiteral("transcript.final")) {
+        extendCloseWait();
         const QString utteranceId = event.value(QStringLiteral("utterance_id")).toString();
         if (!utteranceId.isEmpty() && m_finalUtteranceIds.contains(utteranceId)) {
             return;
         }
         const QString text = event.value(QStringLiteral("text")).toString().trimmed();
-        if (!text.isEmpty()) {
-            if (!utteranceId.isEmpty()) {
-                m_finalUtteranceIds.insert(utteranceId);
-            }
+        if (!text.isEmpty() && !utteranceId.isEmpty()) {
+            m_finalUtteranceIds.insert(utteranceId);
+        }
+        if (m_openUtterances.contains(utteranceId)) {
+            m_heldFinals.insert(utteranceId, text);
+            releaseFinals(false);
+        } else if (!text.isEmpty()) {
             emit finalTranscript(text);
         }
         return;

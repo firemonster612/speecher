@@ -1195,17 +1195,20 @@ private slots:
 
     void audioPiecesEndAtAPauseOrTheLongestPiece()
     {
-        // A pause before the shortest piece is passed over; the first after
-        // it ends the piece, the pause going with it.
+        // A pause before the shortest piece is passed over, and so is a dip
+        // shorter than a pause after it; the first pause after it ends the
+        // piece, the pause going with it.
         AudioPieces pieces;
         QByteArray run;
         for (int chunk = 0; chunk < 100; ++chunk) run += voiced(1);
-        run += quiet();
+        run += quiet() + quiet() + quiet();
         for (int chunk = 0; chunk < 150; ++chunk) run += voiced(1);
-        run += quiet();
+        run += quiet() + quiet();
+        for (int chunk = 0; chunk < 10; ++chunk) run += voiced(1);
+        run += quiet() + quiet() + quiet() + voiced(1);
         AudioPieces::Fit fit = pieces.fit(run);
         QVERIFY(fit.ends);
-        QCOMPARE(fit.bytes, 252 * kSpeechChunkBytes);
+        QCOMPARE(fit.bytes, 268 * kSpeechChunkBytes);
 
         // Speech with no pause ends at the longest piece, however the audio
         // arrives, and the rest starts the next.
@@ -1264,8 +1267,9 @@ private slots:
         for (int chunk = 1; chunk <= 950; ++chunk) {
             // Past kHeldWord. A pause a little past the shortest piece.
             const qint16 word = qint16(1000 + chunk);
-            transcriber.sendAudio(1, chunk == 251 ? quiet() : voiced(word));
-            if (chunk != 251) {
+            const bool paused = chunk >= 251 && chunk <= 253;
+            transcriber.sendAudio(1, paused ? quiet() : voiced(word));
+            if (!paused) {
                 words << QStringLiteral("w%1").arg(word);
             }
         }
