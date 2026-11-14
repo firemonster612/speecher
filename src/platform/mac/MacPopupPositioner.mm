@@ -4,6 +4,7 @@
 
 #include <QDebug>
 #include <QGuiApplication>
+#include <QPlatformSurfaceEvent>
 #include <QScreen>
 #include <QWindow>
 
@@ -11,25 +12,10 @@
 
 namespace speecher {
 
-MacPopupPositioner::MacPopupPositioner(QObject *parent)
-    : FallbackPopupPositioner(parent)
-{
-}
+namespace {
 
-void MacPopupPositioner::configurePopup(PopupSurface &surface)
+void harden(QWindow *handle)
 {
-    // winId() only yields an NSView on the cocoa platform; under the offscreen
-    // platform (tests) the handle is a foreign type and casting it crashes.
-    if (QGuiApplication::platformName() != QLatin1String("cocoa")) {
-        return;
-    }
-
-    // nativeWindow() forces the native window into existence; before that there
-    // is no NSWindow to harden.
-    QWindow *handle = surface.nativeWindow();
-    if (!handle) {
-        return;
-    }
     NSView *view = reinterpret_cast<NSView *>(handle->winId());
     NSWindow *window = view.window;
     if (!window) {
@@ -58,6 +44,57 @@ void MacPopupPositioner::configurePopup(PopupSurface &surface)
         | NSWindowCollectionBehaviorFullScreenAuxiliary
         | NSWindowCollectionBehaviorStationary;
     window.animationBehavior = NSWindowAnimationBehaviorNone;
+}
+
+// Each time Qt makes the window's native window again, the new NSPanel comes
+// with Qt's defaults: hidden whenever Speecher isn't the active app, and
+// taking focus when shown. What makes Qt do this on real Macs is not known
+// yet; the log lines are there to find out.
+class Rehardener final : public QObject {
+public:
+    using QObject::QObject;
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() != QEvent::PlatformSurface) {
+            return false;
+        }
+        switch (static_cast<QPlatformSurfaceEvent *>(event)->surfaceEventType()) {
+        case QPlatformSurfaceEvent::SurfaceAboutToBeDestroyed:
+            qInfo().noquote() << "The dictation popup's native window is going away.";
+            break;
+        case QPlatformSurfaceEvent::SurfaceCreated:
+            qInfo().noquote() << "The dictation popup has a new native window; hardening it again.";
+            harden(static_cast<QWindow *>(watched));
+            break;
+        }
+        return false;
+    }
+};
+
+} // namespace
+
+MacPopupPositioner::MacPopupPositioner(QObject *parent)
+    : FallbackPopupPositioner(parent)
+{
+}
+
+void MacPopupPositioner::configurePopup(PopupSurface &surface)
+{
+    // winId() only yields an NSView on the cocoa platform; under the offscreen
+    // platform (tests) the handle is a foreign type and casting it crashes.
+    if (QGuiApplication::platformName() != QLatin1String("cocoa")) {
+        return;
+    }
+
+    // nativeWindow() forces the native window into existence; before that there
+    // is no NSWindow to harden.
+    QWindow *handle = surface.nativeWindow();
+    if (!handle) {
+        return;
+    }
+    harden(handle);
+    handle->installEventFilter(new Rehardener(handle));
 }
 
 } // namespace speecher
