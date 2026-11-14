@@ -52,7 +52,9 @@ float level(float age)
 {
     float at = clamp(age, 0.0, kSamples - 1.0);
     int i = int(at);
-    return mix(sampleAt(i), sampleAt(min(i + 1, int(kSamples) - 1)), at - float(i));
+    // A float min: GLSL 1.20, the OpenGL 2.1 that Qt falls back to on a Mac
+    // without Metal, has no integer one.
+    return mix(sampleAt(i), sampleAt(int(min(at + 1.0, kSamples - 1.0))), at - float(i));
 }
 
 // The range's height at distance r from the centre, d ridges back; env is
