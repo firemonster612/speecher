@@ -2,10 +2,12 @@
 #include "common/delivery_waits.h"
 
 #include "app/PlatformComposition.h"
+#include "frontend/quick/host/ReflectedRange.h"
 #include "platform/mac/MacSystemAudioCapture.h"
 #include "platform/mac/MacSystemAudioInput.h"
 #include "platform/mac/MacTargetProvider.h"
 
+#include <QQuickWindow>
 #include <QScopeGuard>
 #include <QTest>
 #include <QTimer>
@@ -154,6 +156,30 @@ private slots:
         QString warning;
         platformComposition()->createEchoCanceller(&warning);
         QCOMPARE(warning, QString());
+    }
+
+    // The popup's voice is a shader, and macOS runs it on Metal. At rest it
+    // is a bright line through the middle.
+    void reflectedRangeDrawsWithMetal()
+    {
+        if (QQuickWindow::graphicsApi() != QSGRendererInterface::Metal) {
+            QSKIP("Qt Quick does not render with Metal here");
+        }
+        QQuickWindow window;
+        window.setColor(Qt::black);
+        window.resize(300, 60);
+        ReflectedRange range(window.contentItem());
+        range.setSize(window.size());
+        for (const char *name : {"color", "farColor", "glowColor", "pausedColor"}) {
+            range.setProperty(name, QColor(Qt::white));
+        }
+        range.setProperty("dark", true);
+        range.setListening(true);
+
+        const QImage image = window.grabWindow();
+        QVERIFY(!image.isNull());
+        const QColor middle = image.pixelColor(image.width() / 2, image.height() / 2);
+        QVERIFY2(middle.lightness() > 128, qPrintable(middle.name()));
     }
 
     void systemAudioInterleavesPlanarBuffers()
