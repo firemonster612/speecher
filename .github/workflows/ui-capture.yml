@@ -76,92 +76,52 @@ jobs:
         run: |
           PKG_CONFIG_PATH="$HOME/webrtc-audio-processing/lib/pkgconfig" \
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DSPEECHER_BUILD_TESTS=ON \
+            -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_E2E_HOOKS=ON \
             -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOS_DEPLOYMENT_TARGET" \
             -DSPEECHER_REQUIRE_WEBRTC_AEC=ON \
             -DSPEECHER_WITH_LOCAL_SPEECH=ON
 
       - name: Build
-        run: cmake --build build --parallel --target speecher_tests
+        run: cmake --build build --parallel --target speecher_tests speecher
 
-      - name: Capture
+      - name: Range test
+        continue-on-error: true
         env:
           QT_QPA_PLATFORM: offscreen
-          SPEECHER_UI_CAPTURE_DIR: ${{ github.workspace }}/ui-capture
-        run: build/speecher_tests --suite quick_pages everyPageAndSearchLoads everySetupStepLoads
+          QT_LOGGING_RULES: "qt.rhi.general=true"
+        run: build/speecher_tests --suite mac_platform reflectedRangeDrawsWithMetal
 
-      - name: Upload screenshots
+      - name: Popup on screen
+        run: |
+          mkdir -p ui-capture/frames
+          domain=com.io-github-firemonster612.speecher-ci
+          defaults write $domain app.setupCompleted -bool true
+          defaults write $domain stt.provider e2e-stub
+          defaults write $domain refinement.provider e2e-stub
+          defaults write $domain audio.vadEnabled -bool false
+          defaults write $domain updates.autoCheck -bool false
+          export SPEECHER_INSTANCE=ci SPEECHER_E2E_STUB=1 SPEECHER_E2E_SKIP_MIC_GATE=1
+          export SPEECHER_POPUP_CAPTURE_DIR="$PWD/ui-capture/frames"
+          export QT_LOGGING_RULES="qt.rhi.general=true;qt.scenegraph.general=true"
+          app=build/speecher.app/Contents/MacOS/speecher
+          "$app" --daemon > ui-capture/app.log 2>&1 &
+          for i in $(seq 100); do "$app" status && break; sleep 0.3; done
+          "$app" start || true
+          sleep 4
+          screencapture -x ui-capture/screen-listening.png || true
+          "$app" status || true
+          "$app" stop || true
+          sleep 4
+          "$app" quit || true
+          sleep 2
+          cp ~/Library/Caches/io.github.firemonster612/speecher-ci/speecher.log ui-capture/ 2>/dev/null || true
+          ls ui-capture/frames | head -3; ls ui-capture/frames | wc -l
+
+      - name: Upload evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: ui-capture-macos
-          path: ui-capture/*.png
+          name: ridges-metal
+          path: ui-capture/
           if-no-files-found: error
 
-  windows:
-    runs-on: windows-2025
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Install Qt
-        uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4.5.0
-        with:
-          version: 6.10.3
-          arch: win64_msvc2022_64
-          modules: qtmultimedia qtshadertools qtwebsockets
-          cache: true
-
-      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
-        with:
-          arch: x64
-
-      - name: Install Vulkan SDK
-        uses: humbletim/install-vulkan-sdk@30ba978f977e81b72d091fc8888feb1fb26f9aff # v1.2
-        with:
-          version: 1.4.309.0
-          cache: true
-
-      - name: Install SPIRV-Headers
-        shell: pwsh
-        run: |
-          $version = 'vulkan-sdk-1.4.357.0'
-          $archive = "$env:RUNNER_TEMP/spirv-headers.tar.gz"
-          Invoke-WebRequest "https://github.com/KhronosGroup/SPIRV-Headers/archive/refs/tags/$version.tar.gz" -OutFile $archive
-          if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne '4d703067a7e06331ccb37bdfed3f9b7879cc61969a2689ae95c95db34a47ff07') {
-            throw "SPIRV-Headers $version does not match its pinned hash"
-          }
-          tar -xzf $archive -C $env:RUNNER_TEMP
-          $prefix = "$env:RUNNER_TEMP/spirv-headers" -replace '\\','/'
-          cmake -S "$env:RUNNER_TEMP/SPIRV-Headers-$version" -B "$env:RUNNER_TEMP/spirv-headers-build" -G Ninja -DSPIRV_HEADERS_ENABLE_TESTS=OFF "-DCMAKE_INSTALL_PREFIX=$prefix"
-          if ($LASTEXITCODE -ne 0) { throw "Configuring SPIRV-Headers failed" }
-          cmake --install "$env:RUNNER_TEMP/spirv-headers-build"
-          if ($LASTEXITCODE -ne 0) { throw "Installing SPIRV-Headers failed" }
-          Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$prefix"
-
-      - name: Configure
-        shell: pwsh
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_WITH_LOCAL_SPEECH=ON -DSPEECHER_LOCAL_SPEECH_ALL_CPUS=ON -DSPEECHER_LOCAL_SPEECH_VULKAN=ON
-
-      - name: Build
-        shell: pwsh
-        run: cmake --build build --parallel --target speecher_tests
-
-      - name: Capture
-        shell: pwsh
-        env:
-          QT_QPA_PLATFORM: offscreen
-          SPEECHER_UI_CAPTURE_DIR: ${{ github.workspace }}/ui-capture
-        run: |
-          build/speecher_tests.exe --suite quick_pages everyPageAndSearchLoads everySetupStepLoads
-          if ($LASTEXITCODE -ne 0) { throw "The capture failed" }
-
-      - name: Upload screenshots
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: ui-capture-windows
-          path: ui-capture/*.png
-          if-no-files-found: error
