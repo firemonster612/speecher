@@ -1622,6 +1622,9 @@ if(SPEECHER_BUILD_TESTS)
       COMPILE_OPTIONS -fobjc-arc
     )
     qt_import_plugins(speecher_tests INCLUDE Qt6::QDarwinMicrophonePermissionPlugin)
+    # QRhi, to build the popup's shaders for Metal.
+    find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
+    target_link_libraries(speecher_tests PRIVATE Qt6::GuiPrivate)
   endif()
   if(NOT APPLE)
     target_sources(speecher_tests PRIVATE
