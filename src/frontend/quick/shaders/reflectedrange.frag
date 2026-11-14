@@ -47,19 +47,23 @@ float sampleAt(int i)
     return four[i - 4 * (i / 4)];
 }
 
-// The voice age samples ago, between samples.
-float level(float age)
+// The voice age samples ago, between samples. Helper names must not clash
+// with Metal's (here level): its translation says using namespace metal.
+// test_quick_pages builds it for Metal.
+float voiceAt(float age)
 {
     float at = clamp(age, 0.0, kSamples - 1.0);
     int i = int(at);
-    return mix(sampleAt(i), sampleAt(min(i + 1, int(kSamples) - 1)), at - float(i));
+    // A float min: GLSL 1.20, the OpenGL 2.1 that Qt falls back to on a Mac
+    // without Metal, has no integer one.
+    return mix(sampleAt(i), sampleAt(int(min(float(i) + 1.0, kSamples - 1.0))), at - float(i));
 }
 
 // The range's height at distance r from the centre, d ridges back; env is
 // the voice there.
 float terrain(float r, float d, out float env)
 {
-    env = level(d * row + r * kSpread - sub);
+    env = voiceAt(d * row + r * kSpread - sub);
     float t = time - d * row / kRate;
     float wave = 0.5 + 0.35 * cos(r * 21.0 - t * 7.0) + 0.15 * cos(r * 37.0 - t * 11.0 + 1.3);
     float bell = exp(-r * r * 2.2) * (1.0 - smoothstep(0.6, 1.0, r));
