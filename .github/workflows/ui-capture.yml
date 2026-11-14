@@ -87,9 +87,12 @@ jobs:
       - name: Range test
         continue-on-error: true
         env:
-          QT_QPA_PLATFORM: offscreen
-          QT_LOGGING_RULES: "qt.rhi.general=true"
-        run: build/speecher_tests --suite mac_platform reflectedRangeDrawsWithMetal
+          QSG_INFO: "1"
+          QT_LOGGING_RULES: "qt.rhi.*=true"
+          SPEECHER_UI_CAPTURE_DIR: ${{ github.workspace }}/ui-capture
+        run: |
+          mkdir -p ui-capture
+          build/speecher_tests --suite mac_platform reflectedRangeDrawsWithMetal
 
       - name: Popup on screen
         run: |
@@ -102,7 +105,8 @@ jobs:
           defaults write $domain updates.autoCheck -bool false
           export SPEECHER_INSTANCE=ci SPEECHER_E2E_STUB=1 SPEECHER_E2E_SKIP_MIC_GATE=1
           export SPEECHER_POPUP_CAPTURE_DIR="$PWD/ui-capture/frames"
-          export QT_LOGGING_RULES="qt.rhi.general=true;qt.scenegraph.general=true"
+          export QT_LOGGING_RULES="qt.rhi.*=true;qt.scenegraph.general=true"
+          export QSG_INFO=1 DYLD_FRAMEWORK_PATH="$QT_ROOT_DIR/lib"
           app=build/speecher.app/Contents/MacOS/speecher
           "$app" --daemon > ui-capture/app.log 2>&1 &
           for i in $(seq 100); do "$app" status && break; sleep 0.3; done

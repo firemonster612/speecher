@@ -176,8 +176,21 @@ private slots:
         range.setProperty("dark", true);
         range.setListening(true);
 
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        QTest::qWait(500);
         const QImage image = window.grabWindow();
         QVERIFY(!image.isNull());
+        qInfo() << "graphics api" << window.rendererInterface()->graphicsApi();
+        const QString dir = qEnvironmentVariable("SPEECHER_UI_CAPTURE_DIR");
+        if (!dir.isEmpty()) {
+            image.save(dir + QStringLiteral("/range-test.png"));
+        }
+        int brightest = 0;
+        for (int y = 0; y < image.height(); ++y) {
+            brightest = std::max(brightest, image.pixelColor(image.width() / 2, y).lightness());
+        }
+        qInfo() << "brightest in the middle column" << brightest;
         const QColor middle = image.pixelColor(image.width() / 2, image.height() / 2);
         QVERIFY2(middle.lightness() > 128, qPrintable(middle.name()));
     }
