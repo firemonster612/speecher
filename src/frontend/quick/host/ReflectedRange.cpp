@@ -133,7 +133,7 @@ QImage rasterise(const Frame &frame, QSize pixels)
 {
     // As in the shader.
     constexpr float kSpread = 26, kBand = 28, kAmp = 0.62f, kRise = 0.96f, kGain = 0.9f;
-    const auto level = [&frame](float age) {
+    const auto voiceAt = [&frame](float age) {
         const float at = std::clamp(age, 0.0f, float(RangeVoice::kSamples - 1));
         const int i = int(at);
         return std::lerp(frame.history[i], frame.history[std::min(i + 1, RangeVoice::kSamples - 1)], at - i);
@@ -152,7 +152,7 @@ QImage rasterise(const Frame &frame, QSize pixels)
         for (int i = 0; i <= lines; ++i) {
             const float d = i == 0 ? 0 : i - 1 + frame.frac;
             Ridge &ridge = ridges[size_t(x) * (lines + 1) + i];
-            ridge.env = level(d * frame.row + r * kSpread - frame.sub);
+            ridge.env = voiceAt(d * frame.row + r * kSpread - frame.sub);
             const float t = frame.time - d * frame.row / float(RangeVoice::kRate);
             const float wave = 0.5f + 0.35f * std::cos(r * 21 - t * 7) + 0.15f * std::cos(r * 37 - t * 11 + 1.3f);
             const float bell = std::exp(-r * r * 2.2f) * (1 - smoothstep(0.6f, 1, r));

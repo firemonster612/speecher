@@ -47,8 +47,9 @@ float sampleAt(int i)
     return four[i - 4 * (i / 4)];
 }
 
-// The voice age samples ago, between samples.
-float level(float age)
+// The voice age samples ago, between samples. Not named level: Metal's
+// translation of this shader uses namespace metal, which has a level.
+float voiceAt(float age)
 {
     float at = clamp(age, 0.0, kSamples - 1.0);
     int i = int(at);
@@ -61,7 +62,7 @@ float level(float age)
 // the voice there.
 float terrain(float r, float d, out float env)
 {
-    env = level(d * row + r * kSpread - sub);
+    env = voiceAt(d * row + r * kSpread - sub);
     float t = time - d * row / kRate;
     float wave = 0.5 + 0.35 * cos(r * 21.0 - t * 7.0) + 0.15 * cos(r * 37.0 - t * 11.0 + 1.3);
     float bell = exp(-r * r * 2.2) * (1.0 - smoothstep(0.6, 1.0, r));
