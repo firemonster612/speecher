@@ -6,9 +6,13 @@
 #include "platform/mac/MacSystemAudioInput.h"
 #include "platform/mac/MacTargetProvider.h"
 
+#include <QFile>
 #include <QScopeGuard>
 #include <QTest>
 #include <QTimer>
+#include <rhi/qrhi.h>
+
+#include <memory>
 
 #import <CoreMedia/CoreMedia.h>
 #import <ScreenCaptureKit/ScreenCaptureKit.h>
@@ -154,6 +158,47 @@ private slots:
         QString warning;
         platformComposition()->createEchoCanceller(&warning);
         QCOMPARE(warning, QString());
+    }
+
+    // The popup's voice is a shader, which Qt translates to Metal's language
+    // on macOS. Every frame of it needs this pipeline.
+    void reflectedRangeBuildsAMetalPipeline()
+    {
+        QRhiMetalInitParams params;
+        std::unique_ptr<QRhi> rhi(QRhi::create(QRhi::Metal, &params));
+        if (!rhi) {
+            QSKIP("No Metal device");
+        }
+        const auto shader = [](const QString &name) {
+            QFile file(QStringLiteral(":/speecher/shaders/") + name);
+            return file.open(QIODevice::ReadOnly) ? QShader::fromSerialized(file.readAll()) : QShader();
+        };
+        const QShader vertex = shader(QStringLiteral("reflectedrange.vert.qsb"));
+        const QShader fragment = shader(QStringLiteral("reflectedrange.frag.qsb"));
+        QVERIFY(vertex.isValid() && fragment.isValid());
+
+        std::unique_ptr<QRhiTexture> texture(rhi->newTexture(QRhiTexture::RGBA8, {8, 8}, 1, QRhiTexture::RenderTarget));
+        QVERIFY(texture->create());
+        std::unique_ptr<QRhiTextureRenderTarget> target(rhi->newTextureRenderTarget({texture.get()}));
+        std::unique_ptr<QRhiRenderPassDescriptor> pass(target->newCompatibleRenderPassDescriptor());
+        std::unique_ptr<QRhiBuffer> uniforms(rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer,
+                                                            fragment.description().uniformBlocks().first().size));
+        QVERIFY(uniforms->create());
+        std::unique_ptr<QRhiShaderResourceBindings> bindings(rhi->newShaderResourceBindings());
+        bindings->setBindings({QRhiShaderResourceBinding::uniformBuffer(
+            0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage, uniforms.get())});
+        QVERIFY(bindings->create());
+
+        std::unique_ptr<QRhiGraphicsPipeline> pipeline(rhi->newGraphicsPipeline());
+        pipeline->setShaderStages({{QRhiShaderStage::Vertex, vertex}, {QRhiShaderStage::Fragment, fragment}});
+        QRhiVertexInputLayout layout;
+        // QSGGeometry::defaultAttributes_TexturedPoint2D: position, then the item's pixels.
+        layout.setBindings({{16}});
+        layout.setAttributes({{0, 0, QRhiVertexInputAttribute::Float2, 0}, {0, 1, QRhiVertexInputAttribute::Float2, 8}});
+        pipeline->setVertexInputLayout(layout);
+        pipeline->setShaderResourceBindings(bindings.get());
+        pipeline->setRenderPassDescriptor(pass.get());
+        QVERIFY(pipeline->create());
     }
 
     void systemAudioInterleavesPlanarBuffers()
