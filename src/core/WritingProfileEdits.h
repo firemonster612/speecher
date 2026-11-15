@@ -14,10 +14,10 @@
 
 namespace speecher {
 
-// An id for a profile or rule the user adds: prefix, which starts with
-// kCustomIdPrefix, then a random part. Random rather than counted, so an id
-// is never given twice and an undone deletion never finds its id taken by
-// something added meanwhile. Never one of `taken`.
+// An id for a profile, rule or App Type the user adds: prefix, which starts
+// with kCustomIdPrefix, then a random part. Random rather than counted, so
+// an id is never given twice and an undone deletion never finds its id
+// taken by something added meanwhile. Never one of `taken`.
 QString newCustomId(const QString &prefix, const QStringList &taken);
 
 // Adds one of the user's profiles, after the others. Its id must be a

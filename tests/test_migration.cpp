@@ -522,7 +522,7 @@ private:
                  (AppEntry{{}, QStringLiteral("Konsole"), {},
                            {{AppMatchKind::Name, QStringLiteral("org.kde.konsole")},
                             {AppMatchKind::WindowTitle, QStringLiteral("org.kde.konsole")}},
-                           AppCategory::Terminal, QStringLiteral("ai_coding"), {}}));
+                           QStringLiteral("terminal"), QStringLiteral("ai_coding"), {}}));
         QCOMPARE(withoutId(settings.apps.apps[2]),
                  (AppEntry{{}, QStringLiteral("Thunderbird"), {},
                            {{AppMatchKind::Name, QStringLiteral("thunderbird")},

@@ -24,7 +24,7 @@ QString appSource(AppLayer layer, const AppResolution &app)
     case AppLayer::Terminal:
         return QStringLiteral("type:") + appCategoryName(AppCategory::Terminal);
     case AppLayer::Type:
-        return QStringLiteral("type:") + appCategoryName(app.type);
+        return QStringLiteral("type:") + app.type;
     case AppLayer::Fallback:
         return kDefault;
     }

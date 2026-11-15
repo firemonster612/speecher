@@ -196,7 +196,7 @@ void applyPastingChoices(AppsSettings &apps, const QHash<QString, PasteMethod> &
     const auto setByTypesOtherThan = [&apps](AppCategory except) {
         PastingChoice parts;
         for (const AppTypeSettings &type : apps.types) {
-            if (type.type != except) {
+            if (appCategoryFromName(type.id) != except) {
                 parts.steps = parts.steps ? parts.steps : type.pasting.steps;
                 parts.keys = parts.keys ? parts.keys : type.pasting.keys;
             }
@@ -207,11 +207,12 @@ void applyPastingChoices(AppsSettings &apps, const QHash<QString, PasteMethod> &
     // they go last among the types.
     for (const bool terminals : {false, true}) {
         for (AppTypeSettings &type : apps.types) {
-            if ((type.type == AppCategory::Terminal) != terminals) {
+            const AppCategory category = appCategoryFromName(type.id);
+            if ((category == AppCategory::Terminal) != terminals) {
                 continue;
             }
-            type.pasting = forTypes.contains(type.type)
-                ? ownParts(narrowedBy(forTypes.value(type.type), base), page,
+            type.pasting = forTypes.contains(category)
+                ? ownParts(narrowedBy(forTypes.value(category), base), page,
                            terminals ? setByTypesOtherThan(AppCategory::Terminal) : PastingChoice{})
                 : PastingChoice{};
         }
@@ -350,7 +351,7 @@ void migrateApps(QSettings &settings)
         }
         AppEntry entry{.id = newAppId(idsOf(apps.apps)), .name = nameFrom(match), .matches = {{AppMatchKind::Name, match}}};
         if (category != AppCategory::Unknown) {
-            entry.type = category;
+            entry.type = appCategoryName(category);
         }
         if (!profile.isEmpty()) {
             entry.writingProfile = writingProfileFromName(profile);
@@ -382,7 +383,8 @@ void migrateApps(QSettings &settings)
     applyPastingChoices(apps, appPasting, typePasting, base, *globalChoice.steps);
     // Apps typed Terminals still took the global rule's keys.
     for (AppTypeSettings &type : apps.types) {
-        if (type.type == AppCategory::Terminal && !typePasting.contains(type.type)
+        const AppCategory category = appCategoryFromName(type.id);
+        if (category == AppCategory::Terminal && !typePasting.contains(category)
             && globalChoice.keys == PasteKeyCombo::WithShift) {
             type.pasting.keys = globalChoice.keys;
         }
@@ -390,7 +392,7 @@ void migrateApps(QSettings &settings)
 
     if (settings.contains(SettingsKeys::DefaultWritingProfile)) {
         for (AppTypeSettings &type : apps.types) {
-            if (type.type == AppCategory::General) {
+            if (appCategoryFromName(type.id) == AppCategory::General) {
                 type.writingProfile = writingProfileFromName(settings.value(SettingsKeys::DefaultWritingProfile).toString());
             }
         }

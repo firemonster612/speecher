@@ -67,7 +67,7 @@ const DeliverySteps kInsertAndKeep{.insert = true, .press = false, .keep = true}
 void setTypePasting(AppSettings &settings, AppCategory type, const PastingChoice &pasting)
 {
     for (AppTypeSettings &each : settings.apps.types) {
-        if (each.type == type) {
+        if (each.id == appCategoryName(type)) {
             each.pasting = pasting;
         }
     }
@@ -146,7 +146,7 @@ QList<Cell> layerTable()
         {"writing profile: app type",
          [](AppSettings &settings, Target &target, RunOverrides &) {
              AppEntry mailer = idApp(QStringLiteral("org.example.Mailer"));
-             mailer.type = AppCategory::Email;
+             mailer.type = appCategoryName(AppCategory::Email);
              settings.apps.apps = {mailer};
              target.applicationId = QStringLiteral("org.example.Mailer");
          },

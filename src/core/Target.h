@@ -34,8 +34,8 @@ inline const QString AiCoding = QStringLiteral("ai_coding");
 inline const QString Other = QStringLiteral("other");
 } // namespace WritingProfile
 
-// What every id the user's own rules and profiles get starts with, so none
-// matches a built-in id.
+// What every id the user's own App Types, rules and profiles get starts
+// with, so none matches a built-in id.
 inline const QString kCustomIdPrefix = QStringLiteral("custom_");
 
 QString appCategoryName(AppCategory category);

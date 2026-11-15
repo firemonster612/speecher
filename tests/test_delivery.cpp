@@ -561,7 +561,7 @@ fi
         agentInTerminal.windowTitle = QStringLiteral("claude — ~/project");
         agentInTerminal.role = QStringLiteral("terminal");
         agentInTerminal.aiCodingToolActive = true;
-        QCOMPARE(resolveApp(agentInTerminal, {}).type, AppCategory::AiCoding);
+        QCOMPARE(resolveApp(agentInTerminal, {}).type, appCategoryName(AppCategory::AiCoding));
         QCOMPARE(resolveApp(agentInTerminal, {}).writingProfile, WritingProfile::AiCoding);
 
         // How a terminal outside accessibility, known only by its window,

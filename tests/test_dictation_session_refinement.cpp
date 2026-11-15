@@ -769,7 +769,7 @@ private slots:
         settings.edit([appHasSteps](AppSettings &draft) {
             draft.refinement.services.order = {QStringLiteral("openai")};
             for (AppTypeSettings &type : draft.apps.types) {
-                if (appHasSteps && type.type == AppCategory::CodeEditor) {
+                if (appHasSteps && type.id == appCategoryName(AppCategory::CodeEditor)) {
                     type.pasting.steps = DeliverySteps{.insert = true, .press = true, .keep = false};
                 }
             }

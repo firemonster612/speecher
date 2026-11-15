@@ -16,7 +16,7 @@ class ApplicationController;
 // The UI's Apps singleton: the person's Apps and App Types as core resolves
 // them, the installed and recently dictated-into apps the picker offers, and
 // the edits the Apps page makes. Data only; the page words it
-// (schema/apps.js). Ids are core's: App Types by category name ("email"),
+// (schema/apps.js). Ids are core's: App Types by id ("email" or "custom_…"),
 // paste keys by name ("standard", "terminal"), profiles by id; an empty
 // value, or null steps, is unset ("Same as …"). Steps are { insert, press,
 // keep }.
@@ -37,9 +37,10 @@ class QuickApps final : public QObject, public HostSingleton<QuickApps> {
     // is "stats", "nothing" or empty: what History keeps of the app's
     // dictations, at most What Speecher Keeps.
     Q_PROPERTY(QVariantList entries READ entries NOTIFY changed)
-    // One per App Type, Other apps ("general") last: [{ id, profile, steps,
+    // Built-in types, custom types in order added, then Other apps
+    // ("general"): [{ id, name (custom only), custom, profile, steps,
     // keys, history, effectiveProfile, effective: { steps, keys } }]. Other
-    // apps' profile is always set.
+    // apps' profile is always set. Every type value is a type id.
     Q_PROPERTY(QVariantList types READ types NOTIFY changed)
     // The installed apps, once refresh() has scanned them, launchers that
     // share a program as one under the first one's name: [{ name, icon, ids,
@@ -93,7 +94,13 @@ public:
     // Removes an App. Returns the token undo takes, or -1 when none went.
     Q_INVOKABLE int remove(const QString &id);
     Q_INVOKABLE void undo(int token);
-    // Changes an App Type's profile, steps, keys or history, as update does.
+    // Adds a custom type: { id, refusal }, empty id when refused.
+    Q_INVOKABLE QVariantMap addType(const QString &name);
+    // Removes a custom type, returning its Apps to Automatic. The token
+    // undo takes restores both; -1 for built-ins or an absent id.
+    Q_INVOKABLE int removeType(const QString &id);
+    // Changes an App Type's name (custom only), profile, steps, keys or
+    // history, as update does. Types are addressed by id.
     Q_INVOKABLE QString updateType(const QString &type, const QVariantMap &patch);
     // Switch to it: counts down `seconds`, waits for another app to come to
     // the front, then captures it as dictation does and answers captured

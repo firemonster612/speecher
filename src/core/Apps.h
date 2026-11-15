@@ -51,7 +51,7 @@ struct AppEntry {
     QList<AppMatch> matches;
     // Unset: the built-in catalog and the terminal and AI coding detection
     // decide (Automatic).
-    std::optional<AppCategory> type;
+    std::optional<QString> type;
     std::optional<QString> writingProfile;
     // Its own steps and paste keys; each part unset follows Terminals' for
     // anything running in a terminal, then its App Type's.
@@ -68,10 +68,12 @@ struct AppEntry {
     bool operator==(const AppEntry &other) const = default;
 };
 
-// What one App Type sets. General is "Other apps", whose profile is the one
+// What one App Type sets. "general" is Other apps, whose profile is the one
 // any app Speecher doesn't recognize gets.
 struct AppTypeSettings {
-    AppCategory type = AppCategory::General;
+    QString id;
+    // Custom types have a name; built-in names belong to the UI.
+    QString name;
     // Unset: Other apps' profile (for Other apps itself, the Other profile).
     std::optional<QString> writingProfile;
     // Each part unset: the Pasting page's steps, and the usual paste keys.
@@ -94,7 +96,8 @@ QList<AppTypeSettings> defaultAppTypeSettings();
 
 struct AppsSettings {
     QList<AppEntry> apps;
-    // One for each of appTypes(), in that order.
+    // Built-ins in appTypes() order, then custom types in order added,
+    // with Other apps (general) last.
     QList<AppTypeSettings> types = defaultAppTypeSettings();
 
     bool operator==(const AppsSettings &other) const = default;
@@ -121,7 +124,10 @@ enum class AppLayer {
 struct AppResolution {
     // The first of the person's entries that matched, or empty.
     QString appId;
-    AppCategory type = AppCategory::Unknown;
+    // The App Type's id; "unknown" for a Target with no identity.
+    QString type = QStringLiteral("unknown");
+    // The kind of app, independent of a custom type grouping its settings.
+    AppCategory category = AppCategory::Unknown;
     QString writingProfile = WritingProfile::Other;
     AppLayer writingProfileFrom = AppLayer::Fallback;
     QString writingProfileApp;
@@ -146,7 +152,7 @@ struct AppResolution {
 //   Type: an entry's (never from a title match), then a coding agent detected
 //   in a terminal, then the built-in catalog, then General (Unknown for a
 //   Target with no identity).
-//   Profile: an entry's, then AI coding apps' for an AI coding Target, then
+//   Profile: an entry's, then AI coding apps' for the ai_coding type, then
 //   the catalog's when no entry set the type, then the type's, then Other
 //   apps'.
 //   Pasting, its steps and its keys each on their own: an entry's, then
@@ -167,7 +173,10 @@ AppResolution inheritedFor(const AppEntry &app, const Target &target, const Apps
 // resolveApp consults them: those matching by id, then by name or title.
 QStringList matchingAppIds(const Target &target, const AppsSettings &apps);
 bool appMatches(const AppMatch &match, const Target &target);
-// The settings of App Type `type`; an Unknown type has none of its own.
+// The App Type with that id, or null: one removed, or an id no type has.
+const AppTypeSettings *findAppType(const AppsSettings &apps, const QString &id);
+// The settings of App Type id; an absent id has no values of its own.
+AppTypeSettings appTypeSettings(const AppsSettings &apps, const QString &id);
 AppTypeSettings appTypeSettings(const AppsSettings &apps, AppCategory type);
 // Other apps' profile: what an app Speecher doesn't recognize writes with.
 QString fallbackWritingProfile(const AppsSettings &apps);

@@ -53,7 +53,7 @@ An application the person set something for, picked from installed apps or apps 
 _Avoid_: App rule, app match, recognition rule, application recognition, exception
 
 **App Type**:
-The kind of app a Target is: Terminal, Browser, Email, Office, Code editor, AI coding, or Other. Speecher sorts common apps into them from a built-in list, and each carries a Writing Profile, a Pasting choice and a History choice its apps follow. Other apps' profile is what any app Speecher doesn't recognize writes with.
+The kind of app a Target is: Terminal, Browser, Email, Office, Code editor, AI coding, or Other. Speecher sorts common apps into them from a built-in list, and each carries a Writing Profile, a Pasting choice and a History choice its apps follow. Other apps' profile is what any app Speecher doesn't recognize writes with. The person can add their own types, which hold only the apps they put there. Built-in types can't be renamed or removed. Removing a custom type returns its apps to Automatic.
 _Avoid_: Category, app category
 
 **Pasting choice**:

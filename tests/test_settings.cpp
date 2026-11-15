@@ -1174,7 +1174,7 @@ private slots:
         const AppSettings deleted = SettingsStore().snapshot();
         QCOMPARE(deleted.apps.apps.size(), 2);
         QCOMPARE(deleted.apps.apps.at(0).writingProfile, std::nullopt);
-        QCOMPARE(deleted.apps.apps.at(1).type, AppCategory::Browser);
+        QCOMPARE(deleted.apps.apps.at(1).type, appCategoryName(AppCategory::Browser));
         QCOMPARE(deleted.apps.apps.at(1).writingProfile, std::nullopt);
         QCOMPARE(fallbackWritingProfile(deleted.apps), WritingProfile::Other);
         settings.raw().clear();
@@ -1584,7 +1584,7 @@ private slots:
                             .matches = {{AppMatchKind::Id, QStringLiteral("org.example.Notes")},
                                         {AppMatchKind::Name, QStringLiteral("notes")},
                                         {AppMatchKind::WindowTitle, QStringLiteral("Gmail")}},
-                            .type = AppCategory::Office,
+                            .type = appCategoryName(AppCategory::Office),
                             .writingProfile = WritingProfile::Work,
                             .pasting = {std::nullopt, PasteKeyCombo::Standard}}};
             test::setOtherAppsProfile(s.apps, WritingProfile::Work);

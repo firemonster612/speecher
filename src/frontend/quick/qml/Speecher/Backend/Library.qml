@@ -68,6 +68,9 @@ LibraryLists {
         return name
     }
     function profileName(id) { const p = profiles.find(o => o.id === id); return p ? p.name : id }
+    // App Type `id` as the apps schema words it, the person's own types
+    // included: { id, label, one, icon, custom }.
+    function appType(id) { return Schema.apps.type(id, Apps.types) }
     // "Medium cleanup, Casual, Spanish", or "No cleanup".
     function profileSummary(p) {
         if (p.cleanup === "none" && !p.language) return "No cleanup"
@@ -78,7 +81,7 @@ LibraryLists {
     // Apps that write with it now. Each lands on its row in Apps.
     function profileUsers(id) {
         const types = Apps.types.filter(o => o.profile === id).map(o => ({
-            id: "apptype:" + o.id, name: Schema.apps.type(o.id).label, icon: "", typeIcon: Schema.apps.type(o.id).icon }))
+            id: "apptype:" + o.id, name: appType(o.id).label, icon: "", typeIcon: appType(o.id).icon }))
         const apps = Apps.entries.filter(e => e.effective.profile === id).map(e => ({
             id: "appentry:" + e.id, name: e.name, icon: e.icon, typeIcon: "" }))
         return types.concat(apps)

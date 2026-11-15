@@ -310,7 +310,7 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   of objects).
   Each list has one owner (speech services and refinement providers in `Models`, profiles, tones, levels and
   rules in `Library`, microphones in `Audio`, Apps and App Types in
-  `Apps`, the App Types' names in the apps schema); every other place
+  `Apps`, built-in App Types' names in the apps schema, custom names in `Apps`); every other place
   derives from it with the same ids.
 - The host (`QuickFrontEnd`) opens Main and the setup assistant when the
   daemon asks, at most one of each, and hides a window when it is closed.

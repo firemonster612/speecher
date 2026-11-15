@@ -1,6 +1,7 @@
 #include "core/AppEdits.h"
 
 #include "core/VocabularyEdits.h"
+#include "core/WritingProfileEdits.h"
 
 #include <algorithm>
 
@@ -32,6 +33,27 @@ qsizetype indexOfApp(const QList<AppEntry> &apps, const QString &id)
 {
     const auto found = std::find_if(apps.cbegin(), apps.cend(), [&id](const AppEntry &app) { return app.id == id; });
     return found == apps.cend() ? -1 : found - apps.cbegin();
+}
+
+qsizetype indexOfType(const QList<AppTypeSettings> &types, const QString &id)
+{
+    const auto found = std::find_if(types.cbegin(), types.cend(), [&id](const AppTypeSettings &type) { return type.id == id; });
+    return found == types.cend() ? -1 : found - types.cbegin();
+}
+
+EditRefusal checkTypeName(AppTypeSettings &type, const QList<AppTypeSettings> &types)
+{
+    type.name = type.name.trimmed();
+    if (type.name.isEmpty()) {
+        return EditRefusal::Blank;
+    }
+    for (const AppTypeSettings &other : types) {
+        if (other.id != type.id && other.id.startsWith(kCustomIdPrefix)
+            && other.name.compare(type.name, Qt::CaseInsensitive) == 0) {
+            return EditRefusal::Taken;
+        }
+    }
+    return EditRefusal::None;
 }
 
 bool profileOffered(const std::optional<QString> &profile, const AppSettings &settings)
@@ -69,7 +91,7 @@ EditRefusal checkApp(AppEntry &app, qsizetype self, const AppSettings &settings)
     if (!stepsValid(app.pasting)) {
         return EditRefusal::Incomplete;
     }
-    const bool typeOffered = !app.type || appTypes().contains(*app.type);
+    const bool typeOffered = !app.type || findAppType(settings.apps, *app.type);
     return typeOffered && profileOffered(app.writingProfile, settings) ? EditRefusal::None : EditRefusal::Missing;
 }
 
@@ -120,20 +142,73 @@ SettingsEdit removeApp(AppSettings &settings, const QString &id)
     };
 }
 
-EditRefusal editAppType(AppSettings &settings, AppCategory type, const EntryChange<AppTypeSettings> &change)
+AddAppTypeResult addAppType(AppSettings &settings, const QString &name)
 {
     QList<AppTypeSettings> &types = settings.apps.types;
-    const auto found = std::find_if(types.cbegin(), types.cend(),
-                                    [type](const AppTypeSettings &settings) { return settings.type == type; });
-    return changeEntry(types, found == types.cend() ? -1 : found - types.cbegin(), change,
-                       [&settings, type](AppTypeSettings &edited, qsizetype) {
-                           edited.type = type;
+    AppTypeSettings added{{}, name};
+    const EditRefusal refusal = checkTypeName(added, types);
+    if (refusal != EditRefusal::None) {
+        return {{}, refusal};
+    }
+    QStringList ids;
+    for (const AppTypeSettings &type : types) {
+        ids.append(type.id);
+    }
+    added.id = newCustomId(kCustomIdPrefix + u"type", ids);
+    types.insert(indexOfType(types, appCategoryName(AppCategory::General)), added);
+    return {added.id, EditRefusal::None};
+}
+
+EditRefusal editAppType(AppSettings &settings, const QString &id, const EntryChange<AppTypeSettings> &change)
+{
+    QList<AppTypeSettings> &types = settings.apps.types;
+    return changeEntry(types, indexOfType(types, id), change,
+                       [&settings, &types, &id](AppTypeSettings &edited, qsizetype self) {
+                           edited.id = id;
+                           if (id.startsWith(kCustomIdPrefix)) {
+                               const EditRefusal refusal = checkTypeName(edited, types);
+                               if (refusal != EditRefusal::None) {
+                                   return refusal;
+                               }
+                           } else if (edited.name != types.at(self).name) {
+                               return EditRefusal::Missing;
+                           }
                            if (!stepsValid(edited.pasting)) {
                                return EditRefusal::Incomplete;
                            }
                            return profileOffered(edited.writingProfile, settings) ? EditRefusal::None
                                                                                    : EditRefusal::Missing;
                        });
+}
+
+SettingsEdit removeAppType(AppSettings &settings, const QString &id)
+{
+    QList<AppTypeSettings> &types = settings.apps.types;
+    const qsizetype index = indexOfType(types, id);
+    if (!id.startsWith(kCustomIdPrefix) || index < 0) {
+        return {};
+    }
+    const AppTypeSettings removed = types.takeAt(index);
+    QStringList members;
+    for (AppEntry &app : settings.apps.apps) {
+        if (app.type == id) {
+            members.append(app.id);
+            app.type.reset();
+        }
+    }
+    return [index, removed, members](AppSettings &draft) {
+        QList<AppTypeSettings> &back = draft.apps.types;
+        AppTypeSettings checked = removed;
+        if (indexOfType(back, removed.id) >= 0 || checkTypeName(checked, back) != EditRefusal::None) {
+            return;
+        }
+        back.insert(std::min(index, back.size() - 1), removed);
+        for (AppEntry &app : draft.apps.apps) {
+            if (!app.type && members.contains(app.id)) {
+                app.type = removed.id;
+            }
+        }
+    };
 }
 
 } // namespace speecher

@@ -25,9 +25,22 @@ EditRefusal editApp(AppSettings &settings, const QString &id, const EntryChange<
 // limits removing it rewrote (keepVocabularyLimitsOf). Empty when no App has
 // that id.
 SettingsEdit removeApp(AppSettings &settings, const QString &id);
-// Changes what App Type `type` sets. Missing for a type that isn't one of
-// appTypes(), or a profile that isn't offered; Incomplete when steps of its
-// own leave none on.
-EditRefusal editAppType(AppSettings &settings, AppCategory type, const EntryChange<AppTypeSettings> &change);
+// A new custom type's id, or the reason its name was refused.
+struct AddAppTypeResult {
+    QString id;
+    EditRefusal refusal = EditRefusal::None;
+};
+
+// Adds an empty custom type before Other apps. Blank for an empty trimmed
+// name; Taken for another custom type's name, ignoring case.
+AddAppTypeResult addAppType(AppSettings &settings, const QString &name);
+// Changes a type by id, with the same name checks for custom types.
+// Missing for an absent id, a built-in name change or an unavailable
+// profile; Incomplete when its own steps leave none on.
+EditRefusal editAppType(AppSettings &settings, const QString &id, const EntryChange<AppTypeSettings> &change);
+// Removes a custom type and returns its Apps to Automatic. Undo restores
+// its place and membership for Apps still on Automatic. Empty for built-ins
+// or an absent id. A type added with its id or name meanwhile stays.
+SettingsEdit removeAppType(AppSettings &settings, const QString &id);
 
 } // namespace speecher

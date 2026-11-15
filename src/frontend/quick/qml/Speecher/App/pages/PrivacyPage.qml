@@ -44,7 +44,7 @@ Page {
     // The Apps and App Types that keep less than What Speecher Keeps, App
     // Types first, each with its choice, as Pasting lists those that paste
     // differently.
-    readonly property var _leftOut: Apps.types.filter(o => o.history).map(o => Object.assign(Schema.apps.typeLink(o), { history: o.history }))
+    readonly property var _leftOut: Apps.types.filter(o => o.history).map(o => Object.assign(Schema.apps.typeLink(o, id => Library.appType(id)), { history: o.history }))
         .concat(Apps.entries.filter(e => e.history).map(e => Object.assign(Schema.apps.appLink(e), { history: e.history })))
     readonly property string _refinementSees: {
         if (!Settings.values.refinementEnabled) return t.cleanupOff

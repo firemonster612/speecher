@@ -160,7 +160,7 @@ QList<AppTypeSettings> defaultAppTypeSettings()
 {
     QList<AppTypeSettings> types;
     for (const AppCategory type : appTypes()) {
-        AppTypeSettings settings{type};
+        AppTypeSettings settings{appCategoryName(type)};
         switch (type) {
         case AppCategory::Terminal:
             settings.writingProfile = WritingProfile::Work;
@@ -190,14 +190,22 @@ QList<AppTypeSettings> defaultAppTypeSettings()
     return types;
 }
 
+const AppTypeSettings *findAppType(const AppsSettings &apps, const QString &id)
+{
+    const auto found = std::find_if(apps.types.cbegin(), apps.types.cend(),
+                                    [&id](const AppTypeSettings &type) { return type.id == id; });
+    return found == apps.types.cend() ? nullptr : &*found;
+}
+
+AppTypeSettings appTypeSettings(const AppsSettings &apps, const QString &id)
+{
+    const AppTypeSettings *found = findAppType(apps, id);
+    return found ? *found : AppTypeSettings{id};
+}
+
 AppTypeSettings appTypeSettings(const AppsSettings &apps, AppCategory type)
 {
-    for (const AppTypeSettings &settings : apps.types) {
-        if (settings.type == type) {
-            return settings;
-        }
-    }
-    return {type};
+    return appTypeSettings(apps, appCategoryName(type));
 }
 
 QString fallbackWritingProfile(const AppsSettings &apps)
@@ -309,18 +317,16 @@ AppResolution resolveApp(const Target &target, const AppsSettings &apps)
         return nullptr;
     };
 
-    const AppEntry *typed = first(&AppEntry::type, true);
-    if (typed) {
-        resolution.type = *typed->type;
-    } else if (target.aiCodingToolActive) {
-        resolution.type = AppCategory::AiCoding;
-    } else if (const std::optional<AppCategory> builtIn = builtInType(target)) {
-        resolution.type = *builtIn;
-    } else {
-        resolution.type = target.hasIdentity() ? AppCategory::General : AppCategory::Unknown;
-    }
+    const AppEntry *typed = first([&apps](const AppEntry &entry) {
+        return entry.type && findAppType(apps, *entry.type);
+    }, true);
+    const AppCategory detected = target.aiCodingToolActive ? AppCategory::AiCoding
+        : builtInType(target).value_or(target.hasIdentity() ? AppCategory::General : AppCategory::Unknown);
+    resolution.type = typed ? *typed->type : appCategoryName(detected);
+    resolution.category = resolution.type.startsWith(kCustomIdPrefix)
+        ? (detected == AppCategory::Unknown ? AppCategory::General : detected) : appCategoryFromName(resolution.type);
 
-    const auto typeProfile = [&apps](AppCategory type) { return appTypeSettings(apps, type).writingProfile; };
+    const auto typeProfile = [&apps](const QString &id) { return appTypeSettings(apps, id).writingProfile; };
     const auto setProfile = [&resolution](const QString &profile, AppLayer from, const QString &app = {}) {
         resolution.writingProfile = profile;
         resolution.writingProfileFrom = from;
@@ -344,7 +350,7 @@ AppResolution resolveApp(const Target &target, const AppsSettings &apps)
             if (!app.type) {
                 return app.writingProfile;
             }
-            if (const std::optional<QString> profile = typeProfile(*app.type)) {
+            if (const std::optional<QString> profile = typeProfile(appCategoryName(*app.type))) {
                 return profile;
             }
         }
@@ -353,7 +359,8 @@ AppResolution resolveApp(const Target &target, const AppsSettings &apps)
     std::optional<QString> profile;
     if (const AppEntry *entry = first(&AppEntry::writingProfile)) {
         setProfile(*entry->writingProfile, AppLayer::App, entry->id);
-    } else if (resolution.type == AppCategory::AiCoding && (profile = typeProfile(AppCategory::AiCoding))) {
+    } else if (resolution.type == appCategoryName(AppCategory::AiCoding)
+               && (profile = typeProfile(resolution.type))) {
         setProfile(*profile, AppLayer::Type);
     } else if ((profile = builtInProfile())) {
         setProfile(*profile, AppLayer::BuiltIn);
@@ -366,7 +373,7 @@ AppResolution resolveApp(const Target &target, const AppsSettings &apps)
     // Steps and keys settle on their own: Terminals may set only their keys
     // and still follow the type's steps, or none.
     Target classified = target;
-    classified.category = resolution.type;
+    classified.category = resolution.category;
     const bool inTerminal = isTerminalTarget(classified);
     const PastingChoice terminals = appTypeSettings(apps, AppCategory::Terminal).pasting;
     const PastingChoice own = appTypeSettings(apps, resolution.type).pasting;
