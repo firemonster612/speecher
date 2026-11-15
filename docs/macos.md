@@ -147,7 +147,10 @@ rm sparkle-private-key
 
 `generate_keys` keeps the private key in your login Keychain, which is the
 backup; run again, it reuses that key. A new key pair cuts off everyone on a
-release built with the old public key, so rotate as ADR 0004 says.
+release built with the old public key, so rotate as ADR 0004 says. The same
+key pair signs the Linux and Windows update manifest
+([ADR 0011](adr/0011-signed-update-manifest.md)), so a rotation cuts those
+installs off too.
 
 ## Release gate: updating SwiftUI users to the Qt Quick build
 

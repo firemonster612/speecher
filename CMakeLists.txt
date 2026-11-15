@@ -12,6 +12,16 @@ project(speecher VERSION 0.1.1 LANGUAGES C CXX)
 
 include(cmake/GitVersion.cmake)
 
+# The release Ed25519 public key, base64. macOS's Sparkle checks the DMG with
+# it; Linux and Windows check the update manifest's signature with it
+# (docs/adr/0011-signed-update-manifest.md). A build without it cannot verify
+# updates and says so when it checks.
+set(SPEECHER_SPARKLE_ED_PUBLIC_KEY "" CACHE STRING
+  "Sparkle EdDSA public key that update signatures are checked against")
+if(SPEECHER_SPARKLE_ED_PUBLIC_KEY AND NOT SPEECHER_SPARKLE_ED_PUBLIC_KEY MATCHES "^[A-Za-z0-9+/]+=$")
+  message(FATAL_ERROR "SPEECHER_SPARKLE_ED_PUBLIC_KEY must be a base64 Ed25519 public key.")
+endif()
+
 if(APPLE)
   # The macOS platform backend is Objective-C++. Objective-C too, for ggml's
   # Metal backend: with only OBJCXX enabled CMake compiles its .m files as
@@ -26,8 +36,6 @@ if(APPLE)
   )
   FetchContent_MakeAvailable(sparkle)
 
-  set(SPEECHER_SPARKLE_ED_PUBLIC_KEY "" CACHE STRING
-    "Sparkle EdDSA public key embedded in the macOS app")
   set(SPEECHER_SPARKLE_PUBLIC_KEY_PLIST "")
   if(SPEECHER_SPARKLE_ED_PUBLIC_KEY)
     set(SPEECHER_SPARKLE_PUBLIC_KEY_PLIST
@@ -1115,8 +1123,13 @@ FetchContent_Declare(monocypher
 FetchContent_MakeAvailable(qrcodegen monocypher)
 add_library(speecher_qrcodegen STATIC "${qrcodegen_SOURCE_DIR}/cpp/qrcodegen.cpp")
 target_include_directories(speecher_qrcodegen SYSTEM PUBLIC "${qrcodegen_SOURCE_DIR}/cpp")
-add_library(speecher_monocypher STATIC "${monocypher_SOURCE_DIR}/src/monocypher.c")
-target_include_directories(speecher_monocypher SYSTEM PUBLIC "${monocypher_SOURCE_DIR}/src")
+# Ed25519 (SHA-512) lives in the optional file; the update manifest's
+# signature is one.
+add_library(speecher_monocypher STATIC
+  "${monocypher_SOURCE_DIR}/src/monocypher.c"
+  "${monocypher_SOURCE_DIR}/src/optional/monocypher-ed25519.c")
+target_include_directories(speecher_monocypher SYSTEM PUBLIC
+  "${monocypher_SOURCE_DIR}/src" "${monocypher_SOURCE_DIR}/src/optional")
 
 # The application: sessions, permissions and single-instance IPC, with no user
 # interface of its own; see docs/adr/0009-one-quick-ui-inside-the-daemon.md.
@@ -1133,6 +1146,8 @@ target_link_libraries(speecher_app PUBLIC
   speecher_domain speecher_workflow speecher_providers speecher_platform Qt6::Network
 )
 target_link_libraries(speecher_app PRIVATE speecher_qrcodegen speecher_monocypher)
+set_property(SOURCE src/app/ManifestUpdater.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+  SPEECHER_UPDATE_PUBLIC_KEY="${SPEECHER_SPARKLE_ED_PUBLIC_KEY}")
 if(UNIX)
   target_sources(speecher_app PRIVATE
     src/app/AppImageUpdater.cpp

@@ -209,7 +209,15 @@ jobs:
 
       - name: Package AppImage
         if: env.PACKAGE == 'true'
+        env:
+          SPARKLE_ED_PUBLIC_KEY: ${{ secrets.SPARKLE_ED_PUBLIC_KEY }}
         run: |
+          # The AppImage checks update manifests against this key
+          # (docs/adr/0011-signed-update-manifest.md).
+          if [ "$GITHUB_EVENT_NAME" != pull_request ] && [ -z "${SPARKLE_ED_PUBLIC_KEY:-}" ]; then
+            echo "SPARKLE_ED_PUBLIC_KEY is required for publishing." >&2
+            exit 1
+          fi
           if [ "${GITHUB_REF_NAME}" = "master" ]; then
             updinfo='gh-releases-zsync|firemonster612|speecher|nightly|Speecher-*x86_64.AppImage.zsync'
           else
@@ -220,6 +228,7 @@ jobs:
             --workdir /workspace \
             --env SPEECHER_BUILD_TYPE=Release \
             --env SPEECHER_UPDINFO="$updinfo" \
+            --env SPARKLE_ED_PUBLIC_KEY \
             speecher-appimage:forky \
             bash -lc 'git config --global --add safe.directory "*" && packaging/build-appimage.sh'
 
@@ -531,7 +540,15 @@ jobs:
 
       - name: Configure
         shell: pwsh
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_WITH_LOCAL_SPEECH=ON -DSPEECHER_LOCAL_SPEECH_ALL_CPUS=ON -DSPEECHER_LOCAL_SPEECH_VULKAN=ON
+        env:
+          SPARKLE_ED_PUBLIC_KEY: ${{ secrets.SPARKLE_ED_PUBLIC_KEY }}
+        run: |
+          # The installer checks update manifests against this key
+          # (docs/adr/0011-signed-update-manifest.md).
+          if ($env:GITHUB_EVENT_NAME -ne 'pull_request' -and -not $env:SPARKLE_ED_PUBLIC_KEY) {
+            throw "SPARKLE_ED_PUBLIC_KEY is required for publishing."
+          }
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_WITH_LOCAL_SPEECH=ON -DSPEECHER_LOCAL_SPEECH_ALL_CPUS=ON -DSPEECHER_LOCAL_SPEECH_VULKAN=ON "-DSPEECHER_SPARKLE_ED_PUBLIC_KEY=$env:SPARKLE_ED_PUBLIC_KEY"
 
       - name: Build
         shell: pwsh
@@ -601,6 +618,8 @@ jobs:
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          SPARKLE_ED_PUBLIC_KEY: ${{ secrets.SPARKLE_ED_PUBLIC_KEY }}
         run: bash scripts/publish-release.sh
 
       - name: Publish appcast
