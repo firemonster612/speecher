@@ -27,23 +27,23 @@ enum class DeliveryStep {
     Keep,
 };
 
-// The keys Press presses: the usual paste keys (Ctrl+V, ⌘V on macOS), or a
-// terminal's Ctrl+Shift+V.
+// The keys Press presses: the usual paste keys (Ctrl+V, ⌘V on macOS), or
+// Ctrl+Shift+V, which terminals and some other apps paste with.
 enum class PasteKeyCombo {
     Standard,
-    Terminal,
+    WithShift,
 };
 
-// Whether a terminal's paste keys differ from everyone else's. macOS presses
-// ⌘V everywhere, so it has no choice of keys.
+// Whether Ctrl+Shift+V differs from the usual paste keys. macOS presses ⌘V
+// everywhere, so it has no choice of keys.
 #ifdef Q_OS_MACOS
-inline constexpr bool terminalKeysDiffer = false;
+inline constexpr bool shiftKeysDiffer = false;
 #else
-inline constexpr bool terminalKeysDiffer = true;
+inline constexpr bool shiftKeysDiffer = true;
 #endif
 
-// "standard" or "terminal", as settings store the keys; anything else reads
-// as Standard.
+// "standard" or "terminal" (WithShift), as settings store the keys, kept
+// so an older Speecher reads them; anything else reads as Standard.
 QString pasteKeyComboName(PasteKeyCombo keys);
 PasteKeyCombo pasteKeyComboFromName(const QString &name);
 

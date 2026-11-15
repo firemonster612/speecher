@@ -140,11 +140,12 @@ QVariantMap resolved(const AppResolution &resolution, const DeliverySteps &steps
     return record;
 }
 
-// What core makes of the App, now and with each of its own values unset in
-// turn, with the Pasting page's steps.
-QVariantMap entryRecord(const AppEntry &app, const AppsSettings &apps, const DeliverySteps &steps)
+// What core makes of the App, reporting itself as target, now and with each
+// of its own values unset in turn, with the Pasting page's steps.
+QVariantMap entryRecord(const AppEntry &app, const Target &target, const AppsSettings &apps,
+                        const DeliverySteps &steps)
 {
-    const AppResolution inherited = inheritedFor(app, apps);
+    const AppResolution inherited = inheritedFor(app, target, apps);
     QStringList ids;
     QVariantList matches;
     bool byText = true;
@@ -169,7 +170,7 @@ QVariantMap entryRecord(const AppEntry &app, const AppsSettings &apps, const Del
         {QStringLiteral("steps"), ownSteps(app.pasting.steps)},
         {QStringLiteral("keys"), keysName(app.pasting.keys)},
         {QStringLiteral("history"), historyName(app.history)},
-        {QStringLiteral("effective"), resolved(resolveApp(targetFor(app), apps), steps)},
+        {QStringLiteral("effective"), resolved(resolveApp(target, apps), steps)},
         {QStringLiteral("inherited"),
          QVariantMap{{QStringLiteral("type"), appCategoryName(inherited.type)},
                      {QStringLiteral("profile"), inherited.writingProfile},
@@ -194,6 +195,30 @@ const InstalledApp *installedWithId(const QList<InstalledApp> &installed, const 
         }
     }
     return nullptr;
+}
+
+// The App as the app reports itself: what it matches, and where it has an id
+// but no name to match, the name of the installed app or the app dictated
+// into with that id, which the built-in catalog may know it by. Never the
+// App's own name, which the person may change.
+Target reportedTarget(const AppEntry &app, const QList<InstalledApp> &installed, const QList<SeenApp> &seen)
+{
+    Target target = targetFor(app);
+    if (target.applicationId.isEmpty() || !target.applicationName.isEmpty()) {
+        return target;
+    }
+    if (const InstalledApp *found = installedWithId(installed, target.applicationId)) {
+        target.applicationName = found->name;
+        return target;
+    }
+    const QString wanted = comparableAppId(target.applicationId);
+    for (const SeenApp &each : seen) {
+        if (comparableAppId(each.applicationId) == wanted) {
+            target.applicationName = each.name;
+            break;
+        }
+    }
+    return target;
 }
 
 // The matches of an add or edit: [{ kind: "id" | "name" | "title", value }].
@@ -258,11 +283,6 @@ QuickApps::~QuickApps()
     scanPool().waitForDone();
 }
 
-int QuickApps::builtInCount() const
-{
-    return int(builtInApps().size());
-}
-
 void QuickApps::refresh()
 {
     if (m_scanned || m_scanning) {
@@ -289,7 +309,8 @@ void QuickApps::rebuild()
 
     QVariantList entries;
     for (const AppEntry &app : apps.apps) {
-        entries.append(entryRecord(app, apps, settings.output.steps));
+        entries.append(entryRecord(app, reportedTarget(app, m_installed, m_controller->seenApps()->apps()), apps,
+                                   settings.output.steps));
     }
     QVariantList types;
     for (const AppTypeSettings &type : apps.types) {
@@ -315,6 +336,8 @@ void QuickApps::rebuild()
             {QStringLiteral("name"), installed ? installed->name : seen.name.isEmpty() ? seen.applicationId : seen.name},
             {QStringLiteral("appId"), seen.applicationId},
             {QStringLiteral("icon"), installed ? installed->icon : QString()},
+            {QStringLiteral("listedInstalled"),
+             installed && resolveApp(targetFor(*installed), apps).type == resolution.type},
             {QStringLiteral("lastSeenMs"), double(seen.lastSeenMs)},
             {QStringLiteral("dictations"), seen.dictations},
             {QStringLiteral("entry"), resolution.appId},

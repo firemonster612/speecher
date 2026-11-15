@@ -36,7 +36,7 @@ FocusScope {
     // The person's Apps, found by name or what they are recognized by, and
     // landing on their row on Apps (AppRow's appentry:<id>).
     readonly property var _apps: Apps.entries.map(e => ({
-        type: "app", id: "appentry:" + e.id, page: "apps", section: Schema.apps.t.yourApps,
+        type: "app", id: "appentry:" + e.id, page: "apps", section: Schema.apps.t.types,
         label: e.name, keywords: e.ids.join(" ") + " app"
     }))
     // The Vocabulary's entries, found by what they spell, replace or write,

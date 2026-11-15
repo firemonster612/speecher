@@ -49,11 +49,9 @@ class QuickApps final : public QObject, public HostSingleton<QuickApps> {
     Q_PROPERTY(QVariantList installed READ installed NOTIFY installedChanged)
     Q_PROPERTY(bool scanning READ scanning NOTIFY scanningChanged)
     // The apps dictated into lately, most recent first, while History keeps
-    // stats: [{ name, appId, icon, lastSeenMs, dictations, entry, type,
-    // profile }].
+    // stats: [{ name, appId, icon, listedInstalled (installed lists it too,
+    // as the same type), lastSeenMs, dictations, entry, type, profile }].
     Q_PROPERTY(QVariantList recent READ recent NOTIFY changed)
-    // How many apps the built-in catalog knows.
-    Q_PROPERTY(int builtInCount READ builtInCount CONSTANT)
     // Switch to it: "" (idle), "waiting" (counting down, then waiting for
     // another app to come to the front), "failed" (it couldn't tell which
     // app that was).
@@ -75,7 +73,6 @@ public:
     QVariantList installed() const { return m_installedRecords; }
     bool scanning() const { return m_scanning; }
     QVariantList recent() const { return m_recent; }
-    int builtInCount() const;
     QString capture() const;
     int captureCountdown() const { return m_capture.countdown(); }
     QVariantMap tested() const { return m_tested; }

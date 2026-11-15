@@ -172,7 +172,7 @@ QString pastingAnswer(const PastingChoice &pasting)
 {
     const DeliveryPlan plan = deliveryPlan(DeliverySteps{}, pasting);
     if (plan.steps == DeliverySteps{}) {
-        return plan.keys == PasteKeyCombo::Terminal ? QStringLiteral("terminal_paste") : QStringLiteral("steps");
+        return plan.keys == PasteKeyCombo::WithShift ? QStringLiteral("terminal_paste") : QStringLiteral("steps");
     }
     return plan.steps == insertAndKeep ? QStringLiteral("direct_insert")
          : plan.steps == keepOnly      ? QStringLiteral("clipboard_only")
@@ -219,7 +219,7 @@ private slots:
                 // The answers were captured where terminals' keys differ; on
                 // macOS terminals press Cmd+V like the rest, so neither the
                 // default Terminals nor a migrated Terminal paste presses them.
-                if (!terminalKeysDiffer) {
+                if (!shiftKeysDiffer) {
                     expected.replace(QStringLiteral("terminal_paste"), QStringLiteral("steps"));
                 }
                 QTest::addRow("%s %s", qPrintable(scenario), qPrintable(name)) << scenario << target << expected;
@@ -264,7 +264,7 @@ private slots:
 
         Target inTerminal = target("org.kde.dolphin", "Dolphin", "dolphin");
         inTerminal.terminalHost = true;
-        QCOMPARE(resolveApp(inTerminal, apps).keysFrom, terminalKeysDiffer ? AppLayer::Terminal : AppLayer::Fallback);
+        QCOMPARE(resolveApp(inTerminal, apps).keysFrom, shiftKeysDiffer ? AppLayer::Terminal : AppLayer::Fallback);
         QCOMPARE(resolveApp(inTerminal, apps).stepsFrom, AppLayer::Fallback);
         QCOMPARE(resolveApp(target("org.kde.dolphin", "Dolphin", "dolphin"), apps).writingProfileFrom,
                  AppLayer::Type);
@@ -308,12 +308,12 @@ private slots:
             }
         }
         AppEntry notes = idApp(QStringLiteral("org.example.notes"), WritingProfile::Personal,
-                               {DeliverySteps{.insert = true, .press = false, .keep = true}, PasteKeyCombo::Terminal});
+                               {DeliverySteps{.insert = true, .press = false, .keep = true}, PasteKeyCombo::WithShift});
         notes.type = AppCategory::Email;
         notes.history = HistoryKeep::Nothing;
         apps.apps = {notes};
 
-        const AppResolution inherited = inheritedFor(notes, apps);
+        const AppResolution inherited = inheritedFor(notes, targetFor(notes), apps);
         QCOMPARE(inherited.type, AppCategory::General);
         QCOMPARE(inherited.writingProfile, WritingProfile::Work);
         QCOMPARE(inherited.writingProfileFrom, AppLayer::Type);
@@ -524,14 +524,14 @@ private slots:
     {
         AppsSettings apps;
         for (AppTypeSettings &type : apps.types) {
-            if (type.type == AppCategory::Terminal) type.pasting = {std::nullopt, PasteKeyCombo::Terminal};
+            if (type.type == AppCategory::Terminal) type.pasting = {std::nullopt, PasteKeyCombo::WithShift};
             if (type.type == AppCategory::AiCoding) type.pasting = {keepOnly, PasteKeyCombo::Standard};
         }
         Target agent = target("org.kde.konsole", "Konsole", "konsole");
         agent.terminalHost = true;
         agent.aiCodingToolActive = true;
         QCOMPARE(resolveApp(agent, apps).type, AppCategory::AiCoding);
-        QCOMPARE(resolveApp(agent, apps).pasting, (PastingChoice{keepOnly, PasteKeyCombo::Terminal}));
+        QCOMPARE(resolveApp(agent, apps).pasting, (PastingChoice{keepOnly, PasteKeyCombo::WithShift}));
         QCOMPARE(resolveApp(agent, apps).stepsFrom, AppLayer::Type);
         QCOMPARE(resolveApp(agent, apps).keysFrom, AppLayer::Terminal);
         QCOMPARE(resolveApp(target("", "Cursor", "cursor"), apps).pasting, (PastingChoice{keepOnly, PasteKeyCombo::Standard}));
@@ -563,7 +563,7 @@ private slots:
         QCOMPARE(stored.value(SettingsKeys::AppsMigrationVersion).toInt(), 2);
         const AppsSettings apps = AppsSettingsCodec::load(stored);
         const DeliverySteps steps{.insert = false, .press = true, .keep = true};
-        const QString terminal = terminalKeysDiffer ? QStringLiteral("terminal") : QStringLiteral("standard");
+        const QString terminal = shiftKeysDiffer ? QStringLiteral("terminal") : QStringLiteral("standard");
         Target agent = target("org.kde.konsole", "Konsole", "konsole");
         agent.terminalHost = true;
         agent.aiCodingToolActive = true;
@@ -610,11 +610,11 @@ private slots:
         // Its Standard keys are kept only where Terminals' would differ.
         QCOMPARE(apps.apps.at(1).pasting,
                  (PastingChoice{DeliverySteps{.insert = true, .press = true, .keep = false},
-                                terminalKeysDiffer ? std::optional(PasteKeyCombo::Standard) : std::nullopt}));
+                                shiftKeysDiffer ? std::optional(PasteKeyCombo::Standard) : std::nullopt}));
         QCOMPARE(appTypeSettings(apps, AppCategory::General).pasting, (PastingChoice{keepOnly, std::nullopt}));
         // On macOS Terminals' keys are the usual ones, so they aren't stored.
         QCOMPARE(appTypeSettings(apps, AppCategory::Terminal).pasting.keys,
-                 terminalKeysDiffer ? std::optional(PasteKeyCombo::Terminal) : std::nullopt);
+                 shiftKeysDiffer ? std::optional(PasteKeyCombo::WithShift) : std::nullopt);
         QVERIFY(!stored.value(SettingsKeys::AppsEntries).toByteArray().contains("\"pasting\""));
         QCOMPARE(stored.value(SettingsKeys::AppsMigrationVersion).toInt(), 2);
         // Once.
@@ -736,7 +736,7 @@ private slots:
         konsole.terminalHost = true;
         const Target firefox = target("firefox", "Firefox", "firefox");
         const Target dolphin = target("org.kde.dolphin", "Dolphin", "dolphin");
-        const QString terminal = terminalKeysDiffer ? QStringLiteral("terminal") : QStringLiteral("standard");
+        const QString terminal = shiftKeysDiffer ? QStringLiteral("terminal") : QStringLiteral("standard");
 
         const auto [withoutGlobal, copying] = migrated(
             {{LegacyPasteRule::Scope::Category, "browser", PasteMethod::StandardPaste, true},
@@ -795,7 +795,7 @@ private slots:
         konsole.terminalHost = true;
         Target agent = konsole;
         agent.aiCodingToolActive = true;
-        const QString terminal = terminalKeysDiffer ? QStringLiteral("terminal") : QStringLiteral("standard");
+        const QString terminal = shiftKeysDiffer ? QStringLiteral("terminal") : QStringLiteral("standard");
         // What resolvePasteRule and TextDelivery did: Kate's Standard paste
         // inserted and pasted, restoring the clipboard after.
         QCOMPARE(steps, keepOnly);
@@ -830,7 +830,7 @@ private slots:
         QSettings settings(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
         AppsSettings apps;
         apps.apps = {idApp(QStringLiteral("org.kde.kate"), WritingProfile::Email,
-                           {DeliverySteps{.insert = false, .press = true, .keep = false}, PasteKeyCombo::Terminal}),
+                           {DeliverySteps{.insert = false, .press = true, .keep = false}, PasteKeyCombo::WithShift}),
                      textApp(QStringLiteral("gmail"), AppCategory::Email, WritingProfile::Personal)};
         apps.types[0].pasting = {};
         apps.types[1].pasting.steps = keepOnly;
@@ -888,12 +888,12 @@ private slots:
         QVERIFY(!removeApp(settings, QStringLiteral("app:gone")));
 
         QCOMPARE(editAppType(settings, AppCategory::Browser, [](AppTypeSettings &type) {
-                     type.pasting.keys = PasteKeyCombo::Terminal;
+                     type.pasting.keys = PasteKeyCombo::WithShift;
                      type.writingProfile = WritingProfile::Work;
                  }),
                  EditRefusal::None);
         QCOMPARE(appTypeSettings(settings.apps, AppCategory::Browser),
-                 (AppTypeSettings{AppCategory::Browser, WritingProfile::Work, {std::nullopt, PasteKeyCombo::Terminal}}));
+                 (AppTypeSettings{AppCategory::Browser, WritingProfile::Work, {std::nullopt, PasteKeyCombo::WithShift}}));
         QCOMPARE(editAppType(settings, AppCategory::Browser,
                              [](AppTypeSettings &type) { type.pasting.steps = DeliverySteps{false, false, false}; }),
                  EditRefusal::Incomplete);

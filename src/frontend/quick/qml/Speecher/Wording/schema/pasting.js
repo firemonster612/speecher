@@ -5,16 +5,17 @@ var mac = os === "osx";
 var windows = os === "windows";
 var linux = !mac && !windows;
 
-// The paste keys, as each platform presses them, and a terminal's. An App
-// or App Type picks between them by id (core's PasteKeyCombo names); macOS
-// presses ⌘V everywhere, so it has no choice.
+// The paste keys, as each platform presses them, and Ctrl+Shift+V. An App
+// or App Type picks between them by id (core's PasteKeyCombo names, where
+// "terminal" is Ctrl+Shift+V); macOS presses ⌘V everywhere, so it has no
+// choice.
 var pasteKeys = mac ? "⌘V" : "Ctrl+V";
-var terminalKeys = "Ctrl+Shift+V";
+var shiftKeys = "Ctrl+Shift+V";
 var keyChoices = mac ? [] : [
     { id: "standard", label: pasteKeys, icon: "keyboard" },
-    { id: "terminal", label: terminalKeys, icon: "square-terminal" }
+    { id: "terminal", label: shiftKeys, icon: "keyboard" }
 ];
-function keysLabel(id) { return id === "terminal" && !mac ? terminalKeys : pasteKeys }
+function keysLabel(id) { return id === "terminal" && !mac ? shiftKeys : pasteKeys }
 
 // What the delivery steps rely on here, by the need ids System.deliverySteps
 // names: label names it in every status ("Virtual keyboard: Not set up"),
@@ -79,7 +80,7 @@ function stepsText(steps) {
 // editor and Pasting's list say it: the steps that can run on this
 // computer, in order ("Insert, else press Ctrl+V, keep a copy"), then those
 // that can't yet; "No delivery here yet" where none can. keys is the paste
-// keys' id, named on a Press that can't run when they're a terminal's.
+// keys' id, named on a Press that can't run when they're Ctrl+Shift+V.
 // terminalWins marks an App Type whose apps in a terminal take Terminals'
 // Pasting instead.
 function pastingResult(steps, keys, terminalWins) {
@@ -93,7 +94,7 @@ function pastingResult(steps, keys, terminalWins) {
     // A Press that can't run still names keys of its own, which may be why
     // the app is listed: "Press (Ctrl+Shift+V)".
     const waiting = route.filter(id => !usable.includes(id))
-        .map(id => stepShort[id] + (id === "press" && keys === "terminal" && !mac ? " (" + terminalKeys + ")" : ""));
+        .map(id => stepShort[id] + (id === "press" && keys === "terminal" && !mac ? " (" + shiftKeys + ")" : ""));
     const lines = usable.length ? [parts.join(", "), waiting.length ? waiting.join(" and ") + " can't run here yet" : ""]
                                 : ["No delivery here yet: " + waiting.join(" and ") + " can't run"];
     return lines.concat([terminalWins ? "Apps in a terminal paste like Terminals" : ""]).filter(s => s).join(". ");

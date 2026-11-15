@@ -366,7 +366,7 @@ private slots:
             gmail.matches = {{AppMatchKind::WindowTitle, QStringLiteral("Gmail")}};
             gmail.pasting.steps = DeliverySteps{.insert = false, .press = false, .keep = true};
             draft.apps.apps = {test::idApp(QStringLiteral("org.kde.kate"), WritingProfile::Personal,
-                                           {DeliverySteps{.insert = true, .press = true, .keep = false}, PasteKeyCombo::Terminal}),
+                                           {DeliverySteps{.insert = true, .press = true, .keep = false}, PasteKeyCombo::WithShift}),
                                gmail};
             draft.apps.apps.first().name = QStringLiteral("Kate");
             // Privacy & data lists an app kept out of History.
@@ -1536,7 +1536,7 @@ private slots:
         QQuickItem *app = nullptr;
         QTRY_VERIFY((app = findItem(main->contentItem(), QStringLiteral("differently_appentry:app:org.example.FooEditor"))));
         QVERIFY(findItem(main->contentItem(), QStringLiteral("differently_apptype:ai_coding")));
-        QVERIFY(findItem(main->contentItem(), QStringLiteral("differently_apptype:terminal")) == nullptr || terminalKeysDiffer);
+        QVERIFY(findItem(main->contentItem(), QStringLiteral("differently_apptype:terminal")) == nullptr || shiftKeysDiffer);
         // Following them is no different from them.
         QVERIFY(!findItem(main->contentItem(), QStringLiteral("differently_appentry:app:org.example.Steps")));
         QQuickItem *result = findItem(app, QStringLiteral("appLinkDetail"));
@@ -1583,7 +1583,9 @@ private slots:
         runSteps({
             {QStringLiteral("an App's Pasting menu"), [&] {
                  navigation->goToRow(QStringLiteral("apps"), QStringLiteral("appentry:app:org.example.FooEditor"));
-                 QTRY_VERIFY((pasting = findItem(main->contentItem(), QStringLiteral("appPasting"))));
+                 QQuickItem *app = nullptr;
+                 QTRY_VERIFY((app = findItem(main->contentItem(), QStringLiteral("appentry:app:org.example.FooEditor"))));
+                 QTRY_VERIFY((pasting = findItem(app->parentItem(), QStringLiteral("appPasting"))));
                  QTRY_VERIFY(pasting->isVisible());
                  QVERIFY(QMetaObject::invokeMethod(popupOf(pasting), "open"));
                  QTRY_VERIFY(popupOf(pasting)->property("opened").toBool());
@@ -1720,7 +1722,7 @@ private slots:
         QMetaObject::invokeMethod(search, "open");
         const auto results = searchResults(search, QStringLiteral("fooeditor"));
         QVERIFY(!results.isEmpty());
-        QCOMPARE(results.first(), std::make_pair(rowId, QStringLiteral("Apps, Your apps")));
+        QCOMPARE(results.first(), std::make_pair(rowId, QStringLiteral("Apps, App types")));
         // The old words still find where the settings went.
         const auto defaults = searchResults(search, QStringLiteral("unrecognized"));
         QVERIFY(std::any_of(defaults.cbegin(), defaults.cend(),
@@ -1865,6 +1867,65 @@ private slots:
         QVERIFY(apps.scanning());
         QTRY_VERIFY_WITH_TIMEOUT(!apps.scanning(), 10000);
         QCOMPARE(scanning.count(), 2);
+    }
+
+    // Each App is listed under its type, and those matched only by window
+    // title after every type. A type lists the apps Speecher puts in it that
+    // have nothing of their own, and picking one gives it its own entry,
+    // open under its type.
+    void appsListUnderTheirTypes()
+    {
+        ApplicationController controller(true);
+        controller.settings()->edit([](AppSettings &draft) {
+            AppEntry mail = test::idApp(QStringLiteral("org.example.Post"));
+            mail.type = AppCategory::Email;
+            const AppEntry gmail{QStringLiteral("app:gmail"), QStringLiteral("Gmail"), {},
+                                 {{AppMatchKind::WindowTitle, QStringLiteral("Gmail")}}};
+            draft.apps.apps = {gmail, mail};
+            return true;
+        });
+        DictationRecord seen;
+        seen.appName = QStringLiteral("Wave Browser");
+        seen.applicationId = QStringLiteral("org.example.Wave");
+        controller.seenApps()->record(seen);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"),
+                                                                                QStringLiteral("Navigation"));
+        navigation->goToRow(QStringLiteral("apps"), QStringLiteral("apptype:browser"));
+        const auto top = [&](const QString &name) {
+            QQuickItem *row = findItem(main->contentItem(), name);
+            return row ? row->mapToItem(main->contentItem(), QPointF()).y() : -1.0;
+        };
+        // Found afresh each time: the list may make a row again as the page
+        // scrolls to it.
+        const auto rowOf = [&](const QString &name) {
+            QQuickItem *head = findItem(main->contentItem(), name);
+            return head ? head->parentItem() : nullptr;
+        };
+        const auto isOpen = [&](const QString &name) { return rowOf(name) && rowOf(name)->property("open").toBool(); };
+        QTRY_VERIFY(top(QStringLiteral("apptype:email")) >= 0);
+        QVERIFY(top(QStringLiteral("apptype:email")) < top(QStringLiteral("appentry:app:org.example.Post")));
+        QVERIFY(top(QStringLiteral("appentry:app:org.example.Post")) < top(QStringLiteral("apptype:office")));
+        // The list eases to its full height, which moves the rows after it.
+        QTRY_VERIFY(top(QStringLiteral("apptype:general")) < top(QStringLiteral("appentry:app:gmail")));
+
+        QTRY_VERIFY(isOpen(QStringLiteral("apptype:browser")));
+        QQuickItem *wave = nullptr;
+        QTRY_VERIFY(rowOf(QStringLiteral("apptype:browser"))
+                    && (wave = findItem(rowOf(QStringLiteral("apptype:browser")), QStringLiteral("appDetected_Wave Browser"))));
+        QMetaObject::invokeMethod(wave, "clicked");
+        const QList<AppEntry> apps = controller.settings()->snapshot().apps.apps;
+        QCOMPARE(apps.size(), 3);
+        QCOMPARE(apps.last().matches, (QList<AppMatch>{{AppMatchKind::Id, QStringLiteral("org.example.Wave")}}));
+        QTRY_VERIFY(isOpen(QStringLiteral("appentry:") + apps.last().id));
+        QTRY_VERIFY(top(QStringLiteral("apptype:browser")) < top(QStringLiteral("appentry:") + apps.last().id)
+                    && top(QStringLiteral("appentry:") + apps.last().id) < top(QStringLiteral("apptype:email")));
+        QTRY_VERIFY(!findItem(main->contentItem(), QStringLiteral("appDetected_Wave Browser")));
     }
 
     // Typing in an App's match field keeps every character, the cursor
@@ -2573,8 +2634,10 @@ private slots:
                  QStringLiteral("Only with Work"));
 
         navigation->goToRow(QStringLiteral("apps"), QStringLiteral("appentry:app:org.kde.kate"));
+        QQuickItem *kate = nullptr;
+        QTRY_VERIFY((kate = findItem(main->contentItem(), QStringLiteral("appentry:app:org.kde.kate"))));
         QQuickItem *show = nullptr;
-        QTRY_VERIFY((show = findItem(main->contentItem(), QStringLiteral("appVocabulary"))));
+        QTRY_VERIFY((show = findItem(kate->parentItem(), QStringLiteral("appVocabulary"))));
         QMetaObject::invokeMethod(show, "clicked");
         QTRY_COMPARE(navigation->current(), QStringLiteral("vocabulary"));
         QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("vocab:learned-kate")));

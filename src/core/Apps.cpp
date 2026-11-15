@@ -164,8 +164,8 @@ QList<AppTypeSettings> defaultAppTypeSettings()
         switch (type) {
         case AppCategory::Terminal:
             settings.writingProfile = WritingProfile::Work;
-            if (terminalKeysDiffer) {
-                settings.pasting.keys = PasteKeyCombo::Terminal;
+            if (shiftKeysDiffer) {
+                settings.pasting.keys = PasteKeyCombo::WithShift;
             }
             break;
         case AppCategory::Office:
@@ -415,9 +415,8 @@ Target targetFor(const AppEntry &app)
     return target;
 }
 
-AppResolution inheritedFor(const AppEntry &app, const AppsSettings &apps)
+AppResolution inheritedFor(const AppEntry &app, const Target &target, const AppsSettings &apps)
 {
-    const Target target = targetFor(app);
     const auto without = [&](auto clear) {
         AppsSettings changed = apps;
         for (AppEntry &entry : changed.apps) {

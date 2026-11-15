@@ -63,8 +63,8 @@ void AtSpiTargetProvider::capture(QObject *context, std::function<void(const Tar
 }
 
 // Accessibility found no focus target. Ask the compositor which window is
-// active so a terminal that never reached the a11y bus still resolves to the
-// terminal paste rule instead of the global blind-paste chord.
+// active so a terminal that never reached the a11y bus still pastes the way
+// Terminals do, not with the usual paste keys.
 void AtSpiTargetProvider::compositorFallbackTarget(std::function<void(const Target &)> done)
 {
     if (!m_activeWindow) {
