@@ -776,6 +776,28 @@ bool HistoryStore::syncRecordingFile(qint64 id)
     return true;
 }
 
+void HistoryStore::syncRecordingFiles()
+{
+    QList<qint64> changed;
+    {
+        QSqlQuery select(QSqlDatabase::database(m_connection));
+        if (!m_open
+            || !select.exec(QStringLiteral("SELECT id, transcript_path, transcript_mtime FROM entries"
+                                           " WHERE kind = 'recording' AND finished_at IS NOT NULL"))) {
+            return;
+        }
+        while (select.next()) {
+            const QVariant now = changedAt(select.value(1).toString());
+            if (!now.isNull() && select.value(2) != now) {
+                changed.append(select.value(0).toLongLong());
+            }
+        }
+    }
+    for (const qint64 id : changed) {
+        syncRecordingFile(id);
+    }
+}
+
 void HistoryStore::finishUnfinishedRecordings()
 {
     struct Unfinished {

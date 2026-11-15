@@ -97,6 +97,99 @@ QByteArray linesText(const QList<HistoryLine> &lines)
 
 } // namespace
 
+QVariant HistoryResults::data(const QModelIndex &index, int role) const
+{
+    if (!checkIndex(index, CheckIndexOption::IndexIsValid)) {
+        return {};
+    }
+    const QVariant &row = m_rows.at(index.row());
+    switch (role) {
+    case EntryRole:
+        return row;
+    case DayRole:
+        return row.toMap().value(QStringLiteral("day"));
+    default:
+        return {};
+    }
+}
+
+QHash<int, QByteArray> HistoryResults::roleNames() const
+{
+    return {{EntryRole, "entry"}, {DayRole, "day"}};
+}
+
+int HistoryResults::indexOf(qint64 id) const
+{
+    for (int i = 0; i < count(); ++i) {
+        if (m_rows.at(i).toMap().value(QStringLiteral("id")).toLongLong() == id) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void HistoryResults::reset(QVariantList rows)
+{
+    const int before = count();
+    beginResetModel();
+    m_rows = std::move(rows);
+    endResetModel();
+    if (count() != before) {
+        emit countChanged();
+    }
+}
+
+void HistoryResults::append(const QVariantList &rows)
+{
+    if (rows.isEmpty()) {
+        return;
+    }
+    beginInsertRows({}, count(), count() + int(rows.size()) - 1);
+    m_rows.append(rows);
+    endInsertRows();
+    emit countChanged();
+}
+
+void HistoryResults::update(QVariantList rows)
+{
+    // Both newest first, by id, as History finds them: one walk down both
+    // removes the rows gone, inserts the new ones and updates the rest.
+    const auto idOf = [](const QVariant &row) { return row.toMap().value(QStringLiteral("id")).toLongLong(); };
+    const int before = count();
+    int i = 0;
+    for (const QVariant &row : std::as_const(rows)) {
+        const qint64 id = idOf(row);
+        int gone = i;
+        while (gone < count() && idOf(m_rows.at(gone)) > id) {
+            ++gone;
+        }
+        if (gone > i) {
+            beginRemoveRows({}, i, gone - 1);
+            m_rows.remove(i, gone - i);
+            endRemoveRows();
+        }
+        if (i < count() && idOf(m_rows.at(i)) == id) {
+            if (m_rows.at(i) != row) {
+                m_rows[i] = row;
+                emit dataChanged(index(i), index(i));
+            }
+        } else {
+            beginInsertRows({}, i, i);
+            m_rows.insert(i, row);
+            endInsertRows();
+        }
+        ++i;
+    }
+    if (i < count()) {
+        beginRemoveRows({}, i, count() - 1);
+        m_rows.remove(i, count() - i);
+        endRemoveRows();
+    }
+    if (count() != before) {
+        emit countChanged();
+    }
+}
+
 QuickHistory::QuickHistory(ApplicationController *controller, QObject *parent)
     : QObject(parent)
     , m_controller(controller)
@@ -108,8 +201,8 @@ QuickHistory::QuickHistory(ApplicationController *controller, QObject *parent)
     m_searchDelay.setInterval(searchDelayMs);
     connect(&m_searchDelay, &QTimer::timeout, this, [this] {
         emit searchingChanged();
-        syncRecordingFiles();
-        search(pageSize);
+        m_controller->history()->syncRecordingFiles();
+        m_results.reset(search(pageSize));
     });
     m_purge.setSingleShot(true);
     m_purge.setInterval(undoMs);
@@ -117,7 +210,7 @@ QuickHistory::QuickHistory(ApplicationController *controller, QObject *parent)
     // A new entry, a delete or a clear, or a renamed profile the filter and
     // the rows name: the same query, as many entries as were showing.
     const auto refresh = [this] {
-        search(std::max<int>(pageSize, int(m_results.size())));
+        m_results.update(search(std::max(pageSize, m_results.count())));
         emit changed();
     };
     connect(controller->history(), &HistoryStore::changed, this, refresh);
@@ -126,7 +219,7 @@ QuickHistory::QuickHistory(ApplicationController *controller, QObject *parent)
             refresh();
         }
     });
-    search(pageSize);
+    m_results.reset(search(pageSize));
 }
 
 QuickHistory::~QuickHistory()
@@ -166,29 +259,19 @@ HistoryQuery QuickHistory::currentQuery() const
     return query;
 }
 
-void QuickHistory::search(int limit)
+QVariantList QuickHistory::search(int limit)
 {
     HistoryQuery query = currentQuery();
     query.limit = limit;
     const HistoryStore *history = m_controller->history();
-    m_results.clear();
+    QVariantList results;
     const QStringList terms = historySearchTerms(query.text);
     for (const HistoryHit &hit : history->search(query)) {
-        m_results.append(resultOf(hit, terms));
+        results.append(resultOf(hit, terms));
     }
     m_matches = history->count(query);
-    emit resultsChanged();
-}
-
-void QuickHistory::syncRecordingFiles()
-{
-    HistoryStore *history = m_controller->history();
-    HistoryQuery recordings;
-    recordings.kinds = {HistoryKind::Recording};
-    recordings.limit = history->count(recordings);
-    for (const HistoryHit &hit : history->search(recordings)) {
-        history->syncRecordingFile(hit.entry.id);
-    }
+    emit matchesChanged();
+    return results;
 }
 
 void QuickHistory::fetchMore()
@@ -198,12 +281,13 @@ void QuickHistory::fetchMore()
     }
     HistoryQuery query = currentQuery();
     query.limit = pageSize;
-    query.beforeId = m_results.last().toMap().value(QStringLiteral("id")).toLongLong();
+    query.beforeId = results().last().toMap().value(QStringLiteral("id")).toLongLong();
     const QStringList terms = historySearchTerms(query.text);
+    QVariantList page;
     for (const HistoryHit &hit : m_controller->history()->search(query)) {
-        m_results.append(resultOf(hit, terms));
+        page.append(resultOf(hit, terms));
     }
-    emit resultsChanged();
+    m_results.append(page);
 }
 
 QVariantList QuickHistory::recent(const QString &kind, int limit) const

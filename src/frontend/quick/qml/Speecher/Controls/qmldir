@@ -5,6 +5,7 @@ Badge 1.0 Badge.qml
 BrandMark 1.0 BrandMark.qml
 Button 1.0 Button.qml
 Card 1.0 Card.qml
+CardSlice 1.0 CardSlice.qml
 Caret 1.0 Caret.qml
 CheckBox 1.0 CheckBox.qml
 Chip 1.0 Chip.qml

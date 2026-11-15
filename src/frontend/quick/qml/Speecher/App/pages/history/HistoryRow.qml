@@ -125,7 +125,7 @@ Column {
                 model: root.recording ? root.entry.lines : []
                 LinkedText {
                     required property var modelData
-                    width: parent.width
+                    width: parent ? parent.width : 0
                     plainText: T.lineClock(modelData.atMs) + " " + modelData.speaker + ": " + modelData.text
                     link: T.lineClock(modelData.atMs)
                     variant: "small"

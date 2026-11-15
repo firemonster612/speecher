@@ -103,10 +103,12 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   text); `pages/home/words.js` words it.
 - `History` is core's `HistoryStore` as the History page shows it:
   writing `query` ({ text, kind, app, profile, when }) searches once
-  typing pauses, and `results` come a page at a time (`fetchMore()`),
-  newest first, each match in `<b>` over HTML-escaped text, so dictated
-  markup shows as typed; a search first takes each Recording's lines from
-  its file again where that was edited. `entry(id)` reads one whole;
+  typing pauses, and `results`, a list model with `entry` and `day`
+  roles, come a page at a time (`fetchMore()` adds rows), newest first,
+  each match in `<b>` over HTML-escaped text, so dictated markup shows as
+  typed; a search first takes each Recording's lines from its file again
+  where that was edited. The page lists them as `Page`'s list, each day's
+  rows on `CardSlice`s. `entry(id)` reads one whole;
   `copy`, `pasteAgain`, `play` and `remove`/`undo` act on one; `countIn`
   and `clear` take a span (hour, today, 7d, all), which History's Clear…
   and General's Clear history both ask about through `ClearConfirm`, which
@@ -716,7 +718,8 @@ control fades to `Theme.disabledOpacity`.
 
 Layout and rows:
 
-- `Page { title; subtitle; headerActions; path; pathPicked(id); backText; backPicked() }`: a scrolling page. With no title the page brings its own heading. `path` is the pages above it (`[{ id, title }]`), which lead its title as links; Main sets it from the schema and opens the page a step asks for. `backText` is the way back above the title, which Main sets from `Navigation.returnTo`.
+- `Page { title; subtitle; headerActions; path; pathPicked(id); backText; backPicked() }`: a scrolling page. With no title the page brings its own heading. `path` is the pages above it (`[{ id, title }]`), which lead its title as links; Main sets it from the schema and opens the page a step asks for. `backText` is the way back above the title, which Main sets from `Navigation.returnTo`. A page with more rows than it should build at once sets `listModel`, `listDelegate` and `listSection`: it then scrolls as a ListView (`list`), its content the list's header, and builds only the rows near the view. A row spans the list and centres its content `columnWidth` wide. A list's positions start at its `originY`, not 0, so scroll through `flickable` and `reveal(item)` rather than setting `contentY` to 0.
+- `CardSlice { first; last }`: one row's stretch of a card, for a list row; stacked, slices read as one card.
 - `Section { title; caption; actions; plain; cardPadding }`: a heading over a raised card. Two side by side line up with `minimumHeaderHeight`/`minimumCardHeight` set from each other's `naturalHeaderHeight`/`naturalCardHeight`. Sections stacked outside a Page (in a Reveal or a Switcher view) go in a `Column { spacing: Theme.sectionGap }`.
 - `Card`: the raised card on its own. `Surface`: a floating panel (menus, palettes). `Plate`: the recessed panel a page's or setup step's picture sits on.
 - `SettingRow { title; help; helpLink; iconName; stacked; clickable; trailingText; shown; first; highlight() }`: one setting with its control on the right; `helpLink` makes that part of the help a link (`helpLinkActivated(at)`).
