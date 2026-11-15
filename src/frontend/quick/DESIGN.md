@@ -103,9 +103,12 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   text); `pages/home/words.js` words it.
 - `History` is core's `HistoryStore` as the History page shows it:
   writing `query` ({ text, kind, app, profile, when }) searches once
-  typing pauses, and `results` come a page at a time (`fetchMore()`),
-  newest first, each match in `<b>` over HTML-escaped text, so dictated
-  markup shows as typed; a search first takes each Recording's lines from
+  typing pauses, and `results`, a list model with `entry` and `day`
+  roles, come a page at a time (`fetchMore()` adds rows), newest first,
+  each match in `<b>` over HTML-escaped text, so dictated markup shows as
+  typed. The page lists them through `Page`'s `listModel`, which scrolls
+  the page as a ListView and builds only the rows near the view, each
+  day's rows on `CardSlice`s that read as one card; a search first takes each Recording's lines from
   its file again where that was edited. `entry(id)` reads one whole;
   `copy`, `pasteAgain`, `play` and `remove`/`undo` act on one; `countIn`
   and `clear` take a span (hour, today, 7d, all), which History's Clear…

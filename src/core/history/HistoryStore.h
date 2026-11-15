@@ -80,6 +80,9 @@ public:
     // …"), which leaves History's lines as they were; true while they are
     // in step, or there is no file to be in step with.
     bool syncRecordingFile(qint64 id);
+    // syncRecordingFile for every finished Recording whose file changed
+    // since, checking each file's time in one pass, as a search does first.
+    void syncRecordingFiles();
     // Sets a dictation's, edit's or file's Refined Transcript, keeping its raw
     // one, as Refine again's Keep this does. False for an entry without text.
     bool setText(qint64 id, const QString &text);

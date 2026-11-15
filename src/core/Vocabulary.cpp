@@ -1,6 +1,7 @@
 #include "core/Vocabulary.h"
 
 #include <QFile>
+#include <QHash>
 #include <QRegularExpression>
 #include <QSet>
 #include <QStringList>
@@ -146,6 +147,8 @@ QList<VocabularyEntry> normalizeVocabularyEntries(const QList<VocabularyEntry> &
 {
     QList<VocabularyEntry> spellings;
     QList<VocabularyEntry> replacements;
+    // Each spelling's place in spellings, by its case-folded term.
+    QHash<QString, qsizetype> placeOf;
     for (VocabularyEntry entry : entries) {
         entry.source = entry.source.simplified();
         if (entry.source.isEmpty()) {
@@ -171,12 +174,13 @@ QList<VocabularyEntry> normalizeVocabularyEntries(const QList<VocabularyEntry> &
             replacements.append(entry);
             continue;
         }
-        auto duplicate = std::find_if(spellings.begin(), spellings.end(), [&entry](const VocabularyEntry &existing) {
-            return existing.term.compare(entry.term, Qt::CaseInsensitive) == 0;
-        });
-        if (duplicate == spellings.end()) {
+        const QString key = entry.term.toCaseFolded();
+        const auto place = placeOf.constFind(key);
+        if (place == placeOf.cend()) {
+            placeOf.insert(key, spellings.size());
             spellings.append(entry);
         } else {
+            VocabularyEntry *duplicate = &spellings[*place];
             duplicate->starred = duplicate->starred || entry.starred;
             duplicate->frequency = qMax(duplicate->frequency, entry.frequency);
             duplicate->lastUsedMs = qMax(duplicate->lastUsedMs, entry.lastUsedMs);

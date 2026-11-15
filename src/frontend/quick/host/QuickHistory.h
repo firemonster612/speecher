@@ -4,6 +4,7 @@
 #include "core/history/HistoryEntry.h"
 #include "frontend/quick/host/HostSingleton.h"
 
+#include <QAbstractListModel>
 #include <QObject>
 #include <QQmlEngine>
 #include <QTimer>
@@ -15,6 +16,39 @@ class QMediaPlayer;
 namespace speecher {
 
 class ApplicationController;
+
+// History's results as a list model, so a list view builds only the rows it
+// shows and a next page adds rows instead of replacing them all. Each row
+// has entry, one result as QuickHistory's results describes it, and its
+// day, for the view's sections.
+class HistoryResults : public QAbstractListModel {
+    Q_OBJECT
+    QML_ANONYMOUS
+    Q_PROPERTY(int count READ count NOTIFY countChanged)
+
+public:
+    enum Role { EntryRole = Qt::UserRole + 1, DayRole };
+    using QAbstractListModel::QAbstractListModel;
+
+    int count() const { return int(m_rows.size()); }
+    const QVariantList &rows() const { return m_rows; }
+    int rowCount(const QModelIndex &parent = {}) const override { return parent.isValid() ? 0 : count(); }
+    QVariant data(const QModelIndex &index, int role) const override;
+    QHash<int, QByteArray> roleNames() const override;
+    void reset(QVariantList rows);
+    void append(const QVariantList &rows);
+    // Replaces the rows with rows the same query found again, after a new
+    // entry or a delete: removes the rows gone, inserts the new ones and
+    // updates the rest in place, so a view keeps its place and its rows.
+    // Rows in another order reset.
+    void update(QVariantList rows);
+
+signals:
+    void countChanged();
+
+private:
+    QVariantList m_rows;
+};
 
 // The UI's History singleton: what the History page lists and searches, an
 // entry in full, and what the page does with one (copy, Paste Again, play,
@@ -40,7 +74,8 @@ class QuickHistory final : public QObject, public HostSingleton<QuickHistory> {
     // finishedAt), ending (a finished Recording's, as recordingEndJson),
     // lines (a Recording's lines that match the search, at most three: {
     // atMs, speaker, text }) }].
-    Q_PROPERTY(QVariantList results READ results NOTIFY resultsChanged)
+    // A list model (HistoryResults) with entry and day roles, and count.
+    Q_PROPERTY(speecher::HistoryResults *results READ resultsModel CONSTANT)
     // How many the query finds on every page.
     Q_PROPERTY(int matches READ matches NOTIFY resultsChanged)
     // A changed query waits to be searched.
@@ -67,10 +102,11 @@ public:
 
     QVariantMap query() const { return m_query; }
     void setQuery(const QVariantMap &query);
-    QVariantList results() const { return m_results; }
+    const QVariantList &results() const { return m_results.rows(); }
+    HistoryResults *resultsModel() { return &m_results; }
     int matches() const { return m_matches; }
     // Whether the query finds more than results holds yet.
-    bool hasMore() const { return m_results.size() < m_matches; }
+    bool hasMore() const { return m_results.count() < m_matches; }
     bool searching() const { return m_searchDelay.isActive(); }
     int kept() const;
     int keptText() const;
@@ -149,10 +185,9 @@ signals:
 
 private:
     HistoryQuery currentQuery() const;
-    void search(int limit);
-    // Takes each finished Recording's lines from its file again where the
-    // file changed, so a search finds the words the file now holds.
-    void syncRecordingFiles();
+    // With again, the same query is searched again: the rows are updated
+    // in place rather than replaced.
+    void search(int limit, bool again = false);
     // The stored entry, as entry reads it: a Recording's lines first taken
     // from its file where it changed.
     std::optional<HistoryEntry> syncedEntry(qint64 id) const;
@@ -161,7 +196,7 @@ private:
 
     ApplicationController *m_controller;
     QVariantMap m_query;
-    QVariantList m_results;
+    HistoryResults m_results;
     int m_matches = 0;
     QTimer m_searchDelay;
     QTimer m_purge;

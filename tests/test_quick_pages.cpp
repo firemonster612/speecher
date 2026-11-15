@@ -23,6 +23,7 @@
 #include "dictation/SelectionEditPresentation.h"
 #include "frontend/quick/host/QuickApps.h"
 #include "frontend/quick/host/QuickFrontEnd.h"
+#include "frontend/quick/host/QuickHistory.h"
 #include "frontend/quick/host/QuickRecording.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "frontend/quick/host/QuickSystem.h"
@@ -2106,6 +2107,71 @@ private slots:
         QTRY_VERIFY((field = findItem(main->contentItem(), QStringLiteral("historySearch"))));
         QTRY_COMPARE(field->property("text").toString(), QStringLiteral("quarterly deck"));
         QCOMPARE(navigation->pendingRow(), QString());
+    }
+
+    // A long History builds only the rows near the view, however far it
+    // scrolls, and scrolling to the end loads every page.
+    void historyBuildsOnlyRowsInView()
+    {
+        qputenv("SPEECHER_INSIGHTS_TODAY", "2026-11-08");
+        const auto unpin = qScopeGuard([] { qunsetenv("SPEECHER_INSIGHTS_TODAY"); });
+        ApplicationController controller(true);
+        controller.history()->clear({}, {}, true);
+        constexpr int kept = 1000;
+        QList<HistoryEntry> entries;
+        for (int i = 0; i < kept; ++i) {
+            HistoryEntry entry;
+            entry.kind = HistoryKind::Dictation;
+            entry.stats.finishedAt = QDateTime(QDate(2026, 11, 8), QTime(9, 0)).addSecs(-600 * (kept - i));
+            entry.stats.audioMs = 5000;
+            entry.stats.words = 3;
+            entry.stats.appName = QStringLiteral("Slack");
+            entry.kept = HistoryKeep::Text;
+            entry.text = QStringLiteral("note %1").arg(i);
+            entry.rawText = entry.text;
+            entries.append(entry);
+        }
+        QVERIFY(controller.history()->addAll(entries));
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("historyKeeps"), QStringLiteral("text"));
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main && QTest::qWaitForWindowExposed(main));
+        auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"),
+                                                                                QStringLiteral("Navigation"));
+        auto *history = qmlEngine(main)->singletonInstance<QuickHistory *>(QStringLiteral("Speecher.Backend"),
+                                                                          QStringLiteral("History"));
+        const auto built = [main] {
+            int count = 0;
+            QList<QQuickItem *> items{main->contentItem()};
+            while (!items.isEmpty()) {
+                QQuickItem *item = items.takeLast();
+                items += item->childItems();
+                count += item->objectName().startsWith(QLatin1String("historyRow_"));
+            }
+            return count;
+        };
+        navigation->go(QStringLiteral("history"));
+        QTRY_VERIFY(built() > 0);
+        QTRY_VERIFY2(built() < 100, qPrintable(QString::number(built())));
+
+        QQuickItem *page = nullptr;
+        QTRY_VERIFY((page = findItem(main->contentItem(), QStringLiteral("pageScroll")))
+                    && page->property("count").toInt() > 0);
+        // To the end, again and again, as each page comes in.
+        QTRY_VERIFY_WITH_TIMEOUT(([page, history] {
+                                     const qreal end = page->property("originY").toReal()
+                                                       + page->property("contentHeight").toReal() - page->height();
+                                     page->setProperty("contentY", end);
+                                     return history->results().size() == kept;
+                                 }()),
+                                 20000);
+        const qint64 oldest = history->results().last().toMap().value(QStringLiteral("id")).toLongLong();
+        QMetaObject::invokeMethod(page, "positionViewAtEnd");
+        QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("historyRow_%1").arg(oldest)));
+        QTRY_VERIFY2(built() < 100, qPrintable(QString::number(built())));
     }
 
     // History in each of its states: off, keeping stats, nothing kept yet,

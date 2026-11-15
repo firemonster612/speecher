@@ -34,39 +34,33 @@ Page {
     property bool askKeepText: false
     // The last delete's Undo, while it can still be undone.
     property int lastUndo: -1
-    // The row items by their place in History.results, for Up and Down.
-    property var rowItems: ({})
     // The file or Recording open in the reader, 0 for none, and the line it
     // opened at.
     property real readingId: 0
     property real readAt: -1
-
-    // The results a day at a time: [{ day, rows: [{ entry, index }] }],
-    // index being the entry's place in History.results.
-    readonly property var days: {
-        const groups = []
-        History.results.forEach((entry, index) => {
-            if (!groups.length || groups[groups.length - 1].day !== entry.day) groups.push({ day: entry.day, rows: [] })
-            groups[groups.length - 1].rows.push({ entry: entry, index: index })
-        })
-        return groups
+    // The row at the top of the view when the reader opened, to come back
+    // to; -1 while the top of the page showed.
+    property int _readFrom: -1
+    onReadingIdChanged: {
+        if (readingId) _readFrom = list.indexAt(list.width / 2, list.contentY + 1)
+        else if (_readFrom >= 0) Qt.callLater(() => page.list.positionViewAtIndex(page._readFrom, ListView.Beginning))
     }
 
-    function read(id, atMs) {
-        const entry = History.results.find(r => r.id === id) || History.entry(id)
-        if (entry.live) {
+    // entry: the one listed, or else History.entry(id) reads it.
+    function read(id, atMs, entry) {
+        if ((entry || History.entry(id)).live) {
             Navigation.follow("recordings", "recordingControl")
             return
         }
         readAt = atMs
         readingId = id
     }
-    function remove(id) {
+    function remove(id, listed) {
         if (openId === id) openId = 0
-        const entry = History.results.find(r => r.id === id) || History.entry(id)
+        const entry = listed || History.entry(id)
         // A Recording asks first, in its reader, as it may take its files.
         if (entry.kind === "recording") {
-            read(id, -1)
+            read(id, -1, entry)
             reader.askDelete = true
             return
         }
@@ -82,10 +76,10 @@ Page {
         if (lastUndo >= 0 && History.undo(lastUndo)) lastUndo = -1
     }
     function stepFocus(index, step) {
-        const row = rowItems[index + step]
-        if (row) {
-            row.rowItem.forceActiveFocus()
-            page.reveal(row)
+        const next = page.list.itemAtIndex(index + step) as HistoryListRow
+        if (next) {
+            next.row.rowItem.forceActiveFocus()
+            page.reveal(next.row)
         }
     }
     function clearSearch() {
@@ -124,7 +118,7 @@ Page {
         target: page.flickable
         function onContentYChanged() {
             const flick = page.flickable
-            if (flick.contentY + flick.height > flick.contentHeight - 600) History.fetchMore()
+            if (flick.contentY - flick.originY + flick.height > flick.contentHeight - 600) History.fetchMore()
         }
     }
     Binding {
@@ -135,6 +129,23 @@ Page {
     findField: readingId ? reader.findField : listing ? search : null
     Shortcut { sequences: ["/"]; enabled: page.listing && !page.readingId; onActivated: search.forceActiveFocus() }
     Shortcut { sequences: [StandardKey.Undo]; enabled: page.lastUndo >= 0; onActivated: page.undo() }
+
+    // The results, newest first, each day's on a card. Only the rows near
+    // the view are built, so a long History scrolls as a short one does.
+    // While the reader shows, in the list's place, there are none.
+    listModel: readingId ? null : History.results
+    listSection: "day"
+    listDelegate: HistoryListRow {
+        width: page.list.width
+        contentWidth: page.contentWidth
+        open: page.openId === entry.id
+        onToggled: page.openId = open ? 0 : entry.id
+        onReadRequested: atMs => page.read(entry.id, atMs, entry)
+        onDeleteRequested: page.remove(entry.id, entry)
+        onStepFocus: step => page.stepFocus(index, step)
+        // The row with focus stays built while it scrolls away.
+        onFocused: page.list.currentIndex = index
+    }
 
     headerActions: MenuButton {
         objectName: "historyClear"
@@ -190,33 +201,6 @@ Page {
                 }
             }
 
-            Repeater {
-                model: page.days
-                Section {
-                    id: day
-                    required property var modelData
-                    title: T.dayHeading(modelData.day, Insights.today)
-                    Repeater {
-                        model: day.modelData.rows
-                        HistoryRow {
-                            id: historyRow
-                            required property var modelData
-                            required property int index
-                            readonly property int place: modelData.index
-                            entry: modelData.entry
-                            first: index === 0
-                            open: page.openId === entry.id
-                            onToggled: page.openId = open ? 0 : entry.id
-                            onReadRequested: atMs => page.read(entry.id, atMs)
-                            onDeleteRequested: page.remove(entry.id)
-                            onStepFocus: step => page.stepFocus(place, step)
-                            Component.onCompleted: page.rowItems[place] = historyRow
-                            Component.onDestruction: if (page.rowItems[place] === historyRow) delete page.rowItems[place]
-                        }
-                    }
-                }
-            }
-
             // Nothing to list, and why.
             Reveal {
                 open: !page.listing
@@ -259,7 +243,7 @@ Page {
                 }
             }
             Reveal {
-                open: page.listing && History.results.length === 0 && !History.searching
+                open: page.listing && History.results.count === 0 && !History.searching
                 EmptyState {
                     width: parent.width
                     iconName: "search"

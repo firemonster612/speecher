@@ -51,8 +51,9 @@ ListView {
         const entries = Object.assign({}, _entries)
         values.forEach((v, i) => entries[next[i]] = v)
         _entries = entries
+        const kept = new Set(next)
         for (let i = _rows.count - 1; i >= 0; --i)
-            if (next.indexOf(_rows.get(i).key) < 0) { _rows.remove(i); _prune.restart() }
+            if (!kept.has(_rows.get(i).key)) { _rows.remove(i); _prune.restart() }
         for (let i = 0; i < next.length; ++i) {
             if (i < _rows.count && _rows.get(i).key === next[i]) continue
             let from = -1
@@ -68,9 +69,9 @@ ListView {
     readonly property Timer _prune: Timer {
         interval: Theme.slow   // the remove transition runs Theme.base
         onTriggered: {
-            const live = list.values.map(list.keyOf)
+            const live = new Set(list.values.map(list.keyOf))
             for (const key of Object.keys(list._entries))
-                if (live.indexOf(key) < 0) delete list._entries[key]
+                if (!live.has(key)) delete list._entries[key]
         }
     }
     onValuesChanged: _sync()

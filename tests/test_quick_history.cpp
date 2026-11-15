@@ -183,15 +183,27 @@ private slots:
         QuickHistory history(&controller);
         QCOMPARE(history.results().size(), QuickHistory::pageSize);
         QVERIFY(history.hasMore());
+        // The next page adds rows to the list's model; the rows showing stay.
+        QSignalSpy inserted(history.resultsModel(), &QAbstractItemModel::rowsInserted);
+        QSignalSpy reset(history.resultsModel(), &QAbstractItemModel::modelReset);
         history.fetchMore();
         QCOMPARE(history.results().size(), QuickHistory::pageSize + 20);
+        QCOMPARE(history.resultsModel()->rowCount(), QuickHistory::pageSize + 20);
+        QCOMPARE(inserted.count(), 1);
+        QCOMPARE(reset.count(), 0);
         QVERIFY(!history.hasMore());
 
-        // As many as showed, the newest first; the oldest waits for the next page.
+        // As many as showed, the newest first; the oldest waits for the next
+        // page. The rows showing stay, so the list keeps its place.
         controller.history()->add(kept(QStringLiteral("the newest")));
         QCOMPARE(history.results().size(), QuickHistory::pageSize + 20);
         QCOMPARE(history.results().first().toMap().value(QStringLiteral("text")).toString(), QStringLiteral("the newest"));
         QVERIFY(history.hasMore());
+        QCOMPARE(history.resultsModel()->rowCount(), QuickHistory::pageSize + 20);
+        QCOMPARE(history.resultsModel()->data(history.resultsModel()->index(0), HistoryResults::EntryRole)
+                     .toMap().value(QStringLiteral("text")).toString(),
+                 QStringLiteral("the newest"));
+        QCOMPARE(reset.count(), 0);
     }
 
     // Clear asks how many first, and deletes the words; with the stats, the
