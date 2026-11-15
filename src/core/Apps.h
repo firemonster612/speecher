@@ -159,10 +159,9 @@ AppResolution resolveApp(const Target &target, const AppsSettings &apps);
 Target targetFor(const AppEntry &app);
 // What app's own values give way to: each value resolved for target
 // (normally targetFor(app)) with that one value of app's unset and the
-// others kept, since the type it
-// sets still decides the profile and pasting it would inherit. The type,
-// the profile, the pasting parts and History each come from their own
-// resolution.
+// others kept, since the type it sets still decides the profile and
+// pasting it would inherit. The type, the profile, the pasting parts and
+// History each come from their own resolution.
 AppResolution inheritedFor(const AppEntry &app, const Target &target, const AppsSettings &apps);
 // The ids of the person's entries the Target matches, in the order
 // resolveApp consults them: those matching by id, then by name or title.

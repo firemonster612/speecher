@@ -43,7 +43,7 @@ Page {
     // the latter, not every app Speecher doesn't recognize.
     function detectedIn(id) {
         const other = id === "general"
-        const recent = Apps.recent.filter(a => !a.entry && a.type === id && (other || !a.installed))
+        const recent = Apps.recent.filter(a => !a.entry && a.type === id && (other || !a.listedInstalled))
             .map(a => ({ name: a.name, icon: a.icon, ids: [a.appId] }))
         const installed = other ? [] : Apps.installed.filter(a => !a.entry && a.type === id)
             .map(a => ({ name: a.name, icon: a.icon, ids: a.ids }))
