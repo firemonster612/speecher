@@ -1056,7 +1056,7 @@ private slots:
             }
             return ids;
         };
-        QCOMPARE(listed(), terminalKeysDiffer ? QStringList{QStringLiteral("apptype:terminal")} : QStringList());
+        QCOMPARE(listed(), shiftKeysDiffer ? QStringList{QStringLiteral("apptype:terminal")} : QStringList());
 
         const QVariantMap insertAndKeep{{QStringLiteral("insert"), true}, {QStringLiteral("press"), false},
                                         {QStringLiteral("keep"), true}};
@@ -1069,7 +1069,7 @@ private slots:
         QCOMPARE(apps.update(kate, {{QStringLiteral("steps"), QVariantMap{{QStringLiteral("insert"), false}}}}),
                  QStringLiteral("incomplete"));
         QStringList expected{QStringLiteral("apptype:browser"), QStringLiteral("appentry:") + kate};
-        if (terminalKeysDiffer) {
+        if (shiftKeysDiffer) {
             expected.prepend(QStringLiteral("apptype:terminal"));
         }
         QCOMPARE(listed(), expected);

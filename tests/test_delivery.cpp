@@ -445,8 +445,8 @@ fi
         const DeliverySteps pressOnly{.insert = false, .press = true, .keep = false};
         QCOMPARE(deliveryPlan(all, {}), (DeliveryPlan{all, PasteKeyCombo::Standard}));
         QCOMPARE(deliveryPlan(all, {pressOnly, std::nullopt}), (DeliveryPlan{pressOnly, PasteKeyCombo::Standard}));
-        QCOMPARE(deliveryPlan(pressOnly, {std::nullopt, PasteKeyCombo::Terminal}),
-                 (DeliveryPlan{pressOnly, PasteKeyCombo::Terminal}));
+        QCOMPARE(deliveryPlan(pressOnly, {std::nullopt, PasteKeyCombo::WithShift}),
+                 (DeliveryPlan{pressOnly, PasteKeyCombo::WithShift}));
         QCOMPARE(DeliveryPlan{pressOnly}.route(), QStringList{QStringLiteral("press")});
         QCOMPARE(DeliveryPlan{all}.route(), (QStringList{QStringLiteral("insert"), QStringLiteral("press"), QStringLiteral("keep")}));
         QVERIFY(!PastingChoice{}.isSet());
@@ -489,7 +489,7 @@ fi
                        resolveApp(target, {}).pasting);
 
         // macOS terminals take Cmd+V like everything else.
-        QCOMPARE(attemptedKeys, terminalKeysDiffer ? PasteKeyCombo::Terminal : PasteKeyCombo::Standard);
+        QCOMPARE(attemptedKeys, shiftKeysDiffer ? PasteKeyCombo::WithShift : PasteKeyCombo::Standard);
     }
 
     void aiCodingProcessesAreRecognizedByNameOrCommandLine()
@@ -1998,7 +1998,7 @@ fi
         konsole.applicationId = QStringLiteral("org.kde.konsole");
         const DeliveryResult copied = deliverAndWait(
             delivery, settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), konsole,
-            {std::nullopt, PasteKeyCombo::Terminal});
+            {std::nullopt, PasteKeyCombo::WithShift});
         QCOMPARE(copied.receipt, DeliveryReceipt::Copied);
         QCOMPARE(targetProvider.insertCalls, 0);
         const DeliveryResult inserted = deliverAndWait(
@@ -2155,7 +2155,7 @@ fi
         for (const AppCategory category : {AppCategory::General, AppCategory::Email, AppCategory::Office,
                                            AppCategory::CodeEditor, AppCategory::AiCoding}) {
             QCOMPARE(appTypeSettings(apps, category).pasting,
-                     (terminalKeysDiffer ? PastingChoice{std::nullopt, PasteKeyCombo::Terminal} : PastingChoice{}));
+                     (shiftKeysDiffer ? PastingChoice{std::nullopt, PasteKeyCombo::WithShift} : PastingChoice{}));
         }
         // The browsers' own rule stays, as Keep alone.
         QCOMPARE(appTypeSettings(apps, AppCategory::Browser).pasting,
@@ -2343,7 +2343,7 @@ fi
         const DeliveryResult result = deliverAndWait(
             delivery, settings,
             makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
-            target, {std::nullopt, PasteKeyCombo::Terminal});
+            target, {std::nullopt, PasteKeyCombo::WithShift});
 
         QVERIFY(attempts.isEmpty());
         QCOMPARE(result.receipt, DeliveryReceipt::Copied);
@@ -2746,7 +2746,7 @@ fi
             return arg.startsWith(QStringLiteral("--file="));
         }));
 
-        QCOMPARE(YdotoolDelivery::pasteShortcutArguments(PasteKeyCombo::Terminal),
+        QCOMPARE(YdotoolDelivery::pasteShortcutArguments(PasteKeyCombo::WithShift),
                  QStringList({QStringLiteral("key"),
                               QStringLiteral("--key-delay=2"),
                               QStringLiteral("29:1"),

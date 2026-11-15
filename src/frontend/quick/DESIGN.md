@@ -473,9 +473,14 @@ Choosing:
   then the language's own name), which cover every code core knows; lists
   of codes take those names (`ModelText.languageOptions`).
 - An app is chosen from the Apps picker (`AppPicker`: installed apps, apps
-  dictated into, Switch to it, or a name or window title), never by typing
-  its id; Apps adds an App for it. A Vocabulary Entry limited to apps names
+  dictated into, Switch to it, or a name or window title), or from the apps
+  an App Type's editor lists as Speecher putting there, never by typing its
+  id; Apps adds an App for it. A Vocabulary Entry limited to apps names
   those Apps.
+- The Apps page is one list: each App Type, Other apps last, with the
+  person's Apps of that type under it, then the Apps matched only by window
+  title, which follow no one type. Each App has one row (`appentry:<id>`),
+  so changing its type moves the row.
 - A link to what is limited to a profile or an App (the Vocabulary entries)
   lands on that page filtered to it (`vocabularyFor:profile/<id>`,
   `vocabularyFor:app/<id>`), and a search for one entry opens it

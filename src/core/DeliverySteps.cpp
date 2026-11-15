@@ -58,12 +58,12 @@ QString deliveryStepName(DeliveryStep step)
 
 QString pasteKeyComboName(PasteKeyCombo keys)
 {
-    return keys == PasteKeyCombo::Terminal ? QStringLiteral("terminal") : QStringLiteral("standard");
+    return keys == PasteKeyCombo::WithShift ? QStringLiteral("terminal") : QStringLiteral("standard");
 }
 
 PasteKeyCombo pasteKeyComboFromName(const QString &name)
 {
-    return name == u"terminal" ? PasteKeyCombo::Terminal : PasteKeyCombo::Standard;
+    return name == u"terminal" ? PasteKeyCombo::WithShift : PasteKeyCombo::Standard;
 }
 
 DeliveryPlan deliveryPlan(const DeliverySteps &steps, const PastingChoice &pasting)

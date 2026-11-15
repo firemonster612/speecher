@@ -45,7 +45,7 @@ The user's own text added to the refinement prompt: once for every refinement, t
 _Avoid_: Custom prompt, system prompt
 
 **Delivery Step**:
-One way Speecher gets words out, which the person turns on or off, named the same everywhere: Insert (through accessibility), Press paste keys (copies the words and presses the paste keys, Ctrl+V or ⌘V unless an App or App Type picks a terminal's Ctrl+Shift+V), and Keep on clipboard. Delivery tries Insert, then Press when insertion is off, unavailable or rejected; Keep leaves the words on the clipboard afterwards. With Keep off, Press borrows the clipboard only once Speecher has saved what was there in a form it can put back, and puts it back after a confirmed paste or when no keys went out; a paste it can't confirm, or keys that may have partly gone out, leave the words there. So Insert off, Press on and Keep off pastes and leaves the clipboard as it was. At least one is on.
+One way Speecher gets words out, which the person turns on or off, named the same everywhere: Insert (through accessibility), Press paste keys (copies the words and presses the paste keys, Ctrl+V or ⌘V unless an App or App Type picks Ctrl+Shift+V), and Keep on clipboard. Delivery tries Insert, then Press when insertion is off, unavailable or rejected; Keep leaves the words on the clipboard afterwards. With Keep off, Press borrows the clipboard only once Speecher has saved what was there in a form it can put back, and puts it back after a confirmed paste or when no keys went out; a paste it can't confirm, or keys that may have partly gone out, leave the words there. So Insert off, Press on and Keep off pastes and leaves the clipboard as it was. At least one is on.
 _Avoid_: Output method, paste mode
 
 **App**:

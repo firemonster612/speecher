@@ -11,7 +11,9 @@ import "../text"
 // for an App what it is recognized by (with Edit), its type, writing
 // profile, Pasting, paste keys and History, each starting "Same as …" until
 // changed, the vocabulary limited to it, and Remove app; for an App Type its
-// writing profile, Pasting, paste keys and History. Pasting is "Same as …"
+// writing profile, Pasting, paste keys and History, after the apps Speecher
+// puts in it that have nothing of their own, each picked to give it its
+// own (adopted). Pasting is "Same as …"
 // or its own steps, the Pasting page's step rows with their help, needs and
 // fixes, the paste keys on Press paste keys. Every change saves at once
 // through Apps, as the editor says; a refusal shows under the rows.
@@ -21,7 +23,10 @@ Item {
     // An entry of Apps.entries, or of Apps.types for an App Type.
     property var entry: ({})
     property bool isType: false
+    // For a type: the apps Speecher puts in it with nothing of their own.
+    property var detected: []
     property string refusal
+    signal adopted(var app)
 
     readonly property var t: Schema.apps.t
     readonly property bool isOther: isType && entry.id === "general"
@@ -124,6 +129,34 @@ Item {
         y: Theme.space2
         width: parent.width
 
+        Reveal {
+            open: editor.isType && editor.detected.length > 0
+            width: parent.width
+            Column {
+                width: parent.width
+                Txt {
+                    x: Theme.rowInset
+                    width: parent.width - Theme.rowInset * 2
+                    topPadding: Theme.space2
+                    bottomPadding: Theme.space1
+                    text: editor.t.detected
+                    variant: "small"
+                    tone: "secondary"
+                    wrapMode: Text.WordWrap
+                }
+                Repeater {
+                    model: editor.detected
+                    FoundAppRow {
+                        required property var modelData
+                        required property int index
+                        objectName: "appDetected_" + modelData.name
+                        app: modelData
+                        first: index === 0
+                        onClicked: editor.adopted(modelData)
+                    }
+                }
+            }
+        }
         SettingRow {
             shown: !editor.isType && !editor.editing
             title: editor.t.recognizedAs

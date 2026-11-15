@@ -147,7 +147,7 @@ PastingChoice narrowedBy(PasteMethod method, const DeliverySteps &base)
     case PasteMethod::StandardPaste:
         return {steps, PasteKeyCombo::Standard};
     case PasteMethod::TerminalPaste:
-        return {steps, terminalKeysDiffer ? PasteKeyCombo::Terminal : PasteKeyCombo::Standard};
+        return {steps, shiftKeysDiffer ? PasteKeyCombo::WithShift : PasteKeyCombo::Standard};
     case PasteMethod::ClipboardOnly:
         steps.insert = false;
         steps.press = false;
@@ -248,7 +248,7 @@ void migratePastingChoices(QSettings &settings)
                 forTypes.insert(appCategoryFromName(value[QStringLiteral("type")].toString()), pasteMethodFromName(method));
             }
         }
-    } else if (terminalKeysDiffer) {
+    } else if (shiftKeysDiffer) {
         // Unstored types were the defaults, Terminals' keys among them.
         forTypes.insert(AppCategory::Terminal, PasteMethod::TerminalPaste);
     }
@@ -383,7 +383,7 @@ void migrateApps(QSettings &settings)
     // Apps typed Terminals still took the global rule's keys.
     for (AppTypeSettings &type : apps.types) {
         if (type.type == AppCategory::Terminal && !typePasting.contains(type.type)
-            && globalChoice.keys == PasteKeyCombo::Terminal) {
+            && globalChoice.keys == PasteKeyCombo::WithShift) {
             type.pasting.keys = globalChoice.keys;
         }
     }

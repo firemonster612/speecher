@@ -7,10 +7,13 @@ import Speecher.Wording
 import Speecher.App
 import "apps"
 
-// How Speecher writes and pastes in each app: the person's Apps, then the
-// App Types every other app follows, each opening in place to the same
-// editor. Add app opens the picker, closing any editor; an app picked there
-// opens its editor. Test shows what Speecher makes of the app you switch to.
+// How Speecher writes and pastes in each app: the App Types, Other apps
+// last, each with the person's Apps of that type under it, then any Apps
+// matched only by window title, which follow no one type. Each opens in
+// place to the same editor; a type's editor also lists the apps Speecher
+// puts in it that have nothing of their own yet. Add app opens the picker,
+// closing any editor; an app picked there opens its editor. Test shows what
+// Speecher makes of the app you switch to.
 Page {
     id: page
     title: Schema.page("apps").title
@@ -27,10 +30,38 @@ Page {
         if (openId) { picker.close(); tester.close() }
     }
 
+    // Each type's row, then its Apps' rows: { id (the landing id), isType,
+    // value (of Apps.types or Apps.entries) }.
+    readonly property var grouped: Apps.types.reduce((rows, type) => rows.concat(
+        [{ id: "apptype:" + type.id, isType: true, value: type }],
+        Apps.entries.filter(e => !e.titleOnly && e.effective.type === type.id)
+            .map(e => ({ id: "appentry:" + e.id, isType: false, value: e }))), [])
+    readonly property var titleOnly: Apps.entries.filter(e => e.titleOnly)
+        .map(e => ({ id: "appentry:" + e.id, isType: false, value: e }))
+    // The apps Speecher puts in type `id` that have nothing of their own:
+    // installed ones, and those dictated into lately. Other apps lists only
+    // the latter, not every app Speecher doesn't recognize.
+    function detectedIn(id) {
+        const installed = id === "general" ? [] : Apps.installed.filter(a => !a.entry && a.type === id)
+            .map(a => ({ name: a.name, icon: a.icon, ids: a.ids }))
+        const known = installed.reduce((ids, a) => ids.concat(a.ids.map(Schema.apps.comparableId)), [])
+        const recent = Apps.recent.filter(a => !a.entry && a.type === id && !known.includes(Schema.apps.comparableId(a.appId)))
+            .map(a => ({ name: a.name, icon: a.icon, ids: [a.appId] }))
+        return recent.concat(installed)
+    }
+    // Gives a listed app settings of its own and opens it, as picking it
+    // with Add app does.
+    function adopt(app) {
+        const id = Apps.add(app).id
+        if (id) Navigation.goToRow("apps", "appentry:" + id)
+    }
+
+    Component.onCompleted: Apps.refresh()
+
     Section {
-        id: yours
-        title: page.t.yourApps
-        caption: page.t.yourAppsHelp
+        id: section
+        title: page.t.types
+        caption: page.t.typesHelp
         actions: [
             Button {
                 objectName: "testApp"
@@ -42,10 +73,11 @@ Page {
             },
             Button { text: page.t.addApp; iconName: "plus"; size: "small"; onClicked: picker.start() }
         ]
-        // The History row is in each App's editor; a search for it lands on
-        // the list.
-        SearchLanding { rowIds: ["apps", "appHistory"]; target: yours }
-        SearchLanding { rowIds: ["addApp"]; target: yours; onLanded: picker.start() }
+        // The History row is in each editor; a search for it lands on the
+        // list.
+        SearchLanding { rowIds: ["apps", "appHistory", "appTypes"]; target: section }
+        SearchLanding { rowIds: ["addApp"]; target: section; onLanded: picker.start() }
+        SearchLanding { rowIds: ["otherAppsProfile"]; target: section; onLanded: page.openId = "apptype:general" }
         AccessibilityNotice { what: Schema.pasting.accessibilityUses[System.identifiesAppsWithoutAccessibility ? "inserting" : "apps"] }
 
         AppTest {
@@ -59,42 +91,48 @@ Page {
             onPicked: id => Navigation.goToRow("apps", "appentry:" + id)
         }
         RowList {
-            id: apps
-            values: Apps.entries
+            id: rows
+            values: page.grouped
             delegate: AppRow {
                 required property string key
                 required property int index
+                readonly property var row: rows.entry(key)
                 width: ListView.view.width
-                entry: apps.entry(key)
-                first: index === 0 && apps.first && !picker.open && !tester.open
+                entry: row.value
+                isType: row.isType
+                nested: !row.isType
+                detected: row.isType ? page.detectedIn(row.value.id) : []
+                first: index === 0 && rows.first && !picker.open && !tester.open
                 open: page.openId === landingId
                 onToggled: page.toggle(landingId)
+                onAdopted: app => page.adopt(app)
             }
         }
         Reveal {
-            open: Apps.entries.length === 0 && !picker.open && !tester.open
-            EmptyState { compact: true; title: page.t.noApps; text: page.t.noAppsHelp }
-        }
-    }
-
-    Section {
-        id: typesSection
-        title: page.t.types
-        caption: page.t.typesHelp(Apps.builtInCount)
-        SearchLanding { rowIds: ["appTypes"]; target: typesSection }
-        SearchLanding { rowIds: ["otherAppsProfile"]; target: typesSection; onLanded: page.openId = "apptype:general" }
-        RowList {
-            id: types
-            values: Apps.types
-            delegate: AppRow {
-                required property string key
-                required property int index
-                width: ListView.view.width
-                entry: types.entry(key)
-                isType: true
-                first: index === 0 && types.first
-                open: page.openId === landingId
-                onToggled: page.toggle(landingId)
+            open: page.titleOnly.length > 0
+            Column {
+                width: parent.width
+                Txt {
+                    x: Theme.rowInset
+                    width: parent.width - Theme.rowInset * 2
+                    topPadding: Theme.space4
+                    bottomPadding: Theme.space1
+                    text: page.t.byTitleGroup
+                    variant: "small"
+                    tone: "secondary"
+                }
+                RowList {
+                    id: titled
+                    values: page.titleOnly
+                    delegate: AppRow {
+                        required property string key
+                        readonly property var row: titled.entry(key)
+                        width: ListView.view.width
+                        entry: row.value
+                        open: page.openId === landingId
+                        onToggled: page.toggle(landingId)
+                    }
+                }
             }
         }
     }

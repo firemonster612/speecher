@@ -490,7 +490,7 @@ private:
         QCOMPARE(withoutId(settings.apps.apps[0]),
                  (AppEntry{{}, QStringLiteral("Kate"), {}, {{AppMatchKind::Id, QStringLiteral("org.kde.kate")}},
                            std::nullopt, QStringLiteral("personal"),
-                           {std::nullopt, terminalKeysDiffer ? std::optional(PasteKeyCombo::Standard) : std::nullopt}}));
+                           {std::nullopt, shiftKeysDiffer ? std::optional(PasteKeyCombo::Standard) : std::nullopt}}));
         QCOMPARE(withoutId(settings.apps.apps[1]),
                  (AppEntry{{}, QStringLiteral("Konsole"), {},
                            {{AppMatchKind::Name, QStringLiteral("org.kde.konsole")},
@@ -548,7 +548,7 @@ private:
         QCOMPARE(settings.output.steps, (DeliverySteps{.insert = false, .press = false, .keep = true}));
         // Terminals' rule is their Pasting choice; macOS has none.
         QCOMPARE(appTypeSettings(settings.apps, AppCategory::Terminal).pasting,
-                 (terminalKeysDiffer ? PastingChoice{std::nullopt, PasteKeyCombo::Terminal} : PastingChoice{}));
+                 (shiftKeysDiffer ? PastingChoice{std::nullopt, PasteKeyCombo::WithShift} : PastingChoice{}));
         QCOMPARE(settings.output.format, OutputFormat::Html);
         QCOMPARE(settings.output.completionStatusDurationMs, 1500);
 

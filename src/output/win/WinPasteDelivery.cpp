@@ -59,12 +59,12 @@ bool WinPasteDelivery::paste(PasteKeyCombo keys,
         ++count;
     };
     append(VK_CONTROL, 0);
-    if (keys == PasteKeyCombo::Terminal) {
+    if (keys == PasteKeyCombo::WithShift) {
         append(VK_SHIFT, 0);
     }
     append('V', 0);
     append('V', KEYEVENTF_KEYUP);
-    if (keys == PasteKeyCombo::Terminal) {
+    if (keys == PasteKeyCombo::WithShift) {
         append(VK_SHIFT, KEYEVENTF_KEYUP);
     }
     append(VK_CONTROL, KEYEVENTF_KEYUP);

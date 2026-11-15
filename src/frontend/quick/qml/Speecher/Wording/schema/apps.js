@@ -26,6 +26,9 @@ var types = [
     { id: "general", label: "Other apps", one: "Other app", icon: "app-window", examples: "Every app Speecher doesn't recognize" }
 ];
 function type(id) { return types.find(t => t.id === id) || types[types.length - 1] }
+// An app id as core's Id matches compare it: trimmed, lower case, without a
+// ".desktop" or ".exe" ending.
+function comparableId(id) { return id.trim().toLowerCase().replace(/\.(desktop|exe)$/, "") }
 // An App Type (of Apps.types) or an App (of Apps.entries) as another page
 // lists it, linking to it in Apps: { id, name, typeIcon, icon }, id being
 // the Apps page's landing id.
@@ -71,11 +74,11 @@ function historyResult(choice, keeps, keepsLabel) {
 var t = {
     addApp: "Add app",
     yourApps: "Your apps",
-    yourAppsHelp: "Apps you've set something for. Every other app follows its type.",
-    noApps: "No apps of your own yet",
-    noAppsHelp: "Add one to give it its own writing profile or way of pasting.",
+    yourAppsHelp: "Apps you've set something for, each listed under its type.",
     types: "App types",
-    typesHelp: count => "Speecher knows " + count + " common apps by name and sorts them into these types. Pick one with Add app to change it.",
+    typesHelp: "Every app follows its type until you give it settings of its own. Your apps are listed under their types.",
+    detected: "Speecher puts these apps here. Pick one to give it settings of its own.",
+    byTitleGroup: "Matched by window title",
     type: "Type",
     profile: "Writing profile",
     pasting: "Pasting",
@@ -167,16 +170,16 @@ function typeSummary(settings, profileName) {
 }
 
 var rows = [
-    { id: "apps", page: "apps", section: t.yourApps, kind: "custom",
+    { id: "apps", page: "apps", section: t.types, kind: "custom",
       label: t.yourApps, help: t.yourAppsHelp,
       keywords: "app per-app application exception rule recognition recognize match desktop id bundle program window title profile paste" },
-    { id: "addApp", page: "apps", section: t.yourApps, kind: "custom",
+    { id: "addApp", page: "apps", section: t.types, kind: "custom",
       label: t.addApp, help: "Pick an installed app, or one you dictated into.",
       keywords: "new app exception single app installed switch match name window title web app" },
     { id: "appTypes", page: "apps", section: t.types, kind: "custom",
       label: t.types, help: "Each type has a writing profile and a way of pasting its apps follow.",
       keywords: "app type category terminal keys built-in " + types.map(c => c.label.toLowerCase()).join(" ") },
-    { id: "appHistory", page: "apps", section: t.yourApps, kind: "custom",
+    { id: "appHistory", page: "apps", section: t.types, kind: "custom",
       label: "History for an app",
       help: "Keep only stats, or nothing, of what you dictate into an app or a type of app. It never keeps more than Privacy & data.",
       keywords: "history privacy exclude leave out private password manager incognito keep stats nothing" },

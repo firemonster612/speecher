@@ -122,11 +122,11 @@ QStringList YdotoolDelivery::pasteShortcutArguments(PasteKeyCombo keys)
         QStringLiteral("--key-delay=%1").arg(shortcutKeyDelayMs),
         QStringLiteral("29:1"),
     };
-    if (keys == PasteKeyCombo::Terminal) {
+    if (keys == PasteKeyCombo::WithShift) {
         arguments << QStringLiteral("42:1");
     }
     arguments << QStringLiteral("47:1") << QStringLiteral("47:0");
-    if (keys == PasteKeyCombo::Terminal) {
+    if (keys == PasteKeyCombo::WithShift) {
         arguments << QStringLiteral("42:0");
     }
     arguments << QStringLiteral("29:0");

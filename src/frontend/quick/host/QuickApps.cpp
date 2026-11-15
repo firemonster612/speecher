@@ -258,11 +258,6 @@ QuickApps::~QuickApps()
     scanPool().waitForDone();
 }
 
-int QuickApps::builtInCount() const
-{
-    return int(builtInApps().size());
-}
-
 void QuickApps::refresh()
 {
     if (m_scanned || m_scanning) {

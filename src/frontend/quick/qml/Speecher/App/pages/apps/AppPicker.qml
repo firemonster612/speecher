@@ -113,7 +113,7 @@ Reveal {
                             width: parent.width
                             values: picker.recent
                             keyOf: a => a.appId
-                            delegate: PickerRow {
+                            delegate: FoundAppRow {
                                 required property string key
                                 required property int index
                                 app: recentList.entry(key)
@@ -132,7 +132,7 @@ Reveal {
                                 width: parent.width
                                 values: picker.installedFound.slice(0, picker.shownInstalled)
                                 keyOf: a => a.ids.join("|")
-                                delegate: PickerRow {
+                                delegate: FoundAppRow {
                                     required property string key
                                     required property int index
                                     app: installedList.entry(key)
@@ -235,31 +235,6 @@ Reveal {
                     Txt { id: matchError; visible: text.length > 0; variant: "small"; tone: "negative"; width: parent.width; wrapMode: Text.WordWrap }
                 }
             }
-        }
-    }
-
-    // One app the picker lists: its icon, name and what it gets now.
-    component PickerRow: ListRow {
-        id: pickerRow
-        property var app: ({})
-        implicitHeight: Math.max(Theme.rowHeight, words.implicitHeight + 18)
-        clickable: true
-        Accessible.name: app.name || ""
-        AppIcon {
-            id: appIcon
-            anchors.verticalCenter: parent.verticalCenter
-            name: pickerRow.app.name || ""
-            source: pickerRow.app.icon ? "image://appicon/" + encodeURIComponent(pickerRow.app.icon) : ""
-            size: 24
-        }
-        Column {
-            id: words
-            x: appIcon.width + Theme.space3
-            width: parent.width - x
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: 2
-            Txt { width: parent.width; text: pickerRow.app.name || ""; variant: "label"; elide: Text.ElideRight }
-            Txt { visible: text.length > 0; width: parent.width; text: pickerRow.detail; variant: "small"; tone: "secondary"; elide: Text.ElideRight }
         }
     }
 }

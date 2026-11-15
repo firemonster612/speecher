@@ -164,8 +164,8 @@ QList<AppTypeSettings> defaultAppTypeSettings()
         switch (type) {
         case AppCategory::Terminal:
             settings.writingProfile = WritingProfile::Work;
-            if (terminalKeysDiffer) {
-                settings.pasting.keys = PasteKeyCombo::Terminal;
+            if (shiftKeysDiffer) {
+                settings.pasting.keys = PasteKeyCombo::WithShift;
             }
             break;
         case AppCategory::Office:
