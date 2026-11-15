@@ -1722,7 +1722,7 @@ private slots:
         QMetaObject::invokeMethod(search, "open");
         const auto results = searchResults(search, QStringLiteral("fooeditor"));
         QVERIFY(!results.isEmpty());
-        QCOMPARE(results.first(), std::make_pair(rowId, QStringLiteral("Apps, Your apps")));
+        QCOMPARE(results.first(), std::make_pair(rowId, QStringLiteral("Apps, App types")));
         // The old words still find where the settings went.
         const auto defaults = searchResults(search, QStringLiteral("unrecognized"));
         QVERIFY(std::any_of(defaults.cbegin(), defaults.cend(),

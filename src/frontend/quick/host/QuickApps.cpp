@@ -336,6 +336,7 @@ void QuickApps::rebuild()
             {QStringLiteral("name"), installed ? installed->name : seen.name.isEmpty() ? seen.applicationId : seen.name},
             {QStringLiteral("appId"), seen.applicationId},
             {QStringLiteral("icon"), installed ? installed->icon : QString()},
+            {QStringLiteral("installed"), installed != nullptr},
             {QStringLiteral("lastSeenMs"), double(seen.lastSeenMs)},
             {QStringLiteral("dictations"), seen.dictations},
             {QStringLiteral("entry"), resolution.appId},

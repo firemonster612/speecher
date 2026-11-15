@@ -42,11 +42,11 @@ Page {
     // installed ones, and those dictated into lately. Other apps lists only
     // the latter, not every app Speecher doesn't recognize.
     function detectedIn(id) {
-        const installed = id === "general" ? [] : Apps.installed.filter(a => !a.entry && a.type === id)
-            .map(a => ({ name: a.name, icon: a.icon, ids: a.ids }))
-        const known = installed.reduce((ids, a) => ids.concat(a.ids.map(Schema.apps.comparableId)), [])
-        const recent = Apps.recent.filter(a => !a.entry && a.type === id && !known.includes(Schema.apps.comparableId(a.appId)))
+        const other = id === "general"
+        const recent = Apps.recent.filter(a => !a.entry && a.type === id && (other || !a.installed))
             .map(a => ({ name: a.name, icon: a.icon, ids: [a.appId] }))
+        const installed = other ? [] : Apps.installed.filter(a => !a.entry && a.type === id)
+            .map(a => ({ name: a.name, icon: a.icon, ids: a.ids }))
         return recent.concat(installed)
     }
     // Gives a listed app settings of its own and opens it, as picking it

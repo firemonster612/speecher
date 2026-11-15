@@ -26,9 +26,6 @@ var types = [
     { id: "general", label: "Other apps", one: "Other app", icon: "app-window", examples: "Every app Speecher doesn't recognize" }
 ];
 function type(id) { return types.find(t => t.id === id) || types[types.length - 1] }
-// An app id as core's Id matches compare it: trimmed, lower case, without a
-// ".desktop" or ".exe" ending.
-function comparableId(id) { return id.trim().toLowerCase().replace(/\.(desktop|exe)$/, "") }
 // An App Type (of Apps.types) or an App (of Apps.entries) as another page
 // lists it, linking to it in Apps: { id, name, typeIcon, icon }, id being
 // the Apps page's landing id.

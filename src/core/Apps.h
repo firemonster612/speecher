@@ -157,9 +157,9 @@ AppResolution resolveApp(const Target &target, const AppsSettings &apps);
 // A Target as the app would report itself, from what its App matches: the
 // first id, name and window title it matches by.
 Target targetFor(const AppEntry &app);
-// What app's own values give way to: each value resolved for target, the
-// app as it reports itself (targetFor(app), with its name where that is
-// known), with that one value of app's unset and the others kept, since the type it
+// What app's own values give way to: each value resolved for target
+// (normally targetFor(app)) with that one value of app's unset and the
+// others kept, since the type it
 // sets still decides the profile and pasting it would inherit. The type,
 // the profile, the pasting parts and History each come from their own
 // resolution.

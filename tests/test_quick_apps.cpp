@@ -130,7 +130,7 @@ private slots:
     // An App picked by its id is sorted as the app it was picked as, by the
     // name that app goes by, and not by the App's own name, which the person
     // may change.
-    void anAppPickedByIdIsSortedByTheAppsOwnName()
+    void anAppPickedByIdIsSortedByItsAppsReportedName()
     {
         ApplicationController controller(true);
         controller.settings()->edit([](AppSettings &draft) {
