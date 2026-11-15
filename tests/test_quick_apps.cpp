@@ -5,6 +5,7 @@
 #include "common/test_suites.h"
 
 #include "app/ApplicationController.h"
+#include "core/SeenApps.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/AppCapture.h"
 #include "frontend/quick/host/QuickApps.h"
@@ -124,6 +125,34 @@ private slots:
         QuickApps apps(&controller);
         QCOMPARE(apps.update(QStringLiteral("app:kate"), {{QStringLiteral("type"), QStringLiteral("email")}}), QString());
         QTRY_VERIFY(!controller.settings()->snapshot().apps.apps.value(0).catalogPicksProfile);
+    }
+
+    // An App picked by its id is sorted as the app it was picked as, by the
+    // name that app goes by, and not by the App's own name, which the person
+    // may change.
+    void anAppPickedByIdIsSortedByTheAppsOwnName()
+    {
+        ApplicationController controller(true);
+        controller.settings()->edit([](AppSettings &draft) {
+            AppEntry wave;
+            wave.id = QStringLiteral("app:wave");
+            wave.name = QStringLiteral("Wave Browser");
+            wave.matches = {{AppMatchKind::Id, QStringLiteral("org.example.Wave")}};
+            draft.apps.apps = {wave};
+            return true;
+        });
+        DictationRecord seen;
+        seen.appName = QStringLiteral("Wave Browser");
+        seen.applicationId = QStringLiteral("org.example.Wave");
+        controller.seenApps()->record(seen);
+        QuickApps apps(&controller);
+        const auto effectiveType = [&apps] {
+            return apps.entries().value(0).toMap().value(QStringLiteral("effective")).toMap().value(QStringLiteral("type"));
+        };
+        QTRY_COMPARE(effectiveType(), QVariant(QStringLiteral("browser")));
+        QCOMPARE(apps.update(QStringLiteral("app:wave"), {{QStringLiteral("name"), QStringLiteral("Work mail")}}), QString());
+        QTRY_COMPARE(apps.entries().value(0).toMap().value(QStringLiteral("name")), QVariant(QStringLiteral("Work mail")));
+        QCOMPARE(effectiveType(), QVariant(QStringLiteral("browser")));
     }
 };
 

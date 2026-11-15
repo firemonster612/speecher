@@ -412,17 +412,11 @@ Target targetFor(const AppEntry &app)
             field = match.value;
         }
     }
-    // An app picked by its id reports its name too, which the built-in
-    // catalog may know it by.
-    if (!target.applicationId.isEmpty() && target.applicationName.isEmpty()) {
-        target.applicationName = app.name;
-    }
     return target;
 }
 
-AppResolution inheritedFor(const AppEntry &app, const AppsSettings &apps)
+AppResolution inheritedFor(const AppEntry &app, const Target &target, const AppsSettings &apps)
 {
-    const Target target = targetFor(app);
     const auto without = [&](auto clear) {
         AppsSettings changed = apps;
         for (AppEntry &entry : changed.apps) {

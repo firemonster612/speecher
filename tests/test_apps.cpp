@@ -313,7 +313,7 @@ private slots:
         notes.history = HistoryKeep::Nothing;
         apps.apps = {notes};
 
-        const AppResolution inherited = inheritedFor(notes, apps);
+        const AppResolution inherited = inheritedFor(notes, targetFor(notes), apps);
         QCOMPARE(inherited.type, AppCategory::General);
         QCOMPARE(inherited.writingProfile, WritingProfile::Work);
         QCOMPARE(inherited.writingProfileFrom, AppLayer::Type);
@@ -328,21 +328,6 @@ private slots:
         const AppResolution own = resolveApp(targetFor(notes), apps);
         QCOMPARE(own.writingProfile, WritingProfile::Personal);
         QCOMPARE(own.writingProfileApp, notes.id);
-    }
-
-    // An App picked by its id is resolved with its name as well, as the app
-    // reports it, so the catalog sorts it as it sorted the app before it was
-    // picked. One matched only by window title has no identity.
-    void anAppPickedByIdIsSortedByItsNameToo()
-    {
-        AppsSettings apps;
-        AppEntry wave = idApp(QStringLiteral("org.example.Wave"));
-        wave.name = QStringLiteral("Wave Browser");
-        const AppEntry gmail{QStringLiteral("app:gmail"), QStringLiteral("Gmail"), {},
-                             {{AppMatchKind::WindowTitle, QStringLiteral("Gmail")}}};
-        apps.apps = {wave, gmail};
-        QCOMPARE(resolveApp(targetFor(wave), apps).type, AppCategory::Browser);
-        QCOMPARE(resolveApp(targetFor(gmail), apps).type, AppCategory::Unknown);
     }
 
     // An id matches the Target's application id or process name exactly,

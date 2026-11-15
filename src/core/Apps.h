@@ -155,15 +155,15 @@ struct AppResolution {
 // The Target's own category is ignored; this decides it.
 AppResolution resolveApp(const Target &target, const AppsSettings &apps);
 // A Target as the app would report itself, from what its App matches: the
-// first id, name and window title it matches by, and for an App with an id
-// but no name match, its name.
+// first id, name and window title it matches by.
 Target targetFor(const AppEntry &app);
-// What app's own values give way to: each value resolved for app's Target
-// with that one value of app's unset and the others kept, since the type it
+// What app's own values give way to: each value resolved for target, the
+// app as it reports itself (targetFor(app), with its name where that is
+// known), with that one value of app's unset and the others kept, since the type it
 // sets still decides the profile and pasting it would inherit. The type,
 // the profile, the pasting parts and History each come from their own
 // resolution.
-AppResolution inheritedFor(const AppEntry &app, const AppsSettings &apps);
+AppResolution inheritedFor(const AppEntry &app, const Target &target, const AppsSettings &apps);
 // The ids of the person's entries the Target matches, in the order
 // resolveApp consults them: those matching by id, then by name or title.
 QStringList matchingAppIds(const Target &target, const AppsSettings &apps);
