@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Effects
 import Speecher.Theme
 
 // One row's stretch of a Card, for a list that builds its rows one at a
@@ -33,26 +32,11 @@ Item {
         height: slice.height - y + (slice.last ? slice._shadowRoom : 1)
         clip: true
 
-        Item {
+        Card {
             x: slice._shadowRoom
             y: (slice.first ? 0 : -slice._past) - parent.y
             width: slice.width
             height: slice.height + (slice.first ? 0 : slice._past) + (slice.last ? 0 : slice._past)
-            // As Card draws itself.
-            RectangularShadow {
-                anchors.fill: parent
-                radius: Theme.radiusLarge
-                blur: 3
-                offset.y: 1
-                color: Theme.cardShadow
-            }
-            Rectangle {
-                anchors.fill: parent
-                radius: Theme.radiusLarge
-                color: Theme.raised
-                border.width: 1
-                border.color: Theme.border
-            }
         }
     }
 

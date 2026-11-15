@@ -72,7 +72,7 @@ private slots:
         controller.history()->add(kept(QStringLiteral("lunch at noon"), HistoryKind::Dictation, 1));
         QuickHistory history(&controller);
         QCOMPARE(history.matches(), 2);
-        QSignalSpy results(&history, &QuickHistory::resultsChanged);
+        QSignalSpy results(&history, &QuickHistory::matchesChanged);
 
         history.setQuery({{QStringLiteral("text"), QStringLiteral("lun")}});
         history.setQuery({{QStringLiteral("text"), QStringLiteral("dec")}});

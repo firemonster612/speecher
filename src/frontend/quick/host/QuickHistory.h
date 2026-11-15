@@ -42,7 +42,6 @@ public:
     // Replaces the rows with rows the same query found again, after a new
     // entry or a delete: removes the rows gone, inserts the new ones and
     // updates the rest in place, so a view keeps its place and its rows.
-    // Rows in another order reset.
     void update(QVariantList rows);
 
 signals:
@@ -66,8 +65,9 @@ class QuickHistory final : public QObject, public HostSingleton<QuickHistory> {
     // searches once typing pauses (searchDelayMs), first taking the lines of
     // each Recording whose file was edited from that file again.
     Q_PROPERTY(QVariantMap query READ query WRITE setQuery NOTIFY queryChanged)
-    // The entries found, newest first, a page at a time: [{ id, kind, day
-    // ("yyyy-MM-dd", local), startedAt, finishedAt, text, html (the text,
+    // The entries found, newest first, a page at a time, as a list model
+    // (HistoryResults) whose rows have day and entry, which is { id, kind,
+    // day ("yyyy-MM-dd", local), startedAt, finishedAt, text, html (the text,
     // HTML-escaped, each match in <b>), app, appId, profile, profileName,
     // durationMs, words, outcome (delivered, copied, undelivered, done,
     // complete, missed), hasAudio, hasRaw, title, transcriptPath, fileMissing
@@ -75,11 +75,10 @@ class QuickHistory final : public QObject, public HostSingleton<QuickHistory> {
     // file's audio is gone), live (a Recording still running, which has no
     // finishedAt), ending (a finished Recording's, as recordingEndJson),
     // lines (a Recording's lines that match the search, at most three: {
-    // atMs, speaker, text }) }].
-    // A list model (HistoryResults) with entry and day roles, and count.
+    // atMs, speaker, text }) }.
     Q_PROPERTY(speecher::HistoryResults *results READ resultsModel CONSTANT)
     // How many the query finds on every page.
-    Q_PROPERTY(int matches READ matches NOTIFY resultsChanged)
+    Q_PROPERTY(int matches READ matches NOTIFY matchesChanged)
     // A changed query waits to be searched.
     Q_PROPERTY(bool searching READ searching NOTIFY searchingChanged)
     // How many entries hold text at all, whatever the query, and how many of
@@ -178,7 +177,7 @@ public:
 
 signals:
     void queryChanged();
-    void resultsChanged();
+    void matchesChanged();
     void searchingChanged();
     void changed();
     void playingChanged();
@@ -187,9 +186,8 @@ signals:
 
 private:
     HistoryQuery currentQuery() const;
-    // With again, the same query is searched again: the rows are updated
-    // in place rather than replaced.
-    void search(int limit, bool again = false);
+    // The query's first limit results, as rows; sets matches.
+    QVariantList search(int limit);
     // The stored entry, as entry reads it: a Recording's lines first taken
     // from its file where it changed.
     std::optional<HistoryEntry> syncedEntry(qint64 id) const;

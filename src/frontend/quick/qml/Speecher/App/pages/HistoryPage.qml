@@ -43,12 +43,20 @@ Page {
     // entry may have moved meanwhile, or gone, leaving its place.
     property int _readFrom: -1
     property real _readFromId: 0
+    // Whether the list shows, set once the reader's place is kept.
+    property bool _listShown: true
     onReadingIdChanged: {
         if (readingId) {
-            _readFrom = list.indexAt(list.width / 2, list.contentY + 1)
-            const top = list.itemAtIndex(_readFrom) as HistoryListRow
-            _readFromId = top ? top.entry.id : 0
-        } else if (_readFrom >= 0) {
+            if (_listShown) {
+                _readFrom = list.indexAt(list.width / 2, list.contentY + 1)
+                const top = list.itemAtIndex(_readFrom) as HistoryListRow
+                _readFromId = top ? top.entry.id : 0
+                _listShown = false
+            }
+            return
+        }
+        _listShown = true
+        if (_readFrom >= 0) {
             Qt.callLater(() => {
                 const moved = History.results.indexOf(page._readFromId)
                 const at = moved >= 0 ? moved : Math.min(page._readFrom, History.results.count - 1)
@@ -66,9 +74,10 @@ Page {
         readAt = atMs
         readingId = id
     }
-    function remove(id, listed) {
+    // entry: the one listed, or else History.entry(id) reads it.
+    function remove(id, entry) {
         if (openId === id) openId = 0
-        const entry = listed || History.entry(id)
+        entry = entry || History.entry(id)
         // A Recording asks first, in its reader, as it may take its files.
         if (entry.kind === "recording") {
             read(id, -1, entry)
@@ -149,11 +158,11 @@ Page {
     // The results, newest first, each day's on a card. Only the rows near
     // the view are built, so a long History scrolls as a short one does.
     // While the reader shows, in the list's place, there are none.
-    listModel: readingId ? null : History.results
+    listModel: _listShown ? History.results : null
     listSection: "day"
     listDelegate: HistoryListRow {
         width: page.list.width
-        contentWidth: page.contentWidth
+        columnWidth: page.columnWidth
         open: page.openId === entry.id
         onToggled: page.openId = open ? 0 : entry.id
         onReadRequested: atMs => page.read(entry.id, atMs, entry)

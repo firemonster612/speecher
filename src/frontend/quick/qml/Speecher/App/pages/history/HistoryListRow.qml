@@ -8,7 +8,7 @@ import "HistoryWords.js" as T
 // One of History's results as the page lists it, a row of the page's list:
 // the day's heading above the day's first row, then the row on its stretch
 // of the day's card. It spans the list, as a ListView places its rows at
-// its left edge, and centres its content, contentWidth wide, as the page
+// its left edge, and centres its content, columnWidth wide, as the page
 // does. Its signals are HistoryRow's, and focused says its row took
 // keyboard focus.
 Column {
@@ -16,7 +16,7 @@ Column {
 
     required property var entry
     required property int index
-    property real contentWidth: width
+    property real columnWidth: width
     property alias open: historyRow.open
     readonly property alias row: historyRow
     readonly property bool firstOfDay: ListView.previousSection !== ListView.section
@@ -38,7 +38,7 @@ Column {
     Item {
         visible: listed.firstOfDay
         x: (listed.width - width) / 2
-        width: listed.contentWidth
+        width: listed.columnWidth
         height: Theme.sectionGap + heading.implicitHeight + Theme.space2
         Txt {
             id: heading
@@ -52,7 +52,7 @@ Column {
     }
     CardSlice {
         x: (listed.width - width) / 2
-        width: listed.contentWidth
+        width: listed.columnWidth
         first: listed.firstOfDay
         last: listed.lastOfDay
         HistoryRow {
