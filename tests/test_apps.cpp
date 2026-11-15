@@ -330,6 +330,21 @@ private slots:
         QCOMPARE(own.writingProfileApp, notes.id);
     }
 
+    // An App picked by its id is resolved with its name as well, as the app
+    // reports it, so the catalog sorts it as it sorted the app before it was
+    // picked. One matched only by window title has no identity.
+    void anAppPickedByIdIsSortedByItsNameToo()
+    {
+        AppsSettings apps;
+        AppEntry wave = idApp(QStringLiteral("org.example.Wave"));
+        wave.name = QStringLiteral("Wave Browser");
+        const AppEntry gmail{QStringLiteral("app:gmail"), QStringLiteral("Gmail"), {},
+                             {{AppMatchKind::WindowTitle, QStringLiteral("Gmail")}}};
+        apps.apps = {wave, gmail};
+        QCOMPARE(resolveApp(targetFor(wave), apps).type, AppCategory::Browser);
+        QCOMPARE(resolveApp(targetFor(gmail), apps).type, AppCategory::Unknown);
+    }
+
     // An id matches the Target's application id or process name exactly,
     // ignoring case and a ".desktop" or ".exe" ending; nothing shorter.
     void idMatchesAreExact()

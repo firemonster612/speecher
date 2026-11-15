@@ -1923,7 +1923,8 @@ private slots:
         QCOMPARE(apps.size(), 3);
         QCOMPARE(apps.last().matches, (QList<AppMatch>{{AppMatchKind::Id, QStringLiteral("org.example.Wave")}}));
         QTRY_VERIFY(isOpen(QStringLiteral("appentry:") + apps.last().id));
-        QVERIFY(top(QStringLiteral("apptype:browser")) < top(QStringLiteral("appentry:") + apps.last().id));
+        QTRY_VERIFY(top(QStringLiteral("apptype:browser")) < top(QStringLiteral("appentry:") + apps.last().id)
+                    && top(QStringLiteral("appentry:") + apps.last().id) < top(QStringLiteral("apptype:email")));
         QTRY_VERIFY(!findItem(main->contentItem(), QStringLiteral("appDetected_Wave Browser")));
     }
 

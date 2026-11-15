@@ -155,7 +155,8 @@ struct AppResolution {
 // The Target's own category is ignored; this decides it.
 AppResolution resolveApp(const Target &target, const AppsSettings &apps);
 // A Target as the app would report itself, from what its App matches: the
-// first id, name and window title it matches by.
+// first id, name and window title it matches by, and for an App with an id
+// but no name match, its name.
 Target targetFor(const AppEntry &app);
 // What app's own values give way to: each value resolved for app's Target
 // with that one value of app's unset and the others kept, since the type it

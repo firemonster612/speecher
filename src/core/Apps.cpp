@@ -412,6 +412,11 @@ Target targetFor(const AppEntry &app)
             field = match.value;
         }
     }
+    // An app picked by its id reports its name too, which the built-in
+    // catalog may know it by.
+    if (!target.applicationId.isEmpty() && target.applicationName.isEmpty()) {
+        target.applicationName = app.name;
+    }
     return target;
 }
 
