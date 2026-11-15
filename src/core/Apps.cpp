@@ -360,7 +360,7 @@ AppResolution resolveApp(const Target &target, const AppsSettings &apps)
     if (const AppEntry *entry = first(&AppEntry::writingProfile)) {
         setProfile(*entry->writingProfile, AppLayer::App, entry->id);
     } else if (resolution.type == appCategoryName(AppCategory::AiCoding)
-               && (profile = appTypeSettings(apps, AppCategory::AiCoding).writingProfile)) {
+               && (profile = typeProfile(resolution.type))) {
         setProfile(*profile, AppLayer::Type);
     } else if ((profile = builtInProfile())) {
         setProfile(*profile, AppLayer::BuiltIn);
