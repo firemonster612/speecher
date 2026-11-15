@@ -43,7 +43,7 @@ Item {
     property alias listDelegate: listView.delegate
     // The model role whose changes start a section, which a row reads
     // through ListView.section, previousSection and nextSection.
-    property alias listSection: listView.section.property
+    property string listSection
     readonly property alias columnWidth: column.width
 
     // Scrolls so item sits near the top of the view, for search jumps.
@@ -165,6 +165,7 @@ Item {
         currentIndex: -1
         // A view's height of rows built past each edge.
         cacheBuffer: Math.max(0, height)
+        section.property: page.listSection
         header: Item { width: lead.width }
         footer: Item { width: 1; height: 44 }
     }
