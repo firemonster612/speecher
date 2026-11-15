@@ -225,9 +225,11 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   shortcut another app owns. SchemaRow shows it in place of its help; a page
   that gives a shortcut row its own help sets `note`, not `help`.
 - `Library` is `Library.qml` over `LibraryLists` (`host/QuickLibrary`): the
-  Writing Profiles, custom tones
-  and cleanup levels (as choices: `profileOptions`, `levelOptions`,
-  `toneOptions`), and the Vocabulary (`vocabulary`: spellings,
+  Writing Profiles (as choices: `profileOptions`, with the built-in
+  `cleanupLevels` and `tones`; each profile carries its rule
+  switches and its count of changed built-in rules), the person's rules
+  (`rules`), the built-in rules (`builtInRules`, worded by id in
+  `ruleWords`), and the Vocabulary (`vocabulary`: spellings,
   replacements and Learned Corrections as one list, each with the profiles
   and apps it is limited to), read from and saved through the daemon's
   `SettingsStore`.
@@ -235,7 +237,10 @@ Backend is the C++ types in `host/` plus `Library.qml`.
   return why core refused the entry (`blank`, `taken`,
   `incomplete`, `missing`, `builtIn`), empty when saved, and
   `Library.refusalText(list, reason)` words it for the form. `remove(list,
-  key)` returns a token for `undo(token)`, or -1 when nothing went.
+  key)` returns a token for `undo(token)`, or -1 when nothing went;
+  removing a rule takes every profile's switch for it, and the undo puts
+  them back. `setProfileRule(profile, rule, on)` switches a rule for a
+  profile, and `resetRules(profile)` drops its built-in switches.
   `importVocabulary` takes the file the page's FileDialog chose, CSV
   spellings or JSON snippets. Library.qml words the lists, and says what an
   entry is limited to (`limitText`, `limitedTo`, `appName`), so Vocabulary,
@@ -303,8 +308,8 @@ Backend is the C++ types in `host/` plus `Library.qml`.
 - Area singletons (`Insights`, `Audio`, `Library`, `Models`, …) hold the lists
   and state pages show. Keep their properties plain (strings, numbers, arrays
   of objects).
-  Each list has one owner (speech services and refinement providers in `Models`, profiles, tones and
-  levels in `Library`, microphones in `Audio`, Apps and App Types in
+  Each list has one owner (speech services and refinement providers in `Models`, profiles, tones, levels and
+  rules in `Library`, microphones in `Audio`, Apps and App Types in
   `Apps`, the App Types' names in the apps schema); every other place
   derives from it with the same ids.
 - The host (`QuickFrontEnd`) opens Main and the setup assistant when the
@@ -497,9 +502,9 @@ Choosing:
   link row never copies the control it leads to.
 - Search (`SearchPalette`) finds pages, schema rows (by label, keywords,
   section, options and help, `Schema.search`), the person's Apps
-  (`appentry:<id>`), Writing Profiles, tones and cleanup levels
-  (`profile:<id>`, `tone:<id>`, `level:<id>`, which select the profile or
-  open the tone or level to edit) and Vocabulary entries (`vocab:<id>`). A
+  (`appentry:<id>`), Writing Profiles and the person's rules
+  (`profile:<id>`, `rule:<id>`, which select the profile or open the rule
+  to edit) and Vocabulary entries (`vocab:<id>`). A
   `SearchLanding`'s `landed` names the row it landed for. While History
   keeps text, its last result is Search History for the words, which
   opens History with them in its search (`historyFind:<words>`). A result

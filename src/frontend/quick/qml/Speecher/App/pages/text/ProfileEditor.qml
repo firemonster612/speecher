@@ -8,13 +8,14 @@ import Speecher.App
 
 // One Writing Profile's settings: where it's used and the vocabulary limited
 // to it, its cleanup level with a
-// preview of what that level does, its tone, output language, instructions,
-// and the services it may pick for itself. Edits go out through edited();
-// the page writes them.
+// preview of what that level does, its tone, output language, the rules it
+// turns on, and the services it may pick for itself. Edits go out through
+// edited(), ruleSwitched() and rulesReset(); the page writes them.
 //
 // In run mode it is what one run (a Transcribe batch) changes of its
 // profile: only cleanup, tone and the services show, each starting "Same as
-// <profile> (…)", and the edits are the run's, by the same keys.
+// <profile> (…)", and the edits are the run's, by the same keys. A run has
+// no rules of its own.
 Column {
     id: editor
 
@@ -39,16 +40,21 @@ Column {
     property string refusal
     signal edited(var patch)
     signal deleteRequested()
-    signal newToneRequested()
+    signal ruleSwitched(string rule, bool on)
+    signal rulesReset()
+    signal newRuleRequested()
 
-    readonly property var levels: Library.levelOptions
+    readonly property var levels: Library.cleanupLevels
     readonly property var level: levels.find(l => l.id === (profile.cleanup || inherited.cleanup)) || levels[2]
-    readonly property var tones: Library.toneOptions
+    readonly property var tones: Library.tones
     readonly property var tone: tones.find(t => t.id === (profile.tone || inherited.tone)) || tones[0]
     readonly property string outputLanguage: runMode ? inherited.outputLanguage || "" : profile.language || ""
     // None with an output language still translates, at Light.
     readonly property bool skipsRefinement: level.id === "none" && !outputLanguage
     readonly property bool translatesOnly: level.id === "none" && !!outputLanguage
+    // A custom system prompt stands in for the built-in rules.
+    readonly property bool customPrompt: !!Settings.values.customSystemPromptEnabled
+                                         && !!(Settings.values.customSystemPrompt || "").trim()
     // What the profile runs: its own first services, else the pages'
     // orders'. A speech service the resolver passes over (it can't listen
     // for the Spoken Language, or this build lacks it) leaves the page's.
@@ -227,6 +233,19 @@ Column {
                 currentId: editor.level.id
                 onChosen: id => editor.edited({ cleanup: id })
             }
+            // The built-in rules the profile switched away from its level.
+            Reveal {
+                open: !editor.runMode && editor.profile.changedRules > 0
+                LinkedText {
+                    objectName: "cleanupChanged"
+                    width: parent.width
+                    plainText: Library.levelChanged(editor.level.label, editor.profile.changedRules || 0)
+                    link: Library.rulesText.reset
+                    variant: "small"
+                    tone: "secondary"
+                    onActivated: editor.rulesReset()
+                }
+            }
             InheritSelect {
                 visible: editor.runMode
                 inheritedText: Words.sameAs(editor.inherited.profileName || "", Library.levelLabel(editor.inherited.cleanup))
@@ -245,7 +264,7 @@ Column {
                     y: Theme.space1
                     width: parent.width - x
                     wrap: true
-                    text: Library.cleanupSamples[editor.level.base || editor.level.id] || ""
+                    text: Library.cleanupSamples[editor.level.id] || ""
                     tone: editor.level.id === "none" ? "secondary" : "primary"
                 }
             }
@@ -257,58 +276,115 @@ Column {
         label: Schema.row("profileTone").label
         SearchLanding { rowIds: editor.landsOn(["profileTone"]); target: toneField }
         help: editor.skipsRefinement ? Library.profilesText.toneSkipped : editor.tone.help
-        // One tone, from a list that grows with your own, so a menu. Skipped
-        // refinement leaves it editable for later; the help says so.
-        Row {
-            id: toneRow
-            width: parent.width
-            spacing: Theme.space2
-            InheritSelect {
-                // Narrows rather than push Add tone out of a narrow editor.
-                width: Math.min(implicitWidth, toneRow.width - (newTone.visible ? newTone.width + toneRow.spacing : 0))
-                inheritedText: editor.runMode ? Words.sameAs(editor.inherited.profileName || "", Library.toneLabel(editor.inherited.tone)) : ""
-                choices: editor.tones
-                currentId: editor.runMode ? editor.profile.tone || "" : editor.tone.id
-                onChosen: id => editor.edited({ tone: id })
-            }
-            Button { id: newTone; visible: !editor.runMode; text: Library.profilesText.addTone; iconName: "plus"; onClicked: editor.newToneRequested() }
+        // One tone from a list, so a menu. Skipped refinement leaves it
+        // editable for later; the help says so.
+        InheritSelect {
+            width: Math.min(implicitWidth, parent.width)
+            inheritedText: editor.runMode ? Words.sameAs(editor.inherited.profileName || "", Library.toneLabel(editor.inherited.tone)) : ""
+            choices: editor.tones
+            currentId: editor.runMode ? editor.profile.tone || "" : editor.tone.id
+            onChosen: id => editor.edited({ tone: id })
         }
     }
 
-    Row {
-        id: textFields
+    FormField {
+        id: languageField
+        visible: !editor.runMode
+        width: parent.width * 0.4
+        label: Schema.row("profileLanguage").label
+        help: Library.profilesText.languageHelp
+        SearchLanding { rowIds: editor.landsOn(["profileLanguage"]); target: languageField }
+        SuggestField {
+            objectName: "profileLanguage"
+            suggestionsText: Words.suggestions
+            width: parent.width
+            iconName: "languages"
+            text: editor.profile.language || ""
+            placeholderText: Schema.row("profileLanguage").placeholder
+            // Empty means the same as spoken, so at rest that reads as the
+            // value, as a Select's default does; editing, a hint.
+            placeholderTextColor: activeFocus ? Theme.textTertiary : Theme.text
+            suggestions: Library.outputLanguages.map(l => ({ id: l, label: l }))
+            onCommitted: v => editor.edited({ language: v.trim() })
+        }
+    }
+
+    // The rules, one list per group, each with its switch for this profile.
+    // Cleanup None skips them all; a custom system prompt the built-in ones.
+    Column {
+        id: rulesField
         visible: !editor.runMode
         width: parent.width
         spacing: Theme.space4
-        SearchLanding { rowIds: editor.landsOn(["profileLanguage", "profileInstructions"]); target: textFields }
+        SearchLanding { rowIds: editor.landsOn(["profileRules"]); target: rulesField }
         FormField {
-            width: (parent.width - parent.spacing) * 0.4
-            label: Schema.row("profileLanguage").label
-            help: Library.profilesText.languageHelp
-            SuggestField {
-                suggestionsText: Words.suggestions
-                width: parent.width
-                iconName: "languages"
-                text: editor.profile.language || ""
-                placeholderText: Schema.row("profileLanguage").placeholder
-                // Empty means the same as spoken, so at rest that reads as
-                // the value, as a Select's default does; editing, a hint.
-                placeholderTextColor: activeFocus ? Theme.textTertiary : Theme.text
-                suggestions: Library.outputLanguages.map(l => ({ id: l, label: l }))
-                onCommitted: v => editor.edited({ language: v.trim() })
-            }
+            label: Schema.row("profileRules").label
+            help: editor.skipsRefinement ? Library.rulesText.skipped
+                : editor.customPrompt ? Library.rulesText.customPrompt : Schema.row("profileRules").help
         }
-        FormField {
-            width: (parent.width - parent.spacing) * 0.6
-            label: Schema.row("profileInstructions").label
-            help: Schema.row("profileInstructions").help
-            TextArea {
-                objectName: "profileInstructions"
+        Repeater {
+            model: Library.ruleGroups
+            Column {
+                id: group
+                required property var modelData
+                readonly property bool yours: modelData.id === "yours"
+                // { id, title, detail }: a built-in rule worded by its id, or
+                // one of yours with its instruction.
+                readonly property var rules: yours
+                    ? Library.rules.map(r => ({ id: r.id, title: r.name, detail: r.instruction }))
+                    : Library.builtInRules.filter(r => r.group === modelData.id)
+                        .map(r => ({ id: r.id, title: Library.ruleWords[r.id].label, detail: Library.ruleWords[r.id].help }))
                 width: parent.width
-                minHeight: 64
-                text: editor.profile.instructions || ""
-                placeholderText: Schema.row("profileInstructions").placeholder
-                onEditingFinished: editor.edited({ instructions: text })
+                Item {
+                    width: parent.width
+                    height: Math.max(groupTitle.implicitHeight, addRule.height)
+                    Txt {
+                        id: groupTitle
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: group.modelData.label
+                        variant: "label"
+                        tone: "secondary"
+                    }
+                    Button {
+                        id: addRule
+                        anchors.right: parent.right
+                        visible: group.yours
+                        text: Library.rulesText.addRule
+                        iconName: "plus"
+                        size: "small"
+                        onClicked: editor.newRuleRequested()
+                    }
+                }
+                // Rows bring their own inset, so the list reaches out by as
+                // much to line up.
+                RowList {
+                    id: ruleRows
+                    x: -Theme.rowInset
+                    width: parent.width + Theme.rowInset * 2
+                    values: group.rules
+                    keyOf: r => r.id
+                    delegate: ListRow {
+                        id: ruleRow
+                        required property string key
+                        required property int index
+                        readonly property var rule: ruleRows.entry(key)
+                        width: ListView.view.width
+                        first: index === 0
+                        title: rule.title
+                        detail: rule.detail
+                        trailing: Switch {
+                            objectName: "ruleSwitch_" + ruleRow.key
+                            checked: !!(editor.profile.rules || {})[ruleRow.key]
+                            onToggled: editor.ruleSwitched(ruleRow.key, checked)
+                        }
+                    }
+                }
+                Reveal {
+                    x: -Theme.rowInset
+                    width: parent.width + Theme.rowInset * 2
+                    open: group.yours && group.rules.length === 0
+                    EmptyState { compact: true; title: Library.rulesText.noRules; text: Library.rulesText.rulesEmpty }
+                }
             }
         }
     }

@@ -1,10 +1,11 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 
-// Things a person made, such as their own tones, as rows on a card: the add
+// Things a person made, such as their own rules, as rows on a card: the add
 // or edit form (the default slot, usually an InlineForm), the rows with
 // edit and delete on hover, and a line saying what to add when there are
-// none. items: [{ id?, title, detail }], keyed by id or else title.
+// none. items: [{ id?, title, detail, trailing? }], keyed by id or else
+// title; trailing is a short state at the row's end, such as where it is on.
 Column {
     id: root
 
@@ -36,6 +37,7 @@ Column {
             title: item.title
             detail: item.detail || ""
             detailLines: 2
+            trailing: Txt { visible: text.length > 0; text: row.item.trailing || ""; variant: "small"; tone: "secondary" }
             actions: [
                 IconButton { iconName: "pencil"; size: 28; tooltip: root.editText; onClicked: root.editClicked(row.index) },
                 IconButton { iconName: "trash-2"; size: 28; tooltip: root.removeText; onClicked: root.removeClicked(row.index) }

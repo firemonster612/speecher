@@ -19,6 +19,7 @@ import app.speecher.android.update.IntervalUnit
 import app.speecher.android.update.UpdateChannel
 import app.speecher.android.update.checkIntervalMinutes
 import app.speecher.protocol.AppCategory
+import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.CorrectionEvidence
 import app.speecher.protocol.Corrections
 import app.speecher.protocol.DEFAULT_SPEECH_ENDPOINT_PATH
@@ -26,10 +27,13 @@ import app.speecher.protocol.ENGLISH_LANGUAGE
 import app.speecher.protocol.LearnedCorrection
 import app.speecher.protocol.PendingCorrection
 import app.speecher.protocol.RecognitionRule
+import app.speecher.protocol.RefinementRule
 import app.speecher.protocol.SpeechEndpoint
 import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
+import app.speecher.protocol.builtInProfileLabels
+import app.speecher.protocol.newRuleId
 import app.speecher.protocol.normalizedVocabulary
 import app.speecher.protocol.withEvidence
 import app.speecher.protocol.withUsage
@@ -108,20 +112,16 @@ class SettingsStore(private val context: Context) {
                                 default.cleanupStrength,
                             ),
                             enumOf(preferences.getString("${key}Tone", null), default.tone),
-                            preferences.getString("${key}Instructions", "")!!,
-                            preferences.getString("${key}CustomCleanup", null),
-                            preferences.getString("${key}CustomTone", null),
+                            json.decodeFromString(preferences.getString("${key}Rules", "{}")!!),
                             preferences.getString("${key}Name", "")!!,
                             preferences.getString("${key}OutputLanguage", "")!!,
                         )
                     },
                 appRules = list<StoredRule>("appRules").map { it.rule },
-                additionalInstructions = preferences.getString("additionalInstructions", "")!!,
                 customSystemPromptEnabled =
                     preferences.getBoolean("customSystemPromptEnabled", false),
                 customSystemPrompt = preferences.getString("customSystemPrompt", "")!!,
-                customTones = list("customTones"),
-                customCleanupLevels = list("customCleanupLevels"),
+                refinementRules = list("refinementRules"),
                 buttonLayout =
                     enumOf(
                         preferences.getString("buttonLayout", null),
@@ -142,8 +142,8 @@ class SettingsStore(private val context: Context) {
                 correctionLearningEnabled = correctionLearningEnabled(),
                 learnedCorrections = loadCorrections().learned,
             )
-            // So no profile names a tone or level that is gone, and no rule a profile.
-            .withCustomChoices()
+            // So no profile switches a rule that is gone, and no app rule names a profile that is.
+            .withRefinementRules()
             .withWritingProfiles()
     }
 
@@ -194,11 +194,9 @@ class SettingsStore(private val context: Context) {
             }
             putList("customProfiles", settings.writingProfiles.keys.filterNot { it.isBuiltIn })
             putList("appRules", settings.appRules.map(::StoredRule))
-            putString("additionalInstructions", settings.additionalInstructions)
             putBoolean("customSystemPromptEnabled", settings.customSystemPromptEnabled)
             putString("customSystemPrompt", settings.customSystemPrompt)
-            putList("customTones", settings.customTones)
-            putList("customCleanupLevels", settings.customCleanupLevels)
+            putList("refinementRules", settings.refinementRules)
             putString("buttonLayout", settings.buttonLayout.name)
             putString("panelSize", settings.panelSize.name)
             putBoolean("autoCheckUpdates", settings.autoCheckUpdates)
@@ -276,15 +274,21 @@ class SettingsStore(private val context: Context) {
     fun correctionLearningEnabled(): Boolean = preferences.getBoolean("correctionLearning", true)
 
     /**
-     * Keeps what settings from an earlier release meant, once. That release placed the chip by the
-     * corner of a 52 x 36 dp window, now 56 x 48 dp with the same pill centred, so a saved offset
-     * moves up and left by half the difference to keep the pill put.
+     * Keeps what settings from an earlier release meant, once. Before version 2 the chip was placed
+     * by the corner of a 52 x 36 dp window, now 56 x 48 dp with the same pill centred, so a saved
+     * offset moves up and left by half the difference to keep the pill put. Before version 3
+     * refinement took prose rather than rules; see [migrateRules].
      */
     private fun upgrade() {
-        if (preferences.getInt("version", 1) >= VERSION) return
+        val version = preferences.getInt("version", 1)
+        if (version >= VERSION) return
         val density = context.resources.displayMetrics.density
         preferences.edit(commit = true) {
-            if (preferences.contains("chipOffsetX") && preferences.contains("chipOffsetY")) {
+            if (
+                version < 2 &&
+                    preferences.contains("chipOffsetX") &&
+                    preferences.contains("chipOffsetY")
+            ) {
                 putInt(
                     "chipOffsetX",
                     preferences.getInt("chipOffsetX", 0) - (2 * density).roundToInt(),
@@ -294,7 +298,98 @@ class SettingsStore(private val context: Context) {
                     preferences.getInt("chipOffsetY", 0) - (6 * density).roundToInt(),
                 )
             }
+            if (version < 3) migrateRules()
             putInt("version", VERSION)
+        }
+    }
+
+    /**
+     * Turns the refinement prose an earlier release kept into rules, as the desktop's migrateRules
+     * does, in this order:
+     * 1. the global instructions, when not blank: "Instructions for every profile", on in every
+     *    profile;
+     * 2. each Writing Profile's instructions that are not blank, in stored order: "<profile>
+     *    instructions", on in that profile;
+     * 3. each custom tone: "<name> tone", telling refinement to write in it, on in each profile
+     *    that chose it, which already has no tone;
+     * 4. each custom cleanup level: its name and instructions, on in each profile that chose it,
+     *    which then has the level's base, or Light for one based on Custom only.
+     *
+     * A name already taken gets " 2", " 3" and so on. The retired keys stay, unwritten, so an
+     * earlier release still reads them.
+     */
+    private fun SharedPreferences.Editor.migrateRules() {
+        // Rules already saved, by a later release before a downgrade, are the person's own.
+        if (preferences.contains("refinementRules")) return
+        val rules = mutableListOf<RefinementRule>()
+        val switches = mutableMapOf<WritingProfile, Map<String, Boolean>>()
+        // The id names what the rule came from, as the desktop's does, so an import of the
+        // computer's migrated rules replaces these instead of adding copies.
+        fun addRule(
+            source: String,
+            name: String,
+            instruction: String,
+            everyProfile: Boolean = false,
+        ): String {
+            val taken = rules.map { it.id }
+            val id = "custom_rule_$source".takeIf { it !in taken } ?: newRuleId(taken)
+            val free =
+                (sequenceOf(name.trim()) +
+                        generateSequence(2) { it + 1 }.map { "${name.trim()} $it" })
+                    .first { candidate ->
+                        rules.none { it.name.equals(candidate, ignoreCase = true) }
+                    }
+            rules += RefinementRule(id, free, instruction.trim(), everyProfile)
+            return id
+        }
+        fun switchOn(profile: WritingProfile, id: String) {
+            switches[profile] = switches[profile].orEmpty() + (id to true)
+        }
+        val profiles = WritingProfile.entries + customProfileIds()
+        fun choosing(field: String, id: String) = profiles.filter {
+            preferences.getString("${it.key}$field", null) == id
+        }
+
+        val global = preferences.getString("additionalInstructions", "")!!
+        if (global.isNotBlank())
+            addRule("every_profile", "Instructions for every profile", global, true)
+        profiles.forEach { profile ->
+            val instructions = preferences.getString("${profile.key}Instructions", "")!!
+            if (instructions.isNotBlank()) {
+                val label =
+                    builtInProfileLabels[profile]
+                        ?: preferences.getString("${profile.key}Name", "")!!.trim()
+                switchOn(
+                    profile,
+                    addRule("${profile.id}_instructions", "$label instructions", instructions),
+                )
+            }
+        }
+        list<RetiredTone>("customTones").forEach { tone ->
+            val name = tone.name.trim()
+            val id =
+                addRule(
+                    tone.id,
+                    "$name tone",
+                    "Write in this tone: $name. ${tone.instruction.trim()}",
+                )
+            choosing("CustomTone", tone.id).forEach { switchOn(it, id) }
+        }
+        list<RetiredLevel>("customCleanupLevels").forEach { level ->
+            val id = addRule(level.id, level.name, level.instructions)
+            val base =
+                if (level.base == "CustomOnly") CleanupStrength.LightCleanup
+                else enumOf(level.base, CleanupStrength.Balanced)
+            choosing("CustomCleanup", level.id).forEach {
+                switchOn(it, id)
+                putString("${it.key}Cleanup", base.name)
+            }
+        }
+
+        if (rules.isEmpty()) return
+        putList("refinementRules", rules)
+        switches.forEach { (profile, on) ->
+            putString("${profile.key}Rules", json.encodeToString(on))
         }
     }
 
@@ -343,16 +438,14 @@ class SettingsStore(private val context: Context) {
 
     private companion object {
         const val NO_OFFSET = Int.MIN_VALUE
-        const val VERSION = 2
+        const val VERSION = 3
         const val NAME_FIELD = "Name"
         /** What save stores of each Writing Profile, under its key prefix plus the field's name. */
         val profileFields: Map<String, (WritingProfileSettings) -> String?> =
             mapOf(
                 "Cleanup" to { it.cleanupStrength.name },
                 "Tone" to { it.tone.name },
-                "Instructions" to { it.instructions },
-                "CustomCleanup" to { it.customCleanupLevel },
-                "CustomTone" to { it.customTone },
+                "Rules" to { json.encodeToString(it.rules) },
                 NAME_FIELD to { it.name },
                 "OutputLanguage" to { it.outputLanguage },
             )
@@ -392,6 +485,22 @@ private data class StoredRule(val match: String, val category: String, val profi
                 profile.takeIf(String::isNotEmpty)?.let(::WritingProfile),
             )
 }
+
+/** A custom tone as releases before version 3 stored it, read only to migrate it. */
+@Serializable
+private data class RetiredTone(val id: String, val name: String, val instruction: String)
+
+/**
+ * A custom cleanup level as releases before version 3 stored it, with its base by enum name, read
+ * only to migrate it.
+ */
+@Serializable
+private data class RetiredLevel(
+    val id: String,
+    val name: String,
+    val base: String,
+    val instructions: String,
+)
 
 /**
  * The preference key prefix of a profile. The built-ins keep the enum constant names earlier

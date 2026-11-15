@@ -22,9 +22,13 @@
 #include "core/LocalModelCatalog.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
+#include "core/settings/RulesMigration.h"
+#include "dictation/DictationPlan.h"
+#include "dictation/TranscriptPipeline.h"
 #include "core/settings/SettingsKeys.h"
 #include "frontend/quick/host/QuickSettings.h"
 #include "providers/LocalModelStore.h"
+#include "providers/TranscriptRefinementPrompt.h"
 
 #include <QDir>
 #include <QFile>
@@ -394,6 +398,29 @@ private slots:
         QCOMPARE(migrated(QStringLiteral("/calls")), QStringLiteral("/calls"));
     }
 
+    // Global and profile instructions become rules that write the prompt
+    // they wrote before: the Android golden recorded from it.
+    void migratedInstructionsKeepTheirPrompt()
+    {
+        SettingsStore store;
+        store.raw().setValue(SettingsKeys::AdditionalInstructions,
+                             QStringLiteral("Spell it Speecher.\nKeep British spelling.\n"));
+        store.raw().setValue(
+            SettingsKeys::WritingProfiles,
+            QByteArray(R"([{"profile":"other","cleanupStrength":"balanced","tone":"casual",)"
+                       R"("instructions":" Sign off with Best, Enzo"}])"));
+        migrateRules(store.raw());
+
+        const DictationPlan plan = planDictation(store.snapshot(), Target{}, {});
+        const TranscriptPipelineResult pipeline =
+            TranscriptPipeline::prepare(QStringLiteral("hello"), plan, Target{}, QStringLiteral("en"));
+        QFile golden(QStringLiteral(SPEECHER_SOURCE_DIR
+                                    "/android/protocol/src/test/resources/refinement-prompt/balanced-instructions.txt"));
+        QVERIFY(golden.open(QIODevice::ReadOnly | QIODevice::Text));
+        QCOMPARE(dictationRefinementSystemPrompt(pipeline.refinementSettings.style, pipeline.refinementContext),
+                 QString::fromUtf8(golden.readAll()));
+    }
+
     void nativeSettingsHistoryAndModelsSurviveTheUpdate()
     {
         loadSettingsFile(QStringLiteral("native.conf"));
@@ -578,19 +605,34 @@ private:
 
         const WritingProfileSettings &lab = profile(settings, customProfile);
         QCOMPARE(lab.name, QStringLiteral("Lab notes"));
-        QCOMPARE(lab.instructions, QStringLiteral("Write lab notes."));
         QCOMPARE(lab.outputLanguage, QStringLiteral("Spanish"));
-        QCOMPARE(lab.cleanupStrength, QStringLiteral("custom_level_fixture1"));
-        QCOMPARE(lab.tone, QStringLiteral("custom_tone_fixture1"));
         QCOMPARE(lab.speechFirst, (ServiceChoice{QStringLiteral("local"), QStringLiteral("moonshine-small")}));
         QCOMPARE(lab.refinementFirst, (ServiceChoice{QStringLiteral("anthropic"), QStringLiteral("claude-haiku-5-5")}));
-        QCOMPARE(profile(settings, QStringLiteral("work")).instructions, QStringLiteral("Use the team glossary."));
-        QCOMPARE(settings.refinement.customTones,
-                 (QList<CustomTone>{{QStringLiteral("custom_tone_fixture1"), QStringLiteral("Pirate"),
-                                     QStringLiteral("Talk like a pirate.")}}));
-        QCOMPARE(settings.refinement.customCleanupLevels,
-                 (QList<CustomCleanupLevel>{{QStringLiteral("custom_level_fixture1"), QStringLiteral("Light plus"),
-                                             QStringLiteral("light_cleanup"), QStringLiteral("Keep the filler words.")}}));
+        // Profile instructions, then the custom tone, then the custom level,
+        // each a rule on where it was used. Lab notes takes the level's base
+        // and no tone. Each id names its source, so the phone makes the same.
+        const QList<RefinementRule> &rules = settings.refinement.rules;
+        QCOMPARE(rules,
+                 (QList<RefinementRule>{
+                     {QStringLiteral("custom_rule_work_instructions"), QStringLiteral("Work instructions"),
+                      QStringLiteral("Use the team glossary."), false},
+                     {QStringLiteral("custom_rule_custom_profile_fixture1_instructions"),
+                      QStringLiteral("Lab notes instructions"), QStringLiteral("Write lab notes."), false},
+                     {QStringLiteral("custom_rule_custom_tone_fixture1"), QStringLiteral("Pirate tone"),
+                      QStringLiteral("Write in this tone: Pirate. Talk like a pirate."), false},
+                     {QStringLiteral("custom_rule_custom_level_fixture1"), QStringLiteral("Light plus"),
+                      QStringLiteral("Keep the filler words."), false}}));
+        QCOMPARE(profile(settings, QStringLiteral("work")).rules, (QMap<QString, bool>{{rules[0].id, true}}));
+        QCOMPARE(lab.rules, (QMap<QString, bool>{{rules[1].id, true}, {rules[2].id, true}, {rules[3].id, true}}));
+        QCOMPARE(lab.cleanupStrength, QStringLiteral("light_cleanup"));
+        QCOMPARE(lab.tone, QStringLiteral("none"));
+        for (const QString &other : {QStringLiteral("email"), QStringLiteral("personal"), QStringLiteral("ai_coding"),
+                                     QStringLiteral("other")}) {
+            QVERIFY2(profile(settings, other).rules.isEmpty(), qPrintable(other));
+        }
+        // Once is all it runs.
+        migrateRules(store.raw());
+        QCOMPARE(store.snapshot().refinement, settings.refinement);
         QCOMPARE(fallbackWritingProfile(settings.apps), customProfile);
         QCOMPARE(settings.apps.apps.size(), 2);
         QCOMPARE(withoutId(settings.apps.apps[0]),

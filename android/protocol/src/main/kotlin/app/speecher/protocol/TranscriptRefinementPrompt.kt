@@ -109,62 +109,37 @@ private fun outputLanguageRule(language: String) =
     "Language\n" +
         "Write the reply in $language. When the dictation is in another language, translate it and clean up the translation by the steps above. Keep literals, names and binding placeholders unchanged, and follow $language punctuation and typography."
 
-private fun CleanupStrength.isBuiltIn() = this != CleanupStrength.CustomOnly
-
-/** A custom-only level edits as Balanced does: editing has no level rules for it to leave out. */
-private fun CleanupStrength.builtIn() =
-    if (this == CleanupStrength.CustomOnly) CleanupStrength.Balanced else this
-
-/** The name a tone goes by: a built-in's id in words, or a custom tone's name. Empty for none. */
+/** The tone's name in words, or empty for none. */
 private fun toneName(context: RefinementContext): String =
-    context.customTone?.name?.trim()
-        ?: if (context.tone == Tone.None) "" else context.tone.id.replace('_', ' ')
+    if (context.tone == Tone.None) "" else context.tone.id.replace('_', ' ')
 
-/** The requested tone as an instruction, with a custom tone's own description. Null for none. */
-private fun toneInstruction(context: RefinementContext): String? {
-    val name =
-        toneName(context).ifEmpty {
-            return null
-        }
-    val described = context.customTone?.instruction?.trim().orEmpty()
-    return "Tone: $name. Write in that tone without changing facts or intent." +
-        if (described.isEmpty()) "" else " The user describes it as:\n$described"
-}
-
-/** A custom cleanup level's instructions, or null when it has none. */
-private fun customLevelInstructions(context: RefinementContext): String? =
-    context.cleanupLevel?.instructions?.trim()?.takeIf(String::isNotEmpty)
-
-/**
- * A custom level's instructions as a section of their own, after a custom prompt or for editing.
- */
-private fun customLevelSection(context: RefinementContext): String? =
-    customLevelInstructions(context)?.let {
-        "The user's cleanup level, \"${context.cleanupLevel!!.name.trim()}\":\n$it"
+/** The requested tone as an instruction. Null for none. */
+private fun toneInstruction(context: RefinementContext): String? =
+    toneName(context).takeIf(String::isNotEmpty)?.let {
+        "Tone: $it. Write in that tone without changing facts or intent."
     }
 
-/** Step 3: the level's cleanup, then a custom level's instructions, then the tone. */
+/** Step 3: the level's cleanup, then the tone. */
 private fun cleanupStep(context: RefinementContext): String {
-    val custom = customLevelInstructions(context)
-    val levelName = context.cleanupLevel?.name?.trim().orEmpty()
     val step =
-        when {
-            context.style == CleanupStrength.CustomOnly ->
-                if (custom == null) "3. Clean up.\nFix punctuation and capitalization."
-                else "3. Clean up as the user's cleanup level, \"$levelName\", says:\n$custom"
-            else ->
-                when (context.style) {
-                    CleanupStrength.LightCleanup -> LIGHT_CLEANUP
-                    CleanupStrength.StrongPolish -> STRONG_CLEANUP
-                    else -> BALANCED_CLEANUP
-                } +
-                    if (custom == null) ""
-                    else "\nThe user's cleanup level, \"$levelName\", adds:\n$custom"
+        when (context.style) {
+            CleanupStrength.LightCleanup -> LIGHT_CLEANUP
+            CleanupStrength.StrongPolish -> STRONG_CLEANUP
+            else -> BALANCED_CLEANUP
         }
     return toneInstruction(context)?.let { "$step\n$it" } ?: step
 }
 
-/** For the AI coding profile; each level sets how far the prompt may be reshaped. */
+/**
+ * The built-in rules the profile switched away from its level, after the steps they change, so the
+ * tuned level text stays as written. Null when none changed.
+ */
+private fun changedStepsSection(context: RefinementContext): String? =
+    context.changedSteps
+        .takeIf(List<String>::isNotEmpty)
+        ?.joinToString("\n- ", "The user's changes to the steps above\n- ")
+
+/** For the coding agent rule; each level sets how far the prompt may be reshaped. */
 private fun aiCodingSection(style: CleanupStrength) =
     AI_CODING_SECTION +
         when (style) {
@@ -172,7 +147,6 @@ private fun aiCodingSection(style: CleanupStrength) =
                 "\nKeep the speaker's wording and order rather than reshaping it into a task brief."
             CleanupStrength.StrongPolish ->
                 "\nA long request may be reorganized into a clear task brief that groups related requirements and spells out relationships the speaker implied."
-            CleanupStrength.CustomOnly -> ""
             else ->
                 "\nA long request may be lightly organized to make it easier to follow, in the speaker's order."
         }
@@ -188,7 +162,8 @@ private fun builtInDictationRules(context: RefinementContext) = buildList {
             LITERALS_STEP,
         ),
     )
-    if (context.profile == WritingProfile.AiCoding) add(aiCodingSection(context.style))
+    changedStepsSection(context)?.let(::add)
+    if (context.codingAgent) add(aiCodingSection(context.style))
     add(DICTATION_EXAMPLES)
     add(DICTATION_OUTPUT_CONTRACT)
 }
@@ -213,15 +188,11 @@ private fun languageRule(context: RefinementContext): String? {
     }
 }
 
-/** The user's own instructions, every refinement's first and then the profile's. */
+/** The user's rules that are on, in their order. */
 private fun userInstructions(context: RefinementContext): String? {
-    val instructions =
-        listOf(context.additionalInstructions, context.profileInstructions)
-            .map(String::trim)
-            .filter(String::isNotEmpty)
-    if (instructions.isEmpty()) return null
+    if (context.userRules.isEmpty()) return null
     return "The user's own instructions\nThese come from the user's settings. Follow them, as long as your reply is still only the text and keeps the speaker's meaning.\n" +
-        instructions.joinToString("\n\n")
+        context.userRules.joinToString("\n\n")
 }
 
 internal fun dictationSystemPrompt(context: RefinementContext): String {
@@ -230,8 +201,8 @@ internal fun dictationSystemPrompt(context: RefinementContext): String {
             if (custom.isEmpty()) addAll(builtInDictationRules(context))
             else {
                 add(custom)
+                // The built-in rules' changes go with the built-in rules.
                 toneInstruction(context)?.let(::add)
-                customLevelSection(context)?.let(::add)
             }
             languageRule(context)?.let(::add)
             userInstructions(context)?.let(::add)
@@ -254,13 +225,15 @@ private fun editingStyle(style: CleanupStrength) =
             "Make the requested changes in natural, polished writing, staying close to the document's voice and structure."
     }
 
-/** The desktop's selectedDocumentEditingSystemPrompt. The document keeps its own language. */
+/**
+ * The desktop's selectedDocumentEditingSystemPrompt. The document keeps its own language, and
+ * editing has no steps for the built-in rules' changes to change.
+ */
 private fun editingSystemPrompt(context: RefinementContext): String = buildList {
     add(EDITING_TASK)
-    add(editingStyle(context.style.builtIn()))
-    if (context.profile == WritingProfile.AiCoding) add(aiCodingSection(context.style.builtIn()))
+    add(editingStyle(context.style))
+    if (context.codingAgent) add(aiCodingSection(context.style))
     toneInstruction(context)?.let(::add)
-    customLevelSection(context)?.let(::add)
     if (spokenOffEnglish(context)) add(DOCUMENT_LANGUAGE_RULE)
     userInstructions(context)?.let(::add)
     add(EDITING_CONTEXT_HEADING + contextJson(context))
@@ -288,10 +261,7 @@ private fun contextJson(context: RefinementContext): JsonObject = buildJsonObjec
     putKnown("application_name", context.applicationName)
     putKnown("control_role", context.controlRole)
     putKnown("field_hint", context.fieldHint)
-    put(
-        "refinement_style",
-        JsonPrimitive(if (context.style.isBuiltIn()) context.style.id else "custom"),
-    )
+    put("refinement_style", JsonPrimitive(context.style.id))
     putKnown("screen_text", context.screenText)
     context.nearbyText?.let {
         put("text_after_caret", JsonPrimitive(it.after))

@@ -8,9 +8,8 @@ import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onFirst
-import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performTextReplacement
-import androidx.compose.ui.test.requestFocus
 import app.speecher.android.provider.CleanupProvider
 import app.speecher.android.provider.Provider
 import app.speecher.android.provider.RefinementChoice
@@ -59,8 +58,8 @@ class ModelFieldTest {
             field.performTextReplacement("Claude Haiku 5.5".take(length))
         }
         assertEquals("claude-sonnet-5-5", settings.claudeRefinement.model)
-        // Leaving for the instructions field.
-        compose.onAllNodes(hasSetTextAction()).onLast().requestFocus()
+        // Leaving it with Done.
+        field.performImeAction()
         field.assertTextContains("Claude Sonnet 5.5")
     }
 
@@ -73,7 +72,7 @@ class ModelFieldTest {
         assertEquals("claude-opus-5-5", settings.claudeRefinement.model)
         field.performTextReplacement("claude-opus-9 ")
         assertEquals("claude-opus-9", settings.claudeRefinement.model)
-        compose.onAllNodes(hasSetTextAction()).onLast().requestFocus()
+        field.performImeAction()
         field.assertTextContains("claude-opus-9")
     }
 }

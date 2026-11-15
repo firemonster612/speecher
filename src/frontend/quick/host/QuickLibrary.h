@@ -11,29 +11,32 @@ namespace speecher {
 
 class ApplicationController;
 
-// The UI's LibraryLists: the Writing Profiles with the user's tones and
-// cleanup levels, and the Vocabulary, as plain values read from and written through the
-// daemon's SettingsStore. The Library singleton (Library.qml) builds on it
-// and words it. Edits name a list by its property and an entry by its key
-// there (see update). Core's WritingProfileEdits and VocabularyEdits make
-// them and say why one is refused; this converts the records.
+// The UI's LibraryLists: the Writing Profiles, the user's rules and the
+// Vocabulary, as plain values read from and written through the daemon's
+// SettingsStore. The Library singleton (Library.qml) builds on it and words
+// it. Edits name a list by its property and an entry by its key there (see
+// update). Core's WritingProfileEdits and VocabularyEdits make them and say
+// why one is refused; this converts the records.
 class QuickLibrary : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(LibraryLists)
-    // { id, name, builtIn, cleanup, tone, language, instructions, speech,
-    // speechModel, speechSkipped, refinement, refinementModel }: the
-    // built-ins, then the user's in the order added. An empty service or
-    // model is the one the Speech to text or Refinement page chose.
+    // { id, name, builtIn, cleanup, tone, language, speech,
+    // speechModel, speechSkipped, refinement, refinementModel, rules,
+    // changedRules }: the built-ins, then the user's in the order added. An
+    // empty service or model is the one the Speech to text or Refinement
+    // page chose. rules is whether each rule, built-in or the user's, is on
+    // for the profile, by id (core's ruleOn); changedRules counts the
+    // built-in rules it switched away from its cleanup level's defaults.
     // speechSkipped says why core's planDictation passes over the profile's
     // own speech service for Speech to text's order: "language" where it
     // can't listen for the Spoken Language, "unavailable" where this build
     // lacks it; empty while the profile's service leads.
     Q_PROPERTY(QVariantList profiles READ profiles NOTIFY listsChanged)
-    // { id, name, instruction }
-    Q_PROPERTY(QVariantList customTones READ customTones NOTIFY listsChanged)
-    // { id, name, base, instructions }; base is light_cleanup, balanced,
-    // strong_polish or custom_only.
-    Q_PROPERTY(QVariantList customCleanupLevels READ customCleanupLevels NOTIFY listsChanged)
+    // The user's rules in their order: { id, name, instruction, everyProfile }.
+    Q_PROPERTY(QVariantList rules READ rules NOTIFY listsChanged)
+    // The built-in rules in core's order: { id, group (cleanup, formatting or
+    // more) }. Library.qml words them by id.
+    Q_PROPERTY(QVariantList builtInRules READ builtInRules CONSTANT)
     // The Vocabulary, spellings in the order the speech service is sent
     // them, then replacements in the order saved: { id, kind
     // (spelling or replacement), term (a spelling's term, a replacement's
@@ -69,42 +72,40 @@ public:
     explicit QuickLibrary(ApplicationController *controller, QObject *parent = nullptr);
 
     QVariantList profiles() const { return m_profiles; }
-    QVariantList customTones() const { return m_customTones; }
-    QVariantList customCleanupLevels() const { return m_customCleanupLevels; }
+    QVariantList rules() const { return m_rules; }
+    QVariantList builtInRules() const;
     QVariantList vocabulary() const { return m_vocabulary; }
     int keyTermLimit() const;
     int refinementTermLimit() const;
     bool speechTakesKeyTerms() const { return m_speechTakesKeyTerms; }
     int keyTermsSent() const { return m_keyTermsSent; }
 
-    // An id for a profile, tone or cleanup level to add, starting with
-    // prefix (custom_profile, custom_tone, custom_level).
+    // An id for a profile or rule to add, starting with prefix
+    // (custom_profile, custom_rule).
     Q_INVOKABLE QString newId(const QString &prefix) const;
-    // Adds item to the list named (profiles, customTones, customCleanupLevels,
-    // vocabulary), with the fields its records
-    // show; one of the first three carries its newId. A tone or level takes
-    // builtInNames, the names the page shows the built-in ones by, which it
-    // can't be called. Returns why it was refused, as EditRefusal says: blank,
-    // taken, incomplete, missing or builtIn, or invalid for a field the
-    // records lack. Empty when saved.
-    Q_INVOKABLE QString add(const QString &list, const QVariantMap &item, const QStringList &builtInNames = {});
+    // Adds item to the list named (profiles, rules, vocabulary), with the
+    // fields its records show; a profile or rule carries its newId. Returns why it was refused,
+    // as EditRefusal says: blank, taken, incomplete, missing or builtIn, or
+    // invalid for a field the records lack. Empty when saved.
+    Q_INVOKABLE QString add(const QString &list, const QVariantMap &item);
     // Changes the fields patch names on the entry `key` names in the list
     // named: its id. What the record does not show
     // stays. Returns as add does; missing once the entry is gone.
-    Q_INVOKABLE QString update(const QString &list, const QString &key, const QVariantMap &patch,
-                               const QStringList &builtInNames = {});
-    // Removes the vocabulary entry key names.
-    // Returns the token undo takes to put it back, or -1
-    // when nothing was removed.
+    Q_INVOKABLE QString update(const QString &list, const QString &key, const QVariantMap &patch);
+    // Removes the entry key names from rules (with every profile's switch
+    // for it) or vocabulary. Returns the token undo takes to put it back, or
+    // -1 when nothing was removed.
     Q_INVOKABLE int remove(const QString &list, const QString &key);
     // Removes one of the user's profiles, and saving it drops what named it:
     // Apps and App Types follow the wider place instead, and terms limited
     // to it lose the limit. No undo: the page asks first.
     Q_INVOKABLE void removeProfile(const QString &id);
-    // Remove one of the user's tones or cleanup levels, moving the profiles
-    // that chose it, and return the undo token, or -1.
-    Q_INVOKABLE int removeTone(const QString &id);
-    Q_INVOKABLE int removeLevel(const QString &id);
+    // Switches a rule on or off for a profile. Returns as add does: missing
+    // for a profile or rule that is gone.
+    Q_INVOKABLE QString setProfileRule(const QString &profile, const QString &rule, bool on);
+    // Drops the profile's switches for built-in rules, so each is as its
+    // cleanup level starts it. Returns as setProfileRule does.
+    Q_INVOKABLE QString resetRules(const QString &profile);
     // Forgets the newest Learned Correction; returns the undo token, or -1.
     Q_INVOKABLE int undoLastCorrection();
     // Puts back what the removal with this token took, unless an entry by
@@ -128,8 +129,7 @@ private:
     ApplicationController *m_controller;
     UndoSlot m_undo;
     QVariantList m_profiles;
-    QVariantList m_customTones;
-    QVariantList m_customCleanupLevels;
+    QVariantList m_rules;
     QVariantList m_vocabulary;
     bool m_speechTakesKeyTerms = false;
     int m_keyTermsSent = 0;

@@ -65,11 +65,9 @@ android {
     lint {
         warningsAsErrors = true
         abortOnError = true
-        // lint.xml carries the only exemptions, all scoped to BouncyCastle's bctls jar: its
-        // bytecode
-        // trips TrustAllX509TrustManager (a false positive; our TLS code validates properly) and it
-        // is pinned at 1.86. Every other dependency and every other check stays strict. See
-        // AGENTS.md.
+        // lint.xml carries the only exemption, scoped to BouncyCastle's bctls jar: its bytecode
+        // trips TrustAllX509TrustManager (a false positive; our TLS code validates properly).
+        // Every other check stays strict. See AGENTS.md.
         lintConfig = file("lint.xml")
     }
 }

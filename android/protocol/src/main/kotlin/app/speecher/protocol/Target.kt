@@ -50,8 +50,6 @@ enum class CleanupStrength(val id: String) {
     LightCleanup("light_cleanup"),
     Balanced("balanced"),
     StrongPolish("strong_polish"),
-    /** Only as a custom level's base: none of the level rules, only the level's own. */
-    CustomOnly("custom_only"),
 }
 
 enum class Tone(val id: String) {
@@ -63,25 +61,23 @@ enum class Tone(val id: String) {
     GenZ("gen_z"),
 }
 
-/** A tone the user defined: the model is told its [name] and follows the [instruction]. */
-@Serializable data class CustomTone(val id: String, val name: String, val instruction: String)
-
 /**
- * A cleanup level the user defined: the rules of its [base] plus the user's [instructions]. A base
- * that is no longer a [CleanupStrength] loads as Balanced.
+ * A rule the user wrote. Refinement is told [instruction], or [name] when the instruction is blank.
+ * The [name] is required and unique among the user's rules. [everyProfile] has it on unless a
+ * profile turns it off; otherwise it is off unless one turns it on.
  */
 @Serializable
-data class CustomCleanupLevel(
+data class RefinementRule(
     val id: String,
     val name: String,
-    val base: CleanupStrength = CleanupStrength.Balanced,
-    val instructions: String,
+    val instruction: String = "",
+    val everyProfile: Boolean = false,
 )
 
 /**
- * The id a new custom tone, level or profile named [name] gets: custom_ and the name in lowercase
- * with every other character made _, so it never matches a built-in id, then _2, _3 and so on until
- * it is none of [taken]. The desktop's customChoiceId.
+ * The id a new custom profile named [name] gets: custom_ and the name in lowercase with every other
+ * character made _, so it never matches a built-in id, then _2, _3 and so on until it is none of
+ * [taken]. The desktop's customChoiceId.
  */
 fun customChoiceId(name: String, taken: Collection<String>): String {
     val base =
@@ -92,54 +88,19 @@ fun customChoiceId(name: String, taken: Collection<String>): String {
 }
 
 /**
- * How one writing profile refines. Every profile defaults to balanced with no tone override. The
- * [instructions] follow the global ones in the prompt. [customCleanupLevel] and [customTone] name a
- * custom level or tone chosen instead of [cleanupStrength] or [tone], which then hold what a
- * deletion falls back to: Medium and no tone override. [name] is a custom profile's; a built-in is
- * called by its label. A non-blank [outputLanguage] has refinement write in that language.
+ * How one writing profile refines. Every profile defaults to balanced with no tone override.
+ * [rules] are the rules this profile switched away from their default, by rule id, built-in rules
+ * and the user's alike; an entry equal to the default is never kept (see [withRule]). [name] is a
+ * custom profile's; a built-in is called by its label. A non-blank [outputLanguage] has refinement
+ * write in that language.
  */
 data class WritingProfileSettings(
     val cleanupStrength: CleanupStrength = CleanupStrength.Balanced,
     val tone: Tone = Tone.None,
-    val instructions: String = "",
-    val customCleanupLevel: String? = null,
-    val customTone: String? = null,
+    val rules: Map<String, Boolean> = emptyMap(),
     val name: String = "",
     val outputLanguage: String = "",
 )
-
-/** The chosen level's id: a built-in's or a custom level's. */
-val WritingProfileSettings.cleanupLevelId: String
-    get() = customCleanupLevel ?: cleanupStrength.id
-
-/** The chosen tone's id: a built-in's or a custom tone's. */
-val WritingProfileSettings.toneId: String
-    get() = customTone ?: tone.id
-
-fun WritingProfileSettings.withCleanupLevel(id: String): WritingProfileSettings =
-    CleanupStrength.entries
-        .firstOrNull { it.id == id }
-        ?.let { copy(cleanupStrength = it, customCleanupLevel = null) }
-        ?: copy(cleanupStrength = CleanupStrength.Balanced, customCleanupLevel = id)
-
-fun WritingProfileSettings.withTone(id: String): WritingProfileSettings =
-    Tone.entries.firstOrNull { it.id == id }?.let { copy(tone = it, customTone = null) }
-        ?: copy(tone = Tone.None, customTone = id)
-
-/** Falls back to Medium or no tone override when the custom level or tone chosen is gone. */
-fun WritingProfileSettings.withoutDeleted(
-    tones: List<CustomTone>,
-    levels: List<CustomCleanupLevel>,
-): WritingProfileSettings {
-    var settings = this
-    if (customCleanupLevel != null && levels.none { it.id == customCleanupLevel }) {
-        settings = settings.withCleanupLevel(CleanupStrength.Balanced.id)
-    }
-    if (customTone != null && tones.none { it.id == customTone }) {
-        settings = settings.withTone(Tone.None.id)
-    }
-    return settings
-}
 
 /**
  * The field's text around the caret: [before] the selection start, [after] the selection end.
@@ -177,14 +138,17 @@ data class RefinementContext(
     val screenText: String = "",
     /** A base64 JPEG of the screen, attached as an image for a vision model. */
     val screenshotJpeg: String? = null,
-    /** The user's instructions from settings: every refinement's, then the profile's. */
-    val additionalInstructions: String = "",
-    val profileInstructions: String = "",
+    /** The text of each of the user's rules that is on, in their order. */
+    val userRules: List<String> = emptyList(),
+    /**
+     * The prompt sentence of each built-in rule the profile switched away from its level's default,
+     * in the rules' order.
+     */
+    val changedSteps: List<String> = emptyList(),
+    /** The text is a prompt for a coding agent: the [CODING_AGENT_RULE]. */
+    val codingAgent: Boolean = false,
     /** Replaces the built-in dictation rules when not blank. */
     val customSystemPrompt: String = "",
-    /** Set when the tone or level is one the user defined; [style] is then the level's base. */
-    val customTone: CustomTone? = null,
-    val cleanupLevel: CustomCleanupLevel? = null,
     /** The language code the user dictates in, or Automatic's; anything but English adds a rule. */
     val spokenLanguage: String = ENGLISH_LANGUAGE,
     /** The profile's language to write in; blank keeps the spoken one. */
@@ -293,9 +257,9 @@ private fun RecognitionRule.matches(identity: List<String>, builtIn: Boolean = t
 }
 
 /**
- * The category and profile for an app, then that profile's cleanup and tone. The user's [rules] are
- * checked before the built-in ones. [platformCategory] is what the OS reports, used only when no
- * rule names the app; the desktop has no such signal.
+ * The category and profile for an app, then that profile's cleanup, tone and rules. The user's app
+ * [rules] are checked before the built-in ones. [platformCategory] is what the OS reports, used
+ * only when no rule names the app; the desktop has no such signal.
  */
 fun resolveRefinementContext(
     applicationId: String,
@@ -304,8 +268,7 @@ fun resolveRefinementContext(
     nearbyText: NearbyText?,
     fallbackProfile: WritingProfile,
     profiles: Map<WritingProfile, WritingProfileSettings>,
-    tones: List<CustomTone> = emptyList(),
-    levels: List<CustomCleanupLevel> = emptyList(),
+    refinementRules: List<RefinementRule> = emptyList(),
     rules: List<RecognitionRule> = emptyList(),
 ): RefinementContext {
     // The desktop also matches the process name, the accessibility role and, outside AI coding
@@ -333,14 +296,18 @@ fun resolveRefinementContext(
                 AppCategory.Unknown -> fallbackProfile
             }
     val settings = profiles[profile] ?: WritingProfileSettings()
-    val level = levels.firstOrNull { it.id == settings.customCleanupLevel }
     // Translating is refining, so a profile set to None that has an output language refines at
     // Light, as the desktop's refinedCleanupLevel.
-    val translatesUnrefined =
-        settings.cleanupStrength == CleanupStrength.None && settings.outputLanguage.isNotBlank()
+    val style =
+        if (
+            settings.cleanupStrength == CleanupStrength.None && settings.outputLanguage.isNotBlank()
+        )
+            CleanupStrength.LightCleanup
+        else settings.cleanupStrength
+    // The desktop's fillRules: the rules on for this profile at the level refinement runs at.
+    fun on(ruleId: String) = ruleOn(ruleId, profile, settings, style, refinementRules)
     return RefinementContext(
-        level?.base
-            ?: if (translatesUnrefined) CleanupStrength.LightCleanup else settings.cleanupStrength,
+        style,
         settings.tone,
         profile,
         builtInProfileLabels[profile] ?: settings.name,
@@ -348,9 +315,18 @@ fun resolveRefinementContext(
         applicationId,
         applicationName,
         nearbyText,
-        profileInstructions = settings.instructions,
-        customTone = tones.firstOrNull { it.id == settings.customTone },
-        cleanupLevel = level,
+        userRules =
+            refinementRules
+                .filter { on(it.id) }
+                .map { it.instruction.trim().ifEmpty { it.name.trim() } },
+        changedSteps =
+            builtInRefinementRules.mapNotNull { rule ->
+                val on = on(rule.id)
+                (if (on) rule.onSentence else rule.offSentence).takeIf {
+                    on != ruleDefault(rule.id, profile, style, refinementRules) && it.isNotEmpty()
+                }
+            },
+        codingAgent = on(CODING_AGENT_RULE),
         outputLanguage = settings.outputLanguage,
     )
 }

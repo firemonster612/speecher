@@ -738,7 +738,7 @@ private slots:
         SettingsStore settings;
         AppSettings stored = settings.snapshot();
         stored.refinement.writingProfiles = {{WritingProfile::Other, QStringLiteral("balanced"), QStringLiteral("none"),
-                                              QString(), QString(), QStringLiteral("Spanish")}};
+                                              {}, QString(), QStringLiteral("Spanish")}};
         settings.applySnapshot(stored);
         FileTranscriptionSession session(&settings, m_registry.get());
         QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
@@ -4379,46 +4379,21 @@ private slots:
         QCOMPARE(queue.overrides().tone, std::optional(QStringLiteral("casual")));
     }
 
-    // A profile, cleanup level or tone deleted after it was chosen gives way
-    // to what the settings give instead of reaching the refiner.
+    // A profile deleted after it was chosen gives way to what the settings
+    // give instead of reaching the refiner.
     void aDeletedChoiceFallsBackToTheProfiles()
     {
         ApplicationController controller(true);
         AppSettings settings = controller.settings()->snapshot();
-        settings.refinement.customTones = {{QStringLiteral("custom_pirate"), QStringLiteral("Pirate"), {}}};
-        settings.refinement.customCleanupLevels = {{QStringLiteral("custom_terse"), QStringLiteral("Terse")}};
         WritingProfileSettings notes;
         notes.profile = QStringLiteral("custom_notes");
         notes.name = QStringLiteral("Notes");
         notes.cleanupStrength = QStringLiteral("strong_polish");
         notes.tone = QStringLiteral("formal");
         settings.refinement.writingProfiles << notes;
-        for (WritingProfileSettings &profile : settings.refinement.writingProfiles) {
-            if (profile.profile == WritingProfile::Work) {
-                profile.cleanupStrength = QStringLiteral("light_cleanup");
-                profile.tone = QStringLiteral("casual");
-            }
-        }
         controller.settings()->applySnapshot(settings);
         ControllerQueue queue(controller);
         RunOverrides chosen;
-        chosen.writingProfile = WritingProfile::Work;
-        chosen.cleanupLevel = QStringLiteral("custom_terse");
-        chosen.tone = QStringLiteral("custom_pirate");
-        queue.setOverrides(chosen);
-
-        settings.refinement.customTones.clear();
-        settings.refinement.customCleanupLevels.clear();
-        controller.settings()->applySnapshot(settings);
-
-        QCOMPARE(queue.overrides().writingProfile, std::optional(WritingProfile::Work));
-        QVERIFY(!queue.overrides().cleanupLevel);
-        QVERIFY(!queue.overrides().tone);
-        const DictationPlan work = queue.plan(queue.overrides());
-        QCOMPARE(work.profile.cleanupStrength, QStringLiteral("light_cleanup"));
-        QCOMPARE(work.profile.tone, QStringLiteral("casual"));
-
-        chosen = queue.overrides();
         chosen.writingProfile = notes.profile;
         queue.setOverrides(chosen);
         settings.refinement.writingProfiles.removeLast();

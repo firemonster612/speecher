@@ -2,17 +2,15 @@ package app.speecher.android.transfer
 
 import app.speecher.android.settings.SpeecherSettings
 import app.speecher.protocol.CleanupStrength
-import app.speecher.protocol.CustomCleanupLevel
-import app.speecher.protocol.CustomTone
+import app.speecher.protocol.RefinementRule
 import app.speecher.protocol.Replacement
+import app.speecher.protocol.Tone
 import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
 import app.speecher.protocol.foldCase
 import app.speecher.protocol.normalizedPhrase
 import app.speecher.protocol.normalizedVocabulary
-import app.speecher.protocol.withCleanupLevel
-import app.speecher.protocol.withTone
 import java.io.DataInputStream
 import java.io.IOException
 import java.net.InetAddress
@@ -93,7 +91,7 @@ fun parseImportLink(scanned: String): ImportLink =
                 it.substringBefore('=') to URLDecoder.decode(it.substringAfter('=', ""), "UTF-8")
             }
         val version = query.getValue("v")
-        if (version != "1") throw ImportFailed(ImportFailure.OtherVersion)
+        if (version != FORMAT.toString()) throw ImportFailed(ImportFailure.OtherVersion)
         val base64 = Base64.getUrlDecoder()
         ImportLink(
             query.getValue("a").split(',').map(::privateAddress).also {
@@ -202,16 +200,14 @@ data class ComputerSettings(
     val vocabulary: List<VocabularyWord>,
     val replacements: List<Replacement>,
     val writingProfiles: Map<WritingProfile, WritingProfileSettings>,
-    val customTones: List<CustomTone>,
-    val customCleanupLevels: List<CustomCleanupLevel>,
-    val additionalInstructions: String,
+    val rules: List<RefinementRule>,
 )
 
-/** @throws JSONException when [json] is not a bundle of format 1. */
+/** @throws JSONException when [json] is not a bundle of format [FORMAT]. */
 fun parseComputerSettings(json: String): ComputerSettings {
     val bundle = JSONObject(json)
     val format = bundle.getInt("format")
-    if (format != 1) throw JSONException("Bundle format $format, expected 1")
+    if (format != FORMAT) throw JSONException("Bundle format $format, expected $FORMAT")
     return ComputerSettings(
         bundle.getString("computer"),
         bundle.objects("vocabulary").map {
@@ -232,28 +228,28 @@ fun parseComputerSettings(json: String): ComputerSettings {
             Replacement(it.getString("phrase"), it.getString("text"))
         },
         bundle.objects("writingProfiles").associate {
+            val default = WritingProfileSettings()
+            val switches = it.getJSONObject("rules")
             WritingProfile(it.getString("id")) to
                 WritingProfileSettings(
-                        instructions = it.getString("instructions"),
-                        name = it.getString("name"),
-                        outputLanguage = it.getString("outputLanguage"),
-                    )
-                    .withCleanupLevel(it.getString("cleanupLevel"))
-                    .withTone(it.getString("tone"))
+                    CleanupStrength.entries.firstOrNull { level ->
+                        level.id == it.getString("cleanupLevel")
+                    } ?: default.cleanupStrength,
+                    Tone.entries.firstOrNull { tone -> tone.id == it.getString("tone") }
+                        ?: default.tone,
+                    switches.keys().asSequence().associateWith(switches::getBoolean),
+                    it.getString("name"),
+                    it.getString("outputLanguage"),
+                )
         },
-        bundle.objects("customTones").map {
-            CustomTone(it.getString("id"), it.getString("name"), it.getString("instruction"))
-        },
-        bundle.objects("customCleanupLevels").map {
-            CustomCleanupLevel(
+        bundle.objects("rules").map {
+            RefinementRule(
                 it.getString("id"),
                 it.getString("name"),
-                CleanupStrength.entries.firstOrNull { base -> base.id == it.getString("base") }
-                    ?: CleanupStrength.Balanced,
-                it.getString("instructions"),
+                it.getString("instruction"),
+                it.getBoolean("everyProfile"),
             )
         },
-        bundle.getString("additionalInstructions"),
     )
 }
 
@@ -283,17 +279,10 @@ fun SpeecherSettings.withImported(computer: ComputerSettings): SpeecherSettings 
                     phone.copy(text = incoming.text)
                 },
             writingProfiles = writingProfiles + computer.writingProfiles,
-            customTones = merged(customTones, computer.customTones, CustomTone::id) { _, it -> it },
-            customCleanupLevels =
-                merged(customCleanupLevels, computer.customCleanupLevels, CustomCleanupLevel::id) {
-                    _,
-                    it ->
-                    it
-                },
-            additionalInstructions =
-                computer.additionalInstructions.ifEmpty { additionalInstructions },
         )
-        .withCustomChoices()
+        .withRefinementRules(
+            merged(refinementRules, computer.rules, RefinementRule::id) { _, it -> it },
+        )
         .withWritingProfiles()
 
 /** [phone] with each item [computer] also has [replaced], then the computer's other items. */
@@ -319,24 +308,16 @@ data class Changes<T>(val added: List<T> = emptyList(), val updated: List<T> = e
         get() = added.isEmpty() && updated.isEmpty()
 }
 
-/**
- * What importing changes. [additionalInstructions] are the computer's when they replace different
- * ones, else null.
- */
+/** What importing changes; [rules] by name. */
 data class ImportPreview(
     val vocabulary: Changes<String>,
     val replacements: Changes<String>,
     val writingProfiles: Changes<WritingProfile>,
-    val tonesAndLevels: Changes<String>,
-    val additionalInstructions: String?,
+    val rules: Changes<String>,
 ) {
     val changesNothing: Boolean
         get() =
-            vocabulary.isEmpty &&
-                replacements.isEmpty &&
-                writingProfiles.isEmpty &&
-                tonesAndLevels.isEmpty &&
-                additionalInstructions == null
+            vocabulary.isEmpty && replacements.isEmpty && writingProfiles.isEmpty && rules.isEmpty
 }
 
 /**
@@ -345,14 +326,6 @@ data class ImportPreview(
  */
 fun importPreview(phone: SpeecherSettings, computer: ComputerSettings): ImportPreview {
     val merged = phone.withImported(computer)
-    val tones = changes(phone.customTones, merged.customTones, CustomTone::id, CustomTone::name)
-    val levels =
-        changes(
-            phone.customCleanupLevels,
-            merged.customCleanupLevels,
-            CustomCleanupLevel::id,
-            CustomCleanupLevel::name,
-        )
     return ImportPreview(
         changes(phone.vocabulary, merged.vocabulary, ::termKey, VocabularyWord::term) {
             it.copy(source = "", frequency = 0, lastUsedMs = 0)
@@ -364,8 +337,12 @@ fun importPreview(phone: SpeecherSettings, computer: ComputerSettings): ImportPr
             { it.first },
             { it.first },
         ),
-        Changes(tones.added + levels.added, tones.updated + levels.updated),
-        merged.additionalInstructions.takeIf { it != phone.additionalInstructions },
+        changes(
+            phone.refinementRules,
+            merged.refinementRules,
+            RefinementRule::id,
+            RefinementRule::name,
+        ),
     )
 }
 
@@ -388,6 +365,8 @@ private fun <T, N> changes(
     )
 }
 
+/** The version of the code and the bundle, the desktop's kFormat. */
+private const val FORMAT = 2
 private const val MAX_ADDRESSES = 4
 private const val TOKEN_BYTES = 16
 private const val KEY_BYTES = 32

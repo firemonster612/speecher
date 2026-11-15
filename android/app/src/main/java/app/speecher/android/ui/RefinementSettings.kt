@@ -48,7 +48,7 @@ import app.speecher.protocol.modelSupportsFastMode
 import app.speecher.protocol.modelSupportsUltrafast
 
 // The Refinement page: whether Insert refined is offered, the provider, its model, thinking and
-// speed, the fallback profile and the instructions every refinement gets.
+// speed, and the fallback profile.
 
 @Composable
 internal fun RefinementSettings(
@@ -130,13 +130,6 @@ internal fun RefinementSettings(
         description = "Used when the app doesn't suggest a profile.",
     ) {
         onChange(settings.copy(defaultWritingProfile = it))
-    }
-    InstructionsField(
-        "Additional instructions",
-        "Added to every refinement, before each profile's own instructions.",
-        settings.additionalInstructions,
-    ) {
-        onChange(settings.copy(additionalInstructions = it))
     }
 }
 
@@ -232,25 +225,6 @@ private fun ModelField(
                 )
             }
         }
-    }
-}
-
-/** Several lines of instructions for the refiner, under a title and what they are for. */
-@Composable
-private fun InstructionsField(
-    title: String,
-    description: String,
-    value: String,
-    onValueChange: (String) -> Unit,
-) {
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Text(title, style = MaterialTheme.typography.bodyLarge)
-        Text(
-            description,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        OutlinedTextField(value, onValueChange, Modifier.fillMaxWidth(), minLines = 3)
     }
 }
 

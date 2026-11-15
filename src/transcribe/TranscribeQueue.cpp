@@ -13,22 +13,6 @@
 
 namespace speecher {
 
-namespace {
-
-bool cleanupLevelOffered(const QString &level, const QList<CustomCleanupLevel> &custom)
-{
-    return kBuiltInCleanupLevels.contains(level)
-        || std::any_of(custom.cbegin(), custom.cend(), [&level](const CustomCleanupLevel &c) { return c.id == level; });
-}
-
-bool toneOffered(const QString &tone, const QList<CustomTone> &custom)
-{
-    return kBuiltInTones.contains(tone)
-        || std::any_of(custom.cbegin(), custom.cend(), [&tone](const CustomTone &c) { return c.id == tone; });
-}
-
-} // namespace
-
 TranscribeQueue::TranscribeQueue(SettingsStore *settings,
                                  ProviderRegistry *providers,
                                  FileTranscriptionSession *session,
@@ -388,20 +372,14 @@ bool TranscribeQueue::holdsUnsavedResults() const
     return false;
 }
 
-// A profile, cleanup level or tone deleted since it was chosen gives way to
-// what the settings give, as it would for dictation.
+// A profile deleted since it was chosen gives way to what the settings give,
+// as it would for dictation.
 void TranscribeQueue::dropWithdrawnChoices()
 {
     const RefinementSettings refinement = m_settings->dictationSnapshot().refinement;
     const std::optional<QString> &profile = m_overrides.writingProfile;
     if (profile && offeredWritingProfile(*profile, refinement.writingProfiles, {}).isEmpty()) {
         m_overrides.writingProfile.reset();
-    }
-    if (m_overrides.cleanupLevel && !cleanupLevelOffered(*m_overrides.cleanupLevel, refinement.customCleanupLevels)) {
-        m_overrides.cleanupLevel.reset();
-    }
-    if (m_overrides.tone && !toneOffered(*m_overrides.tone, refinement.customTones)) {
-        m_overrides.tone.reset();
     }
 }
 

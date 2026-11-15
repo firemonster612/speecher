@@ -15,8 +15,7 @@ class TargetTest {
         name: String = "",
         nearbyText: NearbyText? = null,
         profiles: Map<WritingProfile, WritingProfileSettings> = emptyMap(),
-        tones: List<CustomTone> = emptyList(),
-        levels: List<CustomCleanupLevel> = emptyList(),
+        rules: List<RefinementRule> = emptyList(),
         category: AppCategory? = null,
     ) =
         resolveRefinementContext(
@@ -26,8 +25,7 @@ class TargetTest {
             nearbyText,
             WritingProfile.Other,
             profiles,
-            tones,
-            levels,
+            rules,
         )
 
     private fun other(settings: WritingProfileSettings) = mapOf(WritingProfile.Other to settings)
@@ -35,36 +33,35 @@ class TargetTest {
     private fun aiCoding(settings: WritingProfileSettings) =
         mapOf(WritingProfile.AiCoding to settings)
 
-    private val terse =
-        CustomTone(
-            "custom_terse",
-            "Terse",
-            "Short sentences, lowercase, no greetings or sign-offs.",
+    // Rules like those migration makes of global instructions, a custom tone and a custom level.
+    private val spelling =
+        RefinementRule(
+            "custom_rule_1",
+            "Instructions for every profile",
+            "Spell it Speecher.",
+            true,
         )
-    private val notes =
-        CustomCleanupLevel(
-            "custom_notes",
-            "Notes",
-            CleanupStrength.LightCleanup,
-            "Use bullet points.",
+    private val terse =
+        RefinementRule(
+            "custom_rule_2",
+            "Terse tone",
+            "Write in this tone: Terse. Short sentences, lowercase, no greetings or sign-offs.",
         )
     private val tersePrompt =
-        CustomCleanupLevel(
-            "custom_terse_prompt",
-            "Terse prompt",
-            CleanupStrength.CustomOnly,
-            "Keep the prompt under three sentences.",
-        )
+        RefinementRule("custom_rule_3", "Terse prompt", "Keep the prompt under three sentences.")
+    // Fillers and Markdown off, which the desktop's goldens name as changed steps.
+    private val plainSwitches = mapOf("fillers" to false, "markdown" to false)
 
     @Test
-    fun `each level, tone, profile and app gets the desktop's prompt`() {
+    fun `each level, tone, profile, rule and app gets the desktop's prompt`() {
         val chatGpt = "com.openai.chatgpt"
+        val bullets = RefinementRule("custom_rule_4", "Use bullet points.")
         val cases =
             mapOf(
                 // No balanced rules and no caret text.
                 "light-unknown" to
                     resolve(profiles = other(WritingProfileSettings(CleanupStrength.LightCleanup))),
-                // Strong and AI coding rules.
+                // Strong and the coding agent rule the AI coding profile starts with.
                 "strong-chatgpt" to
                     resolve(
                         chatGpt,
@@ -79,53 +76,65 @@ class TargetTest {
                         NearbyText("Dinner at ", " works for me", 10, 15),
                         other(WritingProfileSettings(tone = Tone.Casual)),
                     ),
-                // Global then profile instructions after the built-in rules.
+                // A rule on in every profile, then one the profile turned on: the prompt that
+                // global and profile instructions made before rules.
                 "balanced-instructions" to
                     resolve(
-                            profiles =
-                                other(
-                                    WritingProfileSettings(
-                                        tone = Tone.Casual,
-                                        instructions = "Sign off with Best, Enzo",
-                                    ),
-                                ),
-                        )
-                        .copy(
-                            additionalInstructions = "Spell it Speecher.\nKeep British spelling.",
-                        ),
-                // A custom tone after the built-in tone rule, named in the context.
-                "balanced-custom-tone" to
-                    resolve(
-                        profiles = other(WritingProfileSettings(customTone = terse.id)),
-                        tones = listOf(terse),
-                    ),
-                // A custom level's section after the rules of its base.
-                "light-custom-level" to
-                    resolve(
-                        profiles = other(WritingProfileSettings(customCleanupLevel = notes.id)),
-                        levels = listOf(notes),
-                    ),
-                // A custom-only level drops every level rule.
-                "custom-only-chatgpt" to
-                    resolve(
-                        chatGpt,
-                        "ChatGPT",
                         profiles =
-                            aiCoding(WritingProfileSettings(customCleanupLevel = tersePrompt.id)),
-                        levels = listOf(tersePrompt),
+                            other(
+                                WritingProfileSettings(
+                                    tone = Tone.Casual,
+                                    rules = mapOf("custom_rule_5" to true),
+                                ),
+                            ),
+                        rules =
+                            listOf(
+                                spelling.copy(
+                                    instruction = "Spell it Speecher.\nKeep British spelling.",
+                                ),
+                                RefinementRule(
+                                    "custom_rule_5",
+                                    "Other instructions",
+                                    "Sign off with Best, Enzo",
+                                ),
+                            ),
                     ),
-                // A custom system prompt followed by the custom tone and level.
-                "custom-prompt-tone-level" to
+                // Built-in rules turned off below the level, after step 5.
+                "balanced-changed-steps" to
+                    resolve(
+                        profiles =
+                            other(
+                                WritingProfileSettings(
+                                    tone = Tone.Casual,
+                                    rules = plainSwitches,
+                                ),
+                            ),
+                        rules = listOf(spelling),
+                    ),
+                // The coding agent rule turned on outside AI coding, after a rule turned on.
+                "light-coding-agent" to
+                    resolve(
+                        profiles =
+                            other(
+                                WritingProfileSettings(
+                                    CleanupStrength.LightCleanup,
+                                    rules = mapOf("codingAgent" to true, "britishSpelling" to true),
+                                ),
+                            ),
+                    ),
+                // A custom system prompt drops the changed steps; a rule with no instruction is
+                // told by its name.
+                "custom-prompt-rules" to
                     resolve(
                             profiles =
                                 other(
                                     WritingProfileSettings(
-                                        customCleanupLevel = notes.id,
-                                        customTone = terse.id,
+                                        CleanupStrength.StrongPolish,
+                                        Tone.Casual,
+                                        plainSwitches + (bullets.id to true),
                                     ),
                                 ),
-                            tones = listOf(terse),
-                            levels = listOf(notes.copy(base = CleanupStrength.StrongPolish)),
+                            rules = listOf(bullets),
                         )
                         .copy(customSystemPrompt = "Clean up my dictation."),
             )
@@ -142,8 +151,11 @@ class TargetTest {
             RefinementContext(
                 CleanupStrength.StrongPolish,
                 Tone.Formal,
-                additionalInstructions = "Spell it Speecher.\nKeep British spelling.",
-                profileInstructions = "Sign off with Best, Enzo",
+                userRules =
+                    listOf(
+                        "Spell it Speecher.\nKeep British spelling.",
+                        "Sign off with Best, Enzo",
+                    ),
                 customSystemPrompt = "Clean up my dictation.",
             )
         val prompt = dictationSystemPrompt(context)
@@ -164,7 +176,7 @@ class TargetTest {
 
     @Test
     fun `a spoken language other than English adds its rule before the user's instructions`() {
-        val english = RefinementContext(additionalInstructions = "Spell it Speecher.")
+        val english = RefinementContext(userRules = listOf("Spell it Speecher."))
         val rule =
             "Language\nThe dictation may be in a language other than English. Keep the reply in the language it was spoken in, with that language's punctuation, spacing, quotation marks and typography."
         val prompt = dictationSystemPrompt(english)
@@ -186,7 +198,7 @@ class TargetTest {
             RefinementContext(
                 spokenLanguage = "de",
                 outputLanguage = " Spanish ",
-                additionalInstructions = "Spell it Speecher.",
+                userRules = listOf("Spell it Speecher."),
             )
         val rule =
             "\n\nLanguage\nWrite the reply in Spanish. When the dictation is in another language, translate it and clean up the translation by the steps above. Keep literals, names and binding placeholders unchanged, and follow Spanish punctuation and typography.\n\nThe user's own instructions"
@@ -216,7 +228,7 @@ class TargetTest {
     }
 
     @Test
-    fun `a selection edit gets the desktop's editing prompt, without the output language`() {
+    fun `a selection edit gets the desktop's editing prompt, without the output language or changed steps`() {
         val context =
             resolve(
                     "com.openai.chatgpt",
@@ -224,19 +236,14 @@ class TargetTest {
                     NearbyText("Dinner at ", " works for me", 10, 15),
                     aiCoding(
                         WritingProfileSettings(
-                            customCleanupLevel = tersePrompt.id,
-                            customTone = terse.id,
+                            CleanupStrength.LightCleanup,
+                            rules = plainSwitches + mapOf(terse.id to true, tersePrompt.id to true),
                             outputLanguage = "French",
                         ),
                     ),
-                    listOf(terse),
-                    listOf(tersePrompt),
+                    listOf(spelling, terse, tersePrompt),
                 )
-                .copy(
-                    additionalInstructions = "Spell it Speecher.",
-                    spokenLanguage = "es",
-                    selectedText = "seven",
-                )
+                .copy(spokenLanguage = "es", selectedText = "seven")
         assertEquals(desktopPrompt("edit-chatgpt"), refinementSystemPrompt(context))
     }
 
@@ -312,21 +319,14 @@ class TargetTest {
                         WritingProfileSettings(
                             CleanupStrength.StrongPolish,
                             Tone.Formal,
-                            "Bullets.",
                             name = "Standup",
                         ),
                 ),
                 rules = listOf(RecognitionRule("slac", AppCategory.Browser, standup)),
             )
         assertEquals(
-            listOf("custom_standup", "strong_polish", "formal", "Bullets.", "browser"),
-            listOf(
-                context.profile.id,
-                context.style.id,
-                context.tone.id,
-                context.profileInstructions,
-                context.category.id,
-            ),
+            listOf("custom_standup", "strong_polish", "formal", "browser"),
+            listOf(context.profile.id, context.style.id, context.tone.id, context.category.id),
         )
     }
 

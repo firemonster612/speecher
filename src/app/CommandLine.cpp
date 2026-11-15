@@ -186,37 +186,25 @@ const QHash<QString, QString> kCleanupCliNames{{QStringLiteral("light_cleanup"),
                                                {QStringLiteral("balanced"), QStringLiteral("medium")},
                                                {QStringLiteral("strong_polish"), QStringLiteral("high")}};
 
-// The built-in ids, then each custom tone or level the settings hold, each
-// named by its id without custom_ and with - for _ unless renamed says
+// The built-in ids, each named by its id with - for _ unless renamed says
 // otherwise.
-template<typename Custom>
-CliNames cliNamesFor(const QStringList &builtIn, const QList<Custom> &custom,
-                     const QHash<QString, QString> &renamed = {})
+CliNames cliNamesFor(const QStringList &builtIn, const QHash<QString, QString> &renamed = {})
 {
-    const auto name = [](const QString &id) {
-        QString stripped = id.startsWith(kCustomIdPrefix) ? id.mid(kCustomIdPrefix.size()) : id;
-        return stripped.replace(QLatin1Char('_'), QLatin1Char('-'));
-    };
     CliNames names;
     for (const QString &id : builtIn) {
-        names.append({id, renamed.value(id, name(id))});
-    }
-    for (const Custom &choice : custom) {
-        if (choice.id.startsWith(kCustomIdPrefix)) {
-            names.append({choice.id, name(choice.id)});
-        }
+        names.append({id, renamed.value(id, QString(id).replace(QLatin1Char('_'), QLatin1Char('-')))});
     }
     return names;
 }
 
 CliNames cleanupNames()
 {
-    return cliNamesFor(kBuiltInCleanupLevels, SettingsCodecs().customCleanupLevels(), kCleanupCliNames);
+    return cliNamesFor(kBuiltInCleanupLevels, kCleanupCliNames);
 }
 
 CliNames toneNames()
 {
-    return cliNamesFor(kBuiltInTones, SettingsCodecs().customTones());
+    return cliNamesFor(kBuiltInTones);
 }
 
 QStringList cliNames(const CliNames &choices)

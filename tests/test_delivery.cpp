@@ -4,6 +4,7 @@
 #include "common/apps_fixtures.h"
 #include "common/legacy_settings.h"
 #include "common/vocabulary_entries.h"
+#include "core/RefinementRules.h"
 #include "core/settings/AppsMigration.h"
 #include "core/settings/AppsSettingsCodec.h"
 #include "output/DeliveryNeeds.h"
@@ -39,6 +40,17 @@ TranscriptPipelineResult prepared(const QString &raw,
                                   const QString &spokenLanguage)
 {
     return TranscriptPipeline::prepare(raw, planDictation(settings, target, run), target, spokenLanguage);
+}
+
+// The rule changes the prompt sees for a profile at a level that switches
+// one rule.
+QStringList changedStepsFor(const QString &level, const QString &rule, bool on)
+{
+    AppSettings settings;
+    settings.refinement.writingProfiles = {
+        {WritingProfile::Other, level, QStringLiteral("none"), {{rule, on}}, QString(), QStringLiteral("Spanish")}};
+    return prepared(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language)
+        .refinementContext.changedSteps;
 }
 
 // The terms the speech request carries for a dictation into target.
@@ -603,12 +615,15 @@ fi
         settings.refinement.writingProfiles = {
             {WritingProfile::Work, QStringLiteral("balanced"), QStringLiteral("formal")},
             {WritingProfile::Email, QStringLiteral("strong_polish"), QStringLiteral("excited"),
-             QStringLiteral("Sign off with Best.")},
+             {{QStringLiteral("custom_rule_sign_off"), true}}},
             {WritingProfile::Personal, QStringLiteral("light_cleanup"), QStringLiteral("casual")},
             {WritingProfile::AiCoding, QStringLiteral("balanced"), QStringLiteral("none")},
             {WritingProfile::Other, QStringLiteral("balanced"), QStringLiteral("none")},
         };
-        settings.refinement.additionalInstructions = QStringLiteral("Spell it Speecher.");
+        settings.refinement.rules = {
+            {QStringLiteral("custom_rule_spelling"), QStringLiteral("Spelling"), QStringLiteral("Spell it Speecher."), true},
+            {QStringLiteral("custom_rule_sign_off"), QStringLiteral("Sign off with Best."), QString(), false},
+            {QStringLiteral("custom_rule_formal"), QStringLiteral("Formal"), QStringLiteral("Be formal."), false}};
         settings.refinement.customSystemPrompt = QStringLiteral("Clean up my dictation.");
 
         Target target;
@@ -637,10 +652,11 @@ fi
         QCOMPARE(pipeline.refinementContext.target.selectedText, target.selectedText);
         QCOMPARE(pipeline.refinementContext.writingProfile, WritingProfile::Email);
         QCOMPARE(pipeline.refinementContext.tone, QStringLiteral("excited"));
-        // The resolved profile's instructions ride with the global ones; a
-        // custom prompt that is switched off stays out.
-        QCOMPARE(pipeline.refinementContext.additionalInstructions, QStringLiteral("Spell it Speecher."));
-        QCOMPARE(pipeline.refinementContext.profileInstructions, QStringLiteral("Sign off with Best."));
+        // The rules on in the resolved profile, in their order, a rule
+        // without an instruction by its name; a custom prompt that is
+        // switched off stays out.
+        QCOMPARE(pipeline.refinementContext.userRules,
+                 (QStringList{QStringLiteral("Spell it Speecher."), QStringLiteral("Sign off with Best.")}));
         QCOMPARE(pipeline.refinementContext.customSystemPrompt, QString());
 
         TranscriptPipelineResult screenshotPipeline = pipeline;
@@ -779,7 +795,7 @@ fi
         AppSettings settings;
         settings.refinement.writingProfiles.append({QStringLiteral("custom_standup"),
                                                     QStringLiteral("strong_polish"), QStringLiteral("formal"),
-                                                    QStringLiteral("Bullets."), QStringLiteral("Standup")});
+                                                    {}, QStringLiteral("Standup")});
         settings.apps.apps = {textApp(QStringLiteral("zulip"), std::nullopt, QStringLiteral("custom_standup"))};
         Target target;
         target.applicationId = QStringLiteral("org.zulip.Zulip");
@@ -788,28 +804,64 @@ fi
         QCOMPARE(pipeline.refinementContext.writingProfile, QStringLiteral("custom_standup"));
         QCOMPARE(pipeline.refinementSettings.style, QStringLiteral("strong_polish"));
         QCOMPARE(pipeline.refinementContext.tone, QStringLiteral("formal"));
-        QCOMPARE(pipeline.refinementContext.profileInstructions, QStringLiteral("Bullets."));
     }
 
-    // A profile's custom level refines at its base with its section, and a
-    // custom tone reaches the prompt; neither reads as None.
-    void transcriptPipelineResolvesCustomTonesAndLevels()
+    // A built-in rule the profile switched away from its level's default
+    // adds its sentence: switched on at Light, where no rule with an
+    // on-sentence starts on, or off at High, where every rule with an
+    // off-sentence starts on.
+    void changedBuiltInRulesBecomeChangedSteps()
+    {
+        for (const BuiltInRule &rule : builtInRules()) {
+            if (!rule.onSentence.isEmpty()) {
+                QCOMPARE(changedStepsFor(QStringLiteral("light_cleanup"), rule.id, true), QStringList{rule.onSentence});
+            }
+            if (!rule.offSentence.isEmpty()) {
+                QCOMPARE(changedStepsFor(QStringLiteral("strong_polish"), rule.id, false),
+                         QStringList{rule.offSentence});
+            }
+        }
+    }
+
+    // A switch that matches the level's default adds nothing.
+    void unchangedBuiltInRulesAddNoStep_data()
+    {
+        QTest::addColumn<QString>("level");
+        QTest::addColumn<QString>("rule");
+        QTest::addColumn<bool>("on");
+        // None starts the rules Light does, the level it translates at.
+        QTest::newRow("digits on at None") << QStringLiteral("none") << QStringLiteral("digits") << true;
+        QTest::newRow("fillers off at Light") << QStringLiteral("light_cleanup") << QStringLiteral("fillers") << false;
+        QTest::newRow("lowercase off") << QStringLiteral("strong_polish") << QStringLiteral("lowercase") << false;
+    }
+
+    void unchangedBuiltInRulesAddNoStep()
+    {
+        QFETCH(QString, level);
+        QFETCH(QString, rule);
+        QFETCH(bool, on);
+        QCOMPARE(changedStepsFor(level, rule, on), QStringList());
+    }
+
+    // codingAgent starts on in the AI coding profile alone, and either way
+    // a profile can switch it.
+    void theCodingAgentRuleFollowsTheProfile()
     {
         AppSettings settings;
-        const CustomTone terse{QStringLiteral("custom_terse"), QStringLiteral("Terse"),
-                               QStringLiteral("Short sentences.")};
-        const CustomCleanupLevel notes{QStringLiteral("custom_notes"), QStringLiteral("Notes"),
-                                       QStringLiteral("custom_only"), QStringLiteral("Bullets.")};
-        settings.refinement.customTones = {terse};
-        settings.refinement.customCleanupLevels = {notes};
-        settings.refinement.writingProfiles = {
-            {WritingProfile::Other, notes.id, terse.id},
+        RunOverrides aiCoding;
+        aiCoding.writingProfile = WritingProfile::AiCoding;
+        const auto codingAgent = [&settings](const RunOverrides &run) {
+            const TranscriptPipelineResult pipeline =
+                prepared(QStringLiteral("hello"), settings, run, Target{}, settings.speech.language);
+            return pipeline.refinementContext.codingAgent;
         };
-        const TranscriptPipelineResult pipeline =
-            prepared(QStringLiteral("hello"), settings, {}, Target{}, settings.speech.language);
-        QCOMPARE(pipeline.refinementSettings.style, QStringLiteral("custom_only"));
-        QCOMPARE(pipeline.refinementContext.cleanupLevel, std::optional(notes));
-        QCOMPARE(pipeline.refinementContext.customTone, std::optional(terse));
+        QVERIFY(codingAgent(aiCoding));
+        QVERIFY(!codingAgent({}));
+        for (WritingProfileSettings &profile : settings.refinement.writingProfiles) {
+            profile.rules = {{QStringLiteral("codingAgent"), profile.profile != WritingProfile::AiCoding}};
+        }
+        QVERIFY(!codingAgent(aiCoding));
+        QVERIFY(codingAgent({}));
     }
 
     void theSessionsSpokenLanguageReachesRefinement()
@@ -826,7 +878,7 @@ fi
     {
         AppSettings settings;
         settings.refinement.writingProfiles = {
-            {WritingProfile::Other, QStringLiteral("none"), QStringLiteral("none"), QString(), QString(),
+            {WritingProfile::Other, QStringLiteral("none"), QStringLiteral("none"), {}, QString(),
              QStringLiteral("Spanish")},
         };
         const TranscriptPipelineResult dictation =
@@ -1002,6 +1054,7 @@ fi
         context.target.applicationId = QStringLiteral("t3-code");
         context.target.category = AppCategory::AiCoding;
         context.writingProfile = WritingProfile::AiCoding;
+        context.codingAgent = true;
 
         const QString lightPrompt = dictationRefinementSystemPrompt(
             QStringLiteral("light_cleanup"), context);

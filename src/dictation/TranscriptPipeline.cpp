@@ -1,5 +1,6 @@
 #include "dictation/TranscriptPipeline.h"
 
+#include "core/RefinementRules.h"
 #include "core/VocabularyScope.h"
 
 #include <QDateTime>
@@ -29,14 +30,14 @@ QList<BindingRule> withoutNoBindPhrases(const QList<BindingRule> &rules,
     return filtered;
 }
 
-// The user's instructions, the profile's output language and the custom
-// system prompt for a refinement run with this profile.
-void fillUserInstructions(RefinementContext &context,
-                          const RefinementSettings &refinement,
-                          const WritingProfileSettings &profile)
+// The rules on for this profile at the level refinement runs at, the
+// profile's output language and the custom system prompt.
+void fillRules(RefinementContext &context, const RefinementSettings &refinement,
+               const WritingProfileSettings &profile)
 {
-    context.additionalInstructions = refinement.additionalInstructions;
-    context.profileInstructions = profile.instructions;
+    context.userRules = userRuleTexts(profile, refinement.style, refinement.rules);
+    context.changedSteps = changedSteps(profile, refinement.style, refinement.rules);
+    context.codingAgent = ruleOn(kCodingAgentRule, profile, refinement.style, refinement.rules);
     context.outputLanguage = profile.outputLanguage;
     context.customSystemPrompt =
         refinement.customSystemPromptEnabled ? refinement.customSystemPrompt : QString();
@@ -49,27 +50,6 @@ QString trimmedKeepingIndentation(const QString &text)
 {
     static const QRegularExpression blankEdges(QStringLiteral("^\\s*\\n|\\s+$"));
     return QString(text).remove(blankEdges);
-}
-
-// A tone or cleanup level the user defined goes on the context, and the
-// style becomes the level's base, which is what the prompt builds on.
-void resolveCustomChoices(TranscriptPipelineResult &pipeline)
-{
-    RefinementSettings &refinement = pipeline.refinementSettings;
-    RefinementContext &context = pipeline.refinementContext;
-    context.customTone.reset();
-    context.cleanupLevel.reset();
-    for (const CustomTone &tone : std::as_const(refinement.customTones)) {
-        if (tone.id == context.tone) {
-            context.customTone = tone;
-        }
-    }
-    for (const CustomCleanupLevel &level : std::as_const(refinement.customCleanupLevels)) {
-        if (level.id == refinement.style) {
-            context.cleanupLevel = level;
-            refinement.style = level.base;
-        }
-    }
 }
 
 } // namespace
@@ -112,12 +92,9 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
                                                        result.refinementContext.vocabularyContext);
     result.refinementContext.tone = plan.profile.tone;
     result.refinementContext.bindingVocabulary = BindingProcessor::refinementVocabulary(bindings);
-    fillUserInstructions(result.refinementContext, result.refinementSettings, plan.profile);
-    resolveCustomChoices(result);
-    // A user-defined level built on None still translates for a profile with
-    // an output language, as None itself does.
     result.refinementSettings.style =
-        refinedCleanupLevel(result.refinementSettings.style, result.refinementContext.outputLanguage);
+        refinedCleanupLevel(result.refinementSettings.style, plan.profile.outputLanguage);
+    fillRules(result.refinementContext, result.refinementSettings, plan.profile);
     result.refinementContext.includeNearbyText = result.refinementSettings.useTargetContext && !target.secure;
     result.refinementContext.editSelection = result.editsSelection;
     if (!result.refinementSettings.useTargetContext) {

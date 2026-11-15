@@ -1,6 +1,7 @@
 #include "core/WritingProfileEdits.h"
 
 #include "core/ProviderChain.h"
+#include "core/RefinementRules.h"
 
 #include <QUuid>
 
@@ -12,9 +13,6 @@ namespace {
 
 // Long enough that two ids made a moment apart never meet.
 constexpr int randomIdLength = 8;
-
-const QStringList cleanupBases{QStringLiteral("light_cleanup"), QStringLiteral("balanced"),
-                               QStringLiteral("strong_polish"), kCustomOnlyCleanupBase};
 
 // The index of the entry of list whose idOf is id, or -1.
 template <typename T, typename IdOf>
@@ -44,18 +42,6 @@ bool idFree(const QList<T> &list, IdOf idOf, const QString &id)
     return id.startsWith(kCustomIdPrefix) && indexOf(list, idOf, id) < 0;
 }
 
-bool levelOffered(const QString &id, const RefinementSettings &refinement)
-{
-    return kBuiltInCleanupLevels.contains(id)
-        || indexOf(refinement.customCleanupLevels, [](const CustomCleanupLevel &level) { return level.id; }, id) >= 0;
-}
-
-bool toneOffered(const QString &id, const RefinementSettings &refinement)
-{
-    return kBuiltInTones.contains(id)
-        || indexOf(refinement.customTones, [](const CustomTone &tone) { return tone.id; }, id) >= 0;
-}
-
 // An empty service is the one the Speech to text or Refinement page chose.
 bool serviceOffered(ProviderRole role, const std::optional<ServiceChoice> &first)
 {
@@ -67,19 +53,14 @@ QString profileId(const WritingProfileSettings &profile)
     return profile.profile;
 }
 
-QString toneId(const CustomTone &tone)
+QString ruleId(const RefinementRule &rule)
 {
-    return tone.id;
-}
-
-QString levelId(const CustomCleanupLevel &level)
-{
-    return level.id;
+    return rule.id;
 }
 
 // Tidies the profile at `self` of the settings' profiles (-1 for one being
 // added) and says what it can't hold. `stored` is what it held before, and
-// each choice it held already stays valid, even one no longer offered.
+// each service it held already stays valid, even one no longer offered.
 EditRefusal checkProfile(WritingProfileSettings &profile, const WritingProfileSettings *stored, qsizetype self,
                          const RefinementSettings &refinement)
 {
@@ -105,17 +86,12 @@ EditRefusal checkProfile(WritingProfileSettings &profile, const WritingProfileSe
             return EditRefusal::Taken;
         }
     }
-    const auto kept = [stored](QString WritingProfileSettings::*field, const QString &value) {
-        return stored && stored->*field == value;
-    };
     const auto keptService = [stored, &profile](std::optional<ServiceChoice> WritingProfileSettings::*field) {
         const auto service = [](const std::optional<ServiceChoice> &first) { return first ? first->service : QString(); };
         return stored && service(stored->*field) == service(profile.*field);
     };
     const bool offered =
-        (kept(&WritingProfileSettings::cleanupStrength, profile.cleanupStrength)
-         || levelOffered(profile.cleanupStrength, refinement))
-        && (kept(&WritingProfileSettings::tone, profile.tone) || toneOffered(profile.tone, refinement))
+        kBuiltInCleanupLevels.contains(profile.cleanupStrength) && kBuiltInTones.contains(profile.tone)
         && (keptService(&WritingProfileSettings::speechFirst)
             || serviceOffered(ProviderRole::Speech, profile.speechFirst))
         && (keptService(&WritingProfileSettings::refinementFirst)
@@ -123,84 +99,15 @@ EditRefusal checkProfile(WritingProfileSettings &profile, const WritingProfileSe
     return offered ? EditRefusal::None : EditRefusal::Missing;
 }
 
-// Whether a custom tone or level may go by name: no other custom one of
-// list but the one at `self`, and no built-in one the page shows by
-// builtInNames, is called that, ignoring case.
-template <typename Choice>
-bool choiceNameFree(const QList<Choice> &list, qsizetype self, const QString &name, const QStringList &builtInNames)
+EditRefusal checkRule(RefinementRule &rule, qsizetype self, const QList<RefinementRule> &rules)
 {
-    return !builtInNames.contains(name, Qt::CaseInsensitive)
-        && nameFree(list, self, name, [](const Choice &other) { return other.name; });
-}
-
-EditRefusal checkTone(CustomTone &tone, qsizetype self, const QList<CustomTone> &tones, const QStringList &builtInNames)
-{
-    tone.name = tone.name.trimmed();
-    if (tone.name.isEmpty()) {
+    rule.name = rule.name.trimmed();
+    if (rule.name.isEmpty()) {
         return EditRefusal::Blank;
     }
-    if (!choiceNameFree(tones, self, tone.name, builtInNames)) {
-        return EditRefusal::Taken;
-    }
-    return tone.instruction.trimmed().isEmpty() ? EditRefusal::Incomplete : EditRefusal::None;
-}
-
-EditRefusal checkLevel(CustomCleanupLevel &level, qsizetype self, const QList<CustomCleanupLevel> &levels,
-                       const QStringList &builtInNames)
-{
-    level.name = level.name.trimmed();
-    if (level.name.isEmpty()) {
-        return EditRefusal::Blank;
-    }
-    if (!choiceNameFree(levels, self, level.name, builtInNames)) {
-        return EditRefusal::Taken;
-    }
-    if (!cleanupBases.contains(level.base)) {
-        return EditRefusal::Missing;
-    }
-    // Custom only is nothing but the instructions.
-    const bool instructed = level.base != kCustomOnlyCleanupBase || !level.instructions.trimmed().isEmpty();
-    return instructed ? EditRefusal::None : EditRefusal::Incomplete;
-}
-
-// Removes entry id from `entries` and points every profile field that chose
-// it at `instead`. The edit it returns puts the entry back at its place,
-// unless one by its id or name is there by then, and once it is back points
-// back the fields that still hold `instead`.
-template <typename Choice>
-SettingsEdit removeChoice(QList<Choice> RefinementSettings::*entries,
-                          QString WritingProfileSettings::*field,
-                          AppSettings &settings,
-                          const QString &id,
-                          const QString &instead)
-{
-    QList<Choice> &list = settings.refinement.*entries;
-    const qsizetype index = indexOf(list, [](const Choice &choice) { return choice.id; }, id);
-    if (index < 0) {
-        return {};
-    }
-    const auto putBack = takeEntry(list, index, [](const Choice &entry, const Choice &removed) {
-        return entry.id == removed.id || entry.name.compare(removed.name, Qt::CaseInsensitive) == 0;
-    });
-    QStringList moved;
-    for (WritingProfileSettings &profile : settings.refinement.writingProfiles) {
-        if (profile.*field == id) {
-            profile.*field = instead;
-            moved.append(profile.profile);
-        }
-    }
-    return [=](AppSettings &draft) {
-        QList<Choice> &back = draft.refinement.*entries;
-        putBack(back);
-        if (indexOf(back, [](const Choice &choice) { return choice.id; }, id) < 0) {
-            return;
-        }
-        for (WritingProfileSettings &profile : draft.refinement.writingProfiles) {
-            if (moved.contains(profile.profile) && profile.*field == instead) {
-                profile.*field = id;
-            }
-        }
-    };
+    return nameFree(rules, self, rule.name, [](const RefinementRule &other) { return other.name; })
+        ? EditRefusal::None
+        : EditRefusal::Taken;
 }
 
 } // namespace
@@ -232,6 +139,9 @@ EditRefusal editWritingProfile(AppSettings &settings, const QString &id,
     return changeEntry(profiles, indexOf(profiles, profileId, id), change,
                        [&settings, &profiles](WritingProfileSettings &profile, qsizetype self) {
                            const WritingProfileSettings stored = profiles.at(self);
+                           if (profile.cleanupStrength != stored.cleanupStrength) {
+                               resetBuiltInRules(profile);
+                           }
                            return checkProfile(profile, &stored, self, settings.refinement);
                        });
 }
@@ -244,59 +154,69 @@ bool removeWritingProfile(AppSettings &settings, const QString &id)
         > 0;
 }
 
-EditRefusal addCustomTone(AppSettings &settings, CustomTone tone, const QStringList &builtInNames)
+EditRefusal addRule(AppSettings &settings, RefinementRule rule)
 {
-    QList<CustomTone> &tones = settings.refinement.customTones;
-    if (!idFree(tones, toneId, tone.id)) {
+    QList<RefinementRule> &rules = settings.refinement.rules;
+    if (!idFree(rules, ruleId, rule.id)) {
         return EditRefusal::Taken;
     }
-    return appendEntry(tones, tone, [&](CustomTone &added, qsizetype self) {
-        return checkTone(added, self, tones, builtInNames);
+    return appendEntry(rules, rule, [&rules](RefinementRule &added, qsizetype self) {
+        return checkRule(added, self, rules);
     });
 }
 
-EditRefusal editCustomTone(AppSettings &settings, const QString &id, const EntryChange<CustomTone> &change,
-                           const QStringList &builtInNames)
+EditRefusal editRule(AppSettings &settings, const QString &id, const EntryChange<RefinementRule> &change)
 {
-    QList<CustomTone> &tones = settings.refinement.customTones;
-    return changeEntry(tones, indexOf(tones, toneId, id), change,
-                       [&](CustomTone &tone, qsizetype self) { return checkTone(tone, self, tones, builtInNames); });
+    QList<RefinementRule> &rules = settings.refinement.rules;
+    return changeEntry(rules, indexOf(rules, ruleId, id), change,
+                       [&rules](RefinementRule &rule, qsizetype self) { return checkRule(rule, self, rules); });
 }
 
-EditRefusal addCustomCleanupLevel(AppSettings &settings, CustomCleanupLevel level, const QStringList &builtInNames)
+SettingsEdit removeRule(AppSettings &settings, const QString &id)
 {
-    QList<CustomCleanupLevel> &levels = settings.refinement.customCleanupLevels;
-    if (!idFree(levels, levelId, level.id)) {
-        return EditRefusal::Taken;
+    QList<RefinementRule> &rules = settings.refinement.rules;
+    const qsizetype index = indexOf(rules, ruleId, id);
+    if (index < 0) {
+        return {};
     }
-    return appendEntry(levels, level, [&](CustomCleanupLevel &added, qsizetype self) {
-        return checkLevel(added, self, levels, builtInNames);
+    const auto putBack = takeEntry(rules, index, [](const RefinementRule &entry, const RefinementRule &removed) {
+        return entry.id == removed.id || entry.name.compare(removed.name, Qt::CaseInsensitive) == 0;
     });
+    QHash<QString, bool> switches;
+    for (WritingProfileSettings &profile : settings.refinement.writingProfiles) {
+        if (profile.rules.contains(id)) {
+            switches.insert(profile.profile, profile.rules.take(id));
+        }
+    }
+    return [=](AppSettings &draft) {
+        QList<RefinementRule> &back = draft.refinement.rules;
+        putBack(back);
+        if (indexOf(back, ruleId, id) < 0) {
+            return;
+        }
+        for (WritingProfileSettings &profile : draft.refinement.writingProfiles) {
+            if (switches.contains(profile.profile) && !profile.rules.contains(id)) {
+                profile.rules.insert(id, switches.value(profile.profile));
+            }
+        }
+    };
 }
 
-EditRefusal editCustomCleanupLevel(AppSettings &settings, const QString &id,
-                                   const EntryChange<CustomCleanupLevel> &change, const QStringList &builtInNames)
+EditRefusal setProfileRule(AppSettings &settings, const QString &profile, const QString &rule, bool on)
 {
-    QList<CustomCleanupLevel> &levels = settings.refinement.customCleanupLevels;
-    return changeEntry(levels, indexOf(levels, levelId, id), change, [&](CustomCleanupLevel &level, qsizetype self) {
-        return checkLevel(level, self, levels, builtInNames);
-    });
-}
-
-SettingsEdit removeCustomTone(AppSettings &settings, const QString &id)
-{
-    return removeChoice(&RefinementSettings::customTones, &WritingProfileSettings::tone, settings, id,
-                        QStringLiteral("none"));
-}
-
-SettingsEdit removeCustomCleanupLevel(AppSettings &settings, const QString &id)
-{
-    const QList<CustomCleanupLevel> &levels = settings.refinement.customCleanupLevels;
-    const qsizetype index = indexOf(levels, levelId, id);
-    const QString base = index < 0 || levels.at(index).base == kCustomOnlyCleanupBase ? QStringLiteral("balanced")
-                                                                                       : levels.at(index).base;
-    return removeChoice(&RefinementSettings::customCleanupLevels, &WritingProfileSettings::cleanupStrength,
-                        settings, id, base);
+    QList<WritingProfileSettings> &profiles = settings.refinement.writingProfiles;
+    const qsizetype index = indexOf(profiles, profileId, profile);
+    const QList<RefinementRule> &rules = settings.refinement.rules;
+    if (index < 0 || !ruleExists(rule, rules)) {
+        return EditRefusal::Missing;
+    }
+    WritingProfileSettings &switched = profiles[index];
+    if (on == ruleDefault(rule, switched, switched.cleanupStrength, rules)) {
+        switched.rules.remove(rule);
+    } else {
+        switched.rules.insert(rule, on);
+    }
+    return EditRefusal::None;
 }
 
 } // namespace speecher

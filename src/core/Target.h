@@ -5,6 +5,7 @@
 #include <QByteArray>
 #include <QList>
 #include <QHash>
+#include <QMap>
 #include <QString>
 #include <QStringList>
 
@@ -33,8 +34,8 @@ inline const QString AiCoding = QStringLiteral("ai_coding");
 inline const QString Other = QStringLiteral("other");
 } // namespace WritingProfile
 
-// What every id the user's own tones, cleanup levels and profiles get starts
-// with, so none matches a built-in id.
+// What every id the user's own rules and profiles get starts with, so none
+// matches a built-in id.
 inline const QString kCustomIdPrefix = QStringLiteral("custom_");
 
 QString appCategoryName(AppCategory category);
@@ -48,8 +49,12 @@ struct WritingProfileSettings {
     QString profile = WritingProfile::Other;
     QString cleanupStrength = QStringLiteral("balanced");
     QString tone = QStringLiteral("none");
-    // Added to the refinement prompt for this profile, after the global ones.
-    QString instructions;
+    // The rules this profile switched away from their default, by rule id,
+    // built-in rules and the user's alike (see ruleOn). Switching never stores
+    // an entry equal to the default; one comes to equal it when its rule's "On
+    // in every profile" changes, and keeps this profile's choice if that
+    // changes back.
+    QMap<QString, bool> rules;
     // A custom profile's name. A built-in is called by its label.
     QString name;
     // The language refinement writes in, by name, such as "Spanish". Empty
@@ -87,29 +92,18 @@ inline const QStringList kBuiltInCleanupLevels{
     QStringLiteral("none"), QStringLiteral("light_cleanup"), QStringLiteral("balanced"),
     QStringLiteral("strong_polish")};
 
-// A tone the user defined: the model is told its name and follows the
-// instruction.
-struct CustomTone {
+// A rule the user wrote. Refinement is told `instruction`, or `name` when the
+// instruction is blank.
+struct RefinementRule {
     QString id;
+    // Required, and unique among the user's rules.
     QString name;
     QString instruction;
+    // On unless a profile turns it off; otherwise off unless one turns it on.
+    bool everyProfile = false;
 
-    bool operator==(const CustomTone &other) const = default;
+    bool operator==(const RefinementRule &other) const = default;
 };
-
-// A cleanup level the user defined: the built-in level it builds on
-// (light_cleanup, balanced, strong_polish, or custom_only for none of the
-// level rules) plus the user's instructions.
-struct CustomCleanupLevel {
-    QString id;
-    QString name;
-    QString base = QStringLiteral("balanced");
-    QString instructions;
-
-    bool operator==(const CustomCleanupLevel &other) const = default;
-};
-
-inline const QString kCustomOnlyCleanupBase = QStringLiteral("custom_only");
 
 // The cleanup level refinement runs at. Translating is refinement, so None
 // with an output language refines at Light, the level that stays closest to
@@ -175,10 +169,13 @@ struct RefinementContext {
     // The spoken phrases of the replacements that apply, which refinement
     // must leave for the replacements to find.
     QStringList bindingVocabulary;
-    // The user's own instructions, from settings: every refinement's, then
-    // the writing profile's.
-    QString additionalInstructions;
-    QString profileInstructions;
+    // The text of each of the user's rules that is on, in their order.
+    QStringList userRules;
+    // The prompt sentence of each built-in rule the profile switched away from
+    // its level's default (RefinementRules), in the rules' order.
+    QStringList changedSteps;
+    // The text is a prompt for a coding agent: the codingAgent rule.
+    bool codingAgent = false;
     // The writing profile's output language; empty keeps the spoken one.
     QString outputLanguage;
     // What a vocabulary term means and when it applies, by term, for the
@@ -189,10 +186,6 @@ struct RefinementContext {
     QString spokenLanguage;
     // Replaces the built-in dictation rules when not blank.
     QString customSystemPrompt;
-    // Set when the tone or the cleanup level is one the user defined. The
-    // refinement style is then the level's base.
-    std::optional<CustomTone> customTone;
-    std::optional<CustomCleanupLevel> cleanupLevel;
     bool includeNearbyText = true;
     bool editSelection = false;
     QByteArray screenshotData;

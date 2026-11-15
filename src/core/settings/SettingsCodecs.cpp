@@ -2,6 +2,7 @@
 
 #include "core/EndpointUrl.h"
 #include "core/ProviderChain.h"
+#include "core/RefinementRules.h"
 #include "core/settings/SettingsKeys.h"
 
 #include "core/Vocabulary.h"
@@ -615,28 +616,45 @@ QString SettingsCodecs::refinementStyle() const
     return QStringLiteral("balanced");
 }
 
-// The id when it is built in or one of the custom choices, otherwise fallback.
-template<typename Custom>
-static QString offeredChoice(const QString &value, const QStringList &builtIn, const QList<Custom> &custom,
-                             const QString &fallback)
+// A profile whose tone or level is not built in, which a release with custom
+// ones may have left, falls back to no tone override or Medium.
+static QString offeredChoice(const QString &value, const QStringList &builtIn, const QString &fallback)
 {
     const QString id = value.trimmed().toLower();
-    const bool offered = builtIn.contains(id)
-        || std::any_of(custom.cbegin(), custom.cend(), [&id](const Custom &choice) { return choice.id == id; });
-    return offered ? id : fallback;
+    return builtIn.contains(id) ? id : fallback;
 }
 
-// A profile whose tone or level was deleted falls back to no tone override or
-// Medium, here where settings are read and written, so no stored profile
-// names one that is gone.
-static QString cleanupStrength(const QString &value, const QList<CustomCleanupLevel> &levels)
+QJsonArray refinementRulesJson(const QList<RefinementRule> &rules)
 {
-    return offeredChoice(value, kBuiltInCleanupLevels, levels, QStringLiteral("balanced"));
+    QJsonArray array;
+    for (const RefinementRule &rule : rules) {
+        array.append(QJsonObject{{QStringLiteral("id"), rule.id},
+                                 {QStringLiteral("name"), rule.name},
+                                 {QStringLiteral("instruction"), rule.instruction},
+                                 {QStringLiteral("everyProfile"), rule.everyProfile}});
+    }
+    return array;
 }
 
-static QString writingTone(const QString &value, const QList<CustomTone> &tones)
+QJsonObject ruleSwitchesJson(const QMap<QString, bool> &switches)
 {
-    return offeredChoice(value, kBuiltInTones, tones, QStringLiteral("none"));
+    QJsonObject object;
+    for (auto it = switches.cbegin(); it != switches.cend(); ++it) {
+        object.insert(it.key(), it.value());
+    }
+    return object;
+}
+
+static QList<RefinementRule> refinementRulesFromJson(const QJsonArray &array)
+{
+    QList<RefinementRule> rules;
+    for (const QJsonValue &item : array) {
+        const QJsonObject object = item.toObject();
+        rules.append({object.value(QStringLiteral("id")).toString(), object.value(QStringLiteral("name")).toString(),
+                      object.value(QStringLiteral("instruction")).toString(),
+                      object.value(QStringLiteral("everyProfile")).toBool()});
+    }
+    return rules;
 }
 
 // The profiles the user added, which follow the built-ins in stored order.
@@ -667,21 +685,27 @@ QList<WritingProfileSettings> SettingsCodecs::writingProfileSettings() const
     if (!document.isArray()) {
         return defaultWritingProfileSettings();
     }
-    const QList<CustomCleanupLevel> levels = customCleanupLevels();
-    const QList<CustomTone> tones = customTones();
+    const QList<RefinementRule> rules = refinementRules();
     QList<WritingProfileSettings> settings;
     for (const QJsonValue &item : document.array()) {
         const QJsonObject object = item.toObject();
-        settings.append({
-            writingProfileFromName(object.value(QStringLiteral("profile")).toString()),
-            cleanupStrength(object.value(QStringLiteral("cleanupStrength")).toString(), levels),
-            writingTone(object.value(QStringLiteral("tone")).toString(), tones),
-            object.value(QStringLiteral("instructions")).toString(),
-            object.value(QStringLiteral("name")).toString(),
-            object.value(QStringLiteral("outputLanguage")).toString(),
-        });
-        settings.last().speechFirst = readProfileProvider(object, ProviderRole::Speech);
-        settings.last().refinementFirst = readProfileProvider(object, ProviderRole::Refinement);
+        WritingProfileSettings profile;
+        profile.profile = writingProfileFromName(object.value(QStringLiteral("profile")).toString());
+        profile.cleanupStrength = offeredChoice(object.value(QStringLiteral("cleanupStrength")).toString(),
+                                                kBuiltInCleanupLevels, QStringLiteral("balanced"));
+        profile.tone = offeredChoice(object.value(QStringLiteral("tone")).toString(), kBuiltInTones,
+                                     QStringLiteral("none"));
+        const QJsonObject switches = object.value(QStringLiteral("rules")).toObject();
+        for (auto it = switches.constBegin(); it != switches.constEnd(); ++it) {
+            if (ruleExists(it.key(), rules)) {
+                profile.rules.insert(it.key(), it.value().toBool());
+            }
+        }
+        profile.name = object.value(QStringLiteral("name")).toString();
+        profile.outputLanguage = object.value(QStringLiteral("outputLanguage")).toString();
+        profile.speechFirst = readProfileProvider(object, ProviderRole::Speech);
+        profile.refinementFirst = readProfileProvider(object, ProviderRole::Refinement);
+        settings.append(profile);
     }
     bool hasAiCoding = false;
     for (const WritingProfileSettings &entry : settings) {
@@ -706,19 +730,21 @@ QList<WritingProfileSettings> SettingsCodecs::writingProfileSettings() const
 
 void SettingsCodecs::setWritingProfileSettings(const QList<WritingProfileSettings> &value)
 {
-    const QList<CustomCleanupLevel> levels = customCleanupLevels();
-    const QList<CustomTone> tones = customTones();
+    const QList<RefinementRule> rules = refinementRules();
     QList<WritingProfileSettings> profiles;
     for (const WritingProfileSettings &fallback : defaultWritingProfileSettings()) {
         profiles.append(writingProfileSettingsFor(value, fallback.profile));
     }
     QJsonArray array;
     for (const WritingProfileSettings &settings : profiles + customWritingProfiles(value)) {
+        QMap<QString, bool> switches = settings.rules;
+        switches.removeIf([&rules](const auto &entry) { return !ruleExists(entry.key(), rules); });
         QJsonObject object{
             {QStringLiteral("profile"), settings.profile},
-            {QStringLiteral("cleanupStrength"), cleanupStrength(settings.cleanupStrength, levels)},
-            {QStringLiteral("tone"), writingTone(settings.tone, tones)},
-            {QStringLiteral("instructions"), settings.instructions},
+            {QStringLiteral("cleanupStrength"),
+             offeredChoice(settings.cleanupStrength, kBuiltInCleanupLevels, QStringLiteral("balanced"))},
+            {QStringLiteral("tone"), offeredChoice(settings.tone, kBuiltInTones, QStringLiteral("none"))},
+            {QStringLiteral("rules"), ruleSwitchesJson(switches)},
         };
         if (!isBuiltInWritingProfile(settings.profile)) {
             object.insert(QStringLiteral("name"), settings.name);
@@ -757,16 +783,6 @@ void SettingsCodecs::setIncludeScreenshotContext(bool value)
     m_settings.setValue(SettingsKeys::IncludeScreenshotContext, value);
 }
 
-QString SettingsCodecs::additionalInstructions() const
-{
-    return value(SettingsKeys::AdditionalInstructions, QString()).toString();
-}
-
-void SettingsCodecs::setAdditionalInstructions(const QString &value)
-{
-    m_settings.setValue(SettingsKeys::AdditionalInstructions, value);
-}
-
 bool SettingsCodecs::customSystemPromptEnabled() const
 {
     return value(SettingsKeys::CustomSystemPromptEnabled, false).toBool();
@@ -787,58 +803,16 @@ void SettingsCodecs::setCustomSystemPrompt(const QString &value)
     m_settings.setValue(SettingsKeys::CustomSystemPrompt, value);
 }
 
-QList<CustomTone> SettingsCodecs::customTones() const
+QList<RefinementRule> SettingsCodecs::refinementRules() const
 {
-    QList<CustomTone> tones;
-    const QJsonArray array =
-        QJsonDocument::fromJson(value(SettingsKeys::CustomTones, QByteArray()).toByteArray()).array();
-    for (const QJsonValue &item : array) {
-        const QJsonObject object = item.toObject();
-        tones.append({object.value(QStringLiteral("id")).toString(),
-                      object.value(QStringLiteral("name")).toString(),
-                      object.value(QStringLiteral("instruction")).toString()});
-    }
-    return tones;
+    return refinementRulesFromJson(
+        QJsonDocument::fromJson(value(SettingsKeys::RefinementRules, QByteArray()).toByteArray()).array());
 }
 
-void SettingsCodecs::setCustomTones(const QList<CustomTone> &value)
+void SettingsCodecs::setRefinementRules(const QList<RefinementRule> &value)
 {
-    QJsonArray array;
-    for (const CustomTone &tone : value) {
-        array.append(QJsonObject{{QStringLiteral("id"), tone.id},
-                                 {QStringLiteral("name"), tone.name},
-                                 {QStringLiteral("instruction"), tone.instruction}});
-    }
-    m_settings.setValue(SettingsKeys::CustomTones, QJsonDocument(array).toJson(QJsonDocument::Compact));
-}
-
-QList<CustomCleanupLevel> SettingsCodecs::customCleanupLevels() const
-{
-    QList<CustomCleanupLevel> levels;
-    const QJsonArray array = QJsonDocument::fromJson(
-                                 value(SettingsKeys::CustomCleanupLevels, QByteArray()).toByteArray())
-                                 .array();
-    for (const QJsonValue &item : array) {
-        const QJsonObject object = item.toObject();
-        levels.append({object.value(QStringLiteral("id")).toString(),
-                       object.value(QStringLiteral("name")).toString(),
-                       object.value(QStringLiteral("base")).toString(),
-                       object.value(QStringLiteral("instructions")).toString()});
-    }
-    return levels;
-}
-
-void SettingsCodecs::setCustomCleanupLevels(const QList<CustomCleanupLevel> &value)
-{
-    QJsonArray array;
-    for (const CustomCleanupLevel &level : value) {
-        array.append(QJsonObject{{QStringLiteral("id"), level.id},
-                                 {QStringLiteral("name"), level.name},
-                                 {QStringLiteral("base"), level.base},
-                                 {QStringLiteral("instructions"), level.instructions}});
-    }
-    m_settings.setValue(SettingsKeys::CustomCleanupLevels,
-                        QJsonDocument(array).toJson(QJsonDocument::Compact));
+    m_settings.setValue(SettingsKeys::RefinementRules,
+                        QJsonDocument(refinementRulesJson(value)).toJson(QJsonDocument::Compact));
 }
 
 OpenAiAuthMode SettingsCodecs::openAiAuthMode() const

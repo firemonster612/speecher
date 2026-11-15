@@ -11,17 +11,16 @@ import app.speecher.android.provider.providerOrder
 import app.speecher.android.provider.speech
 import app.speecher.android.update.IntervalUnit
 import app.speecher.android.update.UpdateChannel
-import app.speecher.protocol.CustomCleanupLevel
-import app.speecher.protocol.CustomTone
 import app.speecher.protocol.ENGLISH_LANGUAGE
 import app.speecher.protocol.LearnedCorrection
 import app.speecher.protocol.RecognitionRule
+import app.speecher.protocol.RefinementRule
 import app.speecher.protocol.Replacement
 import app.speecher.protocol.SpeechEndpoint
 import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
-import app.speecher.protocol.withoutDeleted
+import app.speecher.protocol.isBuiltInRule
 
 enum class InsertAction {
     Insert,
@@ -106,14 +105,11 @@ data class SpeecherSettings(
         WritingProfile.entries.associateWith { WritingProfileSettings() },
     /** The user's application rules, checked before the built-in ones. */
     val appRules: List<RecognitionRule> = emptyList(),
-    /** Added to every refinement prompt, before the profile's own instructions. */
-    val additionalInstructions: String = "",
     /** Replaces the built-in dictation rules while on; empty stands for the built-in prompt. */
     val customSystemPromptEnabled: Boolean = false,
     val customSystemPrompt: String = "",
-    /** Offered after the built-in tones and cleanup levels. */
-    val customTones: List<CustomTone> = emptyList(),
-    val customCleanupLevels: List<CustomCleanupLevel> = emptyList(),
+    /** The user's own refinement rules, in the order the prompt lists them. */
+    val refinementRules: List<RefinementRule> = emptyList(),
     val buttonLayout: ButtonLayout = ButtonLayout.RefinedPrimary,
     /** The size the panel opens at. */
     val panelSize: PanelSize = PanelSize.Full,
@@ -163,18 +159,21 @@ data class SpeecherSettings(
         if (provider == Provider.Claude) claudeFastMode else chatGptSpeed != OpenAiSpeed.Standard
 
     /**
-     * With these tones and levels in place of the old ones. A profile that used one of those
-     * deleted falls back to no tone override or Medium, as on the desktop.
+     * With these refinement rules in place of the old ones. Each profile loses its switch for a
+     * rule that is gone, as on the desktop.
      */
-    fun withCustomChoices(
-        tones: List<CustomTone> = customTones,
-        levels: List<CustomCleanupLevel> = customCleanupLevels,
-    ): SpeecherSettings =
-        copy(
-            customTones = tones,
-            customCleanupLevels = levels,
-            writingProfiles = writingProfiles.mapValues { it.value.withoutDeleted(tones, levels) },
+    fun withRefinementRules(rules: List<RefinementRule> = refinementRules): SpeecherSettings {
+        val kept = rules.map { it.id }.toSet()
+        return copy(
+            refinementRules = rules,
+            writingProfiles =
+                writingProfiles.mapValues { (_, profile) ->
+                    profile.copy(
+                        rules = profile.rules.filterKeys { isBuiltInRule(it) || it in kept },
+                    )
+                },
         )
+    }
 
     /**
      * With these profiles in place of the old ones. A rule that pointed at a deleted profile loses

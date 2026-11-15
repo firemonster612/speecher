@@ -249,21 +249,13 @@ private fun ImportPreviewList(
             "Your own profiles, with their tones and levels",
         names(profiles.updated.map(labels::getValue)) to "Different settings on the computer",
     )
-    val tonesAndLevels = preview.tonesAndLevels
+    val rules = preview.rules
     Group(
-        "Tones and cleanup levels",
-        tonesAndLevels,
-        names(tonesAndLevels.added) to "Your own tones and cleanup levels",
-        names(tonesAndLevels.updated) to "Different names or instructions on the computer",
+        "Your rules",
+        rules,
+        names(rules.added) to "Rules you wrote on the computer",
+        names(rules.updated) to "Different on the computer",
     )
-    preview.additionalInstructions?.let {
-        ChangeRow(
-            "Additional instructions",
-            "\"$it\"",
-            "Replaces",
-            MaterialTheme.colorScheme.tertiaryContainer,
-        )
-    }
 }
 
 /**

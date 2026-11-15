@@ -29,20 +29,20 @@ The desktop application and editable control selected when a Dictation Session s
 _Avoid_: Destination, focused app
 
 **Writing Profile**:
-How refinement treats a Target, chosen by its App or App Type, else Other apps' profile. A profile is built-in (Work, Email, Personal, AI coding, Other) or user-defined, and sets a Cleanup Level, a Tone, Additional Instructions and an optional output language that refinement translates into. It may also name a speech and a refinement Service, with a model, that it tries first, ahead of the page's Service Order; unset, it is the same as the page's. AI coding wins over a terminal's own identity when a coding agent is detected inside it.
+How refinement treats a Target, chosen by its App or App Type, else Other apps' profile. A profile is built-in (Work, Email, Personal, AI coding, Other) or user-defined, and sets a Cleanup Level, a Tone, which Rules are on and an optional output language that refinement translates into. It may also name a speech and a refinement Service, with a model, that it tries first, ahead of the page's Service Order; unset, it is the same as the page's. AI coding wins over a terminal's own identity when a coding agent is detected inside it.
 _Avoid_: Style preset, persona, Writing Profile Override, default writing profile
 
 **Cleanup Level**:
-How much refinement may rewrite the Raw Transcript: None, Light, Medium, High, or a user-defined level built on one of them.
+How much refinement may rewrite the Raw Transcript: None, Light, Medium or High. It decides which built-in Rules start on (None starts what Light does). Choosing a level drops the Writing Profile's switches for built-in Rules.
 _Avoid_: Refinement style, polish level
 
 **Tone**:
-The voice a Writing Profile asks refinement to write in, built-in or user-defined, or no tone override.
+The voice a Writing Profile asks refinement to write in, one of the built-in tones, or no tone override.
 _Avoid_: Style, voice preset
 
-**Additional Instructions**:
-The user's own text added to the refinement prompt: once for every refinement, then once per Writing Profile.
-_Avoid_: Custom prompt, system prompt
+**Rule**:
+Something refinement does that a Writing Profile switches on or off. A built-in rule is a part of the Cleanup Levels or the format step, such as removing filler words, writing digits or using Markdown, or writing for a coding agent; the Cleanup Level decides which start on. One of the person's rules has a name and an optional instruction, which refinement is told, or the name when it is blank; it is off unless a profile turns it on, or, set to every profile, on unless one turns it off. A custom system prompt replaces the built-in rules; the Tone and the person's rules still apply.
+_Avoid_: Instructions, Additional Instructions, custom tone, custom cleanup level, preset
 
 **Delivery Step**:
 One way Speecher gets words out, which the person turns on or off, named the same everywhere: Insert (through accessibility), Press paste keys (copies the words and presses the paste keys, Ctrl+V or ⌘V unless an App or App Type picks Ctrl+Shift+V), and Keep on clipboard. Delivery tries Insert, then Press when insertion is off, unavailable or rejected; Keep leaves the words on the clipboard afterwards. With Keep off, Press borrows the clipboard only once Speecher has saved what was there in a form it can put back, and puts it back after a confirmed paste or when no keys went out; a paste it can't confirm, or keys that may have partly gone out, leave the words there. So Insert off, Press on and Keep off pastes and leaves the clipboard as it was. At least one is on.
@@ -153,11 +153,11 @@ The switch that turns refinement on or off for every dictation. Off, no refineme
 _Avoid_: None (as a refinement service)
 
 **Run Overrides**:
-What one Dictation Session, Transcribe batch or headless `transcribe`/`listen` run changes for itself, never saved: its Writing Profile, Cleanup Level, Tone, Spoken Language, first speech and refinement Services with their models, output format, and vocabulary (terms it adds, or none of the saved ones). A run that names a refinement Service refines even with Clean up my words off; one that names none refines nothing.
+What one Dictation Session, Transcribe batch or headless `transcribe`/`listen` run changes for itself, never saved: its Writing Profile, Cleanup Level, Tone, Spoken Language, first speech and refinement Services with their models, output format, and vocabulary (terms it adds, or none of the saved ones). A run's Cleanup Level drops the profile's switches for built-in Rules, as choosing a level does. A run that names a refinement Service refines even with Clean up my words off; one that names none refines nothing.
 _Avoid_: Session overrides, run choices, batch options
 
 **Layers**:
-Where a setting's value comes from, widest first: the setting's own page (Defaults), the App Type, the App, the Writing Profile, then the Run Overrides. Each narrower place that can change a value starts with "Same as <wider place> (<value>)", and one resolver settles every run the same way and says which layer each value came from. An App sets a Writing Profile and Pasting, never a Service; a Writing Profile sets cleanup, tone, output language, instructions and its first Services.
+Where a setting's value comes from, widest first: the setting's own page (Defaults), the App Type, the App, the Writing Profile, then the Run Overrides. Each narrower place that can change a value starts with "Same as <wider place> (<value>)", and one resolver settles every run the same way and says which layer each value came from. An App sets a Writing Profile and Pasting, never a Service; a Writing Profile sets cleanup, tone, output language, Rules and its first Services.
 _Avoid_: Inheritance chain, overrides (for saved settings)
 
 **Local Model**:

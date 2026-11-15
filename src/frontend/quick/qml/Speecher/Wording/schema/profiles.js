@@ -1,13 +1,13 @@
 .pragma library
 
-// The profiles themselves, tones and cleanup levels live in Library, and the
-// profile for apps Speecher doesn't recognize is Other apps' on Apps; these
-// rows give them labels, help and search terms.
+// The profiles themselves live in Library, and the profile for apps Speecher
+// doesn't recognize is Other apps' on Apps; these rows give them labels, help
+// and search terms.
 var rows = [
     { id: "writingProfileBehavior", page: "profiles", section: "Profiles", kind: "custom",
       label: "Profiles",
-      help: "Each profile has a cleanup level, a tone and optional instructions. An output language translates what you say.",
-      keywords: "profile app per-app cleanup level tone instructions translate language edit add" },
+      help: "Each profile has a cleanup level, a tone and the rules it turns on. An output language translates what you say.",
+      keywords: "profile app per-app cleanup level tone rules translate language edit add" },
     { id: "profileCleanup", page: "profiles", section: "Profiles", kind: "custom",
       label: "Cleanup", help: "How much refinement changes your words.",
       keywords: "cleanup level strength none light medium high polish" },
@@ -17,9 +17,9 @@ var rows = [
     { id: "profileLanguage", page: "profiles", section: "Profiles", kind: "custom",
       label: "Output language", help: "Writes in this language, whatever you speak. Translating uses at least Light cleanup.",
       placeholder: "Same as spoken", keywords: "translate translation language spanish french output" },
-    { id: "profileInstructions", page: "profiles", section: "Profiles", kind: "custom",
-      label: "Instructions", help: "Added after the instructions for every profile.",
-      placeholder: "Keep it short and sign off with my first name.", keywords: "instructions rules custom prompt" },
+    { id: "profileRules", page: "profiles", section: "Profiles", kind: "custom",
+      label: "Rules", help: "What refinement does for this profile. The cleanup level decides which built-in rules start on.",
+      keywords: "rules filler paragraphs lists headings digits numbers markdown em dash british spelling lowercase coding agent prompt instructions" },
     { id: "profileServices", page: "profiles", section: "Profiles", kind: "custom",
       label: "Services for this profile",
       help: "Pick a speech or refinement service for this profile only. Each falls back to the ones set for every profile.",
@@ -28,14 +28,7 @@ var rows = [
       label: "Used in", help: "Apps and app types pick their profile on Apps.",
       keywords: "apps applications app type" },
 
-    { id: "additionalInstructions", page: "profiles", section: "Every profile", kind: "custom",
-      label: "Instructions for every profile",
-      help: "Added to every refinement, before each profile's own instructions.",
-      placeholder: "Write numbers as digits.", keywords: "global instructions all profiles rules" },
-    { id: "customTones", page: "profiles", section: "Every profile", kind: "custom",
-      label: "Your tones", help: "A voice you can pick in any profile.",
-      keywords: "custom tone add new voice style" },
-    { id: "customCleanupLevels", page: "profiles", section: "Every profile", kind: "custom",
-      label: "Your cleanup levels", help: "Light, Medium or High plus your own rules.",
-      keywords: "custom cleanup level add new based on" }
+    { id: "yourRules", page: "profiles", section: "Your rules", kind: "custom",
+      label: "Your rules", help: "Instructions you write once and turn on in any profile.",
+      keywords: "custom rules instructions add new prompt every profile global tone level" }
 ];

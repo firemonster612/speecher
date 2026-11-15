@@ -48,7 +48,7 @@ var rows = [
 
     { id: "customSystemPromptEnabled", page: "refinement", section: "Advanced", kind: "toggle",
       label: "Use a custom system prompt",
-      help: "Replaces the built-in rules. Each profile's tone and instructions still apply.",
+      help: "Replaces the built-in rules. Each profile's tone and your rules still apply.",
       keywords: "prompt rules override instructions advanced" },
     { id: "customSystemPrompt", page: "refinement", section: "Advanced", kind: "custom",
       label: "Prompt", help: "Selection editing and local models keep their own prompts.",

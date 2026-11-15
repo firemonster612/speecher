@@ -7,13 +7,14 @@ import app.speecher.android.provider.SpeechProvider
 import app.speecher.protocol.AppCategory
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.CorrectionEvidence
-import app.speecher.protocol.CustomCleanupLevel
-import app.speecher.protocol.CustomTone
 import app.speecher.protocol.LearnedCorrection
 import app.speecher.protocol.RecognitionRule
+import app.speecher.protocol.RefinementRule
 import app.speecher.protocol.Replacement
 import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
+import app.speecher.protocol.WritingProfileSettings
+import app.speecher.protocol.resolveRefinementContext
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -69,6 +70,130 @@ class SettingsUpgradeTest {
     }
 
     @Test
+    fun `instructions, custom tones and custom levels become rules on where they were used, once`() {
+        val context = RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("speecher-settings", Context.MODE_PRIVATE).edit(
+            commit = true,
+        ) {
+            putInt("version", 2)
+            putString("additionalInstructions", "Spell it Speecher.")
+            putString("WorkInstructions", "Use the team glossary.")
+            putString("OtherInstructions", " ")
+            putString("customProfiles", """["custom_lab"]""")
+            putString("custom_labName", "Lab notes")
+            putString("custom_labInstructions", "Write lab notes.")
+            putString("custom_labCleanup", "Balanced")
+            putString("custom_labCustomCleanup", "custom_notes")
+            putString("custom_labCustomTone", "custom_pirate")
+            putString("EmailCustomCleanup", "custom_soft")
+            putString(
+                "customTones",
+                """[{"id":"custom_pirate","name":"Pirate","instruction":"Talk like a pirate."}]""",
+            )
+            // The second level's name is taken by the Work profile's rule.
+            putString(
+                "customCleanupLevels",
+                """[{"id":"custom_notes","name":"Notes","base":"CustomOnly",""" +
+                    """"instructions":"Bullets."},{"id":"custom_soft",""" +
+                    """"name":"work instructions","base":"StrongPolish","instructions":"Softly."}]""",
+            )
+        }
+        val store = SettingsStore(context)
+        val settings = store.load()
+        val rules = settings.refinementRules
+        // Each id names its source, as the desktop's migration names it.
+        assertEquals(
+            listOf(
+                RefinementRule(
+                    "custom_rule_every_profile",
+                    "Instructions for every profile",
+                    "Spell it Speecher.",
+                    true,
+                ),
+                RefinementRule(
+                    "custom_rule_work_instructions",
+                    "Work instructions",
+                    "Use the team glossary.",
+                ),
+                RefinementRule(
+                    "custom_rule_custom_lab_instructions",
+                    "Lab notes instructions",
+                    "Write lab notes.",
+                ),
+                RefinementRule(
+                    "custom_rule_custom_pirate",
+                    "Pirate tone",
+                    "Write in this tone: Pirate. Talk like a pirate.",
+                ),
+                RefinementRule("custom_rule_custom_notes", "Notes", "Bullets."),
+                RefinementRule("custom_rule_custom_soft", "work instructions 2", "Softly."),
+            ),
+            rules,
+        )
+        assertEquals(
+            SpeecherSettings().writingProfiles +
+                mapOf(
+                    WritingProfile.Work to
+                        WritingProfileSettings(
+                            rules = mapOf("custom_rule_work_instructions" to true),
+                        ),
+                    WritingProfile.Email to
+                        WritingProfileSettings(
+                            CleanupStrength.StrongPolish,
+                            rules = mapOf("custom_rule_custom_soft" to true),
+                        ),
+                    WritingProfile("custom_lab") to
+                        WritingProfileSettings(
+                            CleanupStrength.LightCleanup,
+                            rules =
+                                mapOf(
+                                    "custom_rule_custom_lab_instructions" to true,
+                                    "custom_rule_custom_pirate" to true,
+                                    "custom_rule_custom_notes" to true,
+                                ),
+                            name = "Lab notes",
+                        ),
+                ),
+            settings.writingProfiles,
+        )
+        // The global instructions, then the profile's, as the prompt had them before rules.
+        assertEquals(
+            listOf("Spell it Speecher.", "Use the team glossary."),
+            resolveRefinementContext(
+                    "",
+                    "",
+                    null,
+                    null,
+                    WritingProfile.Work,
+                    settings.writingProfiles,
+                    rules,
+                )
+                .userRules,
+        )
+        assertEquals(settings, store.load())
+    }
+
+    @Test
+    fun `rules saved before a downgrade survive the upgrade back`() {
+        val context = RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("speecher-settings", Context.MODE_PRIVATE).edit(
+            commit = true,
+        ) {
+            putInt("version", 2)
+            putString("additionalInstructions", "Spell it Speecher.")
+            putString(
+                "refinementRules",
+                """[{"id":"custom_rule_mine","name":"Mine","instruction":"Be brief.",""" +
+                    """"everyProfile":true}]""",
+            )
+        }
+        assertEquals(
+            listOf(RefinementRule("custom_rule_mine", "Mine", "Be brief.", true)),
+            SettingsStore(context).load().refinementRules,
+        )
+    }
+
+    @Test
     fun `lists stored by the previous release load as they were`() {
         val context = RuntimeEnvironment.getApplication()
         context.getSharedPreferences("speecher-settings", Context.MODE_PRIVATE).edit(
@@ -88,17 +213,6 @@ class SettingsUpgradeTest {
                 "appRules",
                 """[{"match":"zulip","category":"","profile":"custom_standup"},""" +
                     """{"match":"mattermost","category":"browser","profile":""}]""",
-            )
-            putString(
-                "customTones",
-                """[{"id":"custom_terse","name":"Terse","instruction":"Short."}]""",
-            )
-            // Gentle stands for a base a later release added.
-            putString(
-                "customCleanupLevels",
-                """[{"id":"custom_notes","name":"Notes","base":"CustomOnly",""" +
-                    """"instructions":"Bullets."},{"id":"custom_soft","name":"Soft",""" +
-                    """"base":"Gentle","instructions":"Softly."}]""",
             )
             putString(
                 "learnedCorrections",
@@ -138,14 +252,6 @@ class SettingsUpgradeTest {
                 RecognitionRule("mattermost", AppCategory.Browser, null),
             ),
             settings.appRules,
-        )
-        assertEquals(listOf(CustomTone("custom_terse", "Terse", "Short.")), settings.customTones)
-        assertEquals(
-            listOf(
-                CustomCleanupLevel("custom_notes", "Notes", CleanupStrength.CustomOnly, "Bullets."),
-                CustomCleanupLevel("custom_soft", "Soft", CleanupStrength.Balanced, "Softly."),
-            ),
-            settings.customCleanupLevels,
         )
         assertEquals(
             listOf(LearnedCorrection("a1", "github", "GitHub", "", 100, 0.98, false, 3, 400)),

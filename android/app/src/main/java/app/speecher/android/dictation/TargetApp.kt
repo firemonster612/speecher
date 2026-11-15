@@ -136,7 +136,6 @@ fun refinementContext(
         resolvedContext(settings, target)
             .copy(
                 controlRole = target?.role.orEmpty(),
-                additionalInstructions = settings.additionalInstructions,
                 spokenLanguage = settings.spokenLanguage,
                 customSystemPrompt =
                     if (settings.customSystemPromptEnabled) settings.customSystemPrompt else "",
@@ -166,7 +165,6 @@ private fun resolvedContext(settings: SpeecherSettings, target: TargetApp?): Ref
         null,
         settings.defaultWritingProfile,
         settings.writingProfiles,
-        settings.customTones,
-        settings.customCleanupLevels,
+        settings.refinementRules,
         settings.appRules,
     )

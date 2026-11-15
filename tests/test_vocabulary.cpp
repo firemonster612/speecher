@@ -285,7 +285,7 @@ private slots:
         settings.raw().clear();
         QList<WritingProfileSettings> profiles = defaultWritingProfileSettings();
         profiles.append({QStringLiteral("custom_standup"), QStringLiteral("balanced"), QStringLiteral("none"),
-                         QString(), QStringLiteral("Standup")});
+                         {}, QStringLiteral("Standup")});
         settings.edit([&](AppSettings &draft) { draft.refinement.writingProfiles = profiles; return true; });
         VocabularyEntry kubernetes{QStringLiteral("Kubernetes")};
         kubernetes.context = QStringLiteral("  The container platform.\n");

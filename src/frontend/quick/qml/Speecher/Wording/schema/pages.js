@@ -41,7 +41,7 @@ var pages = [
       keywords: "cleanup llm model ai punctuation filler prompt context screenshot" },
     { id: "profiles", parent: "refinement", title: "Writing profiles", icon: "pen-line", file: "ProfilesPage.qml",
       subtitle: "Speecher picks a profile from the app you're dictating into, then cleans up your words to match it.",
-      keywords: "tone style app per-app cleanup level instructions translate" },
+      keywords: "tone style app per-app cleanup level rules instructions translate" },
 
     { id: "vocabulary", title: "Vocabulary", icon: "book-a", file: "VocabularyPage.qml",
       subtitle: "Words Speecher spells your way, phrases that become exact text, and corrections it learned from your edits. Each can be limited to some writing profiles or apps.",

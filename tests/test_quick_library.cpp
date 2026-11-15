@@ -4,6 +4,7 @@
 #include "common/test_system_singletons.h"
 
 #include "app/ApplicationController.h"
+#include "core/RefinementRules.h"
 #include "core/SettingsStore.h"
 #include "frontend/quick/host/QuickLibrary.h"
 #include "frontend/quick/host/QuickModels.h"
@@ -40,11 +41,6 @@ QString writeFile(const QTemporaryDir &dir, const char *name, const QByteArray &
         qFatal("could not write %s", qPrintable(path));
     }
     return path;
-}
-
-QString toneOf(const QString &profile)
-{
-    return writingProfileSettingsFor(SettingsStore().dictationSnapshot().refinement.writingProfiles, profile).tone;
 }
 
 // What add and update return when they save.
@@ -163,16 +159,6 @@ private slots:
         QCOMPARE(library.update(profiles, QStringLiteral("custom_profile_gone"), {{QStringLiteral("language"), QString()}}),
                  QStringLiteral("missing"));
 
-        const QString tones = QStringLiteral("customTones");
-        QCOMPARE(library.add(tones, {{QStringLiteral("id"), library.newId(QStringLiteral("custom_tone"))},
-                                     {QStringLiteral("name"), QStringLiteral("Dry")}}),
-                 QStringLiteral("incomplete"));
-        const QString levels = QStringLiteral("customCleanupLevels");
-        QCOMPARE(library.add(levels, {{QStringLiteral("id"), library.newId(QStringLiteral("custom_level"))},
-                                      {QStringLiteral("name"), QStringLiteral("Raw")},
-                                      {QStringLiteral("base"), kCustomOnlyCleanupBase}}),
-                 QStringLiteral("incomplete"));
-
         const QString vocabulary = QStringLiteral("vocabulary");
         QCOMPARE(library.add(vocabulary, {{QStringLiteral("term"), QStringLiteral("sign off")},
                                           {QStringLiteral("replacement"), QStringLiteral("Thanks")}}),
@@ -203,88 +189,6 @@ private slots:
         QCOMPARE(test::replacementEntries(SettingsStore().dictationSnapshot().vocabulary).size(), 2);
     }
 
-    void removingAToneMovesItsProfilesUntilUndone()
-    {
-        ApplicationController controller(true);
-        QuickLibrary library(&controller);
-        const QString tone = library.newId(QStringLiteral("custom_tone"));
-        QCOMPARE(library.add(QStringLiteral("customTones"), {{QStringLiteral("id"), tone},
-                                                             {QStringLiteral("name"), QStringLiteral("Dry")},
-                                                             {QStringLiteral("instruction"), QStringLiteral("Deadpan.")}}),
-                 saved);
-        QCOMPARE(library.update(QStringLiteral("profiles"), WritingProfile::Work, {{QStringLiteral("tone"), tone}}), saved);
-        QCOMPARE(toneOf(WritingProfile::Work), tone);
-
-        const int undo = library.removeTone(tone);
-        QVERIFY(undo >= 0);
-        QVERIFY(SettingsStore().dictationSnapshot().refinement.customTones.isEmpty());
-        QCOMPARE(toneOf(WritingProfile::Work), QStringLiteral("none"));
-
-        library.undo(undo);
-        QCOMPARE(SettingsStore().dictationSnapshot().refinement.customTones.size(), 1);
-        QCOMPARE(toneOf(WritingProfile::Work), tone);
-        // A token works once.
-        library.undo(undo);
-        QCOMPARE(SettingsStore().dictationSnapshot().refinement.customTones.size(), 1);
-        QCOMPARE(library.removeTone(QStringLiteral("custom_tone_gone")), -1);
-    }
-
-    // A custom tone or level can't go by a built-in one's name either: a
-    // profile's choices would show two by that name.
-    void customChoicesCantTakeABuiltInName()
-    {
-        ApplicationController controller(true);
-        QuickLibrary library(&controller);
-        const QStringList builtInTones{QStringLiteral("No tone"), QStringLiteral("Formal")};
-        const QString tones = QStringLiteral("customTones");
-        const QString tone = library.newId(QStringLiteral("custom_tone"));
-        QCOMPARE(library.add(tones, {{QStringLiteral("id"), tone}, {QStringLiteral("name"), QStringLiteral(" formal ")},
-                                     {QStringLiteral("instruction"), QStringLiteral("Stiff.")}},
-                             builtInTones),
-                 QStringLiteral("taken"));
-        QCOMPARE(library.add(tones, {{QStringLiteral("id"), tone}, {QStringLiteral("name"), QStringLiteral("Dry")},
-                                     {QStringLiteral("instruction"), QStringLiteral("Deadpan.")}},
-                             builtInTones),
-                 saved);
-        QCOMPARE(library.update(tones, tone, {{QStringLiteral("name"), QStringLiteral("no tone")}}, builtInTones),
-                 QStringLiteral("taken"));
-
-        const QString levels = QStringLiteral("customCleanupLevels");
-        const QString level = library.newId(QStringLiteral("custom_level"));
-        QCOMPARE(library.add(levels, {{QStringLiteral("id"), level}, {QStringLiteral("name"), QStringLiteral("Notes")},
-                                      {QStringLiteral("base"), QStringLiteral("balanced")}},
-                             {QStringLiteral("Medium")}),
-                 saved);
-        QCOMPARE(library.update(levels, level, {{QStringLiteral("name"), QStringLiteral("MEDIUM")}}, {QStringLiteral("Medium")}),
-                 QStringLiteral("taken"));
-        QCOMPARE(SettingsStore().dictationSnapshot().refinement.customTones.first().name, QStringLiteral("Dry"));
-        QCOMPARE(SettingsStore().dictationSnapshot().refinement.customCleanupLevels.first().name, QStringLiteral("Notes"));
-    }
-
-    // Undoing a tone's removal after another tone took its name keeps the
-    // new one alone, and leaves the profiles on the tone they have.
-    void undoingAToneLeavesOneByItsNameAlone()
-    {
-        ApplicationController controller(true);
-        QuickLibrary library(&controller);
-        const QString tones = QStringLiteral("customTones");
-        const QString old = library.newId(QStringLiteral("custom_tone"));
-        QCOMPARE(library.add(tones, {{QStringLiteral("id"), old}, {QStringLiteral("name"), QStringLiteral("Dry")},
-                                     {QStringLiteral("instruction"), QStringLiteral("Deadpan.")}}),
-                 saved);
-        QCOMPARE(library.update(QStringLiteral("profiles"), WritingProfile::Work, {{QStringLiteral("tone"), old}}), saved);
-        const int undo = library.removeTone(old);
-        const QString again = library.newId(QStringLiteral("custom_tone"));
-        QCOMPARE(library.add(tones, {{QStringLiteral("id"), again}, {QStringLiteral("name"), QStringLiteral("dry")},
-                                     {QStringLiteral("instruction"), QStringLiteral("Flat.")}}),
-                 saved);
-
-        library.undo(undo);
-        QCOMPARE(SettingsStore().dictationSnapshot().refinement.customTones.size(), 1);
-        QCOMPARE(SettingsStore().dictationSnapshot().refinement.customTones.first().id, again);
-        QCOMPARE(toneOf(WritingProfile::Work), QStringLiteral("none"));
-    }
-
     // Removing a profile leaves the Apps and Other apps that picked it
     // following their wider place.
     void removingAProfileResetsTheAppsThatPickedIt()
@@ -306,46 +210,23 @@ private slots:
         QCOMPARE(library.profiles().size(), 5);
     }
 
-    // Transcribe keeps a profile, tone or level only while the Library
-    // offers it: deleting one here gives way to the profile's own there, as
-    // it would for dictation.
+    // Transcribe keeps a profile only while the Library offers it: deleting
+    // one here gives way to Other apps' there, as it would for dictation.
     void transcribeGivesUpWhatTheLibraryDeletes()
     {
         ApplicationController controller(true);
         QuickLibrary library(&controller);
         QuickTranscription transcription(&controller);
-        const QString tone = library.newId(QStringLiteral("custom_tone"));
-        QCOMPARE(library.add(QStringLiteral("customTones"), {{QStringLiteral("id"), tone},
-                                                             {QStringLiteral("name"), QStringLiteral("Dry")},
-                                                             {QStringLiteral("instruction"), QStringLiteral("Deadpan.")}}),
-                 saved);
-        const QString level = library.newId(QStringLiteral("custom_level"));
-        QCOMPARE(library.add(QStringLiteral("customCleanupLevels"), {{QStringLiteral("id"), level},
-                                                                     {QStringLiteral("name"), QStringLiteral("Terse")},
-                                                                     {QStringLiteral("base"), QStringLiteral("light_cleanup")}}),
-                 saved);
         const QString profile = library.newId(QStringLiteral("custom_profile"));
         QCOMPARE(library.add(QStringLiteral("profiles"), profileItem(profile, QStringLiteral("Notes"))), saved);
         transcription.setOption(QStringLiteral("profile"), profile);
-        transcription.setOption(QStringLiteral("tone"), tone);
-        transcription.setOption(QStringLiteral("cleanup"), level);
         const auto option = [&transcription](const char *id) {
             return transcription.options().value(QLatin1String(id)).toString();
         };
         const auto planned = [&transcription](const char *id) {
             return transcription.plan().value(QLatin1String(id)).toString();
         };
-        QCOMPARE(option("tone"), tone);
-        QCOMPARE(option("cleanup"), level);
-
-        // A deleted choice is the profile's again.
-        QVERIFY(library.removeTone(tone) >= 0);
-        QCOMPARE(option("tone"), QString());
-        QCOMPARE(planned("tone"), QStringLiteral("none"));
-        QCOMPARE(option("cleanup"), level);
-        QVERIFY(library.removeLevel(level) >= 0);
-        QCOMPARE(option("cleanup"), QString());
-        QCOMPARE(planned("cleanup"), QStringLiteral("balanced"));
+        QCOMPARE(option("profile"), profile);
 
         library.removeProfile(profile);
         QCOMPARE(option("profile"), QString());
@@ -604,6 +485,8 @@ private slots:
                           "    property string summary: Library.profileSummary(Library.profiles[1])\n"
                           "    property string invalid: Library.refusalText(\"vocabulary\", \"invalid\")\n"
                           "    function addTerm() { return Library.add(\"vocabulary\", { term: \"Wayland\" }) }\n"
+                          "    property int builtInRules: Library.builtInRules.length\n"
+                          "    property var unlabelled: Library.builtInRules.filter(r => !(Library.ruleWords[r.id] || {}).label).map(r => r.id)\n"
                           "}\n",
                           QUrl());
         const std::unique_ptr<QObject> probe(component.create());
@@ -612,6 +495,9 @@ private slots:
         QCOMPARE(probe->property("summary").toString(), QStringLiteral("Medium cleanup"));
         // The page's own mistake still keeps the form from closing silently.
         QCOMPARE(probe->property("invalid").toString(), QStringLiteral("Speecher couldn't save this."));
+        // Every built-in rule core has is labelled by its id in the UI.
+        QCOMPARE(probe->property("builtInRules").toInt(), int(builtInRules().size()));
+        QCOMPARE(probe->property("unlabelled").toStringList(), QStringList());
 
         QVariant refused;
         QMetaObject::invokeMethod(probe.get(), "addTerm", Q_RETURN_ARG(QVariant, refused));

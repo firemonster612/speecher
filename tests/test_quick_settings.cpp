@@ -325,7 +325,7 @@ private slots:
 
         QVERIFY(schemaRow(engine, "pauseMedia")->property("enabled").toBool());
         // A custom row with a value is a setting; one without draws the page's own content.
-        QVERIFY(schemaRow(engine, "additionalInstructions")->property("enabled").toBool());
+        QVERIFY(schemaRow(engine, "refinementServices")->property("enabled").toBool());
         QVERIFY(schemaRow(engine, "themeControl")->property("enabled").toBool());
         QVERIFY(schemaRow(engine, "speechModels")->property("enabled").toBool());
     }

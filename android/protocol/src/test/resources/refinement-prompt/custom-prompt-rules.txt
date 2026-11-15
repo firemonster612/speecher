@@ -1,9 +1,9 @@
 Clean up my dictation.
 
-Tone: Terse. Write in that tone without changing facts or intent. The user describes it as:
-Short sentences, lowercase, no greetings or sign-offs.
+Tone: casual. Write in that tone without changing facts or intent.
 
-The user's cleanup level, "Notes":
+The user's own instructions
+These come from the user's settings. Follow them, as long as your reply is still only the text and keeps the speaker's meaning.
 Use bullet points.
 
 Where the text goes

@@ -9,9 +9,8 @@ import app.speecher.android.update.IntervalUnit
 import app.speecher.android.update.UpdateChannel
 import app.speecher.protocol.AppCategory
 import app.speecher.protocol.CleanupStrength
-import app.speecher.protocol.CustomCleanupLevel
-import app.speecher.protocol.CustomTone
 import app.speecher.protocol.RecognitionRule
+import app.speecher.protocol.RefinementRule
 import app.speecher.protocol.Replacement
 import app.speecher.protocol.SpeechEndpoint
 import app.speecher.protocol.Tone
@@ -78,29 +77,22 @@ class SettingsStoreTest {
                                 WritingProfileSettings(
                                     CleanupStrength.StrongPolish,
                                     Tone.Formal,
-                                    "Sign off with Best,\nEnzo",
+                                    mapOf("custom_rule_sign" to true, "headings" to false),
                                     outputLanguage = "Spanish",
                                 ),
                             standup to
                                 WritingProfileSettings(
-                                    customCleanupLevel = "custom_notes",
-                                    customTone = "custom_terse",
+                                    rules = mapOf("custom_rule_spell" to false),
                                     name = "Standup",
                                 ),
                         ),
                 appRules = listOf(RecognitionRule("zulip", AppCategory.Browser, standup)),
-                additionalInstructions = "Spell it Speecher.",
                 customSystemPromptEnabled = true,
                 customSystemPrompt = "Clean up my dictation.",
-                customTones = listOf(CustomTone("custom_terse", "Terse", "Short.")),
-                customCleanupLevels =
+                refinementRules =
                     listOf(
-                        CustomCleanupLevel(
-                            "custom_notes",
-                            "Notes",
-                            CleanupStrength.CustomOnly,
-                            "Bullets.",
-                        ),
+                        RefinementRule("custom_rule_spell", "Spelling", "Spell it Speecher.", true),
+                        RefinementRule("custom_rule_sign", "Sign off with Best,\nEnzo"),
                     ),
                 buttonLayout = ButtonLayout.InsertOnly,
                 panelSize = PanelSize.Compact,

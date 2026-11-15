@@ -1,5 +1,6 @@
 package app.speecher.android.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -35,20 +36,22 @@ import app.speecher.android.settings.SpeecherSettings
 import app.speecher.android.settings.profileDeletionNotice
 import app.speecher.protocol.AppCategory
 import app.speecher.protocol.CleanupStrength
-import app.speecher.protocol.CustomCleanupLevel
-import app.speecher.protocol.CustomTone
 import app.speecher.protocol.RecognitionRule
+import app.speecher.protocol.RefinementRule
+import app.speecher.protocol.RuleGroup
 import app.speecher.protocol.Tone
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
 import app.speecher.protocol.builtInDictationSystemPrompt
 import app.speecher.protocol.builtInProfileLabels
+import app.speecher.protocol.builtInRefinementRules
 import app.speecher.protocol.builtInRules
-import app.speecher.protocol.cleanupLevelId
+import app.speecher.protocol.changedBuiltInRules
 import app.speecher.protocol.customChoiceId
-import app.speecher.protocol.toneId
-import app.speecher.protocol.withCleanupLevel
-import app.speecher.protocol.withTone
+import app.speecher.protocol.newRuleId
+import app.speecher.protocol.ruleOn
+import app.speecher.protocol.withRule
+import app.speecher.protocol.withoutBuiltInRules
 
 // The app types, in the order the desktop's rules offer them.
 private val appTypeLabels =
@@ -70,10 +73,6 @@ private val cleanupLabels =
         CleanupStrength.StrongPolish to "High",
     )
 
-/** What a custom cleanup level can build on. */
-private val baseLabels =
-    cleanupLabels - CleanupStrength.None + (CleanupStrength.CustomOnly to "Custom only")
-
 private val toneLabels =
     mapOf(
         Tone.None to "No tone override",
@@ -84,25 +83,39 @@ private val toneLabels =
         Tone.GenZ to "Gen Z",
     )
 
-/** Every level a profile can choose, by id: the built-ins, then the custom ones. */
-internal fun cleanupChoices(settings: SpeecherSettings): Map<String, String> =
-    cleanupLabels.mapKeys { it.key.id } +
-        settings.customCleanupLevels.associate { it.id to it.name }
-
 /** Every profile, by id: the built-ins, then the custom ones by name. */
 internal fun profileChoices(settings: SpeecherSettings): Map<WritingProfile, String> =
     builtInProfileLabels +
         settings.writingProfiles.filterKeys { !it.isBuiltIn }.mapValues { it.value.name }
 
-/** Every tone a profile can choose, by id: no override and the built-ins, then the custom ones. */
-internal fun toneChoices(settings: SpeecherSettings): Map<String, String> =
-    toneLabels.mapKeys { it.key.id } + settings.customTones.associate { it.id to it.name }
+/** The built-in rules' labels, by id, in the order the profile screen lists them. */
+internal val builtInRuleLabels =
+    mapOf(
+        "fillers" to "Remove filler words and false starts",
+        "smoothing" to "Smooth clumsy phrasing",
+        "structure" to "Add paragraphs and lists",
+        "rewrite" to "Rewrite for clarity and flow",
+        "headings" to "Add short headings",
+        "digits" to "Write numbers, times and dates as digits",
+        "markdown" to "Use light Markdown",
+        "noEmDashes" to "Avoid em dashes",
+        "codingAgent" to "Write as a prompt for a coding agent",
+        "britishSpelling" to "Use British spelling",
+        "lowercase" to "Write in lowercase",
+    )
+
+private val ruleGroupLabels =
+    mapOf(
+        RuleGroup.Cleanup to "Cleanup",
+        RuleGroup.Formatting to "Formatting",
+        RuleGroup.More to "More",
+    )
 
 @Composable
 internal fun ProfileSettings(settings: SpeecherSettings, onChange: (SpeecherSettings) -> Unit) {
     PageIntro(
-        "Choose a cleanup level, a tone and optional instructions for each profile. An output " +
-            "language translates what you say, with at least Light cleanup.",
+        "Choose a cleanup level, a tone and the rules for each profile. An output language " +
+            "translates what you say, with at least Light cleanup.",
     )
     val profiles = profileChoices(settings)
     profiles.forEach { (profile, label) ->
@@ -120,19 +133,27 @@ internal fun ProfileSettings(settings: SpeecherSettings, onChange: (SpeecherSett
                 isError = behavior.name.isBlank(),
             )
         }
-        DropdownRow("Cleanup", cleanupChoices(settings), behavior.cleanupLevelId) {
-            update(behavior.withCleanupLevel(it))
+        val level = cleanupLabels.getValue(behavior.cleanupStrength)
+        val changed = behavior.changedBuiltInRules
+        // Choosing a level starts its built-in rules afresh, as on the desktop.
+        DropdownRow(
+            "Cleanup",
+            cleanupLabels,
+            behavior.cleanupStrength,
+            selectedLabel = if (changed == 0) level else "$level, $changed changed",
+        ) {
+            if (it != behavior.cleanupStrength)
+                update(behavior.copy(cleanupStrength = it).withoutBuiltInRules())
         }
-        DropdownRow("Tone", toneChoices(settings), behavior.toneId) {
-            update(behavior.withTone(it))
+        if (changed > 0) {
+            TextButton(
+                { update(behavior.withoutBuiltInRules()) },
+                Modifier.padding(horizontal = 4.dp),
+            ) {
+                Text("Reset to $level")
+            }
         }
-        OutlinedTextField(
-            behavior.instructions,
-            { update(behavior.copy(instructions = it)) },
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            label = { Text("Instructions") },
-            minLines = 2,
-        )
+        DropdownRow("Tone", toneLabels, behavior.tone) { update(behavior.copy(tone = it)) }
         OutlinedTextField(
             behavior.outputLanguage,
             { update(behavior.copy(outputLanguage = it)) },
@@ -141,22 +162,190 @@ internal fun ProfileSettings(settings: SpeecherSettings, onChange: (SpeecherSett
             placeholder = { Text("Same as spoken") },
             singleLine = true,
         )
+        RuleSwitches(settings, profile, behavior, ::update)
         if (!profile.isBuiltIn) {
             DeleteProfile(settings.profileDeletionNotice(profile)) {
                 onChange(settings.withWritingProfiles(settings.writingProfiles - profile))
             }
         }
     }
-    AddChoice("Add profile", "Instructions", profiles.values) { name, instructions ->
-        val id = customChoiceId(name, settings.writingProfiles.keys.map { it.id })
-        onChange(
-            settings.copy(
-                writingProfiles =
-                    settings.writingProfiles +
-                        (WritingProfile(id) to
-                            WritingProfileSettings(instructions = instructions, name = name)),
-            ),
+    AddInSheet("Add profile") { close ->
+        var name by rememberSaveable { mutableStateOf("") }
+        NameField(name, profiles.values) { name = it }
+        SheetActions(nameFree(name, profiles.values), close) {
+            val id = customChoiceId(name, settings.writingProfiles.keys.map { it.id })
+            onChange(
+                settings.copy(
+                    writingProfiles =
+                        settings.writingProfiles +
+                            (WritingProfile(id) to WritingProfileSettings(name = name.trim())),
+                ),
+            )
+            close()
+        }
+    }
+}
+
+/**
+ * A switch per rule for [profile]: the built-in rules by group, then the person's own. None with no
+ * output language refines nothing, so every switch is off limits; a custom system prompt replaces
+ * the built-in rules, so theirs are.
+ */
+@Composable
+private fun RuleSwitches(
+    settings: SpeecherSettings,
+    profile: WritingProfile,
+    behavior: WritingProfileSettings,
+    onChange: (WritingProfileSettings) -> Unit,
+) {
+    val rules = settings.refinementRules
+    val refines =
+        behavior.cleanupStrength != CleanupStrength.None || behavior.outputLanguage.isNotBlank()
+    @Composable
+    fun Group(title: String) =
+        Text(
+            title,
+            Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp),
+            style = MaterialTheme.typography.labelLarge,
         )
+    @Composable
+    fun RuleRow(id: String, label: String, enabled: Boolean, help: String = "") {
+        ListItem(
+            headlineContent = { Text(label) },
+            supportingContent = help.takeIf(String::isNotBlank)?.let { { Text(it) } },
+            trailingContent = {
+                Switch(
+                    ruleOn(id, profile, behavior, behavior.cleanupStrength, rules),
+                    { onChange(behavior.withRule(id, it, profile, rules)) },
+                    enabled = enabled,
+                )
+            },
+            colors = rowColors(),
+        )
+    }
+    // A blank custom prompt leaves the built-in rules in place, as dictationSystemPrompt does.
+    val customPrompt =
+        settings.customSystemPromptEnabled && settings.customSystemPrompt.isNotBlank()
+    if (!refines) PageIntro("Cleanup None skips refinement, so rules have no effect.")
+    else if (customPrompt)
+        PageIntro("The custom system prompt replaces the built-in rules. Yours still apply.")
+    builtInRefinementRules
+        .groupBy { it.group }
+        .forEach { (group, inGroup) ->
+            Group(ruleGroupLabels.getValue(group))
+            inGroup.forEach {
+                RuleRow(it.id, builtInRuleLabels.getValue(it.id), refines && !customPrompt)
+            }
+        }
+    if (rules.isEmpty()) return
+    Group("Yours")
+    rules.forEach { RuleRow(it.id, it.name, refines, it.instruction.trim()) }
+}
+
+/**
+ * The person's rules: each with its instruction and where it is on, edited and deleted here and
+ * switched per profile on the Profiles page.
+ */
+@Composable
+internal fun YourRuleSettings(settings: SpeecherSettings, onChange: (SpeecherSettings) -> Unit) {
+    PageIntro(
+        "A rule tells refinement what you want, such as \"Sign off with Best, Sam\". Turn it on " +
+            "for every profile here, or for some on the Profiles page.",
+    )
+    val rules = settings.refinementRules
+    var editing by rememberSaveable { mutableStateOf<String?>(null) }
+    rules.forEach { rule ->
+        ListItem(
+            headlineContent = { Text(rule.name) },
+            supportingContent = {
+                Text(
+                    listOf(rule.instruction.trim(), ruleReach(settings, rule))
+                        .filter(String::isNotEmpty)
+                        .joinToString("\n"),
+                )
+            },
+            trailingContent = {
+                IconButton({ onChange(settings.withRefinementRules(rules - rule)) }) {
+                    Icon(
+                        painterResource(R.drawable.ic_close),
+                        contentDescription = "Delete ${rule.name}",
+                    )
+                }
+            },
+            modifier = Modifier.clickable { editing = rule.id },
+            colors = rowColors(),
+        )
+    }
+    rules
+        .firstOrNull { it.id == editing }
+        ?.let { rule ->
+            FormSheet("Edit rule", { editing = null }) {
+                RuleForm(rule, rules - rule, "Save", { editing = null }) { edited ->
+                    onChange(
+                        settings.copy(
+                            refinementRules = rules.map { if (it.id == rule.id) edited else it },
+                        ),
+                    )
+                }
+            }
+        }
+    AddInSheet("Add rule") { close ->
+        RuleForm(RefinementRule("", ""), rules, "Add", close) {
+            onChange(
+                settings.copy(
+                    refinementRules = rules + it.copy(id = newRuleId(rules.map { it.id })),
+                ),
+            )
+        }
+    }
+}
+
+/** Where [rule] is on: "Every profile", "2 profiles" or "Off". */
+private fun ruleReach(settings: SpeecherSettings, rule: RefinementRule): String {
+    val on =
+        settings.writingProfiles.count { (profile, behavior) ->
+            ruleOn(rule.id, profile, behavior, behavior.cleanupStrength, settings.refinementRules)
+        }
+    return when (on) {
+        0 -> "Off"
+        settings.writingProfiles.size -> "Every profile"
+        else -> count(on, "profile", "profiles")
+    }
+}
+
+/**
+ * [rule]'s name, instruction and whether it is on in every profile, saved through [onSave] once the
+ * name is set and none of [others] has it.
+ */
+@Composable
+private fun RuleForm(
+    rule: RefinementRule,
+    others: List<RefinementRule>,
+    confirm: String,
+    close: () -> Unit,
+    onSave: (RefinementRule) -> Unit,
+) {
+    var name by rememberSaveable { mutableStateOf(rule.name) }
+    var instruction by rememberSaveable { mutableStateOf(rule.instruction) }
+    var everyProfile by rememberSaveable { mutableStateOf(rule.everyProfile) }
+    val taken = others.map { it.name }
+    NameField(name, taken) { name = it }
+    OutlinedTextField(
+        instruction,
+        { instruction = it },
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        label = { Text("Instruction") },
+        supportingText = { Text("Optional. Without one, refinement is told the name.") },
+        minLines = 2,
+        maxLines = 6,
+    )
+    ListItem(
+        headlineContent = { Text("On in every profile") },
+        trailingContent = { Switch(everyProfile, { everyProfile = it }) },
+    )
+    SheetActions(nameFree(name, taken), close, confirm) {
+        onSave(RefinementRule(rule.id, name.trim(), instruction.trim(), everyProfile))
+        close()
     }
 }
 
@@ -198,83 +387,6 @@ internal fun AppRuleSettings(settings: SpeecherSettings, onChange: (SpeecherSett
 }
 
 @Composable
-internal fun ToneSettings(settings: SpeecherSettings, onChange: (SpeecherSettings) -> Unit) {
-    PageIntro("Built-in: ${toneLabels.values.drop(1).joinToString(", ")}")
-    settings.customTones.forEach { tone ->
-        CustomChoice(
-            tone.name,
-            tone.instruction,
-            "Instruction",
-            onEdit = { name, text ->
-                onChange(
-                    settings.withCustomChoices(
-                        tones =
-                            settings.customTones.map {
-                                if (it.id == tone.id) it.copy(name = name, instruction = text)
-                                else it
-                            },
-                    ),
-                )
-            },
-            onDelete = {
-                onChange(settings.withCustomChoices(tones = settings.customTones - tone))
-            },
-        )
-    }
-    AddChoice("Add tone", "Instruction", toneChoices(settings).values, needsText = true) {
-        name,
-        instruction ->
-        val id = customChoiceId(name, settings.customTones.map { it.id })
-        onChange(
-            settings.withCustomChoices(
-                tones = settings.customTones + CustomTone(id, name, instruction),
-            ),
-        )
-    }
-}
-
-@Composable
-internal fun CleanupLevelSettings(
-    settings: SpeecherSettings,
-    onChange: (SpeecherSettings) -> Unit,
-) {
-    PageIntro("Built-in: ${cleanupLabels.values.drop(1).joinToString(", ")}")
-    settings.customCleanupLevels.forEach { level ->
-        fun edit(next: CustomCleanupLevel) =
-            onChange(
-                settings.withCustomChoices(
-                    levels =
-                        settings.customCleanupLevels.map { if (it.id == level.id) next else it },
-                ),
-            )
-        CustomChoice(
-            level.name,
-            level.instructions,
-            "Instructions",
-            onEdit = { name, text -> edit(level.copy(name = name, instructions = text)) },
-            onDelete = {
-                onChange(settings.withCustomChoices(levels = settings.customCleanupLevels - level))
-            },
-        ) {
-            DropdownRow("Builds on", baseLabels, level.base) { edit(level.copy(base = it)) }
-        }
-    }
-    // A new level builds on Medium; its base can be changed once it is added.
-    AddChoice("Add cleanup level", "Instructions", cleanupChoices(settings).values) {
-        name,
-        instructions ->
-        val id = customChoiceId(name, settings.customCleanupLevels.map { it.id })
-        onChange(
-            settings.withCustomChoices(
-                levels =
-                    settings.customCleanupLevels +
-                        CustomCleanupLevel(id, name, CleanupStrength.Balanced, instructions),
-            ),
-        )
-    }
-}
-
-@Composable
 internal fun CustomPromptSettings(
     settings: SpeecherSettings,
     onChange: (SpeecherSettings) -> Unit,
@@ -282,7 +394,10 @@ internal fun CustomPromptSettings(
     ListItem(
         headlineContent = { Text("Custom system prompt") },
         supportingContent = {
-            Text("Replaces the built-in dictation rules and cleanup levels with your own prompt.")
+            Text(
+                "Replaces the built-in dictation rules and cleanup levels with your own prompt. " +
+                    "Tone and your rules still apply.",
+            )
         },
         trailingContent = {
             Switch(
@@ -320,112 +435,53 @@ private fun PageIntro(text: String) {
     )
 }
 
-/**
- * One custom tone or level: its name and its instructions, editable, with a delete button and
- * [extra] rows under the name.
- */
-@Composable
-private fun CustomChoice(
-    name: String,
-    text: String,
-    textLabel: String,
-    onEdit: (name: String, text: String) -> Unit,
-    onDelete: () -> Unit,
-    extra: @Composable () -> Unit = {},
-) {
-    Row(
-        Modifier.padding(start = 16.dp, end = 4.dp, top = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        OutlinedTextField(
-            name,
-            { onEdit(it, text) },
-            Modifier.weight(1f),
-            label = { Text("Name") },
-            singleLine = true,
-            isError = name.isBlank(),
-        )
-        IconButton(onDelete) {
-            Icon(painterResource(R.drawable.ic_close), contentDescription = "Delete $name")
-        }
-    }
-    extra()
-    OutlinedTextField(
-        text,
-        { onEdit(name, it) },
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        label = { Text(textLabel) },
-        minLines = 2,
-    )
-}
-
-/**
- * [action] as a button that opens a bottom sheet holding [form]. The form gets the call that closes
- * the sheet, for its own Cancel and Add.
- */
+/** A bottom sheet titled [title] holding [form]. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddInSheet(action: String, form: @Composable ColumnScope.(close: () -> Unit) -> Unit) {
-    var open by rememberSaveable { mutableStateOf(false) }
-    FilledTonalButton({ open = true }, Modifier.padding(16.dp)) { Text(action) }
-    if (!open) return
-    val close = { open = false }
+private fun FormSheet(title: String, close: () -> Unit, form: @Composable ColumnScope.() -> Unit) {
     ModalBottomSheet(close, sheetState = rememberModalBottomSheetState(true)) {
         Column(
             Modifier.verticalScroll(rememberScrollState()).padding(bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                action,
+                title,
                 Modifier.padding(horizontal = 16.dp),
                 style = MaterialTheme.typography.headlineSmall,
             )
-            form(close)
+            form()
         }
     }
 }
 
 /**
- * A name and instructions for a new profile, tone or level, added once the name is set and unlike
- * [taken], and the instructions are set when [needsText]. The id comes from the name given here.
+ * [action] as a button that opens a [FormSheet] holding [form]. The form gets the call that closes
+ * the sheet, for its own Cancel and Add.
  */
 @Composable
-private fun AddChoice(
-    action: String,
-    textLabel: String,
-    taken: Collection<String>,
-    needsText: Boolean = false,
-    onAdd: (name: String, text: String) -> Unit,
-) {
-    AddInSheet(action) { close ->
-        var name by rememberSaveable { mutableStateOf("") }
-        var text by rememberSaveable { mutableStateOf("") }
-        val duplicate = taken.any { it.equals(name.trim(), ignoreCase = true) }
-        OutlinedTextField(
-            name,
-            { name = it },
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            label = { Text("Name") },
-            singleLine = true,
-            isError = duplicate,
-            supportingText = if (duplicate) ({ Text("That name is taken.") }) else null,
-        )
-        OutlinedTextField(
-            text,
-            { text = it },
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            label = { Text(textLabel) },
-            minLines = 2,
-            maxLines = 6,
-        )
-        SheetActions(
-            name.isNotBlank() && !duplicate && (!needsText || text.isNotBlank()),
-            close,
-        ) {
-            onAdd(name.trim(), text)
-            close()
-        }
-    }
+private fun AddInSheet(action: String, form: @Composable ColumnScope.(close: () -> Unit) -> Unit) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    FilledTonalButton({ open = true }, Modifier.padding(16.dp)) { Text(action) }
+    if (open) FormSheet(action, { open = false }) { form { open = false } }
+}
+
+/** Whether [name] is set and none of [taken] goes by it, ignoring case. */
+private fun nameFree(name: String, taken: Collection<String>) =
+    name.isNotBlank() && taken.none { it.equals(name.trim(), ignoreCase = true) }
+
+/** A name field that says so when one of [taken] already goes by the name. */
+@Composable
+private fun NameField(name: String, taken: Collection<String>, onChange: (String) -> Unit) {
+    val duplicate = name.isNotBlank() && !nameFree(name, taken)
+    OutlinedTextField(
+        name,
+        onChange,
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        label = { Text("Name") },
+        singleLine = true,
+        isError = duplicate,
+        supportingText = if (duplicate) ({ Text("That name is taken.") }) else null,
+    )
 }
 
 /**

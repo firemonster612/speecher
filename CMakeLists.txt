@@ -262,6 +262,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/ProviderAttemptIssueText.cpp
   src/core/ProviderReadiness.cpp
   src/core/ProviderRatings.cpp
+  src/core/RefinementRules.cpp
   src/core/ReleaseNotes.cpp
   src/core/SeenApps.cpp
   src/core/SettingsStore.cpp
@@ -273,6 +274,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/settings/ServiceOrderSettingsCodec.cpp
   src/core/settings/SettingsCodecs.cpp
   src/core/settings/SettingsFields.cpp
+  src/core/settings/RulesMigration.cpp
   src/core/settings/SettingsFile.cpp
   src/core/settings/SpokenLanguages.cpp
   src/core/settings/VocabularyMigration.cpp
@@ -321,6 +323,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/ProviderReadiness.h
   src/core/ProviderRatings.h
   src/core/ServiceOrder.h
+  src/core/RefinementRules.h
   src/core/ReleaseNotes.h
   src/core/SeenApps.h
   src/core/SettingsStore.h
@@ -332,6 +335,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/settings/ServiceOrderMigration.h
   src/core/settings/ServiceOrderSettingsCodec.h
   src/core/settings/SettingsCodecs.h
+  src/core/settings/RulesMigration.h
   src/core/settings/SettingsFile.h
   src/core/settings/SettingsKeys.h
   src/core/settings/SpokenLanguages.h
@@ -1773,9 +1777,9 @@ if(SPEECHER_BUILD_TESTS)
       ENVIRONMENT "${SPEECHER_TEST_ENVIRONMENT}" TIMEOUT 240)
   endforeach()
   # Every page in both themes, setup and their states: over 200 s on a
-  # Windows runner by itself, more beside the other suites.
+  # Windows runner by itself, and 475 s beside the other suites.
   if(TEST speecher_quick_pages)
-    set_tests_properties(speecher_quick_pages PROPERTIES TIMEOUT 480)
+    set_tests_properties(speecher_quick_pages PROPERTIES TIMEOUT 720)
   endif()
   # Suites run in parallel: test_main.cpp gives each process its own settings
   # and sign-in homes, and each suite its own data folders. These share what
