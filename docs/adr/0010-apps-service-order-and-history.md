@@ -74,6 +74,7 @@ person turns text on; new installs keep text.
 
 ## Consequences
 
+- Custom App Types use `custom_…` ids, and Apps store their type by id.
 - The Apps page is the one place an app's profile, pasting and History
   choice are set. Pasting and General's Privacy & data list the apps that
   differ, read-only, each opening in Apps.

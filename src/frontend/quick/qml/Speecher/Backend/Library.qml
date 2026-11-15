@@ -78,7 +78,7 @@ LibraryLists {
     // Apps that write with it now. Each lands on its row in Apps.
     function profileUsers(id) {
         const types = Apps.types.filter(o => o.profile === id).map(o => ({
-            id: "apptype:" + o.id, name: Schema.apps.type(o.id).label, icon: "", typeIcon: Schema.apps.type(o.id).icon }))
+            id: "apptype:" + o.id, name: Schema.apps.type(o.id, Apps.types).label, icon: "", typeIcon: Schema.apps.type(o.id, Apps.types).icon }))
         const apps = Apps.entries.filter(e => e.effective.profile === id).map(e => ({
             id: "appentry:" + e.id, name: e.name, icon: e.icon, typeIcon: "" }))
         return types.concat(apps)

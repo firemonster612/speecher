@@ -17,7 +17,8 @@ inline AppEntry idApp(const QString &id, std::optional<QString> profile = std::n
 inline AppEntry textApp(const QString &match, std::optional<AppCategory> type,
                         std::optional<QString> profile = std::nullopt)
 {
-    AppEntry app{QStringLiteral("app:") + match, match, {}, {{AppMatchKind::Name, match}}, type, profile, {}};
+    AppEntry app{QStringLiteral("app:") + match, match, {}, {{AppMatchKind::Name, match}},
+                 type ? std::optional(appCategoryName(*type)) : std::nullopt, profile, {}};
     if (profile) {
         app.matches.append({AppMatchKind::WindowTitle, match});
     }
@@ -27,7 +28,7 @@ inline AppEntry textApp(const QString &match, std::optional<AppCategory> type,
 inline void setOtherAppsProfile(AppsSettings &apps, const QString &profile)
 {
     for (AppTypeSettings &type : apps.types) {
-        if (type.type == AppCategory::General) {
+        if (type.id == appCategoryName(AppCategory::General)) {
             type.writingProfile = profile;
         }
     }

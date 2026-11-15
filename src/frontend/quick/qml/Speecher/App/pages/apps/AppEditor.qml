@@ -29,22 +29,24 @@ Item {
     signal adopted(var app)
 
     readonly property var t: Schema.apps.t
+    readonly property bool isCustom: isType && !!entry.custom
+    readonly property bool hasApps: Apps.entries.some(e => e.effective.type === entry.id)
     readonly property bool isOther: isType && entry.id === "general"
     readonly property string otherProfile: (Apps.types.find(o => o.id === "general") || { profile: "" }).profile
     // The type that decides what an App follows.
-    readonly property var appType: Schema.apps.type(isType ? entry.id : (entry.effective || {}).type)
+    readonly property var appType: Schema.apps.type(isType ? entry.id : (entry.effective || {}).type, Apps.types)
     // The Pasting page's steps, as { insert, press, keep }.
     readonly property var pageSteps: System.deliverySteps.reduce((steps, s) => Object.assign(steps, { [s.id]: s.on }), {})
     // What delivering here does: the steps and keys this App or App Type
     // ends up with.
     readonly property var effective: entry.effective || { steps: pageSteps, keys: "standard" }
-    readonly property bool terminalWins: isType && Schema.pasting.pastesLikeTerminals(entry.id, Apps.types)
+    readonly property bool terminalWins: isType && Schema.pasting.pastesLikeTerminals(entry.id, Apps.types, Apps.entries)
 
     // Where an App's value would come from without its own, by layer:
     // Terminals, its type, or (fallback) its type following the widest
     // place, which is Other apps for a profile and Pasting for the rest.
     function placeOf(from) {
-        return from === "terminal" ? Schema.apps.type("terminal").label : appType.label
+        return from === "terminal" ? Schema.apps.type("terminal", Apps.types).label : appType.label
     }
     // "Same as …" for each of an App's own values, by where the value would
     // come from without it; an App Type's profile is Other apps' profile.
@@ -79,8 +81,8 @@ Item {
     function inheritedHistory() {
         const inherited = entry.inherited || {}
         const fromType = isType ? (isOther ? "" : otherHistory) : inherited.history
-        const place = isType ? Schema.apps.type("general").label
-                    : inherited.historyFrom === "type" ? appType.label : Schema.apps.type("general").label
+        const place = isType ? Schema.apps.type("general", Apps.types).label
+                    : inherited.historyFrom === "type" ? appType.label : Schema.apps.type("general", Apps.types).label
         return fromType ? Words.sameAs(place, Schema.apps.historyLabel(fromType))
                         : Words.sameAs(Schema.page(keepsSpec.page).title, keepsLabel)
     }
@@ -90,7 +92,8 @@ Item {
     // included.
     readonly property int vocabularyCount: isType ? 0 : Library.vocabulary.filter(e => Library.limitedToApp(e, entry)).length
     function save(patch) {
-        refusal = Schema.apps.refusals[isType ? Apps.updateType(entry.id, patch) : Apps.update(entry.id, patch)] || ""
+        const refused = isType ? Apps.updateType(entry.id, patch) : Apps.update(entry.id, patch)
+        refusal = isCustom ? Schema.apps.typeRefusal(refused) : Schema.apps.refusals[refused] || ""
         return !refusal
     }
     // The match an App goes by, worded: an id as it is, text with what it
@@ -129,6 +132,15 @@ Item {
         y: Theme.space2
         width: parent.width
 
+        SettingRow {
+            shown: editor.isCustom
+            title: editor.t.appName
+            TextField {
+                objectName: "appTypeName"
+                text: editor.entry.name || ""
+                onEditingFinished: editor.save({ name: text })
+            }
+        }
         Reveal {
             open: editor.isType && editor.detected.length > 0
             width: parent.width
@@ -245,8 +257,9 @@ Item {
             help: editor.entry.titleOnly ? editor.t.titleOnlyType : ""
             InheritSelect {
                 visible: !editor.entry.titleOnly
-                inheritedText: editor.t.automatic(Schema.apps.type((editor.entry.inherited || {}).type).one)
-                choices: Schema.apps.types.map(o => ({ id: o.id, label: o.label, icon: o.icon }))
+                objectName: "appType"
+                inheritedText: editor.t.automatic(Schema.apps.type((editor.entry.inherited || {}).type, Apps.types).one)
+                choices: Apps.types.map(o => Schema.apps.type(o.id, Apps.types))
                 currentId: editor.entry.type || ""
                 onChosen: id => editor.save({ type: id })
             }
@@ -328,6 +341,19 @@ Item {
                 onChosen: id => editor.save({ history: id })
             }
         }
+        Reveal {
+            open: editor.isCustom && !editor.hasApps
+            Txt {
+                x: Theme.rowInset
+                width: parent.width - Theme.rowInset * 2
+                topPadding: Theme.space2
+                bottomPadding: Theme.space2
+                text: editor.t.fillType(editor.entry.name || "")
+                variant: "small"
+                tone: "secondary"
+                wrapMode: Text.WordWrap
+            }
+        }
         SettingRow {
             shown: !editor.isType
             title: Schema.page("vocabulary").title
@@ -353,17 +379,18 @@ Item {
             tone: "tertiary"
         }
         SettingRow {
-            shown: !editor.isType
-            title: editor.t.remove
-            help: editor.t.removeHelp
+            shown: !editor.isType || editor.isCustom
+            title: editor.isCustom ? editor.t.removeType : editor.t.remove
+            help: editor.isCustom ? editor.t.removeTypeHelp : editor.t.removeHelp
             Button {
-                text: editor.t.remove
+                objectName: "appRemove"
+                text: editor.isCustom ? editor.t.removeType : editor.t.remove
                 iconName: "trash-2"
                 variant: "danger"
                 size: "small"
                 onClicked: {
                     const name = editor.entry.name
-                    const undo = Apps.remove(editor.entry.id)
+                    const undo = editor.isCustom ? Apps.removeType(editor.entry.id) : Apps.remove(editor.entry.id)
                     if (undo >= 0) Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: () => Apps.undo(undo) })
                 }
             }

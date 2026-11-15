@@ -50,7 +50,7 @@ Reveal {
     function _detail(app) {
         const also = app.also && app.also.length ? t.sameAppAs(app.also) : ""
         if (app.entry) return [t.hasSettings, also].filter(s => s).join(". ")
-        const type = app.type !== "general" && app.type !== "unknown" ? Schema.apps.type(app.type).one : ""
+        const type = app.type !== "general" && app.type !== "unknown" ? Schema.apps.type(app.type, Apps.types).one : ""
         const profile = app.profile !== (Apps.types.find(o => o.id === "general") || {}).profile ? Library.profileName(app.profile) + " profile" : ""
         return [[type, profile].filter(s => s).join(", "), also].filter(s => s).join(". ")
     }

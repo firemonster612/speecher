@@ -1885,7 +1885,7 @@ private slots:
         navigation->go(QStringLiteral("home"));
         apps->undo(undo);
         QCOMPARE(controller.settings()->snapshot().apps.apps.size(), 1);
-        QCOMPARE(controller.settings()->snapshot().apps.apps.first().type, AppCategory::Email);
+        QCOMPARE(controller.settings()->snapshot().apps.apps.first().type, appCategoryName(AppCategory::Email));
     }
 
     // An App's History choice can only lower what Privacy & data keeps. Once
@@ -1952,7 +1952,7 @@ private slots:
         ApplicationController controller(true);
         controller.settings()->edit([](AppSettings &draft) {
             AppEntry mail = test::idApp(QStringLiteral("org.example.Post"));
-            mail.type = AppCategory::Email;
+            mail.type = appCategoryName(AppCategory::Email);
             const AppEntry gmail{QStringLiteral("app:gmail"), QStringLiteral("Gmail"), {},
                                  {{AppMatchKind::WindowTitle, QStringLiteral("Gmail")}}};
             draft.apps.apps = {gmail, mail};
@@ -2000,6 +2000,97 @@ private slots:
         QTRY_VERIFY(top(QStringLiteral("apptype:browser")) < top(QStringLiteral("appentry:") + apps.last().id)
                     && top(QStringLiteral("appentry:") + apps.last().id) < top(QStringLiteral("apptype:email")));
         QTRY_VERIFY(!findItem(main->contentItem(), QStringLiteral("appDetected_Wave Browser")));
+    }
+
+    void customAppTypesCanBeCreatedRenamedFilledAndRemoved_data() { themes(); }
+    void customAppTypesCanBeCreatedRenamedFilledAndRemoved()
+    {
+        QFETCH(QString, theme);
+        ApplicationController controller(true);
+        QuickSettings settings(&controller);
+        settings.set(QStringLiteral("themeControl"), theme);
+        controller.settings()->edit([](AppSettings &draft) {
+            draft.apps.apps = {test::idApp(QStringLiteral("org.example.Notes"))};
+            return true;
+        });
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main && QTest::qWaitForWindowExposed(main));
+        auto *engine = qmlEngine(main);
+        auto *navigation = engine->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        auto *toaster = engine->singletonInstance<QObject *>(QStringLiteral("Speecher.Controls"), QStringLiteral("Toaster"));
+        const auto rowOf = [&](const QString &name) -> QQuickItem * {
+            QQuickItem *head = findItem(main->contentItem(), name);
+            return head ? head->parentItem() : nullptr;
+        };
+        navigation->go(QStringLiteral("apps"));
+        QQuickItem *button = nullptr;
+        QTRY_VERIFY((button = findItem(main->contentItem(), QStringLiteral("newAppType"))));
+        QVERIFY(QMetaObject::invokeMethod(button, "clicked"));
+        QQuickItem *form = nullptr;
+        QQuickItem *name = nullptr;
+        QTRY_VERIFY((form = findItem(main->contentItem(), QStringLiteral("newAppTypeForm"))) && form->property("open").toBool());
+        QTRY_VERIFY((name = findItem(form, QStringLiteral("newAppTypeName"))));
+        name->setProperty("text", QStringLiteral("Projects"));
+        if (!captureDir().isEmpty()) capture(main, 0, QStringLiteral("new-app-type"));
+        QVERIFY(QMetaObject::invokeMethod(form, "saved"));
+        QCOMPARE(controller.settings()->snapshot().apps.types.size(), 8);
+        const QString id = controller.settings()->snapshot().apps.types.at(6).id;
+        const QString typeRow = QStringLiteral("apptype:") + id;
+        QTRY_VERIFY(rowOf(typeRow) && rowOf(typeRow)->property("open").toBool());
+        QVERIFY(!form->property("open").toBool());
+        QTRY_VERIFY(rowOf(typeRow) && (name = findItem(rowOf(typeRow), QStringLiteral("appTypeName"))));
+        name->setProperty("text", QStringLiteral("My projects"));
+        QVERIFY(QMetaObject::invokeMethod(name, "editingFinished"));
+        QTRY_COMPARE(appTypeSettings(controller.settings()->snapshot().apps, id).name, QStringLiteral("My projects"));
+        const QString appRow = QStringLiteral("appentry:app:org.example.Notes");
+        navigation->goToRow(QStringLiteral("apps"), appRow);
+        QTRY_VERIFY(rowOf(appRow) && rowOf(appRow)->property("open").toBool());
+        QQuickItem *select = nullptr;
+        QTRY_VERIFY(rowOf(appRow) && (select = findItem(rowOf(appRow), QStringLiteral("appType"))));
+        const QVariantList choices = select->property("choices").value<QJSValue>().toVariant().toList();
+        QVERIFY(std::any_of(choices.cbegin(), choices.cend(), [&](const QVariant &value) {
+            return value.toMap().value(QStringLiteral("id")) == id
+                && value.toMap().value(QStringLiteral("label")) == QStringLiteral("My projects");
+        }));
+        QVERIFY(QMetaObject::invokeMethod(select, "chosen", Q_ARG(QString, id)));
+        QTRY_COMPARE(controller.settings()->snapshot().apps.apps.first().type, id);
+        const auto top = [&](const QString &row) {
+            QQuickItem *head = findItem(main->contentItem(), row);
+            return head ? head->mapToItem(main->contentItem(), QPointF()).y() : -1.0;
+        };
+        QTRY_VERIFY(top(typeRow) >= 0 && top(appRow) > top(typeRow)
+                    && top(appRow) < top(QStringLiteral("apptype:general")));
+        navigation->goToRow(QStringLiteral("apps"), typeRow);
+        QTRY_VERIFY(rowOf(typeRow) && rowOf(typeRow)->property("open").toBool());
+        const QString terminalNote = QStringLiteral("Apps in a terminal paste like Terminals");
+        QVERIFY(rowHelp(rowOf(typeRow), terminalNote).isEmpty());
+        // A catalog terminal keeps the note even in a custom type, on
+        // platforms where Terminals have no default paste keys too.
+        controller.settings()->edit([&id](AppSettings &draft) {
+            AppEntry terminal = test::idApp(QStringLiteral("org.kde.konsole"));
+            terminal.type = id;
+            draft.apps.apps.append(terminal);
+            draft.apps.types.first().pasting.steps = DeliverySteps{false, false, true};
+            return true;
+        });
+        QTRY_VERIFY(rowOf(typeRow) && !rowHelp(rowOf(typeRow), terminalNote).isEmpty());
+        if (!captureDir().isEmpty()) capture(main, 1, QStringLiteral("custom-app-type"));
+        QTRY_VERIFY(rowOf(typeRow) && (button = findItem(rowOf(typeRow), QStringLiteral("appRemove"))));
+        QSignalSpy posted(toaster, SIGNAL(posted(QVariant)));
+        QVERIFY(QMetaObject::invokeMethod(button, "clicked"));
+        QTRY_VERIFY(!controller.settings()->snapshot().apps.apps.first().type);
+        QCOMPARE(controller.settings()->snapshot().apps.types.size(), 7);
+        QCOMPARE(posted.count(), 1);
+        const QJSValue toast = posted.first().first().value<QJSValue>();
+        QCOMPARE(toast.property(QStringLiteral("actionText")).toString(), QStringLiteral("Undo"));
+        QJSValue undo = toast.property(QStringLiteral("action"));
+        QVERIFY(undo.isCallable());
+        QVERIFY(!undo.call().isError());
+        QTRY_COMPARE(controller.settings()->snapshot().apps.apps.first().type, id);
+        QCOMPARE(appTypeSettings(controller.settings()->snapshot().apps, id).name, QStringLiteral("My projects"));
     }
 
     // Typing in an App's match field keeps every character, the cursor

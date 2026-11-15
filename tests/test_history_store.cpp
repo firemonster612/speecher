@@ -741,7 +741,7 @@ private slots:
         thunderbird.history = app;
         apps.apps.append(thunderbird);
         for (AppTypeSettings &each : apps.types) {
-            if (each.type == AppCategory::Email) {
+            if (each.id == appCategoryName(AppCategory::Email)) {
                 each.history = type;
             }
         }

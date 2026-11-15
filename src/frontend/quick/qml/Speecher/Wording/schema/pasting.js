@@ -102,9 +102,13 @@ function pastingResult(steps, keys, terminalWins) {
 
 // Whether an App Type's apps in a terminal paste like Terminals instead, as
 // pastingResult's terminalWins says: AI coding apps, while Terminals have
-// steps or keys of their own (types is Apps.types).
-function pastesLikeTerminals(typeId, types) {
-    return typeId === "ai_coding" && types.some(o => o.id === "terminal" && (o.steps || o.keys));
+// steps or keys of their own, or a custom type with an app that follows
+// Terminals. types and entries are Apps.types and Apps.entries.
+function pastesLikeTerminals(typeId, types, entries) {
+    if (typeId === "ai_coding") return types.some(o => o.id === "terminal" && (o.steps || o.keys))
+    return types.some(o => o.id === typeId && o.custom)
+        && entries.some(e => e.effective.type === typeId
+            && (e.inherited.keysFrom === "terminal" || e.inherited.stepsFrom === "terminal"))
 }
 
 // The needs of the steps that are on (System.deliverySteps) which this

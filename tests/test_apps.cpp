@@ -181,7 +181,7 @@ QString pastingAnswer(const PastingChoice &pasting)
 
 QString answer(const AppResolution &resolution)
 {
-    return QStringList{appCategoryName(resolution.type), resolution.writingProfile, pastingAnswer(resolution.pasting)}
+    return QStringList{resolution.type, resolution.writingProfile, pastingAnswer(resolution.pasting)}
         .join(u' ');
 }
 
@@ -301,7 +301,7 @@ private slots:
     {
         AppsSettings apps;
         for (AppTypeSettings &type : apps.types) {
-            if (type.type == AppCategory::Email) {
+            if (type.id == appCategoryName(AppCategory::Email)) {
                 type.writingProfile = WritingProfile::Work;
                 type.pasting.steps = DeliverySteps{.insert = false, .press = false, .keep = true};
                 type.history = HistoryKeep::Stats;
@@ -309,12 +309,12 @@ private slots:
         }
         AppEntry notes = idApp(QStringLiteral("org.example.notes"), WritingProfile::Personal,
                                {DeliverySteps{.insert = true, .press = false, .keep = true}, PasteKeyCombo::WithShift});
-        notes.type = AppCategory::Email;
+        notes.type = appCategoryName(AppCategory::Email);
         notes.history = HistoryKeep::Nothing;
         apps.apps = {notes};
 
         const AppResolution inherited = inheritedFor(notes, targetFor(notes), apps);
-        QCOMPARE(inherited.type, AppCategory::General);
+        QCOMPARE(inherited.type, appCategoryName(AppCategory::General));
         QCOMPARE(inherited.writingProfile, WritingProfile::Work);
         QCOMPARE(inherited.writingProfileFrom, AppLayer::Type);
         QCOMPARE(inherited.pasting.steps, (DeliverySteps{.insert = false, .press = false, .keep = true}));
@@ -440,9 +440,9 @@ private slots:
     // another word is not VS Code.
     void builtInAppsMatchWholeWords()
     {
-        QCOMPARE(resolveApp(target("org.example.barcode", "", ""), {}).type, AppCategory::General);
-        QCOMPARE(resolveApp(target("code", "", ""), {}).type, AppCategory::CodeEditor);
-        QCOMPARE(resolveApp(target("", "", "qwen-code"), {}).type, AppCategory::AiCoding);
+        QCOMPARE(resolveApp(target("org.example.barcode", "", ""), {}).type, appCategoryName(AppCategory::General));
+        QCOMPARE(resolveApp(target("code", "", ""), {}).type, appCategoryName(AppCategory::CodeEditor));
+        QCOMPARE(resolveApp(target("", "", "qwen-code"), {}).type, appCategoryName(AppCategory::AiCoding));
         QCOMPARE(builtInApps().size(), 82);
         QVERIFY(isAiCodingProcess(QStringLiteral("claude"), {}));
         QVERIFY(isAiCodingProcess(QStringLiteral("node"), {QStringLiteral("node"),
@@ -460,7 +460,7 @@ private slots:
         gmail.pasting.steps = keepOnly;
         apps.apps = {gmail};
         const AppResolution firefox = resolveApp(target("firefox", "Firefox", "firefox", "Inbox - Gmail"), apps);
-        QCOMPARE(firefox.type, AppCategory::Browser);
+        QCOMPARE(firefox.type, appCategoryName(AppCategory::Browser));
         QCOMPARE(firefox.writingProfile, WritingProfile::Personal);
         QCOMPARE(firefox.pasting.steps, keepOnly);
     }
@@ -482,7 +482,7 @@ private slots:
     {
         AppsSettings apps;
         for (AppTypeSettings &type : apps.types) {
-            if (type.type == AppCategory::Email) {
+            if (type.id == appCategoryName(AppCategory::Email)) {
                 type.writingProfile = WritingProfile::Personal;
                 type.pasting.steps = insertAndKeep;
             }
@@ -492,7 +492,7 @@ private slots:
         QCOMPARE(resolveApp(thunderbird, apps).pasting.steps, insertAndKeep);
 
         apps.apps = {textApp(QStringLiteral("slack"), AppCategory::Email)};
-        QCOMPARE(resolveApp(target("slack", "Slack", "slack"), apps).type, AppCategory::Email);
+        QCOMPARE(resolveApp(target("slack", "Slack", "slack"), apps).type, appCategoryName(AppCategory::Email));
         QCOMPARE(resolveApp(target("slack", "Slack", "slack"), apps).writingProfile, WritingProfile::Personal);
     }
 
@@ -503,14 +503,14 @@ private slots:
         AppsSettings apps;
         setOtherAppsProfile(apps, WritingProfile::Personal);
         for (AppTypeSettings &type : apps.types) {
-            if (type.type == AppCategory::General || type.type == AppCategory::Browser) {
+            if (type.id == appCategoryName(AppCategory::General) || type.id == appCategoryName(AppCategory::Browser)) {
                 type.pasting.steps = keepOnly;
             }
         }
         QCOMPARE(fallbackWritingProfile(apps), WritingProfile::Personal);
         QCOMPARE(resolveApp(target("org.kde.dolphin", "Dolphin", "dolphin"), apps).pasting.steps, keepOnly);
         const AppResolution unknown = resolveApp(target("", "", ""), apps);
-        QCOMPARE(unknown.type, AppCategory::Unknown);
+        QCOMPARE(unknown.type, appCategoryName(AppCategory::Unknown));
         QCOMPARE(unknown.writingProfile, WritingProfile::Personal);
         QCOMPARE(unknown.pasting.steps, std::nullopt);
         // Browsers follow Other apps' profile until they have their own.
@@ -524,13 +524,13 @@ private slots:
     {
         AppsSettings apps;
         for (AppTypeSettings &type : apps.types) {
-            if (type.type == AppCategory::Terminal) type.pasting = {std::nullopt, PasteKeyCombo::WithShift};
-            if (type.type == AppCategory::AiCoding) type.pasting = {keepOnly, PasteKeyCombo::Standard};
+            if (type.id == appCategoryName(AppCategory::Terminal)) type.pasting = {std::nullopt, PasteKeyCombo::WithShift};
+            if (type.id == appCategoryName(AppCategory::AiCoding)) type.pasting = {keepOnly, PasteKeyCombo::Standard};
         }
         Target agent = target("org.kde.konsole", "Konsole", "konsole");
         agent.terminalHost = true;
         agent.aiCodingToolActive = true;
-        QCOMPARE(resolveApp(agent, apps).type, AppCategory::AiCoding);
+        QCOMPARE(resolveApp(agent, apps).type, appCategoryName(AppCategory::AiCoding));
         QCOMPARE(resolveApp(agent, apps).pasting, (PastingChoice{keepOnly, PasteKeyCombo::WithShift}));
         QCOMPARE(resolveApp(agent, apps).stepsFrom, AppLayer::Type);
         QCOMPARE(resolveApp(agent, apps).keysFrom, AppLayer::Terminal);
@@ -822,6 +822,44 @@ private slots:
         QVERIFY(!settings.contains(SettingsKeys::AppsTypes));
     }
 
+    void customTypeSettingsFollowTheAppWithoutChangingItsKind()
+    {
+        AppsSettings apps;
+        const QString id = QStringLiteral("custom_projects");
+        apps.types.insert(apps.types.size() - 1,
+                          AppTypeSettings{id, QStringLiteral("Projects"), WritingProfile::Personal,
+                                          {keepOnly, PasteKeyCombo::Standard}, HistoryKeep::Nothing});
+        AppEntry app = idApp(QStringLiteral("org.example.Notes"));
+        app.type = id;
+        apps.apps = {app};
+        const AppResolution notes = resolveApp(targetFor(app), apps);
+        QCOMPARE(notes.type, id);
+        QCOMPARE(notes.category, AppCategory::General);
+        QCOMPARE(notes.writingProfile, WritingProfile::Personal);
+        QCOMPARE(notes.writingProfileFrom, AppLayer::Type);
+        QCOMPARE(notes.pasting, (PastingChoice{keepOnly, PasteKeyCombo::Standard}));
+        QCOMPARE(notes.history, HistoryKeep::Nothing);
+
+        app.matches = {{AppMatchKind::Id, QStringLiteral("org.kde.konsole")}};
+        apps.apps = {app};
+        const AppResolution terminal = resolveApp(targetFor(app), apps);
+        QCOMPARE(terminal.type, id);
+        QCOMPARE(terminal.category, AppCategory::Terminal);
+        QCOMPARE(terminal.pasting.steps, keepOnly);
+        QCOMPARE(terminal.pasting.keys, shiftKeysDiffer ? PasteKeyCombo::WithShift : PasteKeyCombo::Standard);
+        Target agent = targetFor(app);
+        agent.aiCodingToolActive = true;
+        const AppResolution coding = resolveApp(agent, apps);
+        QCOMPARE(coding.type, id);
+        QCOMPARE(coding.category, AppCategory::AiCoding);
+        QCOMPARE(coding.writingProfile, WritingProfile::Personal);
+
+        apps.apps.first().type = QStringLiteral("custom_gone");
+        AppsSettings automatic = apps;
+        automatic.apps.first().type.reset();
+        QCOMPARE(resolveApp(agent, apps), resolveApp(agent, automatic));
+    }
+
     // Stored apps read back as saved; what the codec can't use is dropped,
     // and a type the list leaves out keeps its default.
     void storedAppsReadBack()
@@ -846,8 +884,80 @@ private slots:
         const AppsSettings read = AppsSettingsCodec::load(settings);
         QVERIFY(read.apps.isEmpty());
         // Steps with none on read as none.
-        QCOMPARE(appTypeSettings(read, AppCategory::Browser), (AppTypeSettings{AppCategory::Browser, WritingProfile::Work}));
+        QCOMPARE(appTypeSettings(read, AppCategory::Browser), (AppTypeSettings{QStringLiteral("browser"), {}, WritingProfile::Work}));
         QCOMPARE(appTypeSettings(read, AppCategory::Email), appTypeSettings({}, AppCategory::Email));
+    }
+
+    void customTypesAreStoredByIdAndUnknownTypesAreAutomatic()
+    {
+        QTemporaryDir dir;
+        QSettings stored(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
+        // Settings written before custom types keep the existing built-in ids.
+        stored.setValue(SettingsKeys::AppsTypes, QByteArray(R"([{"type":"email","writingProfile":"personal"}])"));
+        stored.setValue(SettingsKeys::AppsEntries,
+                        QByteArray(R"([{"id":"app:post","name":"Post","type":"email","matches":[{"kind":"id","value":"post"}]},)"
+                                   R"({"id":"app:gone","name":"Gone","type":"custom_gone","matches":[{"kind":"id","value":"gone"}]}])"));
+        const AppsSettings old = AppsSettingsCodec::load(stored);
+        QCOMPARE(old.apps.first().type, QStringLiteral("email"));
+        QVERIFY(!old.apps.last().type);
+        QCOMPARE(appTypeSettings(old, QStringLiteral("email")).writingProfile, WritingProfile::Personal);
+        QCOMPARE(old.types.size(), 7);
+        AppSettings settings;
+        const auto first = addAppType(settings, QStringLiteral("Projects"));
+        const auto second = addAppType(settings, QStringLiteral("Friends"));
+        AppEntry app = idApp(QStringLiteral("notes"));
+        app.type = first.id;
+        settings.apps.apps = {app};
+        QCOMPARE(editAppType(settings, first.id, [](AppTypeSettings &type) {
+            type.writingProfile = WritingProfile::Email;
+            type.pasting = {keepOnly, PasteKeyCombo::Standard};
+            type.history = HistoryKeep::Stats;
+        }), EditRefusal::None);
+        AppsSettingsCodec::store(stored, settings.apps);
+        QCOMPARE(AppsSettingsCodec::load(stored), settings.apps);
+        QCOMPARE(AppsSettingsCodec::load(stored).types.at(7).id, second.id);
+    }
+
+    void customTypeEditsKeepNamesAndMembershipConsistent()
+    {
+        AppSettings settings;
+        QCOMPARE(addAppType(settings, QStringLiteral("  ")).refusal, EditRefusal::Blank);
+        const auto added = addAppType(settings, QStringLiteral(" Projects "));
+        QCOMPARE(added.refusal, EditRefusal::None);
+        QVERIFY(added.id.startsWith(kCustomIdPrefix));
+        QCOMPARE(settings.apps.types.at(6).id, added.id);
+        QCOMPARE(settings.apps.types.last().id, QStringLiteral("general"));
+        QCOMPARE(appTypeSettings(settings.apps, added.id).name, QStringLiteral("Projects"));
+        QVERIFY(!appTypeSettings(settings.apps, added.id).writingProfile);
+        QCOMPARE(appTypeSettings(settings.apps, added.id).pasting, PastingChoice{});
+        QVERIFY(!appTypeSettings(settings.apps, added.id).history);
+        QCOMPARE(addAppType(settings, QStringLiteral("PROJECTS")).refusal, EditRefusal::Taken);
+        const auto other = addAppType(settings, QStringLiteral("Friends"));
+        QCOMPARE(editAppType(settings, added.id, [](AppTypeSettings &type) { type.name = QStringLiteral(" "); }), EditRefusal::Blank);
+        QCOMPARE(editAppType(settings, added.id, [](AppTypeSettings &type) { type.name = QStringLiteral("friends"); }), EditRefusal::Taken);
+        QCOMPARE(editAppType(settings, added.id, [](AppTypeSettings &type) { type.name = QStringLiteral("Work apps"); }), EditRefusal::None);
+        QCOMPARE(editAppType(settings, QStringLiteral("email"), [](AppTypeSettings &type) { type.name = QStringLiteral("Mail"); }), EditRefusal::Missing);
+        QCOMPARE(editAppType(settings, QStringLiteral("custom_gone"), [](AppTypeSettings &) {}), EditRefusal::Missing);
+        for (const AppCategory type : appTypes()) {
+            QVERIFY(!removeAppType(settings, appCategoryName(type)));
+        }
+        AppEntry one = idApp(QStringLiteral("one"));
+        one.type = QStringLiteral("custom_gone");
+        QCOMPARE(addApp(settings, one), EditRefusal::Missing);
+        one.type = added.id;
+        QCOMPARE(addApp(settings, one), EditRefusal::None);
+        AppEntry two = idApp(QStringLiteral("two"));
+        QCOMPARE(addApp(settings, two), EditRefusal::None);
+        QCOMPARE(editApp(settings, two.id, [&](AppEntry &app) { app.type = added.id; }), EditRefusal::None);
+        QCOMPARE(editApp(settings, two.id, [](AppEntry &app) { app.type = QStringLiteral("custom_gone"); }), EditRefusal::Missing);
+        const AppsSettings before = settings.apps;
+        const SettingsEdit undo = removeAppType(settings, added.id);
+        QVERIFY(undo);
+        QVERIFY(!settings.apps.apps.first().type);
+        QVERIFY(!settings.apps.apps.last().type);
+        QCOMPARE(settings.apps.types.at(6).id, other.id);
+        undo(settings);
+        QCOMPARE(settings.apps, before);
     }
 
     void appEditsKeepTheListConsistent()
@@ -887,17 +997,17 @@ private slots:
         QCOMPARE(settings.apps.apps.first().id, kate.id);
         QVERIFY(!removeApp(settings, QStringLiteral("app:gone")));
 
-        QCOMPARE(editAppType(settings, AppCategory::Browser, [](AppTypeSettings &type) {
+        QCOMPARE(editAppType(settings, QStringLiteral("browser"), [](AppTypeSettings &type) {
                      type.pasting.keys = PasteKeyCombo::WithShift;
                      type.writingProfile = WritingProfile::Work;
                  }),
                  EditRefusal::None);
         QCOMPARE(appTypeSettings(settings.apps, AppCategory::Browser),
-                 (AppTypeSettings{AppCategory::Browser, WritingProfile::Work, {std::nullopt, PasteKeyCombo::WithShift}}));
-        QCOMPARE(editAppType(settings, AppCategory::Browser,
+                 (AppTypeSettings{QStringLiteral("browser"), {}, WritingProfile::Work, {std::nullopt, PasteKeyCombo::WithShift}}));
+        QCOMPARE(editAppType(settings, QStringLiteral("browser"),
                              [](AppTypeSettings &type) { type.pasting.steps = DeliverySteps{false, false, false}; }),
                  EditRefusal::Incomplete);
-        QCOMPARE(editAppType(settings, AppCategory::Unknown, [](AppTypeSettings &) {}), EditRefusal::Missing);
+        QCOMPARE(editAppType(settings, QStringLiteral("unknown"), [](AppTypeSettings &) {}), EditRefusal::Missing);
     }
 };
 

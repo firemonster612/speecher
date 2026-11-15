@@ -28,7 +28,7 @@ Column {
     signal adopted(var app)
 
     readonly property var t: Schema.apps.t
-    readonly property var type: isType ? Schema.apps.type(entry.id) : null
+    readonly property var type: isType ? Schema.apps.type(entry.id, Apps.types) : null
     readonly property string landingId: (isType ? "apptype:" : "appentry:") + (entry.id || "")
 
     width: parent ? parent.width : implicitWidth
@@ -37,7 +37,7 @@ Column {
         id: head
         readonly property string name: root.isType ? root.type.label : root.entry.name || ""
         readonly property string summary: root.isType ? Schema.apps.typeSummary(root.entry, id => Library.profileName(id))
-                                                      : Schema.apps.summary(root.entry, id => Library.profileName(id))
+                                                      : Schema.apps.summary(root.entry, id => Library.profileName(id), Apps.types)
         objectName: root.landingId
         first: root.first
         implicitHeight: Math.max(Theme.rowHeight, label.implicitHeight + 22)
@@ -49,7 +49,7 @@ Column {
             id: icon
             x: root.nested ? 28 + Theme.space3 : 0
             anchors.verticalCenter: parent.verticalCenter
-            name: root.isType ? "" : head.name
+            name: head.name
             iconName: root.isType ? root.type.icon : ""
             source: !root.isType && root.entry.icon ? "image://appicon/" + encodeURIComponent(root.entry.icon) : ""
             size: root.nested ? 24 : 28

@@ -6,6 +6,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
+#include <algorithm>
+
 namespace speecher::AppsSettingsCodec {
 
 namespace {
@@ -44,19 +46,10 @@ std::optional<AppMatchKind> matchKindFromName(const QString &name)
     return std::nullopt;
 }
 
-QJsonArray arrayAt(const QSettings &settings, const QString &key, bool *stored = nullptr)
+QJsonArray arrayAt(const QSettings &settings, const QString &key)
 {
     const QJsonDocument document = QJsonDocument::fromJson(settings.value(key).toByteArray());
-    if (stored) {
-        *stored = document.isArray();
-    }
     return document.array();
-}
-
-std::optional<AppCategory> typeAt(const QJsonObject &object)
-{
-    const AppCategory type = appCategoryFromName(object.value(kType).toString());
-    return type == AppCategory::Unknown ? std::nullopt : std::optional(type);
 }
 
 std::optional<QString> profileAt(const QJsonObject &object)
@@ -118,12 +111,40 @@ void putSettings(QJsonObject &object, const std::optional<QString> &profile, con
 AppsSettings load(const QSettings &settings)
 {
     AppsSettings apps;
+    const QJsonArray types = arrayAt(settings, SettingsKeys::AppsTypes);
+    for (AppTypeSettings &type : apps.types) {
+        for (const QJsonValue &value : types) {
+            const QJsonObject object = value.toObject();
+            if (object.value(kType).toString() == type.id) {
+                type.writingProfile = profileAt(object);
+                type.pasting = pastingAt(object);
+                type.history = historyAt(object);
+                break;
+            }
+        }
+    }
+    for (const QJsonValue &value : types) {
+        const QJsonObject object = value.toObject();
+        const QString id = object.value(kType).toString();
+        const QString name = object.value(kName).toString().trimmed();
+        if (id.startsWith(kCustomIdPrefix) && !name.isEmpty()
+            && std::none_of(apps.types.cbegin(), apps.types.cend(),
+                            [&id](const AppTypeSettings &type) { return type.id == id; })) {
+            apps.types.insert(apps.types.size() - 1,
+                              {id, name, profileAt(object), pastingAt(object), historyAt(object)});
+        }
+    }
     apps.apps.clear();
     for (const QJsonValue &value : arrayAt(settings, SettingsKeys::AppsEntries)) {
         const QJsonObject object = value.toObject();
         AppEntry entry{object.value(kId).toString(), object.value(kName).toString(), object.value(kIcon).toString(),
-                       {}, typeAt(object), profileAt(object), pastingAt(object), historyAt(object),
+                       {}, std::nullopt, profileAt(object), pastingAt(object), historyAt(object),
                        object.value(kCatalogPicksProfile).toBool()};
+        const QString typeId = object.value(kType).toString();
+        if (std::any_of(apps.types.cbegin(), apps.types.cend(),
+                        [&typeId](const AppTypeSettings &type) { return type.id == typeId; })) {
+            entry.type = typeId;
+        }
         for (const QJsonValue &match : object.value(kMatches).toArray()) {
             const std::optional<AppMatchKind> kind = matchKindFromName(match[kKind].toString());
             const QString text = match[kValue].toString().trimmed();
@@ -138,22 +159,6 @@ AppsSettings load(const QSettings &settings)
         }
     }
 
-    bool typesStored = false;
-    const QJsonArray types = arrayAt(settings, SettingsKeys::AppsTypes, &typesStored);
-    if (!typesStored) {
-        return apps;
-    }
-    for (AppTypeSettings &type : apps.types) {
-        for (const QJsonValue &value : types) {
-            const QJsonObject object = value.toObject();
-            if (typeAt(object) == type.type) {
-                type.writingProfile = profileAt(object);
-                type.pasting = pastingAt(object);
-                type.history = historyAt(object);
-                break;
-            }
-        }
-    }
     return apps;
 }
 
@@ -170,7 +175,7 @@ void store(QSettings &settings, const AppsSettings &apps)
             object.insert(kIcon, entry.icon);
         }
         if (entry.type) {
-            object.insert(kType, appCategoryName(*entry.type));
+            object.insert(kType, *entry.type);
         }
         putSettings(object, entry.writingProfile, entry.pasting, entry.history);
         if (entry.catalogPicksProfile) {
@@ -180,7 +185,10 @@ void store(QSettings &settings, const AppsSettings &apps)
     }
     QJsonArray types;
     for (const AppTypeSettings &type : apps.types) {
-        QJsonObject object{{kType, appCategoryName(type.type)}};
+        QJsonObject object{{kType, type.id}};
+        if (type.id.startsWith(kCustomIdPrefix)) {
+            object.insert(kName, type.name);
+        }
         putSettings(object, type.writingProfile, type.pasting, type.history);
         types.append(object);
     }

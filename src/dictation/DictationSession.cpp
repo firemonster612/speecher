@@ -382,7 +382,7 @@ void DictationSession::continueStartupWithTarget(quint64 generation, const Targe
         m_plan = planDictation(*m_sessionSettings, m_target, m_overrides, m_providers->offersSpeech());
         m_sessionSettings = m_plan.settings;
     }
-    m_target.category = m_plan.app.type;
+    m_target.category = m_plan.app.category;
     openHistoryAudio();
     // Lengths only: the text itself stays out of the log.
     qInfo().noquote() << (m_review.followingUp() ? "target kept for follow-up app=" : "target captured app=")

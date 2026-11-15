@@ -40,11 +40,6 @@ QString layerName(AppLayer layer)
     return QStringLiteral("fallback");
 }
 
-QString typeName(const std::optional<AppCategory> &type)
-{
-    return type ? appCategoryName(*type) : QString();
-}
-
 // Delivery Steps as the UI reads and edits them: { insert, press, keep }.
 QVariantMap stepsRecord(const DeliverySteps &steps)
 {
@@ -134,7 +129,7 @@ QVariantMap planRecord(const DeliverySteps &steps, const PastingChoice &pasting)
 QVariantMap resolved(const AppResolution &resolution, const DeliverySteps &steps)
 {
     QVariantMap record = planRecord(steps, resolution.pasting);
-    record.insert(QStringLiteral("type"), appCategoryName(resolution.type));
+    record.insert(QStringLiteral("type"), resolution.type);
     record.insert(QStringLiteral("profile"), resolution.writingProfile);
     record.insert(QStringLiteral("history"), historyName(resolution.history));
     return record;
@@ -165,14 +160,14 @@ QVariantMap entryRecord(const AppEntry &app, const Target &target, const AppsSet
         {QStringLiteral("matches"), matches},
         {QStringLiteral("byText"), byText},
         {QStringLiteral("titleOnly"), titleOnly},
-        {QStringLiteral("type"), typeName(app.type)},
+        {QStringLiteral("type"), app.type.value_or(QString())},
         {QStringLiteral("profile"), app.writingProfile.value_or(QString())},
         {QStringLiteral("steps"), ownSteps(app.pasting.steps)},
         {QStringLiteral("keys"), keysName(app.pasting.keys)},
         {QStringLiteral("history"), historyName(app.history)},
         {QStringLiteral("effective"), resolved(resolveApp(target, apps), steps)},
         {QStringLiteral("inherited"),
-         QVariantMap{{QStringLiteral("type"), appCategoryName(inherited.type)},
+         QVariantMap{{QStringLiteral("type"), inherited.type},
                      {QStringLiteral("profile"), inherited.writingProfile},
                      {QStringLiteral("profileFrom"), layerName(inherited.writingProfileFrom)},
                      {QStringLiteral("steps"), ownSteps(inherited.pasting.steps)},
@@ -314,9 +309,11 @@ void QuickApps::rebuild()
     }
     QVariantList types;
     for (const AppTypeSettings &type : apps.types) {
-        const bool other = type.type == AppCategory::General;
+        const bool other = type.id == u"general";
         types.append(QVariantMap{
-            {QStringLiteral("id"), appCategoryName(type.type)},
+            {QStringLiteral("id"), type.id},
+            {QStringLiteral("name"), type.name},
+            {QStringLiteral("custom"), type.id.startsWith(kCustomIdPrefix)},
             {QStringLiteral("profile"), other ? fallbackWritingProfile(apps) : type.writingProfile.value_or(QString())},
             {QStringLiteral("steps"), ownSteps(type.pasting.steps)},
             {QStringLiteral("keys"), keysName(type.pasting.keys)},
@@ -341,7 +338,7 @@ void QuickApps::rebuild()
             {QStringLiteral("lastSeenMs"), double(seen.lastSeenMs)},
             {QStringLiteral("dictations"), seen.dictations},
             {QStringLiteral("entry"), resolution.appId},
-            {QStringLiteral("type"), appCategoryName(resolution.type)},
+            {QStringLiteral("type"), resolution.type},
             {QStringLiteral("profile"), resolution.writingProfile},
         });
     }
@@ -389,7 +386,7 @@ void QuickApps::rebuildInstalled()
             {QStringLiteral("ids"), ids},
             {QStringLiteral("also"), also},
             {QStringLiteral("entry"), resolution.appId},
-            {QStringLiteral("type"), appCategoryName(resolution.type)},
+            {QStringLiteral("type"), resolution.type},
             {QStringLiteral("profile"), resolution.writingProfile},
         });
     }
@@ -442,8 +439,7 @@ QString QuickApps::update(const QString &id, const QVariantMap &patch)
                 app.matches = *matches;
             }
             if (patch.contains(QStringLiteral("type"))) {
-                const std::optional<QString> type = nonEmpty(patch.value(QStringLiteral("type")));
-                app.type = type ? std::optional(appCategoryFromName(*type)) : std::nullopt;
+                app.type = nonEmpty(patch.value(QStringLiteral("type")));
                 // A type the person chose takes that type's profile, as for
                 // any App; only a migrated rule's type left it to the catalog.
                 app.catalogPicksProfile = false;
@@ -480,6 +476,24 @@ void QuickApps::undo(int token)
     });
 }
 
+QVariantMap QuickApps::addType(const QString &name)
+{
+    QString id;
+    const QString refusal = saveUnlessRefused(*m_controller->settings(), [&](AppSettings &s) {
+        const AddAppTypeResult added = addAppType(s, name);
+        id = added.id;
+        return added.refusal;
+    });
+    return {{QStringLiteral("id"), id}, {QStringLiteral("refusal"), refusal}};
+}
+
+int QuickApps::removeType(const QString &id)
+{
+    SettingsEdit undo;
+    m_controller->settings()->edit([&](AppSettings &s) { return bool(undo = removeAppType(s, id)); });
+    return m_undo.keep(undo);
+}
+
 QString QuickApps::updateType(const QString &type, const QVariantMap &patch)
 {
     const auto history = historyChoice(patch.value(QStringLiteral("history")));
@@ -488,7 +502,10 @@ QString QuickApps::updateType(const QString &type, const QVariantMap &patch)
         return invalidRecord;
     }
     return saveUnlessRefused(*m_controller->settings(), [&](AppSettings &s) {
-        return editAppType(s, appCategoryFromName(type), [&patch, &history](AppTypeSettings &settings) {
+        return editAppType(s, type, [&patch, &history](AppTypeSettings &settings) {
+            if (patch.contains(QStringLiteral("name"))) {
+                settings.name = patch.value(QStringLiteral("name")).toString();
+            }
             if (patch.contains(QStringLiteral("profile"))) {
                 settings.writingProfile = nonEmpty(patch.value(QStringLiteral("profile")));
             }

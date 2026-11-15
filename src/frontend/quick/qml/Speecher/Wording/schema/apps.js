@@ -2,7 +2,7 @@
 .import "pasting.js" as Pasting
 
 // The Apps page's rows and wording: the person's Apps, the App Types, and
-// the picker that adds an app. Type ids are core's category names, paste
+// the picker that adds an app. Type ids are core's built-in or custom ids, paste
 // keys' ids its key names (Pasting.keyChoices), and an empty id is "Same as
 // …".
 
@@ -25,12 +25,17 @@ var types = [
     { id: "ai_coding", label: "AI coding apps", one: "AI coding app", icon: "bot", examples: "Cursor, Claude Code" },
     { id: "general", label: "Other apps", one: "Other app", icon: "app-window", examples: "Every app Speecher doesn't recognize" }
 ];
-function type(id) { return types.find(t => t.id === id) || types[types.length - 1] }
+function type(id, appTypes) {
+    const builtIn = types.find(t => t.id === id)
+    if (builtIn) return builtIn
+    const custom = appTypes.find(t => t.id === id && t.custom)
+    return custom ? { id, label: custom.name, one: custom.name, icon: "", custom: true } : types[types.length - 1]
+}
 // An App Type (of Apps.types) or an App (of Apps.entries) as another page
 // lists it, linking to it in Apps: { id, name, typeIcon, icon }, id being
 // the Apps page's landing id.
-function typeLink(settings) {
-    return { id: "apptype:" + settings.id, name: type(settings.id).label, typeIcon: type(settings.id).icon, icon: "" }
+function typeLink(settings, appTypes) {
+    return { id: "apptype:" + settings.id, name: type(settings.id, appTypes).label, typeIcon: type(settings.id, appTypes).icon, icon: "" }
 }
 function appLink(entry) { return { id: "appentry:" + entry.id, name: entry.name, typeIcon: "", icon: entry.icon } }
 // The fallback profile's one name, wherever its place is named rather than
@@ -70,6 +75,10 @@ function historyResult(choice, keeps, keepsLabel) {
 // The editor's words, an App's and an App Type's alike.
 var t = {
     addApp: "Add app",
+    newType: "New type",
+    fillType: name => "Set an app's Type to " + name + " to list it here.",
+    removeType: "Remove type",
+    removeTypeHelp: "Its apps go back to Automatic.",
     yourApps: "Your apps",
     yourAppsHelp: "Apps you've set something for, each listed under its type.",
     types: "App types",
@@ -141,21 +150,28 @@ var t = {
 // Why Apps refused an edit, by core's reason.
 var refusals = {
     blank: "Type what to match the app by.",
+    typeBlank: "Type a name.",
+    typeTaken: "Another type has that name.",
     incomplete: "Keep one step on.",
     taken: "Another app is matched by that already.",
     missing: "It, or the profile it picks, was deleted meanwhile.",
     invalid: "Speecher couldn't save this."
 };
 
+// A custom type names a group rather than something to match an app by.
+function typeRefusal(reason) {
+    return reason === "blank" ? refusals.typeBlank : reason === "taken" ? refusals.typeTaken : refusals[reason] || ""
+}
+
 // What an app's row says it sets: "Email profile, Clipboard only", or
 // "Same as its type" when nothing.
-function summary(entry, profileName) {
+function summary(entry, profileName, appTypes) {
     const parts = []
-    if (entry.type) parts.push(type(entry.type).one)
+    if (entry.type) parts.push(type(entry.type, appTypes).one)
     if (entry.profile) parts.push(profileName(entry.profile) + " profile")
     parts.push(...pastingSummary(entry))
     if (entry.history) parts.push(t.inHistory(entry.history))
-    return parts.length ? capitalized(parts.join(", ")) : "Same as " + type(entry.effective.type).label
+    return parts.length ? capitalized(parts.join(", ")) : "Same as " + type(entry.effective.type, appTypes).label
 }
 function capitalized(s) { return s.charAt(0).toUpperCase() + s.slice(1) }
 // What an App Type's row says: its profile, Pasting and History choices.
@@ -173,6 +189,9 @@ var rows = [
     { id: "addApp", page: "apps", section: t.types, kind: "custom",
       label: t.addApp, help: "Pick an installed app, or one you dictated into.",
       keywords: "new app exception single app installed switch match name window title web app" },
+    { id: "newAppType", page: "apps", section: t.types, kind: "custom",
+      label: t.newType, help: "Make a type for apps you put together.",
+      keywords: "custom type group category own add" },
     { id: "appTypes", page: "apps", section: t.types, kind: "custom",
       label: t.types, help: "Each type has a writing profile and a way of pasting its apps follow.",
       keywords: "app type category terminal keys built-in " + types.map(c => c.label.toLowerCase()).join(" ") },

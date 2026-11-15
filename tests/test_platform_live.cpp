@@ -319,7 +319,7 @@ private slots:
         AtSpiTargetProvider provider;
         Target target = test::captureAndWait(provider);
         const AppResolution app = resolveApp(target, SettingsStore().snapshot().apps);
-        target.category = app.type;
+        target.category = app.category;
         const QString profile = app.writingProfile;
         const bool directInsert = provider.canInsertText(target);
         qInfo().noquote()
@@ -892,7 +892,7 @@ private slots:
         AtSpiTargetProvider provider;
         Target target = test::captureAndWait(provider);
         const AppResolution app = resolveApp(target, {});
-        target.category = app.type;
+        target.category = app.category;
         QVERIFY2(target.hasIdentity(), "No focused Plasma target was found");
         QVERIFY2(!target.secure, "Live delivery refuses secure targets");
 

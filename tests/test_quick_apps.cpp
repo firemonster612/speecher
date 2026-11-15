@@ -107,6 +107,36 @@ private slots:
         QCOMPARE(failed.count(), 0);
     }
 
+    void customTypeRecordsAndEditsUseTheirIds()
+    {
+        ApplicationController controller(true);
+        QuickApps apps(&controller);
+        QCOMPARE(apps.addType(QStringLiteral(" ")).value(QStringLiteral("refusal")).toString(), QStringLiteral("blank"));
+        const QVariantMap added = apps.addType(QStringLiteral("Projects"));
+        const QString id = added.value(QStringLiteral("id")).toString();
+        QVERIFY(id.startsWith(kCustomIdPrefix));
+        QCOMPARE(added.value(QStringLiteral("refusal")).toString(), QString());
+        QCOMPARE(apps.types().at(6).toMap().value(QStringLiteral("name")).toString(), QStringLiteral("Projects"));
+        QVERIFY(apps.types().at(6).toMap().value(QStringLiteral("custom")).toBool());
+        QVERIFY(!apps.types().first().toMap().value(QStringLiteral("custom")).toBool());
+        const QString appId = apps.add({{QStringLiteral("name"), QStringLiteral("Notes")},
+                                       {QStringLiteral("ids"), QStringList{QStringLiteral("notes")}}})
+                                  .value(QStringLiteral("id")).toString();
+        QCOMPARE(apps.update(appId, {{QStringLiteral("type"), id}}), QString());
+        QCOMPARE(apps.updateType(id, {{QStringLiteral("name"), QStringLiteral("My projects")},
+                                     {QStringLiteral("profile"), WritingProfile::Personal}}), QString());
+        QCOMPARE(apps.entries().first().toMap().value(QStringLiteral("type")).toString(), id);
+        QCOMPARE(apps.entries().first().toMap().value(QStringLiteral("effective")).toMap().value(QStringLiteral("type")).toString(), id);
+        QCOMPARE(apps.entries().first().toMap().value(QStringLiteral("inherited")).toMap().value(QStringLiteral("type")).toString(), QStringLiteral("general"));
+        const int undo = apps.removeType(id);
+        QVERIFY(undo >= 0);
+        QCOMPARE(apps.entries().first().toMap().value(QStringLiteral("type")).toString(), QString());
+        apps.undo(undo);
+        QCOMPARE(apps.entries().first().toMap().value(QStringLiteral("type")).toString(), id);
+        QCOMPARE(apps.types().at(6).toMap().value(QStringLiteral("name")).toString(), QStringLiteral("My projects"));
+        QCOMPARE(apps.removeType(QStringLiteral("general")), -1);
+    }
+
     // A type the person sets on an App migrated from a category-only rule
     // takes that type's profile, as for any App, rather than the catalog's.
     void choosingATypeEndsTheCatalogsProfile()
@@ -117,7 +147,7 @@ private slots:
             kate.id = QStringLiteral("app:kate");
             kate.name = QStringLiteral("Kate");
             kate.matches = {{AppMatchKind::Id, QStringLiteral("org.kde.kate")}};
-            kate.type = AppCategory::General;
+            kate.type = appCategoryName(AppCategory::General);
             kate.catalogPicksProfile = true;
             draft.apps.apps = {kate};
             return true;

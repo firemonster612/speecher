@@ -23,11 +23,18 @@ Page {
     // The App or App Type whose editor is open, by its landing id
     // ("appentry:<id>" or "apptype:<id>"); one at a time.
     property string openId: ""
-    // Opening an editor closes the picker and Test, and opening either of
-    // them closes the editor: one thing open at a time.
-    function toggle(id) {
-        openId = openId === id ? "" : id
-        if (openId) { picker.close(); tester.close() }
+    // The editor, picker, Test and New type form open one at a time.
+    onOpenIdChanged: if (openId) { picker.close(); tester.close(); newType.open = false }
+    function toggle(id) { openId = openId === id ? "" : id }
+
+    function startType() {
+        openId = ""
+        picker.close()
+        tester.close()
+        typeName.text = ""
+        newType.error = ""
+        newType.open = true
+        typeName.forceActiveFocus()
     }
 
     // Each type's row, then its Apps' rows: { id (the landing id), isType,
@@ -71,22 +78,47 @@ Page {
                 variant: "ghost"
                 onClicked: tester.start()
             },
+            Button { objectName: "newAppType"; text: page.t.newType; iconName: "plus"; size: "small"; variant: "ghost"; onClicked: page.startType() },
             Button { text: page.t.addApp; iconName: "plus"; size: "small"; onClicked: picker.start() }
         ]
         // The History row is in each editor; a search for it lands on the
         // list.
         SearchLanding { rowIds: ["apps", "appHistory", "appTypes"]; target: section }
+        SearchLanding { rowIds: ["newAppType"]; target: section; onLanded: page.startType() }
         SearchLanding { rowIds: ["addApp"]; target: section; onLanded: picker.start() }
         SearchLanding { rowIds: ["otherAppsProfile"]; target: section; onLanded: page.openId = "apptype:general" }
         AccessibilityNotice { what: Schema.pasting.accessibilityUses[System.identifiesAppsWithoutAccessibility ? "inserting" : "apps"] }
 
+        InlineForm {
+            id: newType
+            objectName: "newAppTypeForm"
+            width: parent.width
+            title: page.t.newType
+            saveText: Words.save
+            cancelText: Words.cancel
+            note: Words.savesOnPress(saveText)
+            canSave: typeName.text.trim().length > 0
+            onCancelled: open = false
+            onSaved: {
+                const added = Apps.addType(typeName.text)
+                error = Schema.apps.typeRefusal(added.refusal)
+                if (added.id) {
+                    open = false
+                    page.openId = "apptype:" + added.id
+                }
+            }
+            FormField {
+                label: page.t.appName
+                TextField { id: typeName; objectName: "newAppTypeName"; width: parent.width }
+            }
+        }
         AppTest {
             id: tester
-            onOpenChanged: if (open) { page.openId = ""; picker.close() }
+            onOpenChanged: if (open) { page.openId = ""; picker.close(); newType.open = false }
         }
         AppPicker {
             id: picker
-            onOpenChanged: if (open) { page.openId = ""; tester.close() }
+            onOpenChanged: if (open) { page.openId = ""; tester.close(); newType.open = false }
             // Lands on the App as a search does, which opens it in view.
             onPicked: id => Navigation.goToRow("apps", "appentry:" + id)
         }
@@ -102,7 +134,7 @@ Page {
                 isType: row.isType
                 nested: !row.isType
                 detected: row.isType ? page.detectedIn(row.value.id) : []
-                first: index === 0 && rows.first && !picker.open && !tester.open
+                first: index === 0 && rows.first && !picker.open && !tester.open && !newType.open
                 open: page.openId === landingId
                 onToggled: page.toggle(landingId)
                 onAdopted: app => page.adopt(app)
