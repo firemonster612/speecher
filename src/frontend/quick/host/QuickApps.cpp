@@ -309,7 +309,7 @@ void QuickApps::rebuild()
     }
     QVariantList types;
     for (const AppTypeSettings &type : apps.types) {
-        const bool other = type.id == u"general";
+        const bool other = type.id == appCategoryName(AppCategory::General);
         types.append(QVariantMap{
             {QStringLiteral("id"), type.id},
             {QStringLiteral("name"), type.name},

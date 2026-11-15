@@ -34,7 +34,7 @@ Item {
     readonly property bool isOther: isType && entry.id === "general"
     readonly property string otherProfile: (Apps.types.find(o => o.id === "general") || { profile: "" }).profile
     // The type that decides what an App follows.
-    readonly property var appType: Schema.apps.type(isType ? entry.id : (entry.effective || {}).type, Apps.types)
+    readonly property var appType: Library.appType(isType ? entry.id : (entry.effective || {}).type)
     // The Pasting page's steps, as { insert, press, keep }.
     readonly property var pageSteps: System.deliverySteps.reduce((steps, s) => Object.assign(steps, { [s.id]: s.on }), {})
     // What delivering here does: the steps and keys this App or App Type
@@ -46,7 +46,7 @@ Item {
     // Terminals, its type, or (fallback) its type following the widest
     // place, which is Other apps for a profile and Pasting for the rest.
     function placeOf(from) {
-        return from === "terminal" ? Schema.apps.type("terminal", Apps.types).label : appType.label
+        return from === "terminal" ? Library.appType("terminal").label : appType.label
     }
     // "Same as …" for each of an App's own values, by where the value would
     // come from without it; an App Type's profile is Other apps' profile.
@@ -81,8 +81,8 @@ Item {
     function inheritedHistory() {
         const inherited = entry.inherited || {}
         const fromType = isType ? (isOther ? "" : otherHistory) : inherited.history
-        const place = isType ? Schema.apps.type("general", Apps.types).label
-                    : inherited.historyFrom === "type" ? appType.label : Schema.apps.type("general", Apps.types).label
+        const place = isType ? Library.appType("general").label
+                    : inherited.historyFrom === "type" ? appType.label : Library.appType("general").label
         return fromType ? Words.sameAs(place, Schema.apps.historyLabel(fromType))
                         : Words.sameAs(Schema.page(keepsSpec.page).title, keepsLabel)
     }
@@ -258,8 +258,10 @@ Item {
             InheritSelect {
                 visible: !editor.entry.titleOnly
                 objectName: "appType"
-                inheritedText: editor.t.automatic(Schema.apps.type((editor.entry.inherited || {}).type, Apps.types).one)
-                choices: Apps.types.map(o => Schema.apps.type(o.id, Apps.types))
+                inheritedText: editor.t.automatic(Library.appType((editor.entry.inherited || {}).type).one)
+                // The person's own types have no icon of their own; a tag keeps
+                // their names in line with the others'.
+                choices: Apps.types.map(o => Library.appType(o.id)).map(o => ({ id: o.id, label: o.label, icon: o.icon || "tag" }))
                 currentId: editor.entry.type || ""
                 onChosen: id => editor.save({ type: id })
             }

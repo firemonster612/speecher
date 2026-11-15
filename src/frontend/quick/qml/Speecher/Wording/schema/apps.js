@@ -34,8 +34,9 @@ function type(id, appTypes) {
 // An App Type (of Apps.types) or an App (of Apps.entries) as another page
 // lists it, linking to it in Apps: { id, name, typeIcon, icon }, id being
 // the Apps page's landing id.
-function typeLink(settings, appTypes) {
-    return { id: "apptype:" + settings.id, name: type(settings.id, appTypes).label, typeIcon: type(settings.id, appTypes).icon, icon: "" }
+// appType is Library.appType.
+function typeLink(settings, appType) {
+    return { id: "apptype:" + settings.id, name: appType(settings.id).label, typeIcon: appType(settings.id).icon, icon: "" }
 }
 function appLink(entry) { return { id: "appentry:" + entry.id, name: entry.name, typeIcon: "", icon: entry.icon } }
 // The fallback profile's one name, wherever its place is named rather than
@@ -165,13 +166,13 @@ function typeRefusal(reason) {
 
 // What an app's row says it sets: "Email profile, Clipboard only", or
 // "Same as its type" when nothing.
-function summary(entry, profileName, appTypes) {
+function summary(entry, profileName, appType) {
     const parts = []
-    if (entry.type) parts.push(type(entry.type, appTypes).one)
+    if (entry.type) parts.push(appType(entry.type).one)
     if (entry.profile) parts.push(profileName(entry.profile) + " profile")
     parts.push(...pastingSummary(entry))
     if (entry.history) parts.push(t.inHistory(entry.history))
-    return parts.length ? capitalized(parts.join(", ")) : "Same as " + type(entry.effective.type, appTypes).label
+    return parts.length ? capitalized(parts.join(", ")) : "Same as " + appType(entry.effective.type).label
 }
 function capitalized(s) { return s.charAt(0).toUpperCase() + s.slice(1) }
 // What an App Type's row says: its profile, Pasting and History choices.

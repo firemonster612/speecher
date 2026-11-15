@@ -26,15 +26,15 @@ Reveal {
     // where a tested value came from.
     function fromText(source, widest) {
         const place = source.layer === "app" ? (Apps.entries.find(e => e.id === source.app) || { name: "" }).name
-                    : source.layer === "terminal" ? Schema.apps.type("terminal", Apps.types).label
-                    : source.layer === "type" ? Schema.apps.type(result.type, Apps.types).label
+                    : source.layer === "terminal" ? Library.appType("terminal").label
+                    : source.layer === "type" ? Library.appType(result.type).label
                     : source.layer === "builtIn" ? t.builtInList : widest
         return t.from(place)
     }
     function valueFrom(value, source, widest) { return [value, fromText(source, widest)].filter(s => s).join(", ") }
     readonly property var lines: !found ? [] : [
-        { label: t.type, value: Schema.apps.type(result.type, Apps.types).one },
-        { label: t.profile, value: valueFrom(Library.profileName(result.profile), result.from.profile, Schema.apps.type("general", Apps.types).label) },
+        { label: t.type, value: Library.appType(result.type).one },
+        { label: t.profile, value: valueFrom(Library.profileName(result.profile), result.from.profile, Library.appType("general").label) },
         { label: t.pasting, value: valueFrom(Schema.pasting.stepsText(result.steps), result.from.steps, t.pastingPage) },
         { label: t.pasteKeys, value: valueFrom(Schema.pasting.keysLabel(result.keys), result.from.keys, t.pastingPage),
           shown: Schema.pasting.keyChoices.length > 0 && result.steps.press },

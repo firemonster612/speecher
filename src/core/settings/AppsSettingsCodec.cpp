@@ -6,8 +6,6 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
-#include <algorithm>
-
 namespace speecher::AppsSettingsCodec {
 
 namespace {
@@ -127,9 +125,7 @@ AppsSettings load(const QSettings &settings)
         const QJsonObject object = value.toObject();
         const QString id = object.value(kType).toString();
         const QString name = object.value(kName).toString().trimmed();
-        if (id.startsWith(kCustomIdPrefix) && !name.isEmpty()
-            && std::none_of(apps.types.cbegin(), apps.types.cend(),
-                            [&id](const AppTypeSettings &type) { return type.id == id; })) {
+        if (id.startsWith(kCustomIdPrefix) && !name.isEmpty() && !findAppType(apps, id)) {
             apps.types.insert(apps.types.size() - 1,
                               {id, name, profileAt(object), pastingAt(object), historyAt(object)});
         }
@@ -141,8 +137,7 @@ AppsSettings load(const QSettings &settings)
                        {}, std::nullopt, profileAt(object), pastingAt(object), historyAt(object),
                        object.value(kCatalogPicksProfile).toBool()};
         const QString typeId = object.value(kType).toString();
-        if (std::any_of(apps.types.cbegin(), apps.types.cend(),
-                        [&typeId](const AppTypeSettings &type) { return type.id == typeId; })) {
+        if (findAppType(apps, typeId)) {
             entry.type = typeId;
         }
         for (const QJsonValue &match : object.value(kMatches).toArray()) {

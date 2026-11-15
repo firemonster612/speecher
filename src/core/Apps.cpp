@@ -190,14 +190,17 @@ QList<AppTypeSettings> defaultAppTypeSettings()
     return types;
 }
 
+const AppTypeSettings *findAppType(const AppsSettings &apps, const QString &id)
+{
+    const auto found = std::find_if(apps.types.cbegin(), apps.types.cend(),
+                                    [&id](const AppTypeSettings &type) { return type.id == id; });
+    return found == apps.types.cend() ? nullptr : &*found;
+}
+
 AppTypeSettings appTypeSettings(const AppsSettings &apps, const QString &id)
 {
-    for (const AppTypeSettings &settings : apps.types) {
-        if (settings.id == id) {
-            return settings;
-        }
-    }
-    return {id};
+    const AppTypeSettings *found = findAppType(apps, id);
+    return found ? *found : AppTypeSettings{id};
 }
 
 AppTypeSettings appTypeSettings(const AppsSettings &apps, AppCategory type)
@@ -315,8 +318,7 @@ AppResolution resolveApp(const Target &target, const AppsSettings &apps)
     };
 
     const AppEntry *typed = first([&apps](const AppEntry &entry) {
-        return entry.type && std::any_of(apps.types.cbegin(), apps.types.cend(),
-                                        [&entry](const AppTypeSettings &type) { return type.id == *entry.type; });
+        return entry.type && findAppType(apps, *entry.type);
     }, true);
     const AppCategory detected = target.aiCodingToolActive ? AppCategory::AiCoding
         : builtInType(target).value_or(target.hasIdentity() ? AppCategory::General : AppCategory::Unknown);
@@ -357,7 +359,8 @@ AppResolution resolveApp(const Target &target, const AppsSettings &apps)
     std::optional<QString> profile;
     if (const AppEntry *entry = first(&AppEntry::writingProfile)) {
         setProfile(*entry->writingProfile, AppLayer::App, entry->id);
-    } else if (resolution.type == u"ai_coding" && (profile = typeProfile(QStringLiteral("ai_coding")))) {
+    } else if (resolution.type == appCategoryName(AppCategory::AiCoding)
+               && (profile = appTypeSettings(apps, AppCategory::AiCoding).writingProfile)) {
         setProfile(*profile, AppLayer::Type);
     } else if ((profile = builtInProfile())) {
         setProfile(*profile, AppLayer::BuiltIn);

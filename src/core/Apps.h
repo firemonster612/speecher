@@ -124,6 +124,7 @@ enum class AppLayer {
 struct AppResolution {
     // The first of the person's entries that matched, or empty.
     QString appId;
+    // The App Type's id; "unknown" for a Target with no identity.
     QString type = QStringLiteral("unknown");
     // The kind of app, independent of a custom type grouping its settings.
     AppCategory category = AppCategory::Unknown;
@@ -172,6 +173,8 @@ AppResolution inheritedFor(const AppEntry &app, const Target &target, const Apps
 // resolveApp consults them: those matching by id, then by name or title.
 QStringList matchingAppIds(const Target &target, const AppsSettings &apps);
 bool appMatches(const AppMatch &match, const Target &target);
+// The App Type with that id, or null: one removed, or an id no type has.
+const AppTypeSettings *findAppType(const AppsSettings &apps, const QString &id);
 // The settings of App Type id; an absent id has no values of its own.
 AppTypeSettings appTypeSettings(const AppsSettings &apps, const QString &id);
 AppTypeSettings appTypeSettings(const AppsSettings &apps, AppCategory type);

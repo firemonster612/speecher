@@ -95,7 +95,7 @@ Page {
         objectName: "appsPasteDifferently"
         // Those with steps or keys of their own, App Types first, with what
         // they do here.
-        readonly property var entries: Apps.types.filter(o => o.steps || o.keys).map(o => Object.assign(Schema.apps.typeLink(o, Apps.types), {
+        readonly property var entries: Apps.types.filter(o => o.steps || o.keys).map(o => Object.assign(Schema.apps.typeLink(o, id => Library.appType(id)), {
             effective: o.effective,
             terminalWins: Schema.pasting.pastesLikeTerminals(o.id, Apps.types, Apps.entries)
         })).concat(Apps.entries.filter(e => e.steps || e.keys).map(e => Object.assign(Schema.apps.appLink(e), {

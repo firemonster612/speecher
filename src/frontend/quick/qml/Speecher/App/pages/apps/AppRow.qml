@@ -28,7 +28,7 @@ Column {
     signal adopted(var app)
 
     readonly property var t: Schema.apps.t
-    readonly property var type: isType ? Schema.apps.type(entry.id, Apps.types) : null
+    readonly property var type: isType ? Library.appType(entry.id) : null
     readonly property string landingId: (isType ? "apptype:" : "appentry:") + (entry.id || "")
 
     width: parent ? parent.width : implicitWidth
@@ -37,7 +37,7 @@ Column {
         id: head
         readonly property string name: root.isType ? root.type.label : root.entry.name || ""
         readonly property string summary: root.isType ? Schema.apps.typeSummary(root.entry, id => Library.profileName(id))
-                                                      : Schema.apps.summary(root.entry, id => Library.profileName(id), Apps.types)
+                                                      : Schema.apps.summary(root.entry, id => Library.profileName(id), id => Library.appType(id))
         objectName: root.landingId
         first: root.first
         implicitHeight: Math.max(Theme.rowHeight, label.implicitHeight + 22)

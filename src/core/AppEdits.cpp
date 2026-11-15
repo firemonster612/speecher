@@ -1,7 +1,7 @@
 #include "core/AppEdits.h"
 
 #include "core/VocabularyEdits.h"
-#include <QUuid>
+#include "core/WritingProfileEdits.h"
 
 #include <algorithm>
 
@@ -91,7 +91,7 @@ EditRefusal checkApp(AppEntry &app, qsizetype self, const AppSettings &settings)
     if (!stepsValid(app.pasting)) {
         return EditRefusal::Incomplete;
     }
-    const bool typeOffered = !app.type || indexOfType(settings.apps.types, *app.type) >= 0;
+    const bool typeOffered = !app.type || findAppType(settings.apps, *app.type);
     return typeOffered && profileOffered(app.writingProfile, settings) ? EditRefusal::None : EditRefusal::Missing;
 }
 
@@ -150,10 +150,12 @@ AddAppTypeResult addAppType(AppSettings &settings, const QString &name)
     if (refusal != EditRefusal::None) {
         return {{}, refusal};
     }
-    do {
-        added.id = kCustomIdPrefix + QUuid::createUuid().toString(QUuid::Id128).left(12);
-    } while (indexOfType(types, added.id) >= 0);
-    types.insert(indexOfType(types, QStringLiteral("general")), added);
+    QStringList ids;
+    for (const AppTypeSettings &type : types) {
+        ids.append(type.id);
+    }
+    added.id = newCustomId(kCustomIdPrefix + u"type", ids);
+    types.insert(indexOfType(types, appCategoryName(AppCategory::General)), added);
     return {added.id, EditRefusal::None};
 }
 
