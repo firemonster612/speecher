@@ -28,8 +28,6 @@ class ComputerImportPageTest {
                 emptyList(),
                 emptyMap(),
                 emptyList(),
-                emptyList(),
-                "",
             )
         var saved = phone
         compose.setContent {

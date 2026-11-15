@@ -1043,7 +1043,7 @@ private slots:
         settings.edit([](AppSettings &draft) { draft.refinement.enabled = false; return true; });
         AppSettings draft = settings.snapshot();
         draft.refinement.writingProfiles.append({QStringLiteral("custom_stand_up"), QStringLiteral("balanced"),
-                                                 QStringLiteral("none"), QString(), QStringLiteral("Stand up")});
+                                                 QStringLiteral("none"), {}, QStringLiteral("Stand up")});
         settings.applySnapshot(draft);
 
         auto audio = std::make_unique<FakeAudioInput>();

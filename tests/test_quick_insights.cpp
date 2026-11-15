@@ -320,7 +320,7 @@ private slots:
         ApplicationController controller(true);
         AppSettings settings = controller.settings()->snapshot();
         settings.refinement.writingProfiles.append({QStringLiteral("custom_notes"), QStringLiteral("balanced"),
-                                                    QStringLiteral("none"), QString(), QStringLiteral("Notes")});
+                                                    QStringLiteral("none"), {}, QStringLiteral("Notes")});
         controller.settings()->applySnapshot(settings);
         QuickInsights insights(&controller);
         emit controller.session()->transcriptDelivered(QStringLiteral("Hello."));

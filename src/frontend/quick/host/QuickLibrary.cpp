@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "core/BindingProcessor.h"
+#include "core/RefinementRules.h"
 #include "core/SettingsStore.h"
 #include "core/Vocabulary.h"
 #include "core/VocabularyEdits.h"
@@ -57,8 +58,6 @@ void setProfileFields(WritingProfileSettings &profile, const QVariantMap &fields
             profile.tone = value;
         } else if (it.key() == QLatin1String("language")) {
             profile.outputLanguage = value;
-        } else if (it.key() == QLatin1String("instructions")) {
-            profile.instructions = value;
         }
     }
     // A service of its own, or "" for the page's order; its model goes with
@@ -78,26 +77,16 @@ void setProfileFields(WritingProfileSettings &profile, const QVariantMap &fields
     setFirst(profile.refinementFirst, "refinement", "refinementModel");
 }
 
-void setToneFields(CustomTone &tone, const QVariantMap &fields)
+void setRuleFields(RefinementRule &rule, const QVariantMap &fields)
 {
     if (fields.contains(QStringLiteral("name"))) {
-        tone.name = fields.value(QStringLiteral("name")).toString();
+        rule.name = fields.value(QStringLiteral("name")).toString();
     }
     if (fields.contains(QStringLiteral("instruction"))) {
-        tone.instruction = fields.value(QStringLiteral("instruction")).toString();
+        rule.instruction = fields.value(QStringLiteral("instruction")).toString();
     }
-}
-
-void setLevelFields(CustomCleanupLevel &level, const QVariantMap &fields)
-{
-    if (fields.contains(QStringLiteral("name"))) {
-        level.name = fields.value(QStringLiteral("name")).toString();
-    }
-    if (fields.contains(QStringLiteral("base"))) {
-        level.base = fields.value(QStringLiteral("base")).toString();
-    }
-    if (fields.contains(QStringLiteral("instructions"))) {
-        level.instructions = fields.value(QStringLiteral("instructions")).toString();
+    if (fields.contains(QStringLiteral("everyProfile"))) {
+        rule.everyProfile = fields.value(QStringLiteral("everyProfile")).toBool();
     }
 }
 
@@ -127,67 +116,52 @@ void setVocabularyFields(VocabularyEntry &entry, const QVariantMap &fields)
 }
 
 // One list the UI edits: the fields its records take, adding to it, changing
-// the entry a key names, and removing that entry. Adding and changing take
-// the built-in names the page shows, which only tones and levels use. A list
-// removed from another way (profiles, tones, levels) has no remove; one only
-// dictation adds to (corrections) has no add.
+// the entry a key names, and removing that entry. A list removed from another
+// way (profiles) has no remove.
 struct EditedList {
     const char *name;
     QStringList fields;
-    EditRefusal (*add)(AppSettings &, const QVariantMap &, const QStringList &);
-    EditRefusal (*update)(AppSettings &, const QString &, const QVariantMap &, const QStringList &);
+    EditRefusal (*add)(AppSettings &, const QVariantMap &);
+    EditRefusal (*update)(AppSettings &, const QString &, const QVariantMap &);
     SettingsEdit (*remove)(AppSettings &, const QString &);
 };
 
 const EditedList editedLists[] = {
     {"profiles",
      {QStringLiteral("name"), QStringLiteral("cleanup"), QStringLiteral("tone"), QStringLiteral("language"),
-      QStringLiteral("instructions"), QStringLiteral("speech"), QStringLiteral("speechModel"),
-      QStringLiteral("refinement"), QStringLiteral("refinementModel")},
-     [](AppSettings &s, const QVariantMap &item, const QStringList &) {
+      QStringLiteral("speech"), QStringLiteral("speechModel"), QStringLiteral("refinement"),
+      QStringLiteral("refinementModel")},
+     [](AppSettings &s, const QVariantMap &item) {
          WritingProfileSettings profile;
          profile.profile = item.value(QStringLiteral("id")).toString();
          setProfileFields(profile, item);
          return addWritingProfile(s, profile);
      },
-     [](AppSettings &s, const QString &id, const QVariantMap &patch, const QStringList &) {
+     [](AppSettings &s, const QString &id, const QVariantMap &patch) {
          return editWritingProfile(s, id, [&patch](WritingProfileSettings &profile) { setProfileFields(profile, patch); });
      },
      nullptr},
-    {"customTones",
-     {QStringLiteral("name"), QStringLiteral("instruction")},
-     [](AppSettings &s, const QVariantMap &item, const QStringList &builtInNames) {
-         CustomTone tone;
-         tone.id = item.value(QStringLiteral("id")).toString();
-         setToneFields(tone, item);
-         return addCustomTone(s, tone, builtInNames);
+    {"rules",
+     {QStringLiteral("name"), QStringLiteral("instruction"), QStringLiteral("everyProfile")},
+     [](AppSettings &s, const QVariantMap &item) {
+         RefinementRule rule;
+         rule.id = item.value(QStringLiteral("id")).toString();
+         setRuleFields(rule, item);
+         return addRule(s, rule);
      },
-     [](AppSettings &s, const QString &id, const QVariantMap &patch, const QStringList &builtInNames) {
-         return editCustomTone(s, id, [&patch](CustomTone &tone) { setToneFields(tone, patch); }, builtInNames);
+     [](AppSettings &s, const QString &id, const QVariantMap &patch) {
+         return editRule(s, id, [&patch](RefinementRule &rule) { setRuleFields(rule, patch); });
      },
-     nullptr},
-    {"customCleanupLevels",
-     {QStringLiteral("name"), QStringLiteral("base"), QStringLiteral("instructions")},
-     [](AppSettings &s, const QVariantMap &item, const QStringList &builtInNames) {
-         CustomCleanupLevel level;
-         level.id = item.value(QStringLiteral("id")).toString();
-         setLevelFields(level, item);
-         return addCustomCleanupLevel(s, level, builtInNames);
-     },
-     [](AppSettings &s, const QString &id, const QVariantMap &patch, const QStringList &builtInNames) {
-         return editCustomCleanupLevel(
-             s, id, [&patch](CustomCleanupLevel &level) { setLevelFields(level, patch); }, builtInNames);
-     },
-     nullptr},
+     removeRule},
     {"vocabulary",
      {QStringLiteral("term"), QStringLiteral("replacement"), QStringLiteral("keyTerm"), QStringLiteral("context"),
       QStringLiteral("profiles"), QStringLiteral("apps"), QStringLiteral("enabled")},
-     [](AppSettings &s, const QVariantMap &item, const QStringList &) {
+     [](AppSettings &s, const QVariantMap &item) {
          VocabularyEntry entry;
          setVocabularyFields(entry, item);
          return addVocabularyEntry(s, entry);
      },
-     [](AppSettings &s, const QString &id, const QVariantMap &patch, const QStringList &) {
+     [](AppSettings &s, const QString &id, const QVariantMap &patch) {
          return editVocabularyEntry(s, id, [&patch](VocabularyEntry &entry) { setVocabularyFields(entry, patch); });
      },
      removeVocabularyEntry},
@@ -265,6 +239,15 @@ int QuickLibrary::keyTermLimit() const
     return VocabularyLimit::maxKeyterms;
 }
 
+QVariantList QuickLibrary::builtInRules() const
+{
+    QVariantList rules;
+    for (const BuiltInRule &rule : speecher::builtInRules()) {
+        rules.append(QVariantMap{{QStringLiteral("id"), rule.id}, {QStringLiteral("group"), rule.group}});
+    }
+    return rules;
+}
+
 int QuickLibrary::refinementTermLimit() const
 {
     return VocabularyLimit::maxRefinementTerms;
@@ -277,34 +260,30 @@ QString QuickLibrary::newId(const QString &prefix) const
     for (const WritingProfileSettings &profile : settings.refinement.writingProfiles) {
         taken.append(profile.profile);
     }
-    for (const CustomTone &tone : settings.refinement.customTones) {
-        taken.append(tone.id);
-    }
-    for (const CustomCleanupLevel &level : settings.refinement.customCleanupLevels) {
-        taken.append(level.id);
+    for (const RefinementRule &rule : settings.refinement.rules) {
+        taken.append(rule.id);
     }
     return newCustomId(prefix, taken);
 }
 
-QString QuickLibrary::add(const QString &list, const QVariantMap &item, const QStringList &builtInNames)
+QString QuickLibrary::add(const QString &list, const QVariantMap &item)
 {
     const EditedList *edited = findList(list);
     if (!edited || !edited->add || !convertible(*edited, item)) {
         qWarning().noquote() << "Library.add(" + list + ") takes no entry with" << item.keys();
         return invalidRecord;
     }
-    return saveUnlessRefused(*m_controller->settings(), [&](AppSettings &s) { return edited->add(s, item, builtInNames); });
+    return saveUnlessRefused(*m_controller->settings(), [&](AppSettings &s) { return edited->add(s, item); });
 }
 
-QString QuickLibrary::update(const QString &list, const QString &key, const QVariantMap &patch,
-                            const QStringList &builtInNames)
+QString QuickLibrary::update(const QString &list, const QString &key, const QVariantMap &patch)
 {
     const EditedList *edited = findList(list);
     if (!edited || !edited->update || patch.contains(QStringLiteral("id")) || !convertible(*edited, patch)) {
         qWarning().noquote() << "Library.update(" + list + ") takes no fields" << patch.keys();
         return invalidRecord;
     }
-    return saveUnlessRefused(*m_controller->settings(), [&](AppSettings &s) { return edited->update(s, key, patch, builtInNames); });
+    return saveUnlessRefused(*m_controller->settings(), [&](AppSettings &s) { return edited->update(s, key, patch); });
 }
 
 int QuickLibrary::remove(const QString &list, const QString &key)
@@ -319,26 +298,24 @@ int QuickLibrary::remove(const QString &list, const QString &key)
     return m_undo.keep(undo);
 }
 
+QString QuickLibrary::setProfileRule(const QString &profile, const QString &rule, bool on)
+{
+    return saveUnlessRefused(*m_controller->settings(),
+                             [&](AppSettings &s) { return speecher::setProfileRule(s, profile, rule, on); });
+}
+
+QString QuickLibrary::resetRules(const QString &profile)
+{
+    return saveUnlessRefused(*m_controller->settings(),
+                             [&](AppSettings &s) { return editWritingProfile(s, profile, resetBuiltInRules); });
+}
+
 void QuickLibrary::removeProfile(const QString &id)
 {
     // Saving drops what named it: Apps' and App Types' profile, term limits.
     if (!save([&id](AppSettings &s) { return removeWritingProfile(s, id); })) {
         qWarning().noquote() << "Library.removeProfile:" << id << "is not one of the user's profiles";
     }
-}
-
-int QuickLibrary::removeTone(const QString &id)
-{
-    SettingsEdit undo;
-    save([&](AppSettings &s) { return bool(undo = removeCustomTone(s, id)); });
-    return m_undo.keep(undo);
-}
-
-int QuickLibrary::removeLevel(const QString &id)
-{
-    SettingsEdit undo;
-    save([&](AppSettings &s) { return bool(undo = removeCustomCleanupLevel(s, id)); });
-    return m_undo.keep(undo);
 }
 
 int QuickLibrary::undoLastCorrection()
@@ -413,6 +390,13 @@ void QuickLibrary::refresh()
 
     QVariantList profiles;
     for (const WritingProfileSettings &profile : refinement.writingProfiles) {
+        QVariantMap rulesOn;
+        for (const BuiltInRule &rule : speecher::builtInRules()) {
+            rulesOn.insert(rule.id, ruleOn(rule.id, profile, profile.cleanupStrength, refinement.rules));
+        }
+        for (const RefinementRule &rule : refinement.rules) {
+            rulesOn.insert(rule.id, ruleOn(rule.id, profile, profile.cleanupStrength, refinement.rules));
+        }
         profiles.append(QVariantMap{
             {QStringLiteral("id"), profile.profile},
             {QStringLiteral("name"), writingProfileLabel(profile.profile, refinement.writingProfiles)},
@@ -420,26 +404,21 @@ void QuickLibrary::refresh()
             {QStringLiteral("cleanup"), profile.cleanupStrength},
             {QStringLiteral("tone"), profile.tone},
             {QStringLiteral("language"), profile.outputLanguage},
-            {QStringLiteral("instructions"), profile.instructions},
             {QStringLiteral("speech"), profile.speechFirst ? profile.speechFirst->service : QString()},
             {QStringLiteral("speechModel"), profile.speechFirst ? profile.speechFirst->model : QString()},
             {QStringLiteral("speechSkipped"), speechSkipped(settings, profile, offersSpeech)},
             {QStringLiteral("refinement"), profile.refinementFirst ? profile.refinementFirst->service : QString()},
             {QStringLiteral("refinementModel"), profile.refinementFirst ? profile.refinementFirst->model : QString()},
+            {QStringLiteral("rules"), rulesOn},
+            {QStringLiteral("changedRules"), changedBuiltInRules(profile)},
         });
     }
-    QVariantList tones;
-    for (const CustomTone &tone : refinement.customTones) {
-        tones.append(QVariantMap{{QStringLiteral("id"), tone.id},
-                                 {QStringLiteral("name"), tone.name},
-                                 {QStringLiteral("instruction"), tone.instruction}});
-    }
-    QVariantList levels;
-    for (const CustomCleanupLevel &level : refinement.customCleanupLevels) {
-        levels.append(QVariantMap{{QStringLiteral("id"), level.id},
-                                  {QStringLiteral("name"), level.name},
-                                  {QStringLiteral("base"), level.base},
-                                  {QStringLiteral("instructions"), level.instructions}});
+    QVariantList rules;
+    for (const RefinementRule &rule : refinement.rules) {
+        rules.append(QVariantMap{{QStringLiteral("id"), rule.id},
+                                 {QStringLiteral("name"), rule.name},
+                                 {QStringLiteral("instruction"), rule.instruction},
+                                 {QStringLiteral("everyProfile"), rule.everyProfile}});
     }
     QVariantList vocabulary;
     QStringList keyTerms;
@@ -468,13 +447,12 @@ void QuickLibrary::refresh()
     const bool takesKeyTerms = VocabularyLimit::takesKeyterms(speech);
     const int keyTermsSent = int(VocabularyLimit::speechKeyterms(keyTerms, speech).size());
 
-    if (profiles == m_profiles && tones == m_customTones && levels == m_customCleanupLevels
-        && vocabulary == m_vocabulary && takesKeyTerms == m_speechTakesKeyTerms && keyTermsSent == m_keyTermsSent) {
+    if (profiles == m_profiles && rules == m_rules && vocabulary == m_vocabulary && takesKeyTerms == m_speechTakesKeyTerms
+        && keyTermsSent == m_keyTermsSent) {
         return;
     }
     m_profiles = profiles;
-    m_customTones = tones;
-    m_customCleanupLevels = levels;
+    m_rules = rules;
     m_vocabulary = vocabulary;
     m_speechTakesKeyTerms = takesKeyTerms;
     m_keyTermsSent = keyTermsSent;

@@ -45,18 +45,14 @@ FocusScope {
         type: "vocabulary", id: "vocab:" + e.id, page: "vocabulary", section: Schema.vocabulary.t.yourVocabulary,
         label: e.term, keywords: [e.replacement, e.context].join(" ")
     }))
-    // The Writing Profiles and your own tones and cleanup levels, found by
-    // name and landing on them on Writing profiles (profile:<id>, tone:<id>,
-    // level:<id>).
+    // The Writing Profiles and your rules, found by name and landing on them
+    // on Writing profiles (profile:<id>, rule:<id>).
     readonly property var _library: Library.profiles.map(p => ({
         type: "profile", id: "profile:" + p.id, page: "profiles", section: Schema.row("writingProfileBehavior").section,
         label: p.name, keywords: "writing profile " + Library.profileSummary(p)
-    })).concat(Library.customTones.map(t => ({
-        type: "tone", id: "tone:" + t.id, page: "profiles", section: Schema.row("customTones").label,
-        label: t.name, keywords: "tone " + t.instruction
-    })), Library.customCleanupLevels.map(l => ({
-        type: "level", id: "level:" + l.id, page: "profiles", section: Schema.row("customCleanupLevels").label,
-        label: l.name, keywords: "cleanup level " + l.instructions
+    })).concat(Library.rules.map(r => ({
+        type: "rule", id: "rule:" + r.id, page: "profiles", section: Schema.row("yourRules").section,
+        label: r.name, keywords: "rule " + r.instruction
     })))
     // How many results are pages and settings: Search History is an offer
     // to look elsewhere, not a match, so it is never counted.

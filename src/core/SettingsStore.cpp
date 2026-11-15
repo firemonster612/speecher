@@ -6,6 +6,7 @@
 #include "core/SecretStore.h"
 #include "core/settings/AppsMigration.h"
 #include "core/settings/ServiceOrderMigration.h"
+#include "core/settings/RulesMigration.h"
 #include "core/settings/VocabularyMigration.h"
 #include "core/settings/CorrectionSettingsCodec.h"
 #include "core/settings/SettingsKeys.h"
@@ -206,6 +207,7 @@ void migrateSavedSettings()
     migrateApps(newSettings);
     migrateDeliverySteps(newSettings);
     migrateVocabulary(newSettings);
+    migrateRules(newSettings);
     migrateHistory(newSettings, existingInstall);
     migrateRecording(newSettings);
     // After the model renames, which it carries into the orders.

@@ -49,8 +49,7 @@ enum class SettingsPage(val title: String) {
     LearnedCorrections("Learned corrections"),
     Profiles("Profiles"),
     AppRules("Application rules"),
-    Tones("Tones"),
-    CleanupLevels("Cleanup levels"),
+    YourRules("Your rules"),
     CustomPrompt("Custom prompt"),
 }
 
@@ -160,15 +159,9 @@ fun Settings(
                 onOpen,
             )
             PageRow(
-                SettingsPage.Tones,
-                if (settings.customTones.isEmpty()) "Built-in tones only"
-                else count(settings.customTones.size, "custom tone", "custom tones"),
-                onOpen,
-            )
-            PageRow(
-                SettingsPage.CleanupLevels,
-                if (settings.customCleanupLevels.isEmpty()) "Built-in levels only"
-                else count(settings.customCleanupLevels.size, "custom level", "custom levels"),
+                SettingsPage.YourRules,
+                if (settings.refinementRules.isEmpty()) "No rules"
+                else count(settings.refinementRules.size, "rule", "rules"),
                 onOpen,
             )
             PageRow(
@@ -226,8 +219,7 @@ fun SettingsPageContent(
             CorrectionSettings(settings, chipEnabled, onTurnOnChip, onChange)
         SettingsPage.Profiles -> ProfileSettings(settings, onChange)
         SettingsPage.AppRules -> AppRuleSettings(settings, onChange)
-        SettingsPage.Tones -> ToneSettings(settings, onChange)
-        SettingsPage.CleanupLevels -> CleanupLevelSettings(settings, onChange)
+        SettingsPage.YourRules -> YourRuleSettings(settings, onChange)
         SettingsPage.CustomPrompt -> CustomPromptSettings(settings, onChange)
     }
 }

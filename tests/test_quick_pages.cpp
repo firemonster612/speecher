@@ -373,11 +373,15 @@ private slots:
             draft.apps.apps.first().history = HistoryKeep::Stats;
             draft.apps.types[1].writingProfile = WritingProfile::Work;
             // Writing profiles shows Work with services of its own, a
-            // refinement server's model typed.
+            // refinement server's model typed, a built-in rule switched off
+            // and a rule of yours switched on.
+            draft.refinement.rules = {{QStringLiteral("custom_rule_sign"), QStringLiteral("Sign off"),
+                                       QStringLiteral("End with Thanks and my first name.")}};
             for (WritingProfileSettings &profile : draft.refinement.writingProfiles) {
                 if (profile.profile == WritingProfile::Work) {
                     profile.speechFirst = ServiceChoice{QStringLiteral("codex")};
                     profile.refinementFirst = ServiceChoice{QStringLiteral("endpoint"), QStringLiteral("qwen3:8b")};
+                    profile.rules = {{QStringLiteral("fillers"), false}, {QStringLiteral("custom_rule_sign"), true}};
                 }
             }
             // Vocabulary shows each kind: a key term with a context, one
@@ -799,7 +803,7 @@ private slots:
         QVERIFY(refinement->property("open").toBool());
 
         QMetaObject::invokeMethod(refinement, "openRequested", Q_ARG(bool, false));
-        navigation->goToRow(QStringLiteral("profiles"), QStringLiteral("additionalInstructions"));
+        navigation->goToRow(QStringLiteral("profiles"), QStringLiteral("profileServices"));
         QVERIFY(refinement->property("open").toBool());
         QCOMPARE(navigation->current(), QStringLiteral("profiles"));
 
@@ -1455,11 +1459,11 @@ private slots:
         auto *navigation = qmlEngine(main)->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
         QVERIFY(navigation);
         navigation->go(QStringLiteral("profiles"));
-        QQuickItem *instructions = nullptr;
-        QTRY_VERIFY((instructions = findItem(main->contentItem(), QStringLiteral("profileInstructions"))));
+        QQuickItem *language = nullptr;
+        QTRY_VERIFY((language = findItem(main->contentItem(), QStringLiteral("profileLanguage"))));
         // The page stack drops presses while the page is still coming in,
         // which takes longer than any fixed wait on a slow runner.
-        QQuickItem *stack = instructions;
+        QQuickItem *stack = language;
         while (stack && !stack->inherits("QQuickStackView")) {
             stack = stack->parentItem();
         }
@@ -1476,10 +1480,10 @@ private slots:
             }
             return nullptr;
         };
-        const auto instructionsOf = [&controller](const QString &id) {
+        const auto languageOf = [&controller](const QString &id) {
             for (const WritingProfileSettings &profile : controller.settings()->snapshot().refinement.writingProfiles) {
                 if (profile.profile == id) {
-                    return profile.instructions;
+                    return profile.outputLanguage;
                 }
             }
             return QString();
@@ -1488,27 +1492,27 @@ private slots:
         QVERIFY(email);
         QVERIFY(profileRow(QStringLiteral("work"))->property("selected").toBool());
 
-        instructions->forceActiveFocus(Qt::MouseFocusReason);
-        for (const char *key = "Keep it short."; *key; ++key) {
+        language->forceActiveFocus(Qt::MouseFocusReason);
+        for (const char *key = "Klingon"; *key; ++key) {
             QTest::keyClick(main, *key);
         }
         QTest::mouseClick(main, Qt::LeftButton, Qt::NoModifier,
                           email->mapToScene(QPointF(email->width() / 2, email->height() / 2)).toPoint());
 
         QTRY_VERIFY(email->property("selected").toBool());
-        QCOMPARE(instructionsOf(QStringLiteral("work")), QStringLiteral("Keep it short."));
-        QCOMPARE(instructionsOf(QStringLiteral("email")), QString());
+        QCOMPARE(languageOf(QStringLiteral("work")), QStringLiteral("Klingon"));
+        QCOMPARE(languageOf(QStringLiteral("email")), QString());
 
-        instructions->forceActiveFocus(Qt::MouseFocusReason);
-        for (const char *key = "Sign off."; *key; ++key) {
+        language->forceActiveFocus(Qt::MouseFocusReason);
+        for (const char *key = "Elvish"; *key; ++key) {
             QTest::keyClick(main, *key);
         }
         QQuickItem *work = profileRow(QStringLiteral("work"));
         QAccessible::queryAccessibleInterface(work)->actionInterface()->doAction(QAccessibleActionInterface::pressAction());
 
         QTRY_VERIFY(work->property("selected").toBool());
-        QCOMPARE(instructionsOf(QStringLiteral("email")), QStringLiteral("Sign off."));
-        QCOMPARE(instructionsOf(QStringLiteral("work")), QStringLiteral("Keep it short."));
+        QCOMPARE(languageOf(QStringLiteral("email")), QStringLiteral("Elvish"));
+        QCOMPARE(languageOf(QStringLiteral("work")), QStringLiteral("Klingon"));
     }
 
     // Pasting lists the App Types and Apps with steps or keys of their own,
@@ -1635,9 +1639,9 @@ private slots:
 
     // A saved App is found by its name or what it is recognized by, and the
     // result opens it on Apps.
-    // Your own writing profiles, tones and cleanup levels are found by name:
-    // a profile opens in the editor, a tone or level in its edit form.
-    void searchFindsYourProfilesTonesAndLevels()
+    // Your own writing profiles and rules are found by name: a profile
+    // opens in the editor, a rule in its edit form.
+    void searchFindsYourProfilesAndRules()
     {
         ApplicationController controller(true);
         controller.settings()->edit([](AppSettings &draft) {
@@ -1645,9 +1649,7 @@ private slots:
             lab.profile = QStringLiteral("custom_profile_lab");
             lab.name = QStringLiteral("Lab notebook");
             draft.refinement.writingProfiles.append(lab);
-            draft.refinement.customTones = {{QStringLiteral("custom_tone_dry"), QStringLiteral("Deadpan"), QStringLiteral("Short and dry.")}};
-            draft.refinement.customCleanupLevels = {
-                {QStringLiteral("custom_level_minutes"), QStringLiteral("Minutes"), QStringLiteral("balanced"), QStringLiteral("Bullets.")}};
+            draft.refinement.rules = {{QStringLiteral("custom_rule_sign"), QStringLiteral("Sign off"), QStringLiteral("End with Thanks.")}};
             return true;
         });
         TrayIcon tray(&controller);
@@ -1662,9 +1664,6 @@ private slots:
         QMetaObject::invokeMethod(search, "open");
         QCOMPARE(searchResults(search, QStringLiteral("lab notebook")).first(),
                  std::make_pair(QStringLiteral("profile:custom_profile_lab"), QStringLiteral("Refinement › Writing profiles, Profiles")));
-        QCOMPARE(searchResults(search, QStringLiteral("deadpan")).first().first, QStringLiteral("tone:custom_tone_dry"));
-        QCOMPARE(searchResults(search, QStringLiteral("minutes")).first().first, QStringLiteral("level:custom_level_minutes"));
-
         searchResults(search, QStringLiteral("lab notebook"));
         QMetaObject::invokeMethod(search, "activate", Q_ARG(QVariant, 0));
         QTRY_COMPARE(navigation->current(), QStringLiteral("profiles"));
@@ -1673,12 +1672,87 @@ private slots:
         QTRY_COMPARE(page->property("selectedId").toString(), QStringLiteral("custom_profile_lab"));
 
         QMetaObject::invokeMethod(search, "open");
-        searchResults(search, QStringLiteral("deadpan"));
+        QCOMPARE(searchResults(search, QStringLiteral("sign off")).first(),
+                 std::make_pair(QStringLiteral("rule:custom_rule_sign"), QStringLiteral("Refinement › Writing profiles, Your rules")));
         QMetaObject::invokeMethod(search, "activate", Q_ARG(QVariant, 0));
         QQuickItem *form = nullptr;
-        QTRY_VERIFY((form = findItem(page, QStringLiteral("toneForm"))));
+        QTRY_VERIFY((form = findItem(page, QStringLiteral("ruleForm"))));
         QTRY_VERIFY(form->property("open").toBool());
-        QCOMPARE(form->property("editing").toString(), QStringLiteral("custom_tone_dry"));
+        QCOMPARE(form->property("editing").toString(), QStringLiteral("custom_rule_sign"));
+    }
+
+    // Deleting one of your rules takes its profiles' switches with it, and
+    // the toast names that rule and puts both back where they were.
+    void deletingARuleNamesItAndUndoPutsItBack()
+    {
+        const QList<RefinementRule> rules = {{QStringLiteral("custom_rule_first"), QStringLiteral("First"), QString()},
+                                             {QStringLiteral("custom_rule_middle"), QStringLiteral("Middle"), QString()},
+                                             {QStringLiteral("custom_rule_last"), QStringLiteral("Last"), QString()}};
+        ApplicationController controller(true);
+        controller.settings()->edit([&](AppSettings &draft) {
+            for (const char *name : {"Lab", "Mail"}) {
+                WritingProfileSettings profile;
+                profile.profile = QStringLiteral("custom_profile_") + QLatin1String(name);
+                profile.name = QLatin1String(name);
+                profile.rules = {{QStringLiteral("custom_rule_middle"), true}, {QStringLiteral("custom_rule_last"), true}};
+                draft.refinement.writingProfiles.append(profile);
+            }
+            draft.refinement.rules = rules;
+            return true;
+        });
+        const AppSettings before = controller.settings()->snapshot();
+        QCOMPARE(before.refinement.writingProfiles.last().rules.value(QStringLiteral("custom_rule_middle")), true);
+        TrayIcon tray(&controller);
+        QuickFrontEnd ui(&controller, &tray);
+        ui.showMainWindow();
+        QQuickWindow *main = openWindow("Main");
+        QVERIFY(main);
+        QVERIFY(QTest::qWaitForWindowExposed(main));
+        QQmlEngine *engine = qmlEngine(main);
+        auto *navigation = engine->singletonInstance<QuickNavigation *>(QStringLiteral("Speecher.Backend"), QStringLiteral("Navigation"));
+        auto *toaster = engine->singletonInstance<QObject *>(QStringLiteral("Speecher.Controls"), QStringLiteral("Toaster"));
+        QVERIFY(navigation && toaster);
+        navigation->go(QStringLiteral("profiles"));
+        // The Delete button on the row titled Middle.
+        const auto deleteMiddle = [main]() -> QQuickItem * {
+            QList<QQuickItem *> items{main->contentItem()};
+            while (!items.isEmpty()) {
+                QQuickItem *item = items.takeLast();
+                items += item->childItems();
+                if (item->property("tooltip") != QStringLiteral("Delete")) {
+                    continue;
+                }
+                QQuickItem *row = item;
+                while (row && !row->property("actions").isValid()) {
+                    row = row->parentItem();
+                }
+                if (row && row->property("title") == QStringLiteral("Middle")) {
+                    return item;
+                }
+            }
+            return nullptr;
+        };
+        QQuickItem *button = nullptr;
+        QTRY_VERIFY((button = deleteMiddle()));
+
+        QSignalSpy posted(toaster, SIGNAL(posted(QVariant)));
+        QVERIFY(QMetaObject::invokeMethod(button, "clicked"));
+        QCOMPARE(posted.size(), 1);
+        const QJSValue toast = posted.first().first().value<QJSValue>();
+        QCOMPARE(toast.property("text").toString(), QStringLiteral("Deleted “Middle”"));
+        const AppSettings deleted = controller.settings()->snapshot();
+        QCOMPARE(deleted.refinement.rules, (QList<RefinementRule>{rules.at(0), rules.at(2)}));
+        QCOMPARE(deleted.refinement.writingProfiles.size(), before.refinement.writingProfiles.size());
+        for (qsizetype i = 0; i < deleted.refinement.writingProfiles.size(); ++i) {
+            QMap<QString, bool> kept = before.refinement.writingProfiles.at(i).rules;
+            kept.remove(QStringLiteral("custom_rule_middle"));
+            QCOMPARE(deleted.refinement.writingProfiles.at(i).rules, kept);
+        }
+
+        QVERIFY(!toast.property("action").call().isError());
+        const AppSettings restored = controller.settings()->snapshot();
+        QCOMPARE(restored.refinement.rules, rules);
+        QCOMPARE(restored.refinement.writingProfiles, before.refinement.writingProfiles);
     }
 
     // Search History is an offer, not a match: words no setting has say so,

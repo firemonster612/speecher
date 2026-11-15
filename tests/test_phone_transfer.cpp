@@ -54,17 +54,13 @@ AppSettings sampleSettings()
                            test::learnedEntry(QStringLiteral("cute"), QStringLiteral("Qt"))};
     WritingProfileSettings work;
     work.profile = QStringLiteral("work");
-    work.cleanupStrength = QStringLiteral("custom_terse");
+    work.cleanupStrength = QStringLiteral("strong_polish");
     work.tone = QStringLiteral("formal");
-    work.instructions = QStringLiteral("Short.");
+    work.rules = {{QStringLiteral("custom_rule_short"), true}, {QStringLiteral("headings"), false}};
     settings.refinement.writingProfiles = {work};
-    settings.refinement.customTones = {
-        {QStringLiteral("custom_dry"), QStringLiteral("Dry"), QStringLiteral("Understated.")}};
-    settings.refinement.customCleanupLevels = {{QStringLiteral("custom_terse"),
-                                                QStringLiteral("Terse"),
-                                                QStringLiteral("strong_polish"),
-                                                QStringLiteral("Cut filler.")}};
-    settings.refinement.additionalInstructions = QStringLiteral("Use British spelling.");
+    settings.refinement.rules = {
+        {QStringLiteral("custom_rule_british"), QStringLiteral("British"), QStringLiteral("Use British spelling."), true},
+        {QStringLiteral("custom_rule_short"), QStringLiteral("Short"), QString(), false}};
     // Credentials, which must never leave the computer.
     settings.accounts.cliproxyApiKey = QStringLiteral("proxy-secret");
     settings.speech.server.apiKey = QStringLiteral("speech-secret");
@@ -126,17 +122,18 @@ private slots:
         QCOMPARE(
             phoneTransferBundle(sampleSettings(), QStringLiteral("desk")),
             QByteArrayLiteral(
-                "{\"additionalInstructions\":\"Use British spelling.\",\"computer\":\"desk\","
-                "\"customCleanupLevels\":[{\"base\":\"strong_polish\",\"id\":\"custom_terse\","
-                "\"instructions\":\"Cut filler.\",\"name\":\"Terse\"}],"
-                "\"customTones\":[{\"id\":\"custom_dry\",\"instruction\":\"Understated.\","
-                "\"name\":\"Dry\"}],\"format\":1,"
+                "{\"computer\":\"desk\",\"format\":2,"
                 "\"replacements\":[{\"phrase\":\"my address\",\"text\":\"Flat 3\"}],"
+                "\"rules\":[{\"everyProfile\":true,\"id\":\"custom_rule_british\","
+                "\"instruction\":\"Use British spelling.\",\"name\":\"British\"},"
+                "{\"everyProfile\":false,\"id\":\"custom_rule_short\",\"instruction\":\"\","
+                "\"name\":\"Short\"}],"
                 "\"vocabulary\":[{\"context\":\"The container platform.\",\"frequency\":41,"
                 "\"keyTerm\":true,\"lastUsedMs\":1790000000000,\"priority\":true,"
                 "\"profiles\":[\"work\"],\"source\":\"manual\",\"term\":\"Kubernetes\"}],"
-                "\"writingProfiles\":[{\"cleanupLevel\":\"custom_terse\",\"id\":\"work\","
-                "\"instructions\":\"Short.\",\"name\":\"\",\"outputLanguage\":\"\","
+                "\"writingProfiles\":[{\"cleanupLevel\":\"strong_polish\",\"id\":\"work\","
+                "\"name\":\"\",\"outputLanguage\":\"\","
+                "\"rules\":{\"custom_rule_short\":true,\"headings\":false},"
                 "\"tone\":\"formal\"}]}"));
     }
 
@@ -145,7 +142,7 @@ private slots:
         QCOMPARE(phoneTransferLink({QStringLiteral("192.168.1.20"), QStringLiteral("10.0.0.5")},
                                    53817, bytesFrom(0, 16), bytesFrom(0, 32),
                                    QStringLiteral("enzo's pc+1")),
-                 QStringLiteral("speecher://import?v=1&a=192.168.1.20,10.0.0.5&p=53817"
+                 QStringLiteral("speecher://import?v=2&a=192.168.1.20,10.0.0.5&p=53817"
                                 "&t=AAECAwQFBgcICQoLDA0ODw"
                                 "&k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
                                 "&n=enzo%27s%20pc%2B1"));

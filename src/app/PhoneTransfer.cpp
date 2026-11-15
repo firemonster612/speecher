@@ -1,5 +1,7 @@
 #include "app/PhoneTransfer.h"
 
+#include "core/settings/SettingsCodecs.h"
+
 #include <monocypher.h>
 #include <qrcodegen.hpp>
 
@@ -23,7 +25,7 @@ namespace speecher {
 
 namespace {
 
-constexpr int kFormat = 1;
+constexpr int kFormat = 2;
 constexpr qsizetype kTokenSize = 16;
 constexpr qsizetype kKeySize = 32;
 constexpr qsizetype kNonceSize = 12;
@@ -151,25 +153,8 @@ QByteArray phoneTransferBundle(const AppSettings &settings, const QString &compu
             {QStringLiteral("name"), profile.name},
             {QStringLiteral("cleanupLevel"), profile.cleanupStrength},
             {QStringLiteral("tone"), profile.tone},
-            {QStringLiteral("instructions"), profile.instructions},
             {QStringLiteral("outputLanguage"), profile.outputLanguage},
-        });
-    }
-    QJsonArray tones;
-    for (const CustomTone &tone : refinement.customTones) {
-        tones.append(QJsonObject{
-            {QStringLiteral("id"), tone.id},
-            {QStringLiteral("name"), tone.name},
-            {QStringLiteral("instruction"), tone.instruction},
-        });
-    }
-    QJsonArray levels;
-    for (const CustomCleanupLevel &level : refinement.customCleanupLevels) {
-        levels.append(QJsonObject{
-            {QStringLiteral("id"), level.id},
-            {QStringLiteral("name"), level.name},
-            {QStringLiteral("base"), level.base},
-            {QStringLiteral("instructions"), level.instructions},
+            {QStringLiteral("rules"), ruleSwitchesJson(profile.rules)},
         });
     }
     return QJsonDocument(QJsonObject{
@@ -178,10 +163,7 @@ QByteArray phoneTransferBundle(const AppSettings &settings, const QString &compu
                              {QStringLiteral("vocabulary"), vocabulary},
                              {QStringLiteral("replacements"), replacements},
                              {QStringLiteral("writingProfiles"), profiles},
-                             {QStringLiteral("customTones"), tones},
-                             {QStringLiteral("customCleanupLevels"), levels},
-                             {QStringLiteral("additionalInstructions"),
-                              refinement.additionalInstructions},
+                             {QStringLiteral("rules"), refinementRulesJson(refinement.rules)},
                          })
         .toJson(QJsonDocument::Compact);
 }

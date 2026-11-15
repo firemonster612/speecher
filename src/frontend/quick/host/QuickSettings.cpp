@@ -197,7 +197,6 @@ const SettingRow settingRows[] = {
     FIELD_ROW("includeScreenshotContext", refinement.includeScreenshotContext),
     FIELD_ROW("customSystemPromptEnabled", refinement.customSystemPromptEnabled),
     FIELD_ROW("customSystemPrompt", refinement.customSystemPrompt),
-    FIELD_ROW("additionalInstructions", refinement.additionalInstructions),
 
     FIELD_ROW("correctionLearningControl", correctionLearningEnabled),
 

@@ -108,7 +108,8 @@ const Read spokenLanguage = [](const DictationPlan &plan, const Target &) { retu
 const Read cleanup = [](const DictationPlan &plan, const Target &) { return plan.settings.refinement.style; };
 const Read tone = [](const DictationPlan &plan, const Target &) { return plan.profile.tone; };
 const Read outputLanguage = [](const DictationPlan &plan, const Target &) { return plan.profile.outputLanguage; };
-const Read instructions = [](const DictationPlan &plan, const Target &) { return plan.profile.instructions; };
+// The rules the profile switched, by id.
+const Read rules = [](const DictationPlan &plan, const Target &) { return plan.profile.rules.keys().join(u','); };
 // The terms the speech request carries.
 const Read speechTerms = [](const DictationPlan &plan, const Target &) {
     return plan.settings.speech.vocabulary.join(QLatin1Char(','));
@@ -286,19 +287,30 @@ QList<Cell> layerTable()
          },
          QStringLiteral("tone"), tone, QStringLiteral("casual"), run},
 
-        // Output language and instructions: the profile only.
+        // Output language and rules: the profile only.
         {"output language: profile",
          [](AppSettings &settings, Target &, RunOverrides &run) {
              profile(settings, WritingProfile::Work).outputLanguage = QStringLiteral("Spanish");
              run.writingProfile = WritingProfile::Work;
          },
          QStringLiteral("outputLanguage"), outputLanguage, QStringLiteral("Spanish"), work},
-        {"instructions: profile",
+        {"rules: profile",
          [](AppSettings &settings, Target &, RunOverrides &run) {
-             profile(settings, WritingProfile::Work).instructions = QStringLiteral("Use bullet points.");
+             profile(settings, WritingProfile::Work).rules = {{QStringLiteral("custom_rule_bullets"), true},
+                                                              {QStringLiteral("fillers"), false}};
              run.writingProfile = WritingProfile::Work;
          },
-         QStringLiteral("instructions"), instructions, QStringLiteral("Use bullet points."), work},
+         QStringLiteral("rules"), rules, QStringLiteral("custom_rule_bullets,fillers"), work},
+        // A run's cleanup level drops the profile's changes to built-in
+        // rules, as choosing a level in the editor does.
+        {"rules: run's cleanup level",
+         [](AppSettings &settings, Target &, RunOverrides &run) {
+             profile(settings, WritingProfile::Work).rules = {{QStringLiteral("custom_rule_bullets"), true},
+                                                              {QStringLiteral("fillers"), false}};
+             run.writingProfile = WritingProfile::Work;
+             run.cleanupLevel = QStringLiteral("strong_polish");
+         },
+         QStringLiteral("rules"), rules, QStringLiteral("custom_rule_bullets"), work},
 
         // Words: the saved list, limited to an App, limited to a profile,
         // and this run's (--vocab-file, --no-vocabulary).

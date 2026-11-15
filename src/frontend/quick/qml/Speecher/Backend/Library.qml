@@ -2,11 +2,11 @@ pragma Singleton
 import QtQuick
 import Speecher.Wording
 
-// What the Text pages show. Writing Profiles with their tones and cleanup
-// levels and the Vocabulary are LibraryLists (host/QuickLibrary);
-// this words them and derives what the pages show from them. Each list has
-// one owner: speech services, refinement providers and runners are Models',
-// and the Apps and App Types that pick a profile are Apps'.
+// What the Text pages show. Writing Profiles, rules and the Vocabulary are
+// LibraryLists (host/QuickLibrary); this words them and derives what the
+// pages show from them. Each list has one owner: speech services, refinement
+// providers and runners are Models', and the Apps and App Types that pick a
+// profile are Apps'.
 LibraryLists {
     id: library
 
@@ -51,25 +51,10 @@ LibraryLists {
         { id: "excited", label: "Excited", help: "Upbeat and enthusiastic." },
         { id: "gen_z", label: "Gen Z", help: "Gen Z slang and phrasing." }
     ]
-    // Built-in and custom levels and tones as one choice each. A custom
-    // level carries the built-in level it starts from as base.
-    readonly property var levelOptions: cleanupLevels.concat(customCleanupLevels.map(l => ({
-        id: l.id, label: l.name, base: l.base,
-        help: l.base === "custom_only" ? "Your instructions only." : levelLabel(l.base) + ", plus your own instructions." })))
-    readonly property var toneOptions: tones.concat(customTones.map(t => ({ id: t.id, label: t.name, help: t.instruction })))
     // The profiles as one choice each, with their icons.
     readonly property var profileOptions: profiles.map(p => ({ id: p.id, label: p.name, icon: profileIcon(p.id) }))
-    function levelLabel(id) {
-        const builtIn = cleanupLevels.find(l => l.id === id)
-        if (builtIn) return builtIn.label
-        const custom = customCleanupLevels.find(l => l.id === id)
-        return custom ? custom.name : "Medium"
-    }
-    function toneLabel(id) { const t = toneOptions.find(o => o.id === id); return t ? t.label : "No tone" }
-    // What a custom level does, in its list: "Based on Medium. Turn lists…"
-    function levelDetail(l) {
-        return (l.base === "custom_only" ? "Your instructions only. " : "Based on " + levelLabel(l.base) + ". ") + l.instructions
-    }
+    function levelLabel(id) { const l = cleanupLevels.find(o => o.id === id); return l ? l.label : "Medium" }
+    function toneLabel(id) { const t = tones.find(o => o.id === id); return t ? t.label : "No tone" }
     // Languages a profile's output language suggests.
     readonly property var outputLanguages: ["Spanish", "French", "German", "Portuguese", "Italian", "Japanese", "Chinese"]
     // A profile's icon: a built-in's own, a pen for one you added.
@@ -98,6 +83,58 @@ LibraryLists {
             id: "appentry:" + e.id, name: e.name, icon: e.icon, typeIcon: "" }))
         return types.concat(apps)
     }
+    // Rules -----------------------------------------------------------------
+
+    // Each built-in rule's label and help, by core's id. A test checks every
+    // id core has is worded here.
+    readonly property var ruleWords: ({
+        fillers: { label: "Remove filler words and false starts", help: "Um, uh, you know, repeated words and restarts." },
+        smoothing: { label: "Smooth clumsy phrasing", help: "Rewords a clumsy phrase where the meaning is clear." },
+        structure: { label: "Add paragraphs and lists", help: "A new paragraph where the topic changes, a list where you list." },
+        rewrite: { label: "Rewrite for clarity and flow", help: "Merges points that overlap and reorders sentences." },
+        headings: { label: "Add short headings", help: "Where they help the reader of a long text." },
+        digits: { label: "Write numbers, times and dates as digits", help: "4:30, $2,345, March 3." },
+        markdown: { label: "Use light Markdown", help: "Bullets and backticks where they fit. Off writes plain text." },
+        noEmDashes: { label: "Avoid em dashes", help: "A comma, colon or full stop in their place." },
+        codingAgent: { label: "Write as a prompt for a coding agent", help: "Keeps your request, its limits and every name exact." },
+        britishSpelling: { label: "Use British spelling", help: "Colour, organise, travelled." },
+        lowercase: { label: "Write in lowercase", help: "Everything but code, paths and other literals." }
+    })
+    // The editor's rule lists, in order: the built-in groups, then yours.
+    readonly property var ruleGroups: [
+        { id: "cleanup", label: "Cleanup" },
+        { id: "formatting", label: "Formatting" },
+        { id: "more", label: "More" },
+        { id: "yours", label: "Yours" }
+    ]
+    // Where one of your rules is on: "Every profile", "2 profiles" or "Off".
+    function ruleWhere(rule) {
+        const on = profiles.filter(p => p.rules[rule.id]).length
+        return on === profiles.length ? rulesText.everyProfile : on ? Words.count(on, "profile", "profiles") : rulesText.off
+    }
+    readonly property var rulesText: ({
+        addRule: "Add rule",
+        newRule: "New rule",
+        editRule: "Edit rule",
+        namePlaceholder: "Sign off with my name",
+        instruction: "Instruction",
+        instructionHelp: "What refinement is told. Leave it empty and it is told the name.",
+        instructionPlaceholder: "End every email with Thanks and my first name, on a line of its own.",
+        onEverywhere: "On in every profile",
+        onEverywhereHelp: "Off, it is on only in the profiles that turn it on.",
+        onlyIn: profile => "Off, it is on in " + profile + " and in the profiles that turn it on.",
+        everyProfile: "Every profile",
+        off: "Off",
+        noRules: "No rules of your own",
+        rulesEmpty: "Write down something refinement should always do, such as how you sign off, then turn it on in the profiles that need it.",
+        skipped: "Cleanup None skips refinement, so rules have no effect.",
+        customPrompt: "Your custom system prompt on Refinement replaces the built-in rules. Tone and your rules still apply.",
+        reset: "Reset"
+    })
+    // The cleanup line of a profile that changed built-in rules, ending in
+    // the link that resets them: "Medium, 2 changed. Reset".
+    function levelChanged(level, changed) { return level + ", " + changed + " changed. " + rulesText.reset }
+
     // The question before deleting a profile, and what deleting it changes.
     function profileDeleteQuestion(name) { return "Delete " + name + "?" }
     function profileDeleteDetail(users) {
@@ -112,25 +149,6 @@ LibraryLists {
         newProfile: "New profile",
         unused: "No app or app type uses it yet.",
         name: "Name",
-        newTone: "New tone",
-        editTone: "Edit tone",
-        addTone: "Add tone",
-        toneNamePlaceholder: "Dry",
-        toneInstruction: "Instruction",
-        toneInstructionHelp: "Refinement follows this when a profile picks the tone.",
-        toneInstructionPlaceholder: "Short sentences, no exclamation marks.",
-        noTones: "No tones of your own",
-        tonesEmpty: "Describe a voice once, such as short and deadpan, then pick it in any profile.",
-        newLevel: "New cleanup level",
-        editLevel: "Edit cleanup level",
-        addLevel: "Add level",
-        levelNamePlaceholder: "Meeting notes",
-        basedOn: "Based on",
-        customOnly: "Custom only",
-        levelInstructions: "Instructions",
-        levelInstructionsPlaceholder: "Keep bullet points as bullet points.",
-        noLevels: "No cleanup levels of your own",
-        levelsEmpty: "Start from Light, Medium or High and add your own rules, such as keeping bullet points.",
         toneSkipped: "Cleanup None skips refinement, so tone has no effect.",
         languageHelp: "Writes in this language, whatever you speak. Pick one or type any language, regional varieties too.",
         noRefiner: "Clean up my words is off on Refinement, so this profile's cleanup and output language have no effect.",
@@ -252,10 +270,7 @@ LibraryLists {
     // reason add or update returned. Empty for none.
     readonly property var _refusals: ({
         profiles: { blank: "Give the profile a name.", taken: "Another profile has that name." },
-        customTones: { blank: "Give the tone a name.", taken: "Another tone has that name.",
-                       incomplete: "Add the instruction the tone follows." },
-        customCleanupLevels: { blank: "Give the level a name.", taken: "Another cleanup level has that name.",
-                               incomplete: "A Custom only level needs instructions." },
+        rules: { blank: "Give the rule a name.", taken: "Another of your rules has that name." },
         vocabulary: { blank: "Type the words. A phrase to replace needs a letter or a number.",
                       taken: "That's in the list already, with the same limits.",
                       incomplete: "A learned correction needs something to write.",

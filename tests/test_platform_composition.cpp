@@ -2297,19 +2297,15 @@ private slots:
         }
     }
 
-    // The scripts read these while completing, so a profile, tone or level
-    // added later is offered too, by the name the options take.
+    // The scripts read these while completing, so a profile added later is
+    // offered too, by the name the options take.
     void completionsListTheSettingsNames()
     {
         SettingsStore settings;
         settings.raw().clear();
         AppSettings draft = settings.snapshot();
         draft.refinement.writingProfiles.append({QStringLiteral("custom_stand_up"), QStringLiteral("balanced"),
-                                                 QStringLiteral("none"), QString(), QStringLiteral("Stand up")});
-        draft.refinement.customTones = {
-            {QStringLiteral("custom_very_terse"), QStringLiteral("Very terse"), QStringLiteral("Short.")}};
-        draft.refinement.customCleanupLevels = {{QStringLiteral("custom_notes"), QStringLiteral("Notes"),
-                                                 QStringLiteral("balanced"), QString()}};
+                                                 QStringLiteral("none"), {}, QStringLiteral("Stand up")});
         settings.applySnapshot(draft);
         const auto listed = [](const QString &list) {
             return printedBy({QStringLiteral("completions"), QStringLiteral("--list"), list})
@@ -2318,10 +2314,10 @@ private slots:
         QCOMPARE(listed(QStringLiteral("profiles")),
                  QStringList({QStringLiteral("Work"), QStringLiteral("Email"), QStringLiteral("Personal"),
                               QStringLiteral("AI-coding"), QStringLiteral("Other"), QStringLiteral("Stand-up")}));
-        QCOMPARE(listed(QStringLiteral("tones")).last(), QStringLiteral("very-terse"));
+        QCOMPARE(listed(QStringLiteral("tones")).last(), QStringLiteral("gen-z"));
         QCOMPARE(listed(QStringLiteral("cleanup")),
                  QStringList({QStringLiteral("none"), QStringLiteral("light"), QStringLiteral("medium"),
-                              QStringLiteral("high"), QStringLiteral("notes")}));
+                              QStringLiteral("high")}));
         settings.raw().clear();
     }
 
@@ -2343,7 +2339,7 @@ private slots:
                                        std::pair{QStringLiteral("custom_version"), QStringLiteral("--version")},
                                        std::pair{QStringLiteral("custom_daemon"), QStringLiteral("--daemon")}}) {
             draft.refinement.writingProfiles.append(
-                {id, QStringLiteral("balanced"), QStringLiteral("none"), QString(), name});
+                {id, QStringLiteral("balanced"), QStringLiteral("none"), {}, name});
         }
         settings.applySnapshot(draft);
 
@@ -2445,7 +2441,7 @@ private slots:
         const auto restoreSettings = qScopeGuard([&settings] { settings.raw().clear(); });
         AppSettings draft = settings.snapshot();
         draft.refinement.writingProfiles.append({QStringLiteral("custom_stand_up"), QStringLiteral("balanced"),
-                                                 QStringLiteral("none"), QString(), QStringLiteral("Stand up")});
+                                                 QStringLiteral("none"), {}, QStringLiteral("Stand up")});
         settings.applySnapshot(draft);
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
@@ -2459,29 +2455,20 @@ private slots:
         QVERIFY2(offered.contains(QStringLiteral("Stand-up")), qPrintable(offered.join(QLatin1Char(' '))));
     }
 
-    // A custom tone or level is named by its id without custom_, with - for _.
-    void transcribeTakesCustomTonesAndLevels()
+    // A custom tone or level an older release offered by name is now a rule,
+    // and its name an unknown value.
+    void transcribeRefusesAnOldCustomToneOrLevel()
     {
-        SettingsStore settings;
-        settings.raw().clear();
-        AppSettings draft = settings.snapshot();
-        draft.refinement.customTones = {
-            {QStringLiteral("custom_very_terse"), QStringLiteral("Very terse"), QStringLiteral("Short.")}};
-        draft.refinement.customCleanupLevels = {{QStringLiteral("custom_notes"), QStringLiteral("Notes"),
-                                                 QStringLiteral("balanced"), QString()}};
-        settings.applySnapshot(draft);
         QTemporaryDir dir;
         const QString audio = dir.filePath(QStringLiteral("memo.wav"));
         QFile file(audio);
         QVERIFY(file.open(QIODevice::WriteOnly));
         file.close();
-        const CommandLineDecision decision = parseCommandLine(
-            {QStringLiteral("speecher"), QStringLiteral("transcribe"), QStringLiteral("--tone"),
-             QStringLiteral("very-terse"), QStringLiteral("--cleanup"), QStringLiteral("notes"), audio},
-            {});
-        QCOMPARE(decision.overrides.tone, std::optional(QStringLiteral("custom_very_terse")));
-        QCOMPARE(decision.overrides.cleanupLevel, std::optional(QStringLiteral("custom_notes")));
-        settings.raw().clear();
+        for (const QString &option : {QStringLiteral("--tone"), QStringLiteral("--cleanup")}) {
+            const CommandLineDecision decision = parseCommandLine(
+                {QStringLiteral("speecher"), QStringLiteral("transcribe"), option, QStringLiteral("notes"), audio}, {});
+            QCOMPARE(decision.exitCode, 2);
+        }
     }
 
     // By its name with - between words, as toggle and start take it.
@@ -2491,7 +2478,7 @@ private slots:
         settings.raw().clear();
         AppSettings draft = settings.snapshot();
         draft.refinement.writingProfiles.append({QStringLiteral("custom_stand_up"), QStringLiteral("balanced"),
-                                                 QStringLiteral("none"), QString(), QStringLiteral("Stand up")});
+                                                 QStringLiteral("none"), {}, QStringLiteral("Stand up")});
         settings.applySnapshot(draft);
         QTemporaryDir dir;
         const QString audio = dir.filePath(QStringLiteral("memo.wav"));
@@ -2542,7 +2529,7 @@ private slots:
         AppSettings draft = settings.snapshot();
         // Created as "Stand up", since renamed.
         draft.refinement.writingProfiles.append({QStringLiteral("custom_stand_up"), QStringLiteral("balanced"),
-                                                 QStringLiteral("none"), QString(), QStringLiteral("Daily sync")});
+                                                 QStringLiteral("none"), {}, QStringLiteral("Daily sync")});
         settings.applySnapshot(draft);
         const auto parse = [](const QStringList &arguments) {
             return parseCommandLine(QStringList{QStringLiteral("speecher")} + arguments, {});
@@ -2573,7 +2560,7 @@ private slots:
 
         // A custom profile named like a built-in makes that name ambiguous.
         draft.refinement.writingProfiles.append({QStringLiteral("custom_email"), QStringLiteral("balanced"),
-                                                 QStringLiteral("none"), QString(), QStringLiteral("Email")});
+                                                 QStringLiteral("none"), {}, QStringLiteral("Email")});
         settings.applySnapshot(draft);
         for (const QStringList &mistake : {QStringList{QStringLiteral("toggle"), QStringLiteral("--profile"),
                                                        QStringLiteral("email")},

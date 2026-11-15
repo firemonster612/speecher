@@ -4,10 +4,18 @@
 #include "core/ShortcutBinding.h"
 #include "core/settings/SettingsFile.h"
 
+#include <QJsonArray>
+#include <QJsonObject>
+
 #include <optional>
 #include <vector>
 
 namespace speecher {
+
+// The user's rules as refinement/rules stores them, and a profile's
+// switches for rules as its "rules" object stores them.
+QJsonArray refinementRulesJson(const QList<RefinementRule> &rules);
+QJsonObject ruleSwitchesJson(const QMap<QString, bool> &switches);
 
 // Where Claude Code keeps its sign-in: its config directory, which
 // CLAUDE_CONFIG_DIR moves from ~/.claude.
@@ -58,14 +66,14 @@ public:
     // The cleanup level an older release saved, which seeds the Writing
     // Profiles until they are saved. Nothing writes it now.
     QString refinementStyle() const;
+    QList<RefinementRule> refinementRules() const; void setRefinementRules(const QList<RefinementRule> &value);
+    // A profile's switch for a rule that no longer exists reads and saves
+    // without it, so save the rules first.
     QList<WritingProfileSettings> writingProfileSettings() const; void setWritingProfileSettings(const QList<WritingProfileSettings> &value);
     bool useTargetContext() const; void setUseTargetContext(bool value);
     bool includeScreenshotContext() const; void setIncludeScreenshotContext(bool value);
-    QString additionalInstructions() const; void setAdditionalInstructions(const QString &value);
     bool customSystemPromptEnabled() const; void setCustomSystemPromptEnabled(bool value);
     QString customSystemPrompt() const; void setCustomSystemPrompt(const QString &value);
-    QList<CustomTone> customTones() const; void setCustomTones(const QList<CustomTone> &value);
-    QList<CustomCleanupLevel> customCleanupLevels() const; void setCustomCleanupLevels(const QList<CustomCleanupLevel> &value);
     OpenAiAuthMode openAiAuthMode() const; void setOpenAiAuthMode(OpenAiAuthMode value);
     QString openAiCliproxyAccount() const; void setOpenAiCliproxyAccount(const QString &value);
     AnthropicAuthMode anthropicAuthMode() const; void setAnthropicAuthMode(AnthropicAuthMode value);

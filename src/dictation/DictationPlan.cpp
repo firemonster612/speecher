@@ -2,6 +2,7 @@
 
 #include "core/ProviderChain.h"
 #include "core/ProviderTable.h"
+#include "core/RefinementRules.h"
 #include "core/VocabularyScope.h"
 #include "core/settings/SpokenLanguages.h"
 
@@ -77,7 +78,10 @@ DictationPlan planDictation(const AppSettings &saved,
     plan.profile.profile = profileId;
     const QString fromProfile = QStringLiteral("profile:") + profileId;
     if (run.cleanupLevel) {
+        // As choosing a level in the editor does, the run's level starts its
+        // built-in rules afresh.
         plan.profile.cleanupStrength = *run.cleanupLevel;
+        resetBuiltInRules(plan.profile);
     }
     if (run.tone) {
         plan.profile.tone = *run.tone;
@@ -85,7 +89,7 @@ DictationPlan planDictation(const AppSettings &saved,
     sources.insert(QStringLiteral("cleanup"), run.cleanupLevel ? kRun : fromProfile);
     sources.insert(QStringLiteral("tone"), run.tone ? kRun : fromProfile);
     sources.insert(QStringLiteral("outputLanguage"), fromProfile);
-    sources.insert(QStringLiteral("instructions"), fromProfile);
+    sources.insert(QStringLiteral("rules"), fromProfile);
 
     sources.insert(QStringLiteral("pasting"), appSource(plan.app.stepsFrom, plan.app));
     sources.insert(QStringLiteral("pasteKeys"), appSource(plan.app.keysFrom, plan.app));

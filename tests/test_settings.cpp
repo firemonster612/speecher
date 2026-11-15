@@ -4,6 +4,7 @@
 #include "core/EndpointSettings.h"
 #include "core/ProviderChain.h"
 #include "core/ProviderReadiness.h"
+#include "core/RefinementRules.h"
 #include "core/WritingProfileEdits.h"
 #include "core/settings/ServiceOrderMigration.h"
 #include "core/settings/SpokenLanguages.h"
@@ -947,36 +948,50 @@ private slots:
         QCOMPARE(settings.dictationSnapshot().accounts.anthropicCliproxyAccount, QStringLiteral("claude-user@example.com.json"));
     }
 
-    // Files from before instructions existed load with none, and the new
-    // fields survive a save and a reload.
-    void refinementInstructionsRoundTrip()
+    // The user's rules and each profile's switches survive a save and a
+    // reload, as refinement/rules and the profile's rules store them. A
+    // switch for a rule that is gone is dropped; a built-in rule's stays.
+    void refinementRulesRoundTrip()
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.raw().setValue(QStringLiteral("refinement/writingProfiles"),
-                                QByteArray(R"([{"profile":"email","cleanupStrength":"balanced","tone":"casual"}])"));
         AppSettings draft = settings.snapshot();
-        QCOMPARE(writingProfileSettingsFor(draft.refinement.writingProfiles, WritingProfile::Email).instructions,
-                 QString());
-        QCOMPARE(draft.refinement.additionalInstructions, QString());
+        QVERIFY(draft.refinement.rules.isEmpty());
         QCOMPARE(draft.refinement.customSystemPromptEnabled, false);
         QCOMPARE(draft.refinement.customSystemPrompt, QString());
 
-        draft.refinement.writingProfiles[1].instructions = QStringLiteral("Sign off with Best,\nEnzo");
+        const QString signOff = QStringLiteral("custom_rule_sign_off");
+        const QString shortRule = QStringLiteral("custom_rule_short");
+        draft.refinement.rules = {{signOff, QStringLiteral("Sign-off"), QStringLiteral("Sign off with Best,\nEnzo"), true},
+                                  {shortRule, QStringLiteral("Short"), QString(), false}};
+        draft.refinement.writingProfiles[1].rules = {{shortRule, true},
+                                                     {signOff, false},
+                                                     {QStringLiteral("fillers"), false},
+                                                     {QStringLiteral("custom_rule_gone"), true}};
         draft.refinement.writingProfiles[1].outputLanguage = QStringLiteral("Spanish");
-        draft.refinement.additionalInstructions = QStringLiteral("Spell it Speecher.");
         draft.refinement.customSystemPromptEnabled = true;
         draft.refinement.customSystemPrompt = QStringLiteral("Clean up my dictation.");
         settings.applySnapshot(draft);
 
-        const AppSettings loaded = SettingsStore().snapshot();
-        QCOMPARE(writingProfileSettingsFor(loaded.refinement.writingProfiles, WritingProfile::Email).instructions,
-                 QStringLiteral("Sign off with Best,\nEnzo"));
-        QCOMPARE(writingProfileSettingsFor(loaded.refinement.writingProfiles, WritingProfile::Email).outputLanguage,
-                 QStringLiteral("Spanish"));
-        QCOMPARE(loaded.refinement.additionalInstructions, QStringLiteral("Spell it Speecher."));
+        QCOMPARE(settings.raw().value(QStringLiteral("refinement/rules")).toByteArray(),
+                 QByteArray(R"([{"everyProfile":true,"id":"custom_rule_sign_off","instruction":"Sign off with Best,\nEnzo",)"
+                            R"("name":"Sign-off"},{"everyProfile":false,"id":"custom_rule_short","instruction":"",)"
+                            R"("name":"Short"}])"));
+        AppSettings loaded = SettingsStore().snapshot();
+        const auto email = [](const AppSettings &settings) {
+            return writingProfileSettingsFor(settings.refinement.writingProfiles, WritingProfile::Email);
+        };
+        QCOMPARE(loaded.refinement.rules, draft.refinement.rules);
+        QCOMPARE(email(loaded).rules,
+                 (QMap<QString, bool>{{shortRule, true}, {signOff, false}, {QStringLiteral("fillers"), false}}));
+        QCOMPARE(email(loaded).outputLanguage, QStringLiteral("Spanish"));
         QCOMPARE(loaded.refinement.customSystemPromptEnabled, true);
         QCOMPARE(loaded.refinement.customSystemPrompt, QStringLiteral("Clean up my dictation."));
+
+        loaded.refinement.rules.removeFirst();
+        settings.applySnapshot(loaded);
+        QCOMPARE(email(SettingsStore().snapshot()).rules,
+                 (QMap<QString, bool>{{shortRule, true}, {QStringLiteral("fillers"), false}}));
     }
 
     // A profile's own services survive a save and a reload; one this build
@@ -1008,7 +1023,7 @@ private slots:
         QCOMPARE(profile(loaded, WritingProfile::AiCoding).speechFirst,
                  (ServiceChoice{QStringLiteral("local"), QStringLiteral("moonshine-small")}));
         const QByteArray stored = settings.raw().value(QStringLiteral("refinement/writingProfiles")).toByteArray();
-        QVERIFY(stored.contains(R"("profile":"work","tone":"none"})"));
+        QVERIFY(stored.contains(R"("profile":"work","rules":{},"tone":"none"})"));
 
         // A profile saved on Haiku 4.5 loads on Haiku 5.5, which replaced it.
         settings.raw().setValue(
@@ -1089,39 +1104,24 @@ private slots:
         QCOMPARE(localModelId(resolved.speech), QStringLiteral("qwen3-asr"));
     }
 
-    // A profile keeps a custom tone or level that still exists, and falls back
-    // to no tone override and Medium once it is deleted.
-    void profilesKeepCustomChoicesUntilTheyAreDeleted()
+    // A profile an older release left on a custom tone or level reads as no
+    // tone override and Medium.
+    void profilesReadOnlyBuiltInChoices()
     {
         SettingsStore settings;
         settings.raw().clear();
-        AppSettings draft = settings.snapshot();
-        draft.refinement.customTones = {
-            {QStringLiteral("custom_terse"), QStringLiteral("Terse"), QStringLiteral("Short.")}};
-        draft.refinement.customCleanupLevels = {{QStringLiteral("custom_notes"), QStringLiteral("Notes"),
-                                                 QStringLiteral("light_cleanup"), QStringLiteral("Bullets.")}};
-        draft.refinement.writingProfiles = {
-            {WritingProfile::Email, QStringLiteral("custom_notes"), QStringLiteral("custom_terse")}};
-        settings.applySnapshot(draft);
-        const auto email = [](const AppSettings &loaded) {
-            return writingProfileSettingsFor(loaded.refinement.writingProfiles, WritingProfile::Email);
-        };
-        AppSettings loaded = SettingsStore().snapshot();
-        QCOMPARE(loaded.refinement.customTones, draft.refinement.customTones);
-        QCOMPARE(loaded.refinement.customCleanupLevels, draft.refinement.customCleanupLevels);
-        QCOMPARE(email(loaded).cleanupStrength, QStringLiteral("custom_notes"));
-        QCOMPARE(email(loaded).tone, QStringLiteral("custom_terse"));
-
-        loaded.refinement.customTones.clear();
-        loaded.refinement.customCleanupLevels.clear();
-        settings.applySnapshot(loaded);
-        const AppSettings deleted = SettingsStore().snapshot();
-        QCOMPARE(email(deleted).cleanupStrength, QStringLiteral("balanced"));
-        QCOMPARE(email(deleted).tone, QStringLiteral("none"));
+        settings.raw().setValue(
+            QStringLiteral("refinement/writingProfiles"),
+            QByteArray(R"([{"profile":"email","cleanupStrength":"custom_notes","tone":"custom_terse"}])"));
+        const WritingProfileSettings email =
+            writingProfileSettingsFor(settings.snapshot().refinement.writingProfiles, WritingProfile::Email);
+        QCOMPARE(email.cleanupStrength, QStringLiteral("balanced"));
+        QCOMPARE(email.tone, QStringLiteral("none"));
+        settings.raw().clear();
     }
 
     // A file from before custom profiles loads the five built-ins, and saving
-    // it back writes the same array.
+    // it back writes the same profiles, without instructions and with rules.
     void oldSettingsLoadTheSameProfiles()
     {
         SettingsStore settings;
@@ -1140,7 +1140,12 @@ private slots:
         QCOMPARE(ids, (QStringList{QStringLiteral("work"), QStringLiteral("email"), QStringLiteral("personal"),
                                    QStringLiteral("ai_coding"), QStringLiteral("other")}));
         settings.applySnapshot(settings.snapshot());
-        QCOMPARE(settings.raw().value(QStringLiteral("refinement/writingProfiles")).toByteArray(), stored);
+        QCOMPARE(settings.raw().value(QStringLiteral("refinement/writingProfiles")).toByteArray(),
+                 QByteArray(R"([{"cleanupStrength":"strong_polish","profile":"work","rules":{},"tone":"formal"},)"
+                            R"({"cleanupStrength":"balanced","profile":"email","rules":{},"tone":"none"},)"
+                            R"({"cleanupStrength":"balanced","profile":"personal","rules":{},"tone":"none"},)"
+                            R"({"cleanupStrength":"balanced","profile":"ai_coding","rules":{},"tone":"none"},)"
+                            R"({"cleanupStrength":"light_cleanup","profile":"other","rules":{},"tone":"none"}])"));
         settings.raw().clear();
     }
 
@@ -1153,7 +1158,7 @@ private slots:
         settings.raw().clear();
         AppSettings draft = settings.snapshot();
         draft.refinement.writingProfiles.append(
-            {QStringLiteral("custom_standup"), QStringLiteral("light_cleanup"), QStringLiteral("none"), QString(),
+            {QStringLiteral("custom_standup"), QStringLiteral("light_cleanup"), QStringLiteral("none"), {},
              QStringLiteral("Standup")});
         test::setOtherAppsProfile(draft.apps, QStringLiteral("custom_standup"));
         draft.apps.apps = {
@@ -1562,17 +1567,15 @@ private slots:
                        .readinessTimeoutMs = 700,
                        .vadThresholdPercent = 4};
             s.refinement.services.order = {QStringLiteral("anthropic"), QStringLiteral("local")};
-            s.refinement.customTones = {{.id = QStringLiteral("custom_pirate"),
-                                         .name = QStringLiteral("Pirate"),
-                                         .instruction = QStringLiteral("Talk like a pirate.")}};
-            s.refinement.customCleanupLevels = {{.id = QStringLiteral("custom_tight"),
-                                                 .name = QStringLiteral("Tight"),
-                                                 .base = QStringLiteral("balanced"),
-                                                 .instructions = QStringLiteral("Cut filler.")}};
+            s.refinement.rules = {{.id = QStringLiteral("custom_rule_pirate"),
+                                   .name = QStringLiteral("Pirate"),
+                                   .instruction = QStringLiteral("Talk like a pirate."),
+                                   .everyProfile = true}};
             for (WritingProfileSettings &profile : s.refinement.writingProfiles) {
                 if (profile.profile == WritingProfile::Work) {
-                    profile.cleanupStrength = QStringLiteral("custom_tight");
-                    profile.tone = QStringLiteral("custom_pirate");
+                    profile.cleanupStrength = QStringLiteral("strong_polish");
+                    profile.tone = QStringLiteral("formal");
+                    profile.rules = {{QStringLiteral("custom_rule_pirate"), false}, {QStringLiteral("headings"), false}};
                 }
             }
             s.apps.apps = {{.id = QStringLiteral("app:notes"),
@@ -1589,7 +1592,6 @@ private slots:
             s.apps.types[0].writingProfile.reset();
             s.refinement.useTargetContext = false;
             s.refinement.includeScreenshotContext = true;
-            s.refinement.additionalInstructions = QStringLiteral("Use British spelling.");
             s.refinement.customSystemPromptEnabled = true;
             s.refinement.customSystemPrompt = QStringLiteral("Clean this up.");
             s.refinement.services.choice(QStringLiteral("openai")).model = QStringLiteral("gpt-6.1-sol");
@@ -1780,73 +1782,83 @@ private slots:
         QCOMPARE(snapshot.output.completionStatusDurationMs, 900);
     }
 
-    void removingAToneMovesItsProfilesAndUndoMovesBackOnlyTheUnchanged()
+    // A rule needs a name none of the user's other rules goes by, and an id
+    // of the user's no rule has.
+    void ruleEditsRefuseWhatTheListCantHold()
     {
         AppSettings settings;
-        settings.refinement.customTones = {{QStringLiteral("custom_dry"), QStringLiteral("Dry"), QStringLiteral("Deadpan.")},
-                                           {QStringLiteral("custom_warm"), QStringLiteral("Warm"), QStringLiteral("Kind.")}};
-        const auto setTone = [&settings](const QString &profile, const QString &tone) {
-            for (WritingProfileSettings &entry : settings.refinement.writingProfiles) {
-                if (entry.profile == profile) {
-                    entry.tone = tone;
-                }
-            }
-        };
-        const auto toneOf = [&settings](const QString &profile) {
-            return writingProfileSettingsFor(settings.refinement.writingProfiles, profile).tone;
-        };
-        setTone(WritingProfile::Work, QStringLiteral("custom_dry"));
-        setTone(WritingProfile::Email, QStringLiteral("custom_dry"));
-        setTone(WritingProfile::Personal, QStringLiteral("formal"));
-
-        const SettingsEdit undo = removeCustomTone(settings, QStringLiteral("custom_dry"));
-        QCOMPARE(settings.refinement.customTones.size(), 1);
-        QCOMPARE(settings.refinement.customTones.first().id, QStringLiteral("custom_warm"));
-        QCOMPARE(toneOf(WritingProfile::Work), QStringLiteral("none"));
-        QCOMPARE(toneOf(WritingProfile::Email), QStringLiteral("none"));
-        QCOMPARE(toneOf(WritingProfile::Personal), QStringLiteral("formal"));
-
-        // Changed while the Undo was offered: the change stays.
-        setTone(WritingProfile::Email, QStringLiteral("casual"));
-        QVERIFY(undo);
-        undo(settings);
-        QCOMPARE(settings.refinement.customTones.size(), 2);
-        QCOMPARE(settings.refinement.customTones.first().id, QStringLiteral("custom_dry"));
-        QCOMPARE(toneOf(WritingProfile::Work), QStringLiteral("custom_dry"));
-        QCOMPARE(toneOf(WritingProfile::Email), QStringLiteral("casual"));
-
-        QVERIFY(!removeCustomTone(settings, QStringLiteral("custom_gone")));
+        const QString notes = QStringLiteral("custom_rule_notes");
+        QCOMPARE(addRule(settings, {notes, QStringLiteral(" Notes "), QStringLiteral("Use bullets.")}), EditRefusal::None);
+        QCOMPARE(settings.refinement.rules.first().name, QStringLiteral("Notes"));
+        QCOMPARE(addRule(settings, {QStringLiteral("custom_rule_b"), QStringLiteral("notes")}), EditRefusal::Taken);
+        QCOMPARE(addRule(settings, {notes, QStringLiteral("Other")}), EditRefusal::Taken);
+        QCOMPARE(addRule(settings, {QStringLiteral("fillers"), QStringLiteral("Other")}), EditRefusal::Taken);
+        QCOMPARE(addRule(settings, {QStringLiteral("custom_rule_c"), QStringLiteral("  ")}), EditRefusal::Blank);
+        QCOMPARE(editRule(settings, notes, [](RefinementRule &rule) { rule.name.clear(); }), EditRefusal::Blank);
+        QCOMPARE(editRule(settings, QStringLiteral("custom_rule_gone"), [](RefinementRule &) {}), EditRefusal::Missing);
+        QCOMPARE(editRule(settings, notes, [](RefinementRule &rule) { rule.everyProfile = true; }), EditRefusal::None);
+        QVERIFY(settings.refinement.rules.first().everyProfile);
     }
 
-    void removingACleanupLevelFallsBackToItsBase()
+    // A profile's switch is stored only while it differs from the default:
+    // the level's for a built-in rule, every profile or none for the user's.
+    // Choosing another level drops the built-in ones.
+    void profileSwitchesKeepOnlyWhatDiffers()
     {
         AppSettings settings;
-        settings.refinement.customCleanupLevels = {
-            {QStringLiteral("custom_notes"), QStringLiteral("Notes"), QStringLiteral("strong_polish"), QStringLiteral("Bullets.")},
-            {QStringLiteral("custom_raw"), QStringLiteral("Raw"), kCustomOnlyCleanupBase, QStringLiteral("Only commas.")}};
-        for (WritingProfileSettings &entry : settings.refinement.writingProfiles) {
-            if (entry.profile == WritingProfile::Work) {
-                entry.cleanupStrength = QStringLiteral("custom_notes");
-            } else if (entry.profile == WritingProfile::Email) {
-                entry.cleanupStrength = QStringLiteral("custom_raw");
-            }
-        }
-        const auto levelOf = [&settings](const QString &profile) {
-            return writingProfileSettingsFor(settings.refinement.writingProfiles, profile).cleanupStrength;
+        const QString notes = QStringLiteral("custom_rule_notes");
+        settings.refinement.rules = {{notes, QStringLiteral("Notes")}};
+        const auto work = [&settings] {
+            return writingProfileSettingsFor(settings.refinement.writingProfiles, WritingProfile::Work);
+        };
+        QCOMPARE(setProfileRule(settings, WritingProfile::Work, QStringLiteral("fillers"), false), EditRefusal::None);
+        QCOMPARE(setProfileRule(settings, WritingProfile::Work, QStringLiteral("markdown"), true), EditRefusal::None);
+        QCOMPARE(setProfileRule(settings, WritingProfile::Work, notes, true), EditRefusal::None);
+        QCOMPARE(work().rules, (QMap<QString, bool>{{QStringLiteral("fillers"), false}, {notes, true}}));
+        QCOMPARE(changedBuiltInRules(work()), 1);
+        QCOMPARE(setProfileRule(settings, WritingProfile::Work, QStringLiteral("gone"), true), EditRefusal::Missing);
+        QCOMPARE(setProfileRule(settings, QStringLiteral("custom_profile_gone"), notes, true), EditRefusal::Missing);
+
+        QCOMPARE(editWritingProfile(settings, WritingProfile::Work,
+                                    [](WritingProfileSettings &profile) { profile.tone = QStringLiteral("formal"); }),
+                 EditRefusal::None);
+        QCOMPARE(changedBuiltInRules(work()), 1);
+        QCOMPARE(editWritingProfile(settings, WritingProfile::Work,
+                                    [](WritingProfileSettings &profile) { profile.cleanupStrength = QStringLiteral("light_cleanup"); }),
+                 EditRefusal::None);
+        QCOMPARE(work().rules, (QMap<QString, bool>{{notes, true}}));
+    }
+
+    // Removing a rule takes every profile's switch for it; undoing puts both
+    // back, the switch only where the profile set none meanwhile.
+    void removingARuleTakesItsSwitchesUntilUndone()
+    {
+        AppSettings settings;
+        const QString notes = QStringLiteral("custom_rule_notes");
+        settings.refinement.rules = {{notes, QStringLiteral("Notes")}, {QStringLiteral("custom_rule_b"), QStringLiteral("B")}};
+        QCOMPARE(setProfileRule(settings, WritingProfile::Work, notes, true), EditRefusal::None);
+        QCOMPARE(setProfileRule(settings, WritingProfile::Email, notes, true), EditRefusal::None);
+        const auto switches = [&settings](const QString &profile) {
+            return writingProfileSettingsFor(settings.refinement.writingProfiles, profile).rules;
         };
 
-        const SettingsEdit undoNotes = removeCustomCleanupLevel(settings, QStringLiteral("custom_notes"));
-        const SettingsEdit undoRaw = removeCustomCleanupLevel(settings, QStringLiteral("custom_raw"));
-        QVERIFY(settings.refinement.customCleanupLevels.isEmpty());
-        QCOMPARE(levelOf(WritingProfile::Work), QStringLiteral("strong_polish"));
-        QCOMPARE(levelOf(WritingProfile::Email), QStringLiteral("balanced"));
+        const SettingsEdit undo = removeRule(settings, notes);
+        QCOMPARE(settings.refinement.rules.size(), 1);
+        QVERIFY(switches(WritingProfile::Work).isEmpty());
+        QVERIFY(switches(WritingProfile::Email).isEmpty());
+        QVERIFY(!removeRule(settings, QStringLiteral("custom_rule_gone")));
 
-        undoRaw(settings);
-        undoNotes(settings);
-        QCOMPARE(settings.refinement.customCleanupLevels.size(), 2);
-        QCOMPARE(settings.refinement.customCleanupLevels.first().id, QStringLiteral("custom_notes"));
-        QCOMPARE(levelOf(WritingProfile::Work), QStringLiteral("custom_notes"));
-        QCOMPARE(levelOf(WritingProfile::Email), QStringLiteral("custom_raw"));
+        // Switched while the Undo was offered: the newer switch stays.
+        for (WritingProfileSettings &profile : settings.refinement.writingProfiles) {
+            if (profile.profile == WritingProfile::Email) {
+                profile.rules.insert(notes, false);
+            }
+        }
+        QVERIFY(undo);
+        undo(settings);
+        QCOMPARE(settings.refinement.rules.first().id, notes);
+        QCOMPARE(switches(WritingProfile::Work), (QMap<QString, bool>{{notes, true}}));
+        QCOMPARE(switches(WritingProfile::Email), (QMap<QString, bool>{{notes, false}}));
     }
 
     void newCustomIdsAreFreshAndPrefixed()

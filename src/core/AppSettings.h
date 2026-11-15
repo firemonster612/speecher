@@ -391,14 +391,11 @@ struct RefinementSettings {
     QList<WritingProfileSettings> writingProfiles = defaultWritingProfileSettings();
     bool useTargetContext = true;
     bool includeScreenshotContext = false;
-    // Added to every refinement prompt.
-    QString additionalInstructions;
     // Empty stands for the built-in prompt.
     bool customSystemPromptEnabled = false;
     QString customSystemPrompt;
-    // Offered after the built-in tones and cleanup levels.
-    QList<CustomTone> customTones;
-    QList<CustomCleanupLevel> customCleanupLevels;
+    // The user's own rules, in the order the prompt lists them.
+    QList<RefinementRule> rules;
 
     bool operator==(const RefinementSettings &other) const = default;
 };

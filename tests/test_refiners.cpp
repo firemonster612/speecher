@@ -1,6 +1,7 @@
 #include "common/test_prelude.h"
 #include "common/test_http.h"
 #include "common/test_auth.h"
+#include "core/RefinementRules.h"
 #include "providers/OpenAiTranscriptRefiner.h"
 #include "providers/StreamingRefinement.h"
 
@@ -16,6 +17,8 @@ using namespace speecher::test;
 static const char kLiveCliproxyDir[] = "SPEECHER_TEST_LIVE_CLIPROXY_DIR";
 static const char kLiveCliproxyUrl[] = "SPEECHER_TEST_LIVE_CLIPROXY_URL";
 static const char kLiveCliproxyKey[] = "SPEECHER_TEST_LIVE_CLIPROXY_KEY";
+// The account file to use when the directory holds several Claude accounts.
+static const char kLiveCliproxyAccount[] = "SPEECHER_TEST_LIVE_CLIPROXY_ACCOUNT";
 
 static bool liveRefinementConfigured()
 {
@@ -32,17 +35,18 @@ static bool liveRefinementConfigured()
 static QString liveRefine(const QString &rawTranscript,
                           const QStringList &vocabulary,
                           QString *error,
-                          const QString &textBeforeCaret = {})
+                          const QString &textBeforeCaret = {},
+                          RefinementContext context = {})
 {
     RefinementSettings settings;
     AccountSettings accounts;
     accounts.anthropicAuthMode = AnthropicAuthMode::Cliproxy;
     accounts.cliproxyOauthDir = qEnvironmentVariable(kLiveCliproxyDir);
+    accounts.anthropicCliproxyAccount = qEnvironmentVariable(kLiveCliproxyAccount);
     if (accounts.cliproxyOauthDir.isEmpty()) {
         accounts.cliproxyBaseUrl = qEnvironmentVariable(kLiveCliproxyUrl);
         accounts.cliproxyApiKey = qEnvironmentVariable(kLiveCliproxyKey);
     }
-    RefinementContext context;
     if (!textBeforeCaret.isEmpty()) {
         context.target.caretOffset = int(textBeforeCaret.size());
         context.target.setNearbyText(textBeforeCaret, int(textBeforeCaret.size()), int(textBeforeCaret.size()));
@@ -77,11 +81,6 @@ static const QString kAndroidGoldenDir =
 static QMap<QString, QString> androidGoldenPrompts()
 {
     QMap<QString, QString> prompts;
-    const CustomTone terse{QStringLiteral("custom_terse"), QStringLiteral("Terse"),
-                           QStringLiteral("Short sentences, lowercase, no greetings or sign-offs.")};
-    const CustomCleanupLevel tersePrompt{QStringLiteral("custom_terse_prompt"),
-                                         QStringLiteral("Terse prompt"), kCustomOnlyCleanupBase,
-                                         QStringLiteral("Keep the prompt under three sentences.")};
     const auto unknown = [] {
         RefinementContext context;
         context.includeNearbyText = false;
@@ -95,6 +94,7 @@ static QMap<QString, QString> androidGoldenPrompts()
         context.target.category = AppCategory::AiCoding;
         context.writingProfile = WritingProfile::AiCoding;
         context.writingProfileName = QStringLiteral("AI coding");
+        context.codingAgent = true;
         return context;
     };
     const auto withMessageAroundCaret = [](RefinementContext context) {
@@ -107,12 +107,14 @@ static QMap<QString, QString> androidGoldenPrompts()
         context.target.selectionEnd = 15;
         return context;
     };
+    const QStringList changedSteps{
+        QStringLiteral("Keep filler words, stutters, repeated words and false starts as spoken."),
+        QStringLiteral("Write plain text with no Markdown.")};
 
     {
-        // Recorded before instructions existed: blank instructions and
-        // prompt leave it as it was.
+        // Recorded before instructions existed: a blank custom prompt leaves
+        // it as it was.
         RefinementContext context = unknown();
-        context.additionalInstructions = QStringLiteral(" \n");
         context.customSystemPrompt = QStringLiteral("\n");
         prompts[QStringLiteral("light-unknown")] =
             dictationRefinementSystemPrompt(QStringLiteral("light_cleanup"), context);
@@ -129,56 +131,57 @@ static QMap<QString, QString> androidGoldenPrompts()
             dictationRefinementSystemPrompt(QStringLiteral("balanced"), withMessageAroundCaret(context));
     }
     {
+        // What migrated global and profile instructions make: the prompt
+        // they made before rules.
         RefinementContext context = unknown();
         context.tone = QStringLiteral("casual");
-        context.additionalInstructions = QStringLiteral("Spell it Speecher.\nKeep British spelling.");
-        context.profileInstructions = QStringLiteral("Sign off with Best, Enzo");
+        context.userRules = {QStringLiteral("Spell it Speecher.\nKeep British spelling."),
+                             QStringLiteral("Sign off with Best, Enzo")};
         prompts[QStringLiteral("balanced-instructions")] =
             dictationRefinementSystemPrompt(QStringLiteral("balanced"), context);
     }
     {
         RefinementContext context = unknown();
-        context.tone = terse.id;
-        context.customTone = terse;
-        prompts[QStringLiteral("balanced-custom-tone")] =
+        context.tone = QStringLiteral("casual");
+        context.changedSteps = changedSteps;
+        context.userRules = {QStringLiteral("Spell it Speecher.")};
+        prompts[QStringLiteral("balanced-changed-steps")] =
             dictationRefinementSystemPrompt(QStringLiteral("balanced"), context);
     }
     {
+        // The coding agent rule on in a profile that isn't AI coding, after
+        // a changed step.
         RefinementContext context = unknown();
-        context.cleanupLevel = CustomCleanupLevel{QStringLiteral("custom_notes"), QStringLiteral("Notes"),
-                                                  QStringLiteral("light_cleanup"),
-                                                  QStringLiteral("Use bullet points.")};
-        prompts[QStringLiteral("light-custom-level")] =
+        context.codingAgent = true;
+        context.changedSteps = {QStringLiteral("Use British spelling.")};
+        prompts[QStringLiteral("light-coding-agent")] =
             dictationRefinementSystemPrompt(QStringLiteral("light_cleanup"), context);
     }
     {
-        RefinementContext context = chatGpt();
-        context.cleanupLevel = tersePrompt;
-        prompts[QStringLiteral("custom-only-chatgpt")] =
-            dictationRefinementSystemPrompt(kCustomOnlyCleanupBase, context);
-    }
-    {
+        // A custom prompt drops the changed steps with the steps.
         RefinementContext context = unknown();
-        context.tone = terse.id;
-        context.customTone = terse;
-        context.cleanupLevel = CustomCleanupLevel{QStringLiteral("custom_notes"), QStringLiteral("Notes"),
-                                                  QStringLiteral("strong_polish"),
-                                                  QStringLiteral("Use bullet points.")};
+        context.tone = QStringLiteral("casual");
+        context.changedSteps = changedSteps;
+        context.userRules = {QStringLiteral("Use bullet points.")};
         context.customSystemPrompt = QStringLiteral("Clean up my dictation.");
-        prompts[QStringLiteral("custom-prompt-tone-level")] =
+        prompts[QStringLiteral("custom-prompt-rules")] =
             dictationRefinementSystemPrompt(QStringLiteral("strong_polish"), context);
     }
     {
+        // What a profile with a custom tone and a Custom only level migrates
+        // to: their rules after the global one, at Light. Editing takes no
+        // changed steps.
         RefinementContext context = withMessageAroundCaret(chatGpt());
-        context.tone = terse.id;
-        context.customTone = terse;
-        context.cleanupLevel = tersePrompt;
+        context.changedSteps = changedSteps;
+        context.userRules = {QStringLiteral("Spell it Speecher."),
+                             QStringLiteral("Write in this tone: Terse. Short sentences, lowercase, no greetings or "
+                                            "sign-offs."),
+                             QStringLiteral("Keep the prompt under three sentences.")};
         context.outputLanguage = QStringLiteral("French");
-        context.additionalInstructions = QStringLiteral("Spell it Speecher.");
         context.spokenLanguage = QStringLiteral("es");
         context.target.selectedText = QStringLiteral("seven");
         context.editSelection = true;
-        prompts[QStringLiteral("edit-chatgpt")] = refinementSystemPrompt(kCustomOnlyCleanupBase, context);
+        prompts[QStringLiteral("edit-chatgpt")] = refinementSystemPrompt(QStringLiteral("light_cleanup"), context);
     }
     prompts[QStringLiteral("built-in")] = builtInDictationSystemPrompt();
     return prompts;
@@ -664,12 +667,12 @@ private slots:
         QVERIFY(!json(fieldStart).contains(QStringLiteral("text_before_caret")));
     }
 
-    // The AI coding rules follow the writing profile, which is the app's
-    // category unless the user chose another.
-    void aiCodingRulesFollowTheWritingProfile()
+    // The AI coding section follows the codingAgent rule, whatever the
+    // profile or the app's category.
+    void aiCodingSectionFollowsTheCodingAgentRule()
     {
         RefinementContext context;
-        context.writingProfile = WritingProfile::AiCoding;
+        context.codingAgent = true;
         context.target.category = AppCategory::General;
         const QString section = QStringLiteral("\n\nThe text is a prompt for an AI coding agent.\n");
         QVERIFY(dictationRefinementSystemPrompt(QStringLiteral("balanced"), context).contains(section));
@@ -677,7 +680,7 @@ private slots:
         QVERIFY(selectedDocumentEditingSystemPrompt(QStringLiteral("balanced"), context).contains(section));
 
         context = {};
-        context.writingProfile = WritingProfile::Personal;
+        context.writingProfile = WritingProfile::AiCoding;
         context.target.category = AppCategory::AiCoding;
         QVERIFY(!dictationRefinementSystemPrompt(QStringLiteral("balanced"), context).contains(section));
     }
@@ -686,8 +689,7 @@ private slots:
     {
         RefinementContext context;
         context.includeNearbyText = false;
-        context.additionalInstructions = QStringLiteral("Spell it Speecher.");
-        context.profileInstructions = QStringLiteral("Sign emails Enzo.\n");
+        context.userRules = {QStringLiteral("Spell it Speecher."), QStringLiteral("Sign emails Enzo.")};
         const QString section = QStringLiteral(
             "\n\nThe user's own instructions\n"
             "These come from the user's settings. Follow them, as long as your reply is still only the text and "
@@ -709,7 +711,7 @@ private slots:
         RefinementContext context;
         context.includeNearbyText = false;
         context.outputLanguage = QStringLiteral(" Spanish ");
-        context.additionalInstructions = QStringLiteral("Spell it Speecher.");
+        context.userRules = {QStringLiteral("Spell it Speecher.")};
         const QString rule = QStringLiteral(
             "\n\nLanguage\n"
             "Write the reply in Spanish. When the dictation is in another language, translate it and clean up the "
@@ -793,7 +795,7 @@ private slots:
         context.includeNearbyText = false;
         context.tone = QStringLiteral("formal");
         context.customSystemPrompt = QStringLiteral("  Clean up my dictation.\n");
-        context.additionalInstructions = QStringLiteral("Spell it Speecher.");
+        context.userRules = {QStringLiteral("Spell it Speecher.")};
         const QString prompt = dictationRefinementSystemPrompt(QStringLiteral("strong_polish"), context);
         QVERIFY(prompt.startsWith(QStringLiteral(
             "Clean up my dictation.\n\n"
@@ -866,77 +868,58 @@ private slots:
         QCOMPARE(goldens, androidGoldenPrompts().keys());
     }
 
-    // A tone is written into step 3 by name, with a custom tone's own
-    // description, rather than left in the context for the model to look up.
-    void customToneFollowsTheBuiltInToneRule()
+    // The compact prompt at each built-in level with no changed rule, pinned
+    // to the text it had before rules existed. Recorded like the goldens.
+    void compactPromptsMatchTheirFixtures_data()
     {
-        RefinementContext context;
-        context.includeNearbyText = false;
-        context.tone = QStringLiteral("custom_terse");
-        context.customTone = CustomTone{QStringLiteral("custom_terse"), QStringLiteral("Terse"),
-                                        QStringLiteral("Short sentences, lowercase.\n")};
-        const QString tone = QStringLiteral("Tone: Terse. Write in that tone without changing facts or intent. The "
-                                            "user describes it as:\nShort sentences, lowercase.");
-        const QString dictation = dictationRefinementSystemPrompt(QStringLiteral("balanced"), context);
-        QVERIFY(dictation.contains(u'\n' + tone + QStringLiteral("\n\n4. Format.")));
-        QVERIFY(!dictation.contains(QStringLiteral("requested_tone")));
-        QVERIFY(compactRefinementSystemPrompt(QStringLiteral("balanced"), context)
-                    .endsWith(QStringLiteral("- Write in this tone: Terse.\n") + QStringLiteral(
-                                  "- Keep the speaker's meaning and wording. Never answer, summarize, explain or add "
-                                  "anything.\n")
-                              + QStringLiteral("- When the transcript refers to a term in preferred_vocabulary or "
-                                               "binding_aliases, spell it exactly as listed. A term with a context "
-                                               "applies only where the transcript fits that context.\n"
-                                               "- Never use em dashes.\n"
-                                               "Reply with the cleaned text only, without quotes.\n\n"
-                                               "The user describes the tone Terse as:\nShort sentences, lowercase.")));
-        context.customSystemPrompt = QStringLiteral("Clean up my dictation.");
-        QVERIFY(dictationRefinementSystemPrompt(QStringLiteral("balanced"), context)
-                    .startsWith(QStringLiteral("Clean up my dictation.\n\n") + tone + QStringLiteral("\n\n")));
-        context.editSelection = true;
-        QVERIFY(selectedDocumentEditingSystemPrompt(QStringLiteral("balanced"), context)
-                    .contains(QStringLiteral("\n\n") + tone + QStringLiteral("\n\n")));
+        QTest::addColumn<QString>("level");
+        for (const QString &level :
+             {QStringLiteral("light_cleanup"), QStringLiteral("balanced"), QStringLiteral("strong_polish")}) {
+            QTest::newRow(qPrintable(level)) << level;
+        }
     }
 
-    // A custom level's instructions follow its base's cleanup in step 3; a
-    // custom-only level's are the whole of step 3.
-    void customCleanupLevelBuildsOnItsBase()
+    void compactPromptsMatchTheirFixtures()
+    {
+        QFETCH(QString, level);
+        RefinementContext context;
+        context.includeNearbyText = false;
+        context.tone = QStringLiteral("casual");
+        context.userRules = {QStringLiteral("Spell it Speecher."), QStringLiteral("Sign off with Best, Enzo")};
+        const QString prompt = compactRefinementSystemPrompt(level, context);
+        QFile fixture(QStringLiteral(SPEECHER_SOURCE_DIR "/tests/data/refinement-prompt-compact/") + level
+                      + QStringLiteral(".txt"));
+        if (qEnvironmentVariableIsSet("SPEECHER_RECORD_GOLDENS")) {
+            QVERIFY(fixture.open(QIODevice::WriteOnly | QIODevice::Truncate));
+            fixture.write(prompt.toUtf8());
+            return;
+        }
+        QVERIFY(fixture.open(QIODevice::ReadOnly | QIODevice::Text));
+        QCOMPARE(prompt, QString::fromUtf8(fixture.readAll()));
+    }
+
+    // The built-in rules a profile changed follow the steps they change, in
+    // both dictation prompts; a custom prompt and selection editing, which
+    // have no steps, leave them out.
+    void changedStepsFollowTheSteps()
     {
         RefinementContext context;
         context.includeNearbyText = false;
-        context.writingProfile = WritingProfile::AiCoding;
-        context.cleanupLevel = CustomCleanupLevel{QStringLiteral("custom_notes"), QStringLiteral("Notes"),
-                                                  QString(), QStringLiteral("Use bullet points.")};
-        const QString adds = QStringLiteral("\nThe user's cleanup level, \"Notes\", adds:\nUse bullet points.\n\n4. Format.");
-        const auto dictation = [&context](const QString &base) {
-            context.cleanupLevel->base = base;
-            return dictationRefinementSystemPrompt(base, context);
-        };
-
-        const QString light = dictation(QStringLiteral("light_cleanup"));
-        QVERIFY(light.contains(QStringLiteral("by numbering the items aloud.") + adds));
-        QVERIFY(light.contains(QStringLiteral(R"("refinement_style":"light_cleanup")")));
-        QVERIFY(dictation(QStringLiteral("balanced")).contains(QStringLiteral("lists items or steps.") + adds));
-        QVERIFY(dictation(QStringLiteral("strong_polish"))
-                    .contains(QStringLiteral("the way they would write it themselves.") + adds));
-
-        const QString customOnly = dictation(QStringLiteral("custom_only"));
-        QVERIFY(customOnly.contains(QStringLiteral(
-            "\n\n3. Clean up as the user's cleanup level, \"Notes\", says:\nUse bullet points.\n\n4. Format.")));
-        // The AI coding section leaves how far to reshape to the level's own
-        // instructions.
-        QVERIFY(customOnly.contains(QStringLiteral("success criteria of your own.\n\nExamples\n")));
-        QVERIFY(customOnly.contains(QStringLiteral(R"("refinement_style":"custom")")));
-
-        // Editing and the compact prompt treat custom only as Balanced.
-        const QString section = QStringLiteral("The user's cleanup level, \"Notes\":\nUse bullet points.");
-        QVERIFY(compactRefinementSystemPrompt(QStringLiteral("custom_only"), context)
+        context.changedSteps = {QStringLiteral("Write plain text with no Markdown."),
+                                QStringLiteral("Use British spelling.")};
+        const QString section = QStringLiteral("The user's changes to the steps above\n"
+                                               "- Write plain text with no Markdown.\n"
+                                               "- Use British spelling.");
+        QVERIFY(dictationRefinementSystemPrompt(QStringLiteral("balanced"), context)
+                    .contains(QStringLiteral("inside a literal alone.\n\n") + section + QStringLiteral("\n\nExamples\n")));
+        QVERIFY(compactRefinementSystemPrompt(QStringLiteral("balanced"), context)
                     .endsWith(QStringLiteral("without quotes.\n\n") + section));
         context.editSelection = true;
-        const QString editing = selectedDocumentEditingSystemPrompt(QStringLiteral("custom_only"), context);
-        QVERIFY(editing.contains(QStringLiteral("\n\nMake the requested changes in natural, polished writing")));
-        QVERIFY(editing.contains(QStringLiteral("lightly organized to make it easier to follow, in the speaker's order.")));
-        QVERIFY(editing.contains(QStringLiteral("\n\n") + section + QStringLiteral("\n\n")));
+        QVERIFY(!refinementSystemPrompt(QStringLiteral("balanced"), context).contains(section));
+        context.editSelection = false;
+        context.customSystemPrompt = QStringLiteral("Clean up my dictation.");
+        QVERIFY(!dictationRefinementSystemPrompt(QStringLiteral("balanced"), context).contains(section));
+        QVERIFY(!compactRefinementSystemPrompt(QStringLiteral("balanced"), context).contains(section));
     }
 
     void openAiRefinerSendsAdaptiveInstructions()
@@ -1908,6 +1891,44 @@ private slots:
         QVERIFY2(openAiFailed.isEmpty(),
                  qPrintable(openAiFailed.isEmpty() ? QString() : openAiFailed.first().first().value<ProviderFailure>().message));
         QVERIFY(!openAiCompleted.first().first().toString().trimmed().isEmpty());
+    }
+
+    // A changed built-in rule and one of the person's rules reach a real
+    // model: each changes the reply only while it is on. Three runs, since
+    // replies vary.
+    void liveRulesChangeTheReply()
+    {
+        if (!liveRefinementConfigured()) {
+            QSKIP("Live refinement robustness checks are opt-in: set SPEECHER_TEST_LIVE_CLIPROXY_DIR "
+                  "to a CLI Proxy API auth directory, or SPEECHER_TEST_LIVE_CLIPROXY_URL and _KEY");
+        }
+        const QString level = QStringLiteral("balanced");
+        const QList<RefinementRule> rules{{QStringLiteral("custom_rule_sign"), QStringLiteral("Sign-off"),
+                                           QStringLiteral("End with a new line that says: Over and out."), false}};
+        const auto refine = [&](const QMap<QString, bool> &switches) {
+            WritingProfileSettings profile;
+            profile.rules = switches;
+            RefinementContext context;
+            context.includeNearbyText = false;
+            context.changedSteps = changedSteps(profile, level, rules);
+            context.userRules = userRuleTexts(profile, level, rules);
+            QString error;
+            const QString text = liveRefine(QStringLiteral("um so I think we should uh ship it on friday you know"),
+                                            {}, &error, {}, context);
+            qInfo().noquote() << switches.keys() << "->" << (text.isEmpty() ? error : text);
+            return text;
+        };
+        const QRegularExpression filler(QStringLiteral("\\b(um|uh)\\b"), QRegularExpression::CaseInsensitiveOption);
+        const QString signOff = QStringLiteral("Over and out");
+        for (int run = 0; run < 3; ++run) {
+            const QString plain = refine({});
+            const QString fillersKept = refine({{QStringLiteral("fillers"), false}});
+            const QString signedOff = refine({{QStringLiteral("custom_rule_sign"), true}});
+            QVERIFY2(!plain.isEmpty() && !fillersKept.isEmpty() && !signedOff.isEmpty(), "a live refinement failed");
+            QVERIFY2(!plain.contains(filler) && !plain.contains(signOff), qPrintable(plain));
+            QVERIFY2(fillersKept.contains(filler), qPrintable(fillersKept));
+            QVERIFY2(signedOff.contains(signOff) && !signedOff.contains(filler), qPrintable(signedOff));
+        }
     }
 
     // Live robustness checks for common dictation failure modes: misheard

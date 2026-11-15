@@ -111,11 +111,14 @@ inline const QString WritingProfiles = QStringLiteral("refinement/writingProfile
 inline const QString WritingProfileOverrides = QStringLiteral("refinement/writingProfileOverrides");
 inline const QString UseTargetContext = QStringLiteral("refinement/useTargetContext");
 inline const QString IncludeScreenshotContext = QStringLiteral("refinement/includeScreenshotContext");
+// Retired: migrateRules made rules of them, AdditionalInstructions,
+// CustomTones and CustomCleanupLevels, and leaves them for a downgrade to read.
 inline const QString AdditionalInstructions = QStringLiteral("refinement/additionalInstructions");
 inline const QString CustomSystemPromptEnabled = QStringLiteral("refinement/customSystemPromptEnabled");
 inline const QString CustomSystemPrompt = QStringLiteral("refinement/customSystemPrompt");
 inline const QString CustomTones = QStringLiteral("refinement/customTones");
 inline const QString CustomCleanupLevels = QStringLiteral("refinement/customCleanupLevels");
+inline const QString RefinementRules = QStringLiteral("refinement/rules");
 inline const QString OpenAiModel = QStringLiteral("openai/model");
 inline const QString OpenAiAuthMode = QStringLiteral("openai/auth/mode");
 inline const QString OpenAiEffort = QStringLiteral("openai/effort");
@@ -196,6 +199,7 @@ inline const QString DeliveryStepsMigrationVersion = QStringLiteral("migration/d
 inline const QString AppsMigrationVersion = QStringLiteral("migration/appsVersion");
 inline const QString ServiceOrderMigrationVersion = QStringLiteral("migration/serviceOrderVersion");
 inline const QString VocabularyMigrationVersion = QStringLiteral("migration/vocabularyVersion");
+inline const QString RulesMigrationVersion = QStringLiteral("migration/rulesVersion");
 inline const QString HistoryMigrationVersion = QStringLiteral("migration/historyVersion");
 inline const QString RecordingMigrationVersion = QStringLiteral("migration/recordingVersion");
 inline const QString ClaudeCredentialsPath = QStringLiteral("claude/credentialsPath");

@@ -65,7 +65,7 @@ private slots:
             {QDateTime(QDate(2026, 9, 23), QTime(10, 0)), 1000, 3, QStringLiteral("Slack"), QStringLiteral("custom_old")},
         };
         const QList<WritingProfileSettings> kept{{QStringLiteral("custom_standup"), QStringLiteral("balanced"),
-                                                  QStringLiteral("none"), QString(), QStringLiteral("Daily")}};
+                                                  QStringLiteral("none"), {}, QStringLiteral("Daily")}};
         QCOMPARE(summarize(records, InsightsRange::AllTime, kToday, kept).apps.at(0).profileName,
                  QStringLiteral("Daily"));
         const InsightsSummary deleted = summarize(records, InsightsRange::AllTime, kToday);
@@ -331,9 +331,9 @@ private slots:
                                    storedName};
         };
         const QList<WritingProfileSettings> profiles{
-            {QStringLiteral("custom_a"), QStringLiteral("balanced"), QStringLiteral("none"), QString(),
+            {QStringLiteral("custom_a"), QStringLiteral("balanced"), QStringLiteral("none"), {},
              QStringLiteral("Notes")},
-            {QStringLiteral("custom_b"), QStringLiteral("balanced"), QStringLiteral("none"), QString(),
+            {QStringLiteral("custom_b"), QStringLiteral("balanced"), QStringLiteral("none"), {},
              QStringLiteral("Notes")}};
         const InsightsSummary summary =
             summarize({in(QStringLiteral("custom_a"), QStringLiteral("Notes"), 30),

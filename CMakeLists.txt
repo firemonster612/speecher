@@ -254,6 +254,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/ProviderAttemptIssueText.cpp
   src/core/ProviderReadiness.cpp
   src/core/ProviderRatings.cpp
+  src/core/RefinementRules.cpp
   src/core/ReleaseNotes.cpp
   src/core/SeenApps.cpp
   src/core/SettingsStore.cpp
@@ -265,6 +266,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/settings/ServiceOrderSettingsCodec.cpp
   src/core/settings/SettingsCodecs.cpp
   src/core/settings/SettingsFields.cpp
+  src/core/settings/RulesMigration.cpp
   src/core/settings/SettingsFile.cpp
   src/core/settings/SpokenLanguages.cpp
   src/core/settings/VocabularyMigration.cpp
@@ -313,6 +315,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/ProviderReadiness.h
   src/core/ProviderRatings.h
   src/core/ServiceOrder.h
+  src/core/RefinementRules.h
   src/core/ReleaseNotes.h
   src/core/SeenApps.h
   src/core/SettingsStore.h
@@ -324,6 +327,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/settings/ServiceOrderMigration.h
   src/core/settings/ServiceOrderSettingsCodec.h
   src/core/settings/SettingsCodecs.h
+  src/core/settings/RulesMigration.h
   src/core/settings/SettingsFile.h
   src/core/settings/SettingsKeys.h
   src/core/settings/SpokenLanguages.h

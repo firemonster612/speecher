@@ -4,6 +4,7 @@ import android.text.InputType
 import app.speecher.android.settings.SpeecherSettings
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.NearbyText
+import app.speecher.protocol.RefinementRule
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
 import org.junit.Assert.assertEquals
@@ -65,27 +66,23 @@ class RefinementContextTest {
     }
 
     @Test
-    fun `instructions reach the context, and the custom prompt only while it is on`() {
+    fun `rules reach the context, and the custom prompt only while it is on`() {
         val settings =
             SpeecherSettings(
-                writingProfiles =
-                    WritingProfile.entries.associateWith {
-                        WritingProfileSettings(instructions = "Sign off with Best.")
-                    },
-                additionalInstructions = "Spell it Speecher.",
+                refinementRules =
+                    listOf(
+                        RefinementRule("custom_rule_1", "Spelling", "Spell it Speecher.", true),
+                        RefinementRule("custom_rule_2", "Sign off with Best."),
+                    ),
                 customSystemPrompt = "Clean up my dictation.",
             )
         val sent = { chosen: SpeecherSettings ->
             refinementContext(chosen, messages, null, null) { null }
-                .let {
-                    listOf(it.additionalInstructions, it.profileInstructions, it.customSystemPrompt)
-                }
+                .let { listOf(it.userRules, it.customSystemPrompt) }
         }
+        val rules = listOf("Spell it Speecher.")
         assertEquals(
-            listOf(
-                listOf("Spell it Speecher.", "Sign off with Best.", ""),
-                listOf("Spell it Speecher.", "Sign off with Best.", "Clean up my dictation."),
-            ),
+            listOf(listOf(rules, ""), listOf(rules, "Clean up my dictation.")),
             listOf(sent(settings), sent(settings.copy(customSystemPromptEnabled = true))),
         )
     }

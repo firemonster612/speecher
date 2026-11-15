@@ -22,7 +22,8 @@ struct DictationPlan {
     // run's own.
     AppResolution app;
     // The Writing Profile the run writes with, its id even when no saved
-    // profile holds it, with the run's tone and cleanup level over its own.
+    // profile holds it, with the run's tone and cleanup level over its own;
+    // a run's level drops the profile's switches for built-in rules.
     WritingProfileSettings profile;
     // The saved settings with every layer applied: the speech and refinement
     // Service Orders as the run walks them (refinement's chain empty when it
@@ -34,7 +35,7 @@ struct DictationPlan {
     QStringList addedVocabulary;
     // Where each value came from, by field: writingProfile, pasting (the
     // steps), pasteKeys, outputFormat, speech, refinement, spokenLanguage, cleanup, tone,
-    // outputLanguage, instructions, vocabulary. A source is "run",
+    // outputLanguage, rules, vocabulary. A source is "run",
     // "profile:<id>", an App's id ("app:<uuid>"), "builtin" (the catalog's
     // profile for a known app), "type:<App Type id>" or "default" (the
     // field's own page: Other apps for the profile, the Pasting page's steps,

@@ -21,19 +21,17 @@ Page {
     function addProfile() {
         const id = Library.newId("custom_profile")
         if (!Library.add("profiles", { id: id, name: Library.newProfileName(), cleanup: "balanced", tone: "none", language: "",
-                                       instructions: "", speech: "", speechModel: "", refinement: "", refinementModel: "" }))
+                                       speech: "", speechModel: "", refinement: "", refinementModel: "" }))
             selectedId = id
     }
 
-    // A search for a profile shows it in the editor; one for your own tone
-    // or cleanup level opens it to edit.
+    // A search for a profile shows it in the editor; one for your rule
+    // opens it to edit.
     function landOn(rowId) {
         const at = rowId.indexOf(":")
-        const kind = rowId.slice(0, at)
         const id = rowId.slice(at + 1)
-        if (kind === "profile") selectedId = id
-        if (kind === "tone") toneForm.startEdit(Library.customTones.findIndex(t => t.id === id))
-        if (kind === "level") levelForm.startEdit(Library.customCleanupLevels.findIndex(l => l.id === id))
+        if (rowId.slice(0, at) === "rule") ruleForm.startEdit(id)
+        else selectedId = id
     }
 
     // Profiles on the left, the chosen one's settings on the right, on one
@@ -111,165 +109,99 @@ Page {
                     Library.removeProfile(page.selected.id)
                     page.selectedId = "work"
                 }
-                onNewToneRequested: { toneForm.startAdd(); page.reveal(toneSection) }
+                onRuleSwitched: (rule, on) => refusal = Library.refusalText("rules", Library.setProfileRule(page.selected.id, rule, on))
+                onRulesReset: refusal = Library.refusalText("profiles", Library.resetRules(page.selected.id))
+                onNewRuleRequested: { ruleForm.startAdd(page.selected.id); page.reveal(rulesSection) }
             }
         }
     }
 
+    // Your rules, each on in the profiles that turn it on.
     Section {
-        title: Schema.row("additionalInstructions").section
-        SchemaRow {
-            rowId: "additionalInstructions"
-            stacked: true
-            TextArea {
-                width: parent.width
-                text: Settings.values.additionalInstructions || ""
-                placeholderText: Schema.row("additionalInstructions").placeholder
-                onEditingFinished: Settings.set("additionalInstructions", text)
-            }
-        }
-    }
-
-    // Your own tones and cleanup levels, side by side.
-    Row {
-        id: ownChoices
-        width: parent.width
+        id: rulesSection
+        title: Schema.row("yourRules").label
+        caption: Schema.row("yourRules").help
+        actions: [ Button { text: Library.rulesText.addRule; iconName: "plus"; size: "small"; onClicked: ruleForm.startAdd("") } ]
+        SearchLanding { rowIds: ["yourRules"]; target: rulesSection }
         SearchLanding {
-            rowIds: Library.customTones.map(t => "tone:" + t.id).concat(Library.customCleanupLevels.map(l => "level:" + l.id))
-            target: ownChoices
+            rowIds: Library.rules.map(r => "rule:" + r.id)
+            target: rulesSection
             onLanded: rowId => page.landOn(rowId)
         }
-        spacing: Theme.space4
 
-        Section {
-            id: toneSection
-            width: (parent.width - parent.spacing) / 2
-            minimumHeaderHeight: levelSection.naturalHeaderHeight
-            title: Schema.row("customTones").label
-            caption: Schema.row("customTones").help
-            actions: [ Button { text: Library.profilesText.addTone; iconName: "plus"; size: "small"; onClicked: toneForm.startAdd() } ]
-            SearchLanding { rowIds: ["customTones"]; target: toneSection }
-
-            EditableList {
-                editText: Words.edit
-                removeText: Words.delete_
-                items: Library.customTones.map(t => ({ id: t.id, title: t.name, detail: t.instruction }))
-                formOpen: toneForm.open
-                emptyTitle: Library.profilesText.noTones
-                emptyText: Library.profilesText.tonesEmpty
-                onEditClicked: i => toneForm.startEdit(i)
-                onRemoveClicked: i => {
-                    const name = Library.customTones[i].name
-                    const undo = Library.removeTone(Library.customTones[i].id)
-                    if (undo >= 0) Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: () => Library.undo(undo) })
-                }
-
-                InlineForm {
-                    cancelText: Words.cancel
-                    id: toneForm
-                    objectName: "toneForm"
-                    // The tone being edited, by id, or empty while adding.
-                    property string editing
-                    function startAdd() { editing = ""; toneName.text = ""; toneText.text = ""; error = ""; open = true }
-                    function startEdit(i) {
-                        const t = Library.customTones[i]
-                        editing = t.id
-                        toneName.text = t.name
-                        toneText.text = t.instruction
-                        error = ""
-                        open = true
-                    }
-                    title: editing ? Library.profilesText.editTone : Library.profilesText.newTone
-                    saveText: editing ? Words.save : Library.profilesText.addTone
-                    note: Words.savesOnPress(saveText)
-                    canSave: toneName.text.trim().length > 0 && toneText.text.trim().length > 0
-                    onCancelled: open = false
-                    onSaved: {
-                        const tone = { name: toneName.text.trim(), instruction: toneText.text }
-                        // A profile's tone choices list the built-in ones by these names too.
-                        const builtIns = Library.tones.map(t => t.label)
-                        const refused = editing ? Library.update("customTones", editing, tone, builtIns)
-                                                : Library.add("customTones", Object.assign({ id: Library.newId("custom_tone") }, tone), builtIns)
-                        error = Library.refusalText("customTones", refused)
-                        if (!refused) open = false
-                    }
-                    FormField { label: Library.profilesText.name; TextField { id: toneName; width: parent.width; placeholderText: Library.profilesText.toneNamePlaceholder } }
-                    FormField {
-                        label: Library.profilesText.toneInstruction
-                        help: Library.profilesText.toneInstructionHelp
-                        TextArea { id: toneText; width: parent.width; minHeight: 60; placeholderText: Library.profilesText.toneInstructionPlaceholder }
-                    }
-                }
+        EditableList {
+            editText: Words.edit
+            removeText: Words.delete_
+            items: Library.rules.map(r => ({ id: r.id, title: r.name, detail: r.instruction, trailing: Library.ruleWhere(r) }))
+            formOpen: ruleForm.open
+            emptyTitle: Library.rulesText.noRules
+            emptyText: Library.rulesText.rulesEmpty
+            onEditClicked: i => ruleForm.startEdit(Library.rules[i].id)
+            onRemoveClicked: i => {
+                // Copied before removing: Library.rules[i] reads the list as
+                // it is when used, which the removal changes.
+                const name = Library.rules[i].name
+                const undo = Library.remove("rules", Library.rules[i].id)
+                if (undo >= 0) Toaster.show(Words.deleted(name),{ icon: "trash-2", actionText: Words.undo, action: () => Library.undo(undo) })
             }
-        }
 
-        Section {
-            id: levelSection
-            width: (parent.width - parent.spacing) / 2
-            minimumHeaderHeight: toneSection.naturalHeaderHeight
-            title: Schema.row("customCleanupLevels").label
-            caption: Schema.row("customCleanupLevels").help
-            actions: [ Button { text: Library.profilesText.addLevel; iconName: "plus"; size: "small"; onClicked: levelForm.startAdd() } ]
-            SearchLanding { rowIds: ["customCleanupLevels"]; target: levelSection }
-
-            EditableList {
-                editText: Words.edit
-                removeText: Words.delete_
-                items: Library.customCleanupLevels.map(l => ({ id: l.id, title: l.name, detail: Library.levelDetail(l) }))
-                formOpen: levelForm.open
-                emptyTitle: Library.profilesText.noLevels
-                emptyText: Library.profilesText.levelsEmpty
-                onEditClicked: i => levelForm.startEdit(i)
-                onRemoveClicked: i => {
-                    const name = Library.customCleanupLevels[i].name
-                    const undo = Library.removeLevel(Library.customCleanupLevels[i].id)
-                    if (undo >= 0) Toaster.show(Words.deleted(name), { icon: "trash-2", actionText: Words.undo, action: () => Library.undo(undo) })
+            InlineForm {
+                id: ruleForm
+                objectName: "ruleForm"
+                cancelText: Words.cancel
+                // The rule being edited, by id, or empty while adding.
+                property string editing
+                // The profile whose editor asked for the form, which a new
+                // rule not on in every profile is switched on for; or empty.
+                property string forProfile
+                function startAdd(profile) {
+                    editing = ""
+                    forProfile = profile
+                    ruleName.text = ""
+                    ruleText.text = ""
+                    everyProfile.checked = false
+                    error = ""
+                    open = true
                 }
-
-                InlineForm {
-                    cancelText: Words.cancel
-                    id: levelForm
-                    // The level being edited, by id, or empty while adding.
-                    property string editing
-                    property string base: "balanced"
-                    function startAdd() { editing = ""; levelName.text = ""; levelText.text = ""; base = "balanced"; error = ""; open = true }
-                    function startEdit(i) {
-                        const l = Library.customCleanupLevels[i]
-                        editing = l.id
-                        levelName.text = l.name
-                        levelText.text = l.instructions
-                        base = l.base
-                        error = ""
-                        open = true
-                    }
-                    title: editing ? Library.profilesText.editLevel : Library.profilesText.newLevel
-                    saveText: editing ? Words.save : Library.profilesText.addLevel
-                    note: Words.savesOnPress(saveText)
-                    canSave: levelName.text.trim().length > 0 && (base !== "custom_only" || levelText.text.trim().length > 0)
-                    onCancelled: open = false
-                    onSaved: {
-                        const level = { name: levelName.text.trim(), base: base, instructions: levelText.text }
-                        const builtIns = Library.cleanupLevels.map(l => l.label)
-                        const refused = editing ? Library.update("customCleanupLevels", editing, level, builtIns)
-                                                : Library.add("customCleanupLevels", Object.assign({ id: Library.newId("custom_level") }, level), builtIns)
-                        error = Library.refusalText("customCleanupLevels", refused)
-                        if (!refused) open = false
-                    }
-                    FormField { label: Library.profilesText.name; TextField { id: levelName; width: parent.width; placeholderText: Library.profilesText.levelNamePlaceholder } }
-                    FormField {
-                        label: Library.profilesText.basedOn
-                        SegmentedControl {
-                            width: parent.width
-                            stretch: true
-                            options: Library.cleanupLevels.slice(1).map(l => ({ id: l.id, label: l.label })).concat([{ id: "custom_only", label: Library.profilesText.customOnly }])
-                            currentId: levelForm.base
-                            onActivated: id => levelForm.base = id
-                        }
-                    }
-                    FormField {
-                        label: Library.profilesText.levelInstructions
-                        TextArea { id: levelText; width: parent.width; minHeight: 60; placeholderText: Library.profilesText.levelInstructionsPlaceholder }
-                    }
+                function startEdit(id) {
+                    const rule = Library.rules.find(r => r.id === id)
+                    if (!rule) return
+                    editing = id
+                    forProfile = ""
+                    ruleName.text = rule.name
+                    ruleText.text = rule.instruction
+                    everyProfile.checked = rule.everyProfile
+                    error = ""
+                    open = true
+                }
+                title: editing ? Library.rulesText.editRule : Library.rulesText.newRule
+                saveText: editing ? Words.save : Library.rulesText.addRule
+                note: Words.savesOnPress(saveText)
+                canSave: ruleName.text.trim().length > 0
+                onCancelled: open = false
+                onSaved: {
+                    const rule = { name: ruleName.text.trim(), instruction: ruleText.text, everyProfile: everyProfile.checked }
+                    const id = editing || Library.newId("custom_rule")
+                    const refused = editing ? Library.update("rules", id, rule) : Library.add("rules", Object.assign({ id: id }, rule))
+                    error = Library.refusalText("rules", refused)
+                    if (refused) return
+                    if (!editing && forProfile && !rule.everyProfile) Library.setProfileRule(forProfile, id, true)
+                    open = false
+                }
+                FormField {
+                    label: Library.profilesText.name
+                    TextField { id: ruleName; width: parent.width; placeholderText: Library.rulesText.namePlaceholder }
+                }
+                FormField {
+                    label: Library.rulesText.instruction
+                    help: Library.rulesText.instructionHelp
+                    TextArea { id: ruleText; width: parent.width; minHeight: 60; placeholderText: Library.rulesText.instructionPlaceholder }
+                }
+                FormField {
+                    label: Library.rulesText.onEverywhere
+                    help: ruleForm.forProfile ? Library.rulesText.onlyIn(Library.profileName(ruleForm.forProfile))
+                                              : Library.rulesText.onEverywhereHelp
+                    Switch { id: everyProfile }
                 }
             }
         }

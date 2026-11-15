@@ -142,10 +142,13 @@ class MainActivity : ComponentActivity() {
         signIn.restore(status.working)
         page = if (status.complete && signIn.activeProvider == null) Page.Home else Page.Setup
         updates.showSavedOffer(settings.updateChannel)
-        savedInstanceState?.getString(SETTINGS_PAGE)?.let {
-            page = Page.Settings
-            settingsPage = SettingsPage.valueOf(it)
-        }
+        // A page an earlier release saved may no longer exist, as Tones and Cleanup levels.
+        SettingsPage.entries
+            .find { it.name == savedInstanceState?.getString(SETTINGS_PAGE) }
+            ?.let {
+                page = Page.Settings
+                settingsPage = it
+            }
         if (savedInstanceState == null) handleIntent(intent)
         setContent {
             SpeecherTheme {

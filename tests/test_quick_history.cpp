@@ -149,7 +149,7 @@ private slots:
         ApplicationController controller(true);
         controller.settings()->edit([](AppSettings &draft) {
             draft.refinement.writingProfiles.append({QStringLiteral("custom_notes"), QStringLiteral("balanced"),
-                                                     QStringLiteral("none"), QString(), QStringLiteral("Notes")});
+                                                     QStringLiteral("none"), {}, QStringLiteral("Notes")});
             return true;
         });
         HistoryEntry note = kept(QStringLiteral("buy milk"));

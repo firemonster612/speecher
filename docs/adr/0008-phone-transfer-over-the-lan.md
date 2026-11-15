@@ -1,6 +1,7 @@
 # Copy settings to the phone over the LAN
 
-Status: accepted, 2026-10-07
+Status: accepted, 2026-10-07. Amended 2026-11-15 by
+[0011](0011-refinement-rules.md): format 2 carries rules.
 
 ## Context
 
@@ -26,8 +27,8 @@ the key from the code.
 - The code is the only secret. A neighbour on the same Wi-Fi sees ciphertext,
   and cannot use up the one serving without the token.
 - Only the user's own dictation setup moves: vocabulary, replacements and
-  snippets, Writing Profiles, custom tones, custom cleanup levels and
-  Additional Instructions. Never accounts, tokens or keys.
+  snippets, Writing Profiles and the person's refinement rules. Never
+  accounts, tokens or keys.
 - The phone merges: nothing on it is deleted, and where both have an item the
   computer's version replaces the phone's.
 - Only desktop to phone. The other direction has no use yet.
@@ -39,12 +40,15 @@ ChaCha20-Poly1305, built in from API 28.
 
 ## Wire format
 
-Version 1. Both sides treat anything else as an error.
+Version 2. Both sides treat anything else as an error, so a phone whose app
+reads another version says so. Version 1 carried custom
+tones, custom cleanup levels and Additional Instructions, which rules
+replaced.
 
 **The code** is a URI:
 
 ```
-speecher://import?v=1&a=192.168.1.20,10.0.0.5&p=53817&t=<token>&k=<key>&n=<name>
+speecher://import?v=2&a=192.168.1.20,10.0.0.5&p=53817&t=<token>&k=<key>&n=<name>
 ```
 
 - `a`: the desktop's private IPv4 addresses on interfaces that are up, comma
@@ -80,29 +84,32 @@ code. The desktop never reopens the port for the same code.
 
 ```json
 {
-  "format": 1,
-  "computer": "enzo-thinkpad",
+  "format": 2,
+  "computer": "desk",
   "vocabulary": [
     {"term": "Kubernetes", "context": "The container platform.", "profiles": ["work"],
-     "keyTerm": true, "priority": false, "source": "manual", "frequency": 41,
+     "keyTerm": true, "priority": true, "source": "manual", "frequency": 41,
      "lastUsedMs": 1790000000000}
   ],
-  "replacements": [{"phrase": "my address", "text": "Flat 3, 14 Harcourt Street"}],
+  "replacements": [{"phrase": "my address", "text": "Flat 3"}],
   "writingProfiles": [
-    {"id": "work", "name": "", "cleanupLevel": "balanced", "tone": "none",
-     "instructions": "", "outputLanguage": ""}
+    {"id": "work", "name": "", "cleanupLevel": "strong_polish", "tone": "formal",
+     "outputLanguage": "", "rules": {"custom_rule_short": true, "headings": false}}
   ],
-  "customTones": [{"id": "custom_dry", "name": "Dry", "instruction": "Understated."}],
-  "customCleanupLevels": [
-    {"id": "custom_terse", "name": "Terse", "base": "strong_polish", "instructions": "Cut filler."}
-  ],
-  "additionalInstructions": "Use British spelling."
+  "rules": [
+    {"id": "custom_rule_british", "name": "British", "instruction": "Use British spelling.",
+     "everyProfile": true},
+    {"id": "custom_rule_short", "name": "Short", "instruction": "", "everyProfile": false}
+  ]
 }
 ```
 
 `priority` is the desktop's `starred`. `cleanupLevel` and `tone` hold a
-built-in id or a custom id, as the desktop stores them. `writingProfiles`
-lists every profile, built-in and custom; `name` is empty for a built-in.
+built-in id, as the desktop stores them. A profile's `rules` holds only the
+rules it switched away from their default, by id, built-in rules and the
+person's alike. `writingProfiles` lists every profile, built-in and custom;
+`name` is empty for a built-in. `rules` lists the person's rules in their
+order.
 
 **Merging on the phone**, item by item:
 
@@ -111,8 +118,7 @@ lists every profile, built-in and custom; `name` is empty for a built-in.
 | Vocabulary Entry | terms match ignoring case and spacing | replaces term, context, profiles, key term and priority; frequency and last use keep the larger |
 | Replacement | spoken phrases match as `normalizedPhrase` | replaces the text |
 | Writing Profile | ids match | replaces every setting |
-| Custom tone, custom cleanup level | ids match | replaces it whole |
-| Additional Instructions | always, unless the computer's are empty | replaces the phone's |
+| Rule | ids match | replaces it whole |
 
 ## Consequences
 

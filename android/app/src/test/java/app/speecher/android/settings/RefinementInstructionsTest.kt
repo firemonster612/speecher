@@ -1,16 +1,10 @@
 package app.speecher.android.settings
 
 import app.speecher.protocol.AppCategory
-import app.speecher.protocol.CleanupStrength
-import app.speecher.protocol.CustomCleanupLevel
-import app.speecher.protocol.CustomTone
 import app.speecher.protocol.RecognitionRule
+import app.speecher.protocol.RefinementRule
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
-import app.speecher.protocol.cleanupLevelId
-import app.speecher.protocol.toneId
-import app.speecher.protocol.withCleanupLevel
-import app.speecher.protocol.withTone
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -20,35 +14,23 @@ import org.robolectric.RuntimeEnvironment
 @RunWith(RobolectricTestRunner::class)
 class RefinementInstructionsTest {
     @Test
-    fun `profiles keep custom tones and levels until they are deleted`() {
-        val store = SettingsStore(RuntimeEnvironment.getApplication())
-        val tone = CustomTone("custom_terse", "Terse", "Short.")
-        val level =
-            CustomCleanupLevel("custom_notes", "Notes", CleanupStrength.CustomOnly, "Bullets.")
-        val chosen = WritingProfileSettings().withCleanupLevel(level.id).withTone(tone.id)
-        store.save(
+    fun `deleting a rule drops each profile's switch for it, and a switch for none loads without it`() {
+        val kept = RefinementRule("custom_rule_kept", "Kept")
+        val gone = RefinementRule("custom_rule_gone", "Gone")
+        val switches = mapOf(kept.id to true, gone.id to true, "markdown" to false)
+        val settings =
             SpeecherSettings(
-                customTones = listOf(tone),
-                customCleanupLevels = listOf(level),
                 writingProfiles =
-                    SpeecherSettings().writingProfiles + (WritingProfile.Email to chosen),
-            ),
-        )
-        val loaded = store.load()
-        assertEquals(listOf(tone), loaded.customTones)
-        assertEquals(listOf(level), loaded.customCleanupLevels)
-        val email = loaded.writingProfiles.getValue(WritingProfile.Email)
+                    SpeecherSettings().writingProfiles +
+                        (WritingProfile.Email to WritingProfileSettings(rules = switches)),
+                refinementRules = listOf(kept, gone),
+            )
+        val store = SettingsStore(RuntimeEnvironment.getApplication())
+        store.save(settings.copy(refinementRules = listOf(kept)))
         assertEquals(
-            listOf("custom_notes", "custom_terse"),
-            listOf(email.cleanupLevelId, email.toneId),
+            mapOf(kept.id to true, "markdown" to false),
+            store.load().writingProfiles.getValue(WritingProfile.Email).rules,
         )
-
-        val deleted =
-            loaded
-                .withCustomChoices(tones = emptyList(), levels = emptyList())
-                .writingProfiles
-                .getValue(WritingProfile.Email)
-        assertEquals(listOf("balanced", "none"), listOf(deleted.cleanupLevelId, deleted.toneId))
     }
 
     @Test
