@@ -119,6 +119,16 @@ QHash<int, QByteArray> HistoryResults::roleNames() const
     return {{EntryRole, "entry"}, {DayRole, "day"}};
 }
 
+int HistoryResults::indexOf(qint64 id) const
+{
+    for (int i = 0; i < count(); ++i) {
+        if (m_rows.at(i).toMap().value(QStringLiteral("id")).toLongLong() == id) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 void HistoryResults::reset(QVariantList rows)
 {
     const int before = count();

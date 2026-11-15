@@ -38,12 +38,23 @@ Page {
     // opened at.
     property real readingId: 0
     property real readAt: -1
-    // The row at the top of the view when the reader opened, to come back
-    // to; -1 while the top of the page showed.
+    // The entry at the top of the view when the reader opened, and its
+    // place then, to come back to; -1 while the top of the page showed. The
+    // entry may have moved meanwhile, or gone, leaving its place.
     property int _readFrom: -1
+    property real _readFromId: 0
     onReadingIdChanged: {
-        if (readingId) _readFrom = list.indexAt(list.width / 2, list.contentY + 1)
-        else if (_readFrom >= 0) Qt.callLater(() => page.list.positionViewAtIndex(page._readFrom, ListView.Beginning))
+        if (readingId) {
+            _readFrom = list.indexAt(list.width / 2, list.contentY + 1)
+            const top = list.itemAtIndex(_readFrom) as HistoryListRow
+            _readFromId = top ? top.entry.id : 0
+        } else if (_readFrom >= 0) {
+            Qt.callLater(() => {
+                const moved = History.results.indexOf(page._readFromId)
+                const at = moved >= 0 ? moved : Math.min(page._readFrom, History.results.count - 1)
+                if (at >= 0) page.list.positionViewAtIndex(at, ListView.Beginning)
+            })
+        }
     }
 
     // entry: the one listed, or else History.entry(id) reads it.
@@ -75,8 +86,13 @@ Page {
     function undo() {
         if (lastUndo >= 0 && History.undo(lastUndo)) lastUndo = -1
     }
+    // Focuses the row step from index, scrolling to it first if it's out of
+    // the rows built.
     function stepFocus(index, step) {
-        const next = page.list.itemAtIndex(index + step) as HistoryListRow
+        const to = index + step
+        if (to < 0 || to >= History.results.count) return
+        if (!page.list.itemAtIndex(to)) page.list.positionViewAtIndex(to, ListView.Contain)
+        const next = page.list.itemAtIndex(to) as HistoryListRow
         if (next) {
             next.row.rowItem.forceActiveFocus()
             page.reveal(next.row)

@@ -35,6 +35,8 @@ public:
     int rowCount(const QModelIndex &parent = {}) const override { return parent.isValid() ? 0 : count(); }
     QVariant data(const QModelIndex &index, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
+    // The row holding the entry id, or -1.
+    Q_INVOKABLE int indexOf(qint64 id) const;
     void reset(QVariantList rows);
     void append(const QVariantList &rows);
     // Replaces the rows with rows the same query found again, after a new

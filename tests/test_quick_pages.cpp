@@ -2172,6 +2172,19 @@ private slots:
         QMetaObject::invokeMethod(page, "positionViewAtEnd");
         QTRY_VERIFY(findItem(main->contentItem(), QStringLiteral("historyRow_%1").arg(oldest)));
         QTRY_VERIFY2(built() < 100, qPrintable(QString::number(built())));
+
+        // Down from the search, far below, still reaches the newest row.
+        const qint64 newest = history->results().first().toMap().value(QStringLiteral("id")).toLongLong();
+        QQuickItem *search = findItem(main->contentItem(), QStringLiteral("historySearch"));
+        QVERIFY(search);
+        search->forceActiveFocus();
+        QTest::keyClick(main, Qt::Key_Down);
+        QQuickItem *row = nullptr;
+        QTRY_VERIFY((row = findItem(main->contentItem(), QStringLiteral("historyRow_%1").arg(newest))) && row->hasActiveFocus());
+        // And Down again steps to the next row.
+        QTest::keyClick(main, Qt::Key_Down);
+        const qint64 second = history->results().at(1).toMap().value(QStringLiteral("id")).toLongLong();
+        QTRY_VERIFY((row = findItem(main->contentItem(), QStringLiteral("historyRow_%1").arg(second))) && row->hasActiveFocus());
     }
 
     // History in each of its states: off, keeping stats, nothing kept yet,

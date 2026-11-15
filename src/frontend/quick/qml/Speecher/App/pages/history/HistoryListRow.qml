@@ -27,6 +27,8 @@ Column {
     signal stepFocus(int step)
     signal focused()
 
+    // The list gives its current row focus; the row's keys are on its row.
+    onActiveFocusChanged: if (activeFocus) historyRow.rowItem.forceActiveFocus()
     // A Column lays out after the list has placed it, so until then the row
     // counts as a typical one rather than as nothing, which would have the
     // list build every row.
