@@ -31,6 +31,8 @@ Environment:
                         Falls back to QT_ROOT_DIR. Without either, CMake's
                         default discovery applies (risky on hosts with a
                         system Qt).
+  SPARKLE_ED_PUBLIC_KEY The release key update manifests must be signed
+                        with. Without it the AppImage cannot update itself.
   ARCH                   AppImage arch. Default: x86_64
 EOF
 }
@@ -114,6 +116,9 @@ CMAKE_CONFIGURE_ARGS=(
 )
 if [[ -n "$QT_PREFIX_HINT" ]]; then
   CMAKE_CONFIGURE_ARGS+=("-DCMAKE_PREFIX_PATH=$QT_PREFIX_HINT")
+fi
+if [[ -n "${SPARKLE_ED_PUBLIC_KEY:-}" ]]; then
+  CMAKE_CONFIGURE_ARGS+=("-DSPEECHER_SPARKLE_ED_PUBLIC_KEY=$SPARKLE_ED_PUBLIC_KEY")
 fi
 # The update end-to-end run builds AppImages with the E2E hooks compiled in.
 if [[ -n "${SPEECHER_APPIMAGE_CMAKE_EXTRA:-}" ]]; then

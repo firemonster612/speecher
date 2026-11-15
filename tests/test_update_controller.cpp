@@ -27,6 +27,7 @@
 #include <QToolButton>
 
 #include <cstring>
+#include <monocypher-ed25519.h>
 #ifdef Q_OS_LINUX
 #include <QLocalServer>
 #include <sys/stat.h>
@@ -101,6 +102,31 @@ private:
     qint64 m_offset = 0;
 };
 
+// The key tests sign manifests with, which TestManifestUpdater trusts in
+// place of the release key. tests/release/test-publish-release.sh signs the
+// fixture in tests/data/update-manifest with its seed.
+const QByteArray testKeySeed = QByteArray::fromBase64("KTTjIefSe4LxN8oP0lBmHLa44tcubLY/KSSJNGFar7E=");
+const QByteArray testPublicKey = QByteArray::fromBase64("7toydKEGhrZxA8HUHxqtl70KI9hgucXCGh4/ux5k6so=");
+
+// A signed manifest as the release publishes one: the base64 signature over
+// prefix followed by the manifest, a newline, then the manifest.
+QByteArray signedManifest(const QByteArray &manifest,
+                          const QByteArray &seed = testKeySeed,
+                          const QByteArray &prefix = QByteArrayLiteral("Speecher update manifest v1\n"))
+{
+    uint8_t secretKey[64];
+    uint8_t publicKey[32];
+    uint8_t seedBytes[32];
+    std::memcpy(seedBytes, seed.constData(), sizeof seedBytes);
+    crypto_ed25519_key_pair(secretKey, publicKey, seedBytes);
+    const QByteArray message = prefix + manifest;
+    QByteArray signature(64, Qt::Uninitialized);
+    crypto_ed25519_sign(reinterpret_cast<uint8_t *>(signature.data()), secretKey,
+                        reinterpret_cast<const uint8_t *>(message.constData()),
+                        size_t(message.size()));
+    return signature.toBase64() + '\n' + manifest;
+}
+
 struct UpdateTestContext {
     SettingsStore settings;
 
@@ -129,6 +155,7 @@ protected:
     std::unique_ptr<QFile> createDownload(QString *, bool *) override { return {}; }
     bool installDownload(const QString &, QString *) override { return false; }
     void restartApplication() override { ++restartCount; }
+    QByteArray manifestPublicKey() const override { return testPublicKey; }
     QUrl manifestUrl(UpdateChannel channel) const override
     {
         if (channel == UpdateChannel::Stable && !stableManifest.isEmpty()) {
@@ -336,9 +363,9 @@ private slots:
         // check offers it, carrying the stable channel for the banner wording.
         QTcpServer *nightlyServer = manifestServer(
             &updater,
-            manifestJson(QStringLiteral("0.2.2-nightly.20260921+gabc1234"), current + 1));
+            signedManifest(manifestJson(QStringLiteral("0.2.2-nightly.20260921+gabc1234"), current + 1)));
         QTcpServer *stableServer =
-            manifestServer(&updater, manifestJson(QStringLiteral("0.2.1"), current + 2));
+            manifestServer(&updater, signedManifest(manifestJson(QStringLiteral("0.2.1"), current + 2)));
         updater.manifest = serverUrl(nightlyServer);
         updater.stableManifest = serverUrl(stableServer);
 
@@ -356,7 +383,7 @@ private slots:
         context.settings.edit([](AppSettings &draft) { draft.updates.channel = UpdateChannel::Nightly; return true; });
         QTcpServer *newerNightly = manifestServer(
             &updater,
-            manifestJson(QStringLiteral("0.2.2-nightly.20260922+gdef5678"), current + 3));
+            signedManifest(manifestJson(QStringLiteral("0.2.2-nightly.20260922+gdef5678"), current + 3)));
         updater.manifest = serverUrl(newerNightly);
         updater.checkForUpdates(UpdateChannel::Nightly);
         QTRY_COMPARE_WITH_TIMEOUT(updater.state(),
@@ -378,7 +405,7 @@ private slots:
         // exactly the release a broken feed must not hide.
         QTcpServer *deadNightly = manifestServer(&updater, QByteArrayLiteral("not json"));
         QTcpServer *stableServer =
-            manifestServer(&updater, manifestJson(QStringLiteral("0.2.1"), current + 2));
+            manifestServer(&updater, signedManifest(manifestJson(QStringLiteral("0.2.1"), current + 2)));
         updater.manifest = serverUrl(deadNightly);
         updater.stableManifest = serverUrl(stableServer);
         updater.checkForUpdates(UpdateChannel::Nightly);
@@ -391,7 +418,7 @@ private slots:
         context.settings.edit([](AppSettings &draft) { draft.updates.channel = UpdateChannel::Stable; return true; });
         context.settings.edit([](AppSettings &draft) { draft.updates.channel = UpdateChannel::Nightly; return true; });
         QTcpServer *oldStable =
-            manifestServer(&updater, manifestJson(QStringLiteral("0.1.0"), 1));
+            manifestServer(&updater, signedManifest(manifestJson(QStringLiteral("0.1.0"), 1)));
         updater.stableManifest = serverUrl(oldStable);
         updater.checkForUpdates(UpdateChannel::Nightly);
         QTRY_COMPARE_WITH_TIMEOUT(updater.state(),
@@ -472,6 +499,76 @@ private slots:
                                                 QStringLiteral("linux-x86_64"),
                                                 QStringLiteral("appimage"))
                      .has_value());
+    }
+
+    // The release script and the updater agree on the format, the prefix and
+    // the signature: the fixture is the script's output for the test key.
+    void acceptsTheReleaseScriptsSignedManifest()
+    {
+        const QString directory = QStringLiteral(SPEECHER_SOURCE_DIR "/tests/data/update-manifest/");
+        const QByteArray manifest = readFile(directory + QStringLiteral("update-manifest.json"));
+        QVERIFY(!manifest.isEmpty());
+        QString error;
+        const std::optional<QByteArray> verified = ManifestUpdater::verifiedManifest(
+            readFile(directory + QStringLiteral("update-manifest.signed")), testPublicKey, &error);
+        QVERIFY2(verified, qPrintable(error));
+        QCOMPARE(*verified, manifest);
+        QCOMPARE(signedManifest(manifest),
+                 readFile(directory + QStringLiteral("update-manifest.signed")));
+    }
+
+    void rejectsUnsignedAndForgedManifests_data()
+    {
+        QTest::addColumn<QByteArray>("body");
+        QTest::addColumn<QByteArray>("publicKey");
+        QTest::addColumn<QString>("error");
+        const QByteArray manifest = validManifestJson();
+        const QByteArray genuine = signedManifest(manifest);
+        const QString unsignedError = QStringLiteral("not signed");
+        const QString forgedError = QStringLiteral("does not match");
+
+        QTest::newRow("unsigned") << manifest << testPublicKey << unsignedError;
+        QTest::newRow("empty") << QByteArray() << testPublicKey << unsignedError;
+        QTest::newRow("signature not base64")
+            << QByteArray("not*base64\n" + manifest) << testPublicKey << unsignedError;
+        QTest::newRow("short signature")
+            << QByteArray(genuine.left(40) + '\n' + manifest) << testPublicKey << unsignedError;
+        QByteArray tampered = genuine;
+        tampered.replace("\"buildNumber\": 123", "\"buildNumber\": 923");
+        QTest::newRow("manifest changed after signing") << tampered << testPublicKey << forgedError;
+        QTest::newRow("another key")
+            << signedManifest(manifest, QByteArray(32, '\x07')) << testPublicKey << forgedError;
+        // What a Sparkle signature over the same bytes would be.
+        QTest::newRow("no prefix")
+            << signedManifest(manifest, testKeySeed, QByteArray()) << testPublicKey << forgedError;
+        QTest::newRow("build without a key")
+            << genuine << QByteArray() << QStringLiteral("no update signing key");
+    }
+
+    void rejectsUnsignedAndForgedManifests()
+    {
+        QFETCH(QByteArray, body);
+        QFETCH(QByteArray, publicKey);
+        QFETCH(QString, error);
+        QString message;
+        QVERIFY(!ManifestUpdater::verifiedManifest(body, publicKey, &message));
+        QVERIFY2(message.contains(error), qPrintable(message));
+    }
+
+    // A check never falls back to an unsigned manifest: it fails and offers
+    // nothing.
+    void aCheckFailsOnAnUnsignedManifest()
+    {
+        UpdateTestContext context;
+        TestManifestUpdater updater(&context.settings);
+        QTcpServer *server = manifestServer(
+            &updater, manifestJson(QStringLiteral("9.9.9"), updater.currentBuildNumber() + 1));
+        updater.manifest = serverUrl(server);
+        updater.checkForUpdates(UpdateChannel::Stable);
+        QTRY_COMPARE_WITH_TIMEOUT(updater.state(), UpdateController::State::CheckFailed, 10000);
+        QVERIFY2(updater.errorMessage().contains(QStringLiteral("not signed")),
+                 qPrintable(updater.errorMessage()));
+        QVERIFY(updater.availableVersion().isEmpty());
     }
 
     void rejectsDownloadWithMismatchedChecksum()
@@ -880,7 +977,7 @@ private slots:
         QCOMPARE(ManifestUpdaterTestAccess::nextCheckDelay(invalidUpdater), 5 * minuteMs);
 
         ManifestUpdaterTestAccess::finishCheck(
-            updater, new StaticNetworkReply(validManifestJson(),
+            updater, new StaticNetworkReply(signedManifest(validManifestJson()),
                                             QNetworkReply::NoError,
                                             &updater),
             true);

@@ -82,8 +82,9 @@ The default Update Channel is Stable Release. You can select Nightly Build in
 Settings > General > Updates.
 
 Speecher downloads a new installer to
-`%LOCALAPPDATA%\Speecher\updates\Speecher-Setup-<version>.exe`, checks the
-SHA-256 value from `update-manifest.json`, and waits for the current Dictation
+`%LOCALAPPDATA%\Speecher\updates\Speecher-Setup-<version>.exe`, checks it
+against the SHA-256 value in the release's signed update manifest (see
+`docs/adr/0011-signed-update-manifest.md`), and waits for the current Dictation
 Session to finish. The installer then runs silently and starts the updated app.
 If the updates folder is not writable, Speecher opens the GitHub release page
 for a manual install.

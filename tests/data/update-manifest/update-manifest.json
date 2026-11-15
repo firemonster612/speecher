@@ -1,0 +1,12 @@
+{
+  "version": "9.9.9",
+  "buildNumber": 402,
+  "linux-x86_64": {
+    "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "appimage": "https://github.com/firemonster612/speecher/releases/download/v9.9.9/Speecher-x86_64.AppImage"
+  },
+  "windows-x86_64": {
+    "installer": "https://github.com/firemonster612/speecher/releases/download/v9.9.9/Speecher-Setup-x64.exe",
+    "sha256": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+  }
+}

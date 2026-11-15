@@ -42,11 +42,13 @@ bool runPkexecConversation(const QString &program,
                            int timeoutMs);
 // Runs the setup helper as root through pkexec with a fixed argv: the helper,
 // --install or --remove, --user and the current user. Root never executes
-// from a user-writable path: a helper not already at its root-owned installed
-// path (an AppImage mount, a build directory) is first copied, with its
-// companion files, to a root-owned directory by pkexec'd /usr/bin/install,
-// and that copy is what runs. The intermediate hop onto a normal filesystem
-// exists because pkexec's root cannot read the AppImage's private FUSE mount.
+// from a user-writable path: unless the helper, its companion files and every
+// directory above them are owned by root and writable by neither group nor
+// others, they are first copied to a root-owned directory by pkexec'd
+// /usr/bin/install, and that copy is what runs. That covers an AppImage
+// mount, a build directory and a `make install` into ~/.local. The
+// intermediate hop onto a normal filesystem exists because pkexec's root
+// cannot read the AppImage's private FUSE mount.
 bool runSetupHelper(const char *installedHelperPath,
                     const QStringList &companionFileNames,
                     HelperAction action,

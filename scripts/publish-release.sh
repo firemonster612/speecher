@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The manifest is signed below; check for the key before anything is published.
+if [ -z "${SPARKLE_ED_PRIVATE_KEY:-}" ] || [ -z "${SPARKLE_ED_PUBLIC_KEY:-}" ]; then
+  echo "SPARKLE_ED_PRIVATE_KEY and SPARKLE_ED_PUBLIC_KEY are required for publishing." >&2
+  exit 1
+fi
+
 version="$(python3 -c 'import json; print(json.load(open("artifacts/linux-release/update-manifest.json"))["version"])')"
 build_number="$(python3 -c 'import json; print(json.load(open("artifacts/linux-release/update-manifest.json"))["buildNumber"])')"
 if [ "${GITHUB_REF_NAME}" = "master" ]; then
@@ -100,6 +106,10 @@ manifest["windows-x86_64"] = {
 }
 path.write_text(json.dumps(manifest, indent=2) + "\n")
 PY
+# Installs from before signed manifests read update-manifest.json; newer ones
+# read only the signed copy (docs/adr/0011-signed-update-manifest.md).
+python3 scripts/sign-update-manifest.py artifacts/linux-release/update-manifest.json \
+  artifacts/linux-release/update-manifest.signed
 if [ "${GITHUB_REF_NAME}" = "master" ]; then
   git tag --force "$tag" "$GITHUB_SHA"
   git push origin "refs/tags/$tag" --force
@@ -136,7 +146,8 @@ EOF
     artifacts/windows-release/Speecher-Setup-x64.exe \
     artifacts/linux-release/Speecher-x86_64.AppImage.zsync \
     artifacts/windows-release/Speecher-Setup-x64.exe.sha256 --clobber
-  gh release upload "$tag" artifacts/linux-release/update-manifest.json --clobber
+  gh release upload "$tag" artifacts/linux-release/update-manifest.json \
+    artifacts/linux-release/update-manifest.signed --clobber
 
   for asset in "${stale_assets[@]}"; do
     gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/$asset" --silent
@@ -163,7 +174,8 @@ else
     "artifacts/macos-release/$dmg_name" \
     "artifacts/windows-release/$installer_name" \
     artifacts/windows-release/Speecher-Setup-x64.exe.sha256 \
-    artifacts/linux-release/update-manifest.json --clobber
+    artifacts/linux-release/update-manifest.json \
+    artifacts/linux-release/update-manifest.signed --clobber
 fi
 published_at="$(git log -1 --format=%aD HEAD)"
 python3 scripts/make-appcast.py \

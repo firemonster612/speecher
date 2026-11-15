@@ -15,6 +15,8 @@
 #include <QRegularExpression>
 #include <QTimer>
 
+#include <monocypher-ed25519.h>
+
 #include <utility>
 
 namespace speecher {
@@ -23,10 +25,16 @@ namespace {
 constexpr int initialRetryIntervalMs = 5 * 60 * 1000;
 constexpr int maximumRetryIntervalMs = 60 * 60 * 1000;
 constexpr int visibleAutomaticFailureCount = 3;
+// update-manifest.json, unsigned, stays published for installs from before
+// manifests were signed.
 const QUrl stableManifestUrl(QStringLiteral(
-    "https://github.com/firemonster612/speecher/releases/latest/download/update-manifest.json"));
+    "https://github.com/firemonster612/speecher/releases/latest/download/update-manifest.signed"));
 const QUrl nightlyManifestUrl(QStringLiteral(
-    "https://github.com/firemonster612/speecher/releases/download/nightly/update-manifest.json"));
+    "https://github.com/firemonster612/speecher/releases/download/nightly/update-manifest.signed"));
+// Every manifest signature covers this first, so a manifest signature and a
+// Sparkle signature made with the same key never stand in for each other.
+// scripts/sign-update-manifest.py signs with the same prefix.
+constexpr QByteArrayView manifestSignaturePrefix("Speecher update manifest v1\n");
 
 void setError(QString *error, const QString &message)
 {
@@ -80,6 +88,10 @@ ManifestUpdater::~ManifestUpdater()
 
 void ManifestUpdater::start()
 {
+    if (manifestPublicKey().size() != 32) {
+        qWarning("Updates: this build has no update signing key "
+                 "(SPEECHER_SPARKLE_ED_PUBLIC_KEY), so every update check will fail.");
+    }
     connect(m_checkTimer, &QTimer::timeout, this, [this] {
         // A failed automatic check is retried on its backoff, due or not.
         const UpdateSettings updates = updateSettings();
@@ -193,6 +205,39 @@ bool ManifestUpdater::stableReplacementAvailable() const
     return m_manifest.channel == UpdateChannel::Stable
         && m_checkChannel == UpdateChannel::Stable
         && currentVersion().contains(QStringLiteral("-nightly"));
+}
+
+std::optional<QByteArray> ManifestUpdater::verifiedManifest(const QByteArray &signedManifest,
+                                                            const QByteArray &publicKey,
+                                                            QString *error)
+{
+    if (publicKey.size() != 32) {
+        setError(error,
+                 QStringLiteral("This build has no update signing key, so it cannot tell a "
+                                "genuine update from a forged one. Download updates from the "
+                                "releases page."));
+        return std::nullopt;
+    }
+    const qsizetype newline = signedManifest.indexOf('\n');
+    const auto signature = QByteArray::fromBase64Encoding(
+        signedManifest.first(qMax<qsizetype>(newline, 0)),
+        QByteArray::AbortOnBase64DecodingErrors);
+    if (newline < 0 || !signature || signature.decoded.size() != 64) {
+        setError(error, QStringLiteral("The update manifest is not signed."));
+        return std::nullopt;
+    }
+    QByteArray manifest = signedManifest.sliced(newline + 1);
+    const QByteArray message = manifestSignaturePrefix.toByteArray() + manifest;
+    if (crypto_ed25519_check(reinterpret_cast<const uint8_t *>(signature.decoded.constData()),
+                             reinterpret_cast<const uint8_t *>(publicKey.constData()),
+                             reinterpret_cast<const uint8_t *>(message.constData()),
+                             size_t(message.size()))
+        != 0) {
+        setError(error, QStringLiteral("The update manifest's signature does not match "
+                                       "Speecher's release key."));
+        return std::nullopt;
+    }
+    return manifest;
 }
 
 std::optional<UpdateManifest> ManifestUpdater::parseManifest(
@@ -409,6 +454,11 @@ QUrl ManifestUpdater::manifestUrl(UpdateChannel channel) const
     return channel == UpdateChannel::Nightly ? nightlyManifestUrl : stableManifestUrl;
 }
 
+QByteArray ManifestUpdater::manifestPublicKey() const
+{
+    return QByteArray::fromBase64(QByteArrayLiteral(SPEECHER_UPDATE_PUBLIC_KEY));
+}
+
 void ManifestUpdater::finishCheck(QNetworkReply *reply)
 {
     if (m_reply != reply) {
@@ -424,7 +474,10 @@ void ManifestUpdater::finishCheck(QNetworkReply *reply)
     QString error;
     std::optional<UpdateManifest> parsed;
     if (networkError.isEmpty()) {
-        parsed = parseManifest(body, m_platformKey, m_downloadKey, &error);
+        // Nothing in the manifest is read before its signature checks out.
+        if (const auto manifest = verifiedManifest(body, manifestPublicKey(), &error)) {
+            parsed = parseManifest(*manifest, m_platformKey, m_downloadKey, &error);
+        }
     }
     if (parsed) {
         parsed->channel = m_fetchingStable ? UpdateChannel::Stable : m_checkChannel;

@@ -4,6 +4,9 @@
 #include "setup/HelperCommands.h"
 
 #include <QFile>
+#include <QFileInfo>
+#include <QScopeGuard>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -50,6 +53,34 @@ QString writeScript(const QTemporaryDir &directory, const char *body)
     file.write(body);
     file.setPermissions(file.permissions() | QFileDevice::ExeOwner);
     return path;
+}
+
+// Runs runSetupHelper with a pkexec that only records each command it is
+// given, one line per call, and returns those lines.
+QStringList setupHelperCommands(const char *installedHelperPath)
+{
+    QTemporaryDir bin;
+    const QString log = bin.filePath(QStringLiteral("pkexec.log"));
+    QFile pkexec(bin.filePath(QStringLiteral("pkexec")));
+    if (!pkexec.open(QIODevice::WriteOnly)) {
+        return {};
+    }
+    pkexec.write(QStringLiteral("#!/bin/sh\necho \"$*\" >> '%1'\n").arg(log).toUtf8());
+    pkexec.close();
+    pkexec.setPermissions(pkexec.permissions() | QFileDevice::ExeOwner);
+
+    const QByteArray path = qgetenv("PATH");
+    qputenv("PATH", QFile::encodeName(bin.path()) + ':' + path);
+    const auto restorePath = qScopeGuard([&] { qputenv("PATH", path); });
+    QString error;
+    if (!helpers::runSetupHelper(installedHelperPath, {}, helpers::HelperAction::Install, &error)) {
+        return {error};
+    }
+    QFile output(log);
+    if (!output.open(QIODevice::ReadOnly)) {
+        return {};
+    }
+    return QString::fromUtf8(output.readAll()).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
 }
 
 } // namespace
@@ -131,6 +162,41 @@ private slots:
         QString error;
         QVERIFY(!helpers::runPkexecConversation(script, {}, &error, 10000));
         QVERIFY2(error.contains(QStringLiteral("canceled")), qPrintable(error));
+    }
+
+    // A `make install` into ~/.local puts the helper at its compiled-in path,
+    // but the user owns it, so root runs only a root-owned copy of it.
+    void aUserOwnedHelperAtItsInstalledPathIsStagedFirst()
+    {
+        QTemporaryDir directory;
+        const QString helper = directory.filePath(QStringLiteral("speecher-test-setup"));
+        QFile file(helper);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("#!/bin/sh\n");
+        file.close();
+        QVERIFY(file.setPermissions(file.permissions() | QFileDevice::ExeOwner));
+
+        const QStringList commands = setupHelperCommands(QFile::encodeName(helper).constData());
+        const QString user = helpers::currentUserName();
+        QCOMPARE(commands.size(), 2);
+        QVERIFY2(commands.at(0).startsWith(QStringLiteral("/usr/bin/install -o root -g root")),
+                 qPrintable(commands.at(0)));
+        QCOMPARE(commands.at(1),
+                 QStringLiteral("/usr/local/lib/speecher/setup/speecher-test-setup --install --user ")
+                     + user);
+    }
+
+    // A helper that root alone can change, here a system binary, runs where it is.
+    void aRootOwnedHelperRunsDirectly()
+    {
+        const QString helper =
+            QFileInfo(QStandardPaths::findExecutable(QStringLiteral("true"))).canonicalFilePath();
+        QVERIFY(!helper.isEmpty());
+
+        const QStringList commands = setupHelperCommands(QFile::encodeName(helper).constData());
+        QCOMPARE(commands,
+                 QStringList{helper + QStringLiteral(" --install --user ")
+                             + helpers::currentUserName()});
     }
 
     // Under pkexec a setup helper sets up the account that asked, and refuses

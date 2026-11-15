@@ -50,6 +50,13 @@ public:
     bool manualInstallRequired() const override;
     bool stableReplacementAvailable() const override;
 
+    // The manifest bytes a signed manifest carries, once its Ed25519
+    // signature checks out against publicKey (32 raw bytes). A signed
+    // manifest is the base64 signature, a newline, then the manifest bytes;
+    // the signature covers manifestSignaturePrefix followed by those bytes.
+    static std::optional<QByteArray> verifiedManifest(const QByteArray &signedManifest,
+                                                       const QByteArray &publicKey,
+                                                       QString *error = nullptr);
     static std::optional<UpdateManifest> parseManifest(
         const QByteArray &json,
         const QString &platformKey,
@@ -79,8 +86,11 @@ protected:
     // ApplicationController::quitApplication does, so a restart keeps them.
     void quitAfterKeySaves();
     void finishRestart() override;
-    // Where a check fetches the channel's manifest.
+    // Where a check fetches the channel's signed manifest.
     virtual QUrl manifestUrl(UpdateChannel channel) const;
+    // The key manifests must be signed with: the one compiled in, or empty
+    // in a build configured without SPEECHER_SPARKLE_ED_PUBLIC_KEY.
+    virtual QByteArray manifestPublicKey() const;
 
 private:
     friend class ManifestUpdaterTestAccess;

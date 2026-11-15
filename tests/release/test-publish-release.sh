@@ -9,7 +9,9 @@ fi
 mkdir -p "$WORK"
 
 python3 - "$ROOT" "$WORK" <<'PY'
+import base64
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -18,6 +20,29 @@ import sys
 import xml.etree.ElementTree as ET
 
 root, work = map(lambda arg: Path(arg).resolve(), sys.argv[1:])
+
+# The test key tests/test_update_controller.cpp trusts.
+TEST_SEED = "KTTjIefSe4LxN8oP0lBmHLa44tcubLY/KSSJNGFar7E="
+TEST_PUBLIC = "7toydKEGhrZxA8HUHxqtl70KI9hgucXCGh4/ux5k6so="
+spec = importlib.util.spec_from_file_location("signer", root / "scripts/sign-update-manifest.py")
+signer = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(signer)
+
+def signed(manifest):
+    signature, _ = signer.sign(base64.b64decode(TEST_SEED), signer.PREFIX + manifest)
+    return base64.b64encode(signature) + b"\n" + manifest
+
+# The updater's test checks this fixture, so the script and the app agree. A
+# legacy 96-byte key (expanded key, then public key) signs the same bytes.
+fixture = root / "tests/data/update-manifest"
+for private_key in (TEST_SEED, base64.b64encode(
+        signer.expanded_key(base64.b64decode(TEST_SEED)) + base64.b64decode(TEST_PUBLIC)).decode()):
+    subprocess.run([sys.executable, str(root / "scripts/sign-update-manifest.py"),
+                    str(fixture / "update-manifest.json"), str(work / "fixture.signed")],
+                   env=dict(os.environ, SPARKLE_ED_PRIVATE_KEY=private_key, SPARKLE_ED_PUBLIC_KEY=TEST_PUBLIC),
+                   check=True)
+    assert (work / "fixture.signed").read_bytes() == (fixture / "update-manifest.signed").read_bytes()
+print("PASS signing: the script's signature for the test key matches tests/data/update-manifest.")
 shim = work / "bin"
 shim.mkdir(exist_ok=True)
 (shim / "gh").write_text('''#!/usr/bin/env python3
@@ -75,7 +100,7 @@ def asset_name(build, base):
 immutable = [asset_name(402, name) for name in rolling]
 sidecars = ["Speecher-x86_64.AppImage.zsync", "Speecher-Setup-x64.exe.sha256"]
 
-for scenario in ("nightly", "identical", "changed", "stale", "stub", "create", "stable"):
+for scenario in ("nightly", "identical", "changed", "stale", "stub", "create", "stable", "unsigned"):
     channel = "stable" if scenario == "stable" else "nightly"
     ref = "v9.9.9" if channel == "stable" else "master"
     build_number = 390 if scenario == "stale" else 402
@@ -132,12 +157,20 @@ for scenario in ("nightly", "identical", "changed", "stale", "stub", "create", "
     env = dict(os.environ, PATH=f"{shim}:{os.environ['PATH']}", COMMAND_LOG=str(log),
         ASSET_LIST=str(asset_list), RELEASE_EXISTS="no" if scenario == "create" else "yes", GITHUB_REF_NAME=ref, GITHUB_SHA="0123456789abcdef0123456789abcdef01234567",
         GITHUB_REPOSITORY="firemonster612/speecher", GITHUB_OUTPUT=str(output), GH_TOKEN="fake-token")
+    if scenario != "unsigned":
+        env.update(SPARKLE_ED_PRIVATE_KEY=TEST_SEED, SPARKLE_ED_PUBLIC_KEY=TEST_PUBLIC)
     result = subprocess.run(["bash", str(root / "scripts/publish-release.sh")], cwd=case, env=env, capture_output=True, text=True)
     commands = [json.loads(line) for line in log.read_text().splitlines()]
     listings = [command for command in commands if command[:2] == ["gh", "api"] and command[2].endswith("/assets")]
     mutations = [command for command in commands if command[:3] in (
         ["gh", "release", "upload"], ["gh", "release", "edit"], ["gh", "release", "create"],
         ["gh", "api", "-X"]) or command[:2] in (["git", "tag"], ["git", "push"])]
+    if scenario == "unsigned":
+        assert result.returncode != 0 and "SPARKLE_ED_PRIVATE_KEY" in result.stderr, result.stderr
+        assert not commands, commands
+        assert manifest_path.read_bytes() == original_manifest
+        print("PASS unsigned: refused before any request without the signing key.")
+        continue
     if scenario in ("changed", "stale"):
         assert result.returncode != 0, scenario
         assert not mutations, mutations
@@ -165,18 +198,19 @@ for scenario in ("nightly", "identical", "changed", "stale", "stub", "create", "
     batches = [[Path(arg).name for arg in command[4:] if not arg.startswith("--")] for command in uploads]
     names = [name for batch in batches for name in batch]
     expected = immutable if channel == "nightly" else rolling
+    manifests = ["update-manifest.json", "update-manifest.signed"]
     rerun = scenario == "identical"
     if channel == "nightly" and not rerun:
         assert "--clobber" not in uploads[0], uploads[0]
         assert set(names[:3]) == set(immutable), f"Immutable binaries must upload first: {batches}"
         assert set(batches[0]) == set(immutable), batches
-        assert set(names[3:-1]) == set(rolling + sidecars), names
-        assert batches[-1] == ["update-manifest.json"], "Manifest must upload in a separate final call"
+        assert set(names[3:-2]) == set(rolling + sidecars), names
+        assert batches[-1] == manifests, "Manifests must upload in a separate final call"
     elif rerun:
-        assert batches == [rolling + sidecars, ["update-manifest.json"]], batches
+        assert batches == [rolling + sidecars, manifests], batches
     else:
-        assert names == [rolling[0], sidecars[0], rolling[1], rolling[2], sidecars[1], "update-manifest.json"], names
-    assert len(names) == (9 if channel == "nightly" and not rerun else 6), names
+        assert names == [rolling[0], sidecars[0], rolling[1], rolling[2], sidecars[1], *manifests], names
+    assert len(names) == (10 if channel == "nightly" and not rerun else 7), names
     assert all("--clobber" in command for command in (uploads[1:] if channel == "nightly" and not rerun else uploads))
     assert [name for name in names if name.endswith(".zsync")] == [sidecars[0]]
     assert all(command[3] == tag for command in uploads)
@@ -188,6 +222,8 @@ for scenario in ("nightly", "identical", "changed", "stale", "stub", "create", "
     assert manifest == {"version": version, "buildNumber": build_number,
         "linux-x86_64": {"appimage": url + expected[0], "sha256": linux_sha256},
         "windows-x86_64": {"installer": url + expected[2], "sha256": windows_sha256}}, manifest
+    assert (case / "uploaded/update-manifest.signed").read_bytes() == signed(
+        (case / "uploaded/update-manifest.json").read_bytes())
     appcast_path = case / f"appcast-{channel}.xml"
     appcast = ET.parse(appcast_path)
     enclosure = appcast.find("./channel/item/enclosure")

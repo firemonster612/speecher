@@ -19,7 +19,10 @@ SPEECHER_E2E_OPENAI_KEY names the one they saved, and the proxy key only when
 the settings file holds one; their auth modes are left as they are otherwise.
 
 The released app has no feed override, so it fetches the real manifest URL,
-which the local server answers with the new AppImage and its SHA-256. The old
+which the local server answers with the new AppImage and its SHA-256. An app
+from after manifests were signed fetches update-manifest.signed instead, and
+the server has one only when SPARKLE_ED_PRIVATE_KEY and SPARKLE_ED_PUBLIC_KEY
+hold the key that app was built to trust (docs/adr/0011-signed-update-manifest.md). The old
 app saves the OpenAI key in the keyring itself, then downloads, verifies and
 swaps the image on its own; the script presses the old window's own "Restart
 now" over AT-SPI. The new app's settings are compared with the old ones as the
@@ -68,6 +71,7 @@ DESKTOP = HOME / f'.local/share/applications/{APP_ID}.desktop'
 ICON = HOME / f'.local/share/icons/hicolor/scalable/apps/{APP_ID}.svg'
 HELPER = Path('/usr/local/lib/speecher/speecher-keywatchd')
 MANIFEST_PATH = '/firemonster612/speecher/releases/latest/download/update-manifest.json'
+SIGNED_MANIFEST_PATH = '/firemonster612/speecher/releases/latest/download/update-manifest.signed'
 IMAGE_PATH = '/firemonster612/speecher/releases/download/e2e/Speecher-x86_64.AppImage'
 STUB_TRANSCRIPT = 'speecher migration stub transcript'
 REFINED = 'speecher migration refined'
@@ -211,6 +215,11 @@ def serve_https(work, evidence, new_image, version, build, credentials):
         'linux-x86_64': {'appimage': 'https://github.com' + IMAGE_PATH, 'sha256': sha256(new_image)},
     }).encode()
     (evidence / 'update-manifest.json').write_bytes(manifest)
+    signed_manifest = None
+    if os.environ.get('SPARKLE_ED_PRIVATE_KEY') and os.environ.get('SPARKLE_ED_PUBLIC_KEY'):
+        run(sys.executable, str(REPO / 'scripts/sign-update-manifest.py'),
+            str(evidence / 'update-manifest.json'), str(evidence / 'update-manifest.signed'))
+        signed_manifest = (evidence / 'update-manifest.signed').read_bytes()
     refined = b''.join(f'event: {name}\ndata: {json.dumps(dict(data, type=name))}\n\n'.encode() for name, data in (
         ('response.output_text.delta', {'delta': REFINED}), ('response.completed', {'response': {}})))
     log = open(evidence / 'https-requests.log', 'a')
@@ -219,6 +228,8 @@ def serve_https(work, evidence, new_image, version, build, credentials):
         def do_GET(self):
             if self.path == MANIFEST_PATH:
                 self.reply(manifest)
+            elif self.path == SIGNED_MANIFEST_PATH and signed_manifest:
+                self.reply(signed_manifest)
             elif self.path == IMAGE_PATH:
                 self.reply(Path(new_image).read_bytes())
             else:

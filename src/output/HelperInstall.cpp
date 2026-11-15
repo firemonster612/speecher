@@ -12,6 +12,7 @@
 #include <QStandardPaths>
 #include <QTemporaryDir>
 
+#include <algorithm>
 #include <cerrno>
 #include <csignal>
 #include <vector>
@@ -21,6 +22,7 @@
 #include <poll.h>
 #include <pty.h>
 #include <pwd.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <termios.h>
@@ -34,6 +36,28 @@ namespace {
 constexpr auto rootStageDirectory = "/usr/local/lib/speecher/setup";
 
 PkexecPrompt promptHandler;
+
+// True when only root can change the file at this canonical path: it and
+// every directory above it are owned by root and writable by neither group
+// nor others.
+bool onlyRootCanChange(const QString &canonicalPath)
+{
+    QByteArray path = QFile::encodeName(canonicalPath);
+    if (!path.startsWith('/')) {
+        return false;
+    }
+    while (true) {
+        struct stat info;
+        if (lstat(path.constData(), &info) != 0 || info.st_uid != 0
+            || (info.st_mode & (S_IWGRP | S_IWOTH)) != 0) {
+            return false;
+        }
+        if (path == "/") {
+            return true;
+        }
+        path.truncate(qMax<qsizetype>(path.lastIndexOf('/'), 1));
+    }
+}
 
 // How long the terminal must stay quiet before text ending in a colon counts
 // as a prompt waiting for input rather than output still arriving.
@@ -375,17 +399,33 @@ bool runSetupHelper(const char *installedHelperPath,
         }
         return false;
     }
-    // Root never executes from a user-writable path. The installed libexec
-    // path is root-owned and runs directly; a helper found anywhere else (an
-    // AppImage mount, a build directory) is first copied to a root-owned
-    // directory by pkexec'd /usr/bin/install — fixed tooling, so nothing a
-    // user can rewrite runs as root — and the root-owned copy is what runs.
-    // The two prompts this costs are honest: one names install, one the helper.
-    QString helper = resolvedHelperPath(installedHelperPath);
-    if (helper != QLatin1StringView(installedHelperPath)) {
-        const QDir sourceDirectory = QFileInfo(helper).dir();
-        const QString helperName = QFileInfo(helper).fileName();
-
+    // Root never executes from a user-writable path. A helper runs directly
+    // only when it, its companions and every directory above them are root's
+    // alone, as a package or a root `make install` leaves them. Anything else
+    // (an AppImage mount, a build directory, a `make install` into ~/.local)
+    // is first copied to a root-owned directory by pkexec'd /usr/bin/install,
+    // fixed tooling, and the root-owned copy is what runs. That copy holds
+    // whatever bytes this account supplied, so it does not stop malware
+    // already running as the user from planting a helper before the prompt;
+    // it keeps root to root-owned files, and nobody can swap the file between
+    // the prompt and its execution. The two prompts this costs are honest:
+    // one names install, one the helper.
+    QString helper = QFileInfo(resolvedHelperPath(installedHelperPath)).canonicalFilePath();
+    if (helper.isEmpty()) {
+        if (error) {
+            *error = QStringLiteral("Could not find %1.")
+                         .arg(QFileInfo(QString::fromLatin1(installedHelperPath)).fileName());
+        }
+        return false;
+    }
+    const QDir sourceDirectory = QFileInfo(helper).dir();
+    const QString helperName = QFileInfo(helper).fileName();
+    QStringList names{helperName};
+    names.append(companionFileNames);
+    const bool rootOwned = std::all_of(names.cbegin(), names.cend(), [&](const QString &name) {
+        return onlyRootCanChange(sourceDirectory.filePath(name));
+    });
+    if (!rootOwned) {
         // The helper usually sits in the AppImage's FUSE mount, which only the
         // user who mounted it can read: pkexec's root gets EACCES from the
         // mount itself, whatever the file's own mode, so staging straight from
@@ -399,8 +439,6 @@ bool runSetupHelper(const char *installedHelperPath,
             }
             return false;
         }
-        QStringList names{helperName};
-        names.append(companionFileNames);
         QStringList sources;
         for (const QString &name : names) {
             const QString destination = readable.filePath(name);
